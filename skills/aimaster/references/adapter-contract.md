@@ -7,8 +7,9 @@ Every capability follows: `discover`, `probe`, `prepare`, `execute`, `collect`, 
 - `prepare`: a reviewable prompt/job package and intended outputs. Before every
   external generation, complete [reference binding](reference-bindings.md).
 - `execute`: only after fresh approval for an external or paid action.
-- `collect`: bind results to the exact Studio `pos:*` target (or legacy
-  `shot_id`) and revision without guessing success.
+- `collect`: follow the mandatory [completion loop](completion-loop.md): save
+  confirmed output locally, bind it to the exact Studio `pos:*` target (or
+  legacy `shot_id`) and revision, read back the dashboard state, then finish.
 - `validate`: technical evidence and visual evidence as separate fields.
 - `provenance`: adapter/model, settings, source, time, and artifact path/URI.
 
@@ -26,3 +27,7 @@ Reference binding is a provider-neutral safety contract, not a universal prompt
 syntax: route, model and mode determine whether an observed native inline tag,
 structured file field/order, or hybrid form is used. Unknown mapping blocks
 preparation and execution; it never permits a paid probe or invented tag.
+
+Select the model through [model selection](model-selection.md). Provider or
+catalog defaults are candidates, not a sufficient shortlist or compatibility
+decision.

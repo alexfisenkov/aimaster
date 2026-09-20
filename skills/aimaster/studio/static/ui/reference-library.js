@@ -58,6 +58,7 @@ function referenceItem(project, reference, { readOnly, canEditReference, canEdit
     source: reference.source,
     sourceLabel: SOURCE_LABELS[reference.source],
     hasAsset: reference.has_asset === true,
+    assetId: typeof reference.asset_id === "string" ? reference.asset_id : null,
     assetUrl: typeof reference.asset_url === "string" ? reference.asset_url : null,
     playableAssetUrl: typeof reference.playable_asset_url === "string" ? reference.playable_asset_url : null,
     mediaType: reference.media_type,

@@ -82,6 +82,16 @@
   overflow-wrap: break-word;
 }
 
+.media-dimensions {
+  color: var(--color-text-muted);
+  font: 600 11px/1.35 var(--font-mono);
+  letter-spacing: 0.01em;
+}
+
+.media-dimensions[hidden] {
+  display: none;
+}
+
 .media-empty {
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
@@ -142,10 +152,12 @@
 
 .media-thumb-button {
   position: relative;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  aspect-ratio: 1 / 1;
   min-height: var(--touch-target-min);
+  max-height: 18rem;
   padding: 0;
   overflow: hidden;
   border-radius: var(--radius-md);
@@ -155,9 +167,12 @@
 
 .media-thumb-button img,
 .media-thumb-button video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 18rem;
+  object-fit: contain;
 }
 
 .media-duration-badge {
@@ -242,10 +257,6 @@
   opacity: 0.6;
 }
 
-.media-result-card .media-thumb-button {
-  aspect-ratio: 16 / 9;
-}
-
 /* A result whose generation hasn't produced a file yet (ui/media.js's
    `notYetGenerated`) uses this same button, disabled, so its layout matches
    a loaded sibling card; the dimmed, default (not pointer) cursor keeps it
@@ -263,6 +274,10 @@
 }
 
 .media-item-footer .media-item-caption {
+  flex-basis: 100%;
+}
+
+.media-item-footer .media-dimensions {
   flex-basis: 100%;
 }
 

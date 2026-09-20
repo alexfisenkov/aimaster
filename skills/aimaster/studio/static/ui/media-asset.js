@@ -35,6 +35,47 @@ export function hasLoadableAsset(assetUrl) {
   return typeof assetUrl === "string" && assetUrl.startsWith("/assets/");
 }
 
+function greatestCommonDivisor(left, right) {
+  let a = Math.abs(Math.round(left));
+  let b = Math.abs(Math.round(right));
+  while (b) [a, b] = [b, a % b];
+  return a || 1;
+}
+
+/**
+ * Build a visible, accessible intrinsic-size label for an image or video.
+ * The browser is the source of truth: no server metadata or guessed ratio.
+ */
+export function buildMediaDimensions(media) {
+  const dimensions = document.createElement("span");
+  dimensions.className = "media-dimensions";
+  dimensions.hidden = true;
+
+  const update = () => {
+    const width = Number(media.videoWidth || media.naturalWidth);
+    const height = Number(media.videoHeight || media.naturalHeight);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+    const divisor = greatestCommonDivisor(width, height);
+    const ratioWidth = Math.round(width / divisor);
+    const ratioHeight = Math.round(height / divisor);
+    dimensions.textContent = `${width}×${height} · ${ratioWidth}:${ratioHeight}`;
+    dimensions.setAttribute(
+      "aria-label",
+      `Размер ${width} на ${height} пикселей, соотношение сторон ${ratioWidth} к ${ratioHeight}`,
+    );
+    dimensions.hidden = false;
+  };
+
+  if (media.tagName === "VIDEO") {
+    media.addEventListener("loadedmetadata", update);
+    if (media.readyState >= 1) queueMicrotask(update);
+  } else {
+    media.addEventListener("load", update);
+    if (media.complete && media.naturalWidth > 0) queueMicrotask(update);
+  }
+  return dimensions;
+}
+
 function disposeMediaElement(element) {
   if (!element) return;
   if (typeof element.pause === "function") element.pause();

@@ -19,10 +19,11 @@
 .position-card .prompt-editor { margin: 0; min-width: 0; }
 .position-card .prompt-editor-header { flex-wrap: wrap; }
 .position-card .prompt-editor-text { min-height: 90px; width: 100%; box-sizing: border-box; }
-.position-preview { position: relative; min-width: 0; aspect-ratio: 1; overflow: hidden; border-radius: 10px; background: #fafbfb; border: 1px solid var(--color-border); }
+.position-preview { position: relative; min-width: 0; overflow: hidden; border-radius: 10px; background: #fafbfb; border: 1px solid var(--color-border); }
 .position-preview .media-placeholder { min-height: 0; height: 100%; box-sizing: border-box; }
-.position-preview-button { display: block; border: 0; padding: 0; width: 100%; height: 100%; background: #eceef0; cursor: pointer; }
-.position-preview-button img, .position-preview-button video { display: block; width: 100%; height: 100%; object-fit: contain; }
+.position-preview-button { display: flex; align-items: center; justify-content: center; border: 0; padding: 0; width: 100%; min-height: 96px; max-height: 24rem; background: #eceef0; cursor: pointer; }
+.position-preview-button img, .position-preview-button video { display: block; width: auto; max-width: 100%; height: auto; max-height: 24rem; object-fit: contain; }
+.position-preview > .media-dimensions { position: absolute; left: 8px; top: 8px; z-index: 1; padding: 3px 7px; border-radius: 5px; color: white; background: rgba(23, 24, 26, 0.72); pointer-events: none; }
 .position-duration { position: absolute; bottom: 8px; right: 8px; padding: 3px 7px; border-radius: 5px; color: white; background: #3b4149; font-size: 12px; pointer-events: none; }
 .position-material-note { margin: 0; color: var(--color-text-secondary); font-size: 12px; }
 .position-card button, .position-readiness button, .video-mode-choice { min-height: 44px; min-width: 44px; }
@@ -33,7 +34,6 @@
 .position-card [data-action="generate"], .position-card [data-action="approve"], .position-readiness [data-action="approve-stage"] { background: var(--color-accent); color: white; border-color: var(--color-accent); }
 .position-card-video .position-card-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
 .position-card-video .position-card-content:only-child { grid-column: 1 / -1; }
-.position-card-video .position-preview { aspect-ratio: 16 / 9; }
 .video-mode h4 { margin: 0 0 8px; font-size: 12px; color: var(--color-text-secondary); }
 .video-mode-choice { display: grid; text-align: left; gap: 5px; width: 100%; margin-bottom: 8px; padding: 12px; border: 1px solid var(--color-border); border-radius: 10px; background: white; font-size: 13px; }
 .video-mode-choice[aria-pressed="true"] { border-color: var(--color-accent); background: #f6fbf8; }

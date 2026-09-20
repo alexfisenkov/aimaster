@@ -29,6 +29,7 @@ import {
   hasLoadableAsset,
   markAssetError,
   buildAssetPlaceholder,
+  buildMediaDimensions,
 } from "./media-asset.js";
 import { requestSceneSelection, resolveSceneOrder, resolveSceneRange } from "./timeline.js";
 
@@ -835,6 +836,7 @@ function buildReferenceItem(item) {
 
   if (hasLoadableAsset(item.asset_url)) {
     const img = document.createElement("img");
+    const dimensions = buildMediaDimensions(img);
     img.alt = "";
     img.loading = "lazy";
     img.addEventListener("error", () => {
@@ -846,12 +848,15 @@ function buildReferenceItem(item) {
       const message = "Референс недоступен";
       const placeholder = buildAssetPlaceholder(message);
       img.replaceWith(placeholder);
+      dimensions.remove();
       markAssetError(placeholder, item.asset_id);
       button.disabled = true;
       button.setAttribute("aria-label", message);
     });
     img.src = item.asset_url;
     button.append(img);
+    li.append(button);
+    li.append(dimensions);
     button.addEventListener("click", () =>
       dispatchOpenViewer(
         "image",
@@ -874,7 +879,8 @@ function buildReferenceItem(item) {
   const caption = document.createElement("span");
   caption.className = "media-item-caption";
   caption.textContent = item.label || "";
-  li.append(button, caption);
+  if (!button.parentNode) li.append(button);
+  li.append(caption);
 
   // Task 14: one tag per linked scene -- a reference bound to two-or-more
   // scenes (scenes[].links.reference_ids) shows at every one of them, not
@@ -991,6 +997,8 @@ function buildResultCardNode(card, kind) {
     button.dataset.action = "open";
   }
 
+  let footerDimensions = null;
+
   if (hasLoadableAsset(card.assetUrl)) {
     const label = buildAccessibleLabel([
       kind === "video" ? "Открыть видео" : "Открыть изображение",
@@ -1017,12 +1025,14 @@ function buildResultCardNode(card, kind) {
       const message = kind === "video" ? "Видео недоступно" : "Изображение недоступно";
       const placeholder = buildAssetPlaceholder(message);
       mediaEl.replaceWith(placeholder);
+      footerDimensions?.remove();
       markAssetError(placeholder, card.assetId);
       button.disabled = true;
       button.setAttribute("aria-label", message);
     });
     mediaEl.src = card.assetUrl;
     button.append(mediaEl);
+    footerDimensions = buildMediaDimensions(mediaEl);
     if (card.rangeLabel) {
       const badge = document.createElement("span");
       badge.className = "media-duration-badge";
@@ -1059,6 +1069,7 @@ function buildResultCardNode(card, kind) {
 
   const footer = document.createElement("div");
   footer.className = "media-item-footer";
+  if (footerDimensions) footer.append(footerDimensions);
   const version = document.createElement("span");
   version.className = "media-version-badge";
   version.textContent = `v${card.ordinal}`;

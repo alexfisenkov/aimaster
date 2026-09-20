@@ -11,6 +11,7 @@ import { resolveSceneDisplayText } from "./scenario.js";
 import { resolveSceneOrder, resolveSceneRange } from "./timeline.js";
 import { requestAgentPrompt } from "./chat-prompt-dialog.js";
 import { exactTarget } from "./agent-control.js";
+import { buildAssetPlaceholder, buildMediaDimensions, hasLoadableAsset, markAssetError } from "./media-asset.js";
 
 const FRAME_STATUS_LABELS = Object.freeze({
   waiting: "Ждёт промпта",
@@ -198,6 +199,7 @@ export function frameCardsModel(snapshot, { readOnly = false } = {}) {
           .filter((reference) => reference.scene_id === sceneId && includedIds.has(reference.reference_id))
           .map((reference) => ({
             referenceId: reference.reference_id,
+            assetId: typeof reference.asset_id === "string" ? reference.asset_id : null,
             tag: reference.tag,
             label: reference.label || "",
             assetUrl: typeof (reference.playable_asset_url || reference.asset_url) === "string" ? (reference.playable_asset_url || reference.asset_url) : null,
@@ -365,13 +367,37 @@ function renderLocalReferences(card, model, status, key) {
     item.className = "frame-local-reference";
     const preview = document.createElement("div");
     preview.className = "frame-local-preview";
-    if (reference.assetUrl) {
+    if (hasLoadableAsset(reference.assetUrl)) {
       const isVideo = reference.kind === "video" || reference.mediaType === "video";
       const media = document.createElement(isVideo ? "video" : "img");
       media.src = reference.assetUrl;
       if (isVideo) { media.controls = true; media.preload = "metadata"; }
       else media.alt = reference.label ? `Разовый референс: ${reference.label}` : "Разовый референс";
-      preview.append(media);
+      const dimensions = buildMediaDimensions(media);
+      let imageButton = null;
+      if (!isVideo) {
+        imageButton = document.createElement("button");
+        imageButton.type = "button";
+        imageButton.className = "frame-local-preview-button";
+        imageButton.setAttribute("aria-label", `Открыть локальный референс: ${reference.label || reference.tag}`);
+        imageButton.append(media);
+        imageButton.addEventListener("click", () => imageButton.dispatchEvent(new CustomEvent("studio:open-viewer", {
+          bubbles: true,
+          detail: { kind: "image", asset: { assetUrl: reference.assetUrl, assetId: reference.assetId, caption: reference.label || reference.tag } },
+        })));
+      }
+      media.addEventListener("error", () => {
+        const placeholder = buildAssetPlaceholder(isVideo ? "Видеореференс недоступен" : "Референс недоступен");
+        media.replaceWith(placeholder);
+        if (imageButton) imageButton.disabled = true;
+        dimensions.remove();
+        markAssetError(placeholder, reference.assetId || reference.referenceId);
+      });
+      preview.append(imageButton || media, dimensions);
+    } else {
+      const placeholder = buildAssetPlaceholder("Референс недоступен");
+      markAssetError(placeholder, reference.assetId || reference.referenceId);
+      preview.append(placeholder);
     }
     const tag = document.createElement("span");
     tag.textContent = reference.tag;

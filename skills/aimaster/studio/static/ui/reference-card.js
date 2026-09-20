@@ -8,6 +8,7 @@ import {
 } from "./card-forms.js";
 import { isActionWorking, renderPromptRefreshNotice } from "./prompt-editor.js";
 import { requestAgentPrompt } from "./chat-prompt-dialog.js";
+import { buildAssetPlaceholder, buildMediaDimensions, markAssetError } from "./media-asset.js";
 
 function hook(control, targetId, action) {
   markControlHooks(control, targetId, action);
@@ -56,7 +57,28 @@ function mediaPreview(model) {
     media.src = previewUrl;
     if (model.kind === "video") { media.controls = true; media.preload = "metadata"; }
     else media.alt = model.name ? `Референс: ${model.name}` : `Референс ${model.tag}`;
-    wrap.append(media);
+    const dimensions = buildMediaDimensions(media);
+    let imageButton = null;
+    if (model.kind !== "video") {
+      imageButton = document.createElement("button");
+      imageButton.type = "button";
+      imageButton.className = "reference-card-preview-button";
+      imageButton.setAttribute("aria-label", `Открыть референс: ${model.name || model.tag}`);
+      imageButton.append(media);
+      imageButton.addEventListener("click", () => imageButton.dispatchEvent(new CustomEvent("studio:open-viewer", {
+        bubbles: true,
+        detail: { kind: "image", asset: { assetUrl: previewUrl, assetId: model.assetId, caption: model.name || model.tag } },
+      })));
+    }
+    media.addEventListener("error", () => {
+      const message = model.kind === "video" ? "Видеореференс недоступен" : "Референс недоступен";
+      const placeholder = buildAssetPlaceholder(message);
+      media.replaceWith(placeholder);
+      if (imageButton) imageButton.disabled = true;
+      dimensions.remove();
+      markAssetError(placeholder, model.assetId || model.referenceId);
+    });
+    wrap.append(imageButton || media, dimensions);
     if (model.kind === "video") {
       const open = document.createElement("button");
       open.type = "button";

@@ -247,6 +247,11 @@ owner-configured controller.
 
 ## Jobs, grants and the active operator
 
+Before preparing a generation job, follow [model selection](model-selection.md).
+After any successful external result, follow the full
+[collection/completion loop](completion-loop.md); provider success alone does
+not complete a position or stage.
+
 The eight job types serviced by chat are `generate`, `vary`, `regenerate`,
 `prompts-generate`, `prompt-refresh`, `assemble`, `revise-scenario`, and
 `continue-in-chat`.

@@ -6,7 +6,7 @@ import { buildCardActionsRow } from "./card-decorate.js";
 import { prunePendingRequests } from "./paid-action-state.js";
 import { buildSimpleButton, buildCommentForm, buildStatusLine, markControlHooks } from "./card-forms.js";
 import { draftKey } from "./card-drafts.js";
-import { formatSceneRange, hasLoadableAsset, buildAssetPlaceholder, markAssetError } from "./media-asset.js";
+import { formatSceneRange, hasLoadableAsset, buildAssetPlaceholder, buildMediaDimensions, markAssetError } from "./media-asset.js";
 import { requestAgentPrompt } from "./chat-prompt-dialog.js";
 import { renderChatStageActions } from "./stage-approval.js";
 
@@ -100,7 +100,7 @@ function preview(model) {
       asset: { assetUrl: model.result.asset_url, assetId: model.result.asset_id, caption: model.result.caption || model.title },
       scene: model.scene },
   })));
-  wrap.append(button);
+  wrap.append(button, buildMediaDimensions(media));
   if (model.durationLabel) {
     const duration = document.createElement("span"); duration.className = "position-duration";
     duration.textContent = model.durationLabel; wrap.append(duration);

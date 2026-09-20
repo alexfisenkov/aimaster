@@ -43,18 +43,23 @@ MOV при необходимости конвертируй в отдельну
 4. Адаптер мапит `video_reference` в нативное поле только после schema lookup. Для текущего Magnific это `references[].type: "video"` и asset URL/creation identifier; модельные keyframes — отдельное поле, не синоним reference.
 5. В prompt давать нативную ссылку/тег только если его выдал адаптер (например, порядковый video reference); не изобретать `@video1` или другой provider tag.
 
-## Подтверждённые маршруты на 2026-09-20
+## Датированный пример проверки на 2026-09-21
+
+Это свидетельство проверки, а не постоянный shortlist. Перед каждым новым
+запуском перечитай полный live-каталог по [правилу выбора модели](model-selection.md).
 
 | Маршрут | Подтверждённая возможность | Существенная граница |
 | --- | --- | --- |
 | Seedance 2.0 / 2.5 | Reference video, edit video и extend video; text + image/video/audio references. | В Magnific visual references взаимоисключаемы с start/end image keyframes; точные лимиты брать из live schema. |
-| Kling Motion Control 2.6 / 3.0 | Source video для переноса движения. | Это motion route, не обещание edit/extend исходного ролика. |
-| Kling Omni 1 / 3 | Video reference в current catalog. | Совместимость с audio, end frame и resolution зависит от конкретной модели; сверять schema. |
-| Kling 2.5 | Start/end image keyframes. | Current catalog не заявляет video reference. |
+| Kling 3.0 Omni | Image/video/character/product references; 12 с и 9:16 доступны в проверенном каталоге. | Ограничения audio, end frame и 4K зависят от состава входов; сверять schema. |
+| Kling 3.0 | Character/product/image references. | В проверенном маршруте references требуют start frame. |
+| Wan 2.7 | Image/video/character/product/style references; 12 с, 9:16 и 1080p доступны. | Точные сочетания входов сверять по schema. |
+| Kling Motion Control 2.6 / 3.0 | Source video для переноса движения. | Это motion route, не замена character/location references и не обещание edit/extend исходного ролика. |
+| Kling 2.5 | Start/end image keyframes. | Проверенный каталог: 5/10 с и `supportsReferences: false`; не предлагать для character/location reference задачи. |
 
 | Доказательство | Дата | Что именно подтверждает |
 | --- | --- | --- |
 | [BytePlus LAS: Enhanced/basic video generation](https://docs.byteplus.com/en/docs/Byteplus_LAS/video_gen_enhanced) | 2026-09-20 | Official matrix для Seedance 2.0/2.5: video reference, edit и extend; входы text/image/video/audio. В таблице и отдельных bullet есть несогласованная подпись про audio/video limits, поэтому числа здесь не фиксируются. |
-| Magnific `video_models_list` + `video_generate` schema | 2026-09-20 | Текущие slugs/routes выше и mapping `references[].type="video"`; не доказательство production availability интеграции. |
+| Magnific `video_models_list`, `images_models_list` + `video_generate` schema | 2026-09-21 | 48 video и 49 image entries; точные capabilities выше, mapping `references[].type="video"`; не доказательство production availability интеграции. |
 
 Официальная актуальная спецификация Kling была найдена, но её подробное чтение заблокировано robots policy. Поэтому current separate Kling video-extension endpoint не подтверждён: его не надо реализовывать или обещать без новой проверки официальной schema.

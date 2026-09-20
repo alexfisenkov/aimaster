@@ -132,7 +132,9 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
   selected route, then present only models actually exposed by that verified
   route. A declared candidate is `needs_chat_setup` until the current session
   proves it reachable. Read the [adapter contract](references/adapter-contract.md)
-  before using one.
+  and mandatory [model-selection process](references/model-selection.md) before
+  using one. Query the full current catalog, build the compatible set from the
+  exact task and references, then offer a useful shortlist plus all-compatible.
 - For every newly selected model and relevant prompt task/stage, before writing
   prompts, run the mandatory [writing-guide gate](references/writing-guides.md).
   A selected guide governs creative composition only; route verification and
@@ -171,6 +173,21 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
 - Run `recover` only after the relevant operator stopped and the workspace's
   running jobs are confirmed orphaned. It affects all running chat jobs in that
   workspace. `outcome_unknown` never auto-retries or rebases to a new revision.
+
+## Collection and completion
+
+- Follow the mandatory [completion loop](references/completion-loop.md) after
+  every output and before every stage approval. A provider result must be
+  downloaded/copied into workspace media, registered on its exact Studio
+  position and confirmed in the dashboard before it is reported as complete.
+  Do not ask a second permission for this canonical collection.
+- Keep every generated and post-processed variant. Record the user's preferred
+  version in Studio and use that exact version downstream; never leave the
+  decision only in chat.
+- Before ending a stage or project, enumerate missing required materials,
+  uncollected results and unresolved choices; offer relevant optional
+  improvements once. When ready, explicitly offer stage approval, final
+  assembly and export/editor handoff in sequence.
 
 ## Review before presentation
 
