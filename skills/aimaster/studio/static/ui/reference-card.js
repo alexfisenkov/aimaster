@@ -7,6 +7,7 @@ import {
   requestProjectRefresh,
 } from "./card-forms.js";
 import { isActionWorking, renderPromptRefreshNotice } from "./prompt-editor.js";
+import { requestAgentPrompt } from "./chat-prompt-dialog.js";
 
 function hook(control, targetId, action) {
   markControlHooks(control, targetId, action);
@@ -142,6 +143,22 @@ export function renderReferenceCard(model, { projectId, revision }) {
   membership.className = "reference-card-membership";
   membership.textContent = `включён в ${model.includedSceneCount} из ${model.sceneCount} кадров`;
   card.append(membership);
+
+  const chatActions = document.createElement("div");
+  chatActions.className = "agent-prompt-actions";
+  const sourceAction = document.createElement("button");
+  sourceAction.type = "button";
+  sourceAction.className = "agent-prompt-button agent-prompt-button-primary";
+  sourceAction.textContent = model.assetUrl ? "Заменить референс" : "Добавить референс";
+  sourceAction.addEventListener("click", () => {
+    requestAgentPrompt({
+      title: `${sourceAction.textContent}: ${model.name || model.tag}`,
+      prompt: `Открой проект «${projectId}» и референс «${model.referenceId}» (${model.name || model.tag}). Я хочу ${model.assetUrl ? "заменить текущий референс" : "добавить референс"}. Спроси, прикреплю ли я готовый файл или нужно сначала сгенерировать вариант. Если я прикреплю файл, проверь его и покажи, куда он будет подключён. Если выберу генерацию, сначала согласуй MCP/инструмент, доступную модель, промпт и один разрешённый запуск.`,
+      attachmentHint: "Если у вас уже есть референс, прикрепите его к сообщению в чате. Если нет — отправьте только текст и выберите генерацию вместе с агентом.",
+    }, sourceAction);
+  });
+  chatActions.append(sourceAction);
+  card.append(chatActions);
 
   if (model.voice) {
     const voice = document.createElement("label");

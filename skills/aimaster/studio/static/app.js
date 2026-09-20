@@ -24,18 +24,18 @@
 
 import { createStore } from "./ui/state.js";
 import { renderShell } from "./ui/shell.js";
-import { renderProjectRail } from "./ui/rail.js";
 import { deriveRailChrome } from "./ui/shell-runtime.js";
 import { createAppController } from "./ui/app-controller.js";
 import { attachViewerOpenListener } from "./ui/viewer.js";
-import { fetchCsrfToken, setActiveProject } from "./ui/actions.js";
 import { applyHistoryBackgroundInert, trapHistoryPanelTab } from "./ui/history-panel.js";
+import { attachAgentPromptListener } from "./ui/chat-prompt-dialog.js";
 
 // Wires ui/media.js's cards to ui/viewer.js's lightbox/player via the
 // `studio:open-viewer` DOM event -- the two modules never import each
 // other (see viewer.js's file banner), so this one call is what actually
 // connects them at runtime.
 attachViewerOpenListener();
+attachAgentPromptListener();
 
 class StudioFetchError extends Error {
   constructor(code) {
@@ -54,6 +54,10 @@ const main = document.querySelector("#main");
 const historyPanel = document.querySelector('[data-hook="history-panel"]');
 
 const store = createStore();
+const pageUrl = new URL(window.location.href);
+const preferredProjectId = pageUrl.searchParams.has("project")
+  ? pageUrl.searchParams.get("project")
+  : null;
 
 async function fetchJson(path, options) {
   let response;
@@ -82,7 +86,9 @@ async function fetchJson(path, options) {
 }
 
 function reportFailure(error) {
-  const code = error instanceof StudioFetchError ? error.code : "unexpected_error";
+  const code = typeof error?.code === "string"
+    ? error.code
+    : error instanceof StudioFetchError ? error.code : "unexpected_error";
   store.setError({ code });
 }
 
@@ -97,21 +103,16 @@ const controller = createAppController({
   fetchSnapshot: (projectId) => fetchJson(`/api/projects/${encodeURIComponent(projectId)}/snapshot`),
   fetchProjects: () => fetchJson("/api/projects"),
   paintShell: (state) => renderShell(shellRoot, state),
-  paintRail: (state) => renderProjectRail(railRoot, state),
-  // Task 06: ui/actions.js's `postAction` never takes a project id itself
-  // (see that module's own banner) -- the controller's subscriber is the
-  // one place that keeps its module-level active-project id in step with
-  // the store, on every commit, so a snapshot swap is never a separate
-  // wiring path from any other store change.
-  setActiveProject,
+  paintRail: () => {},
+  setActiveProject: () => {},
   reportFailure,
   isDocumentVisible: () => document.visibilityState === "visible",
+  preferredProjectId,
 });
 // Paint the initial (loading) state immediately, before any fetch resolves
 // -- the controller's own `store.subscribe` above only fires on *future*
 // commits, never for the state the store already holds at construction.
 renderShell(shellRoot, store.getState());
-renderProjectRail(railRoot, store.getState());
 
 document.addEventListener("studio:refresh-snapshot", (event) => {
   controller.requestRefresh(event?.detail?.projectId);
@@ -131,22 +132,6 @@ document.addEventListener("studio:refresh-snapshot", (event) => {
 setInterval(controller.pollLiveness, controller.liveness.periodMs);
 document.addEventListener("visibilitychange", controller.refreshOnReturn);
 window.addEventListener("focus", controller.refreshOnReturn);
-
-async function loadSession() {
-  // Reuses ui/actions.js's own cached CSRF-token fetch (ticket 06
-  // condition 11: "/api/session запрашивается на страницу один раз") --
-  // calling `fetchJson("/api/session")` here too used to cost a second,
-  // separate GET whose result this function immediately discarded, and
-  // the first click's own `postAction` would then fetch the token all
-  // over again. Session failure must never block browsing already-public
-  // snapshot data.
-  try {
-    await fetchCsrfToken();
-  } catch {
-    // ignored: the project index/snapshot fetches below report their own
-    // failures, and the shell stays usable read-only either way.
-  }
-}
 
 document.addEventListener("studio:project-selected", (event) => {
   const projectId = event?.detail?.projectId;
@@ -348,4 +333,4 @@ mobileRailQuery.addEventListener("change", () => {
 setRailOpen(railOpenIntent);
 syncHistoryBackground();
 
-loadSession().then(controller.loadProjectIndex);
+controller.loadProjectIndex();

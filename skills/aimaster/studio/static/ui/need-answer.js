@@ -1,4 +1,4 @@
-const COPY_HINT = "Продолжи проект";
+import { requestAgentPrompt } from "./chat-prompt-dialog.js";
 
 export function questionCountLabel(count) {
   const n = Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0;
@@ -49,30 +49,18 @@ export function renderNeedAnswer(root, { project, questions = [], blocked = fals
   const chat = document.createElement("button");
   chat.type = "button";
   chat.className = "need-answer-chat";
-  chat.textContent = "Открыть чат с агентом";
-  const hint = document.createElement("p");
-  hint.className = "need-answer-hint";
-  hint.setAttribute("role", "status");
-  chat.addEventListener("click", async () => {
+  chat.textContent = "Скопировать запрос агенту";
+  chat.addEventListener("click", () => {
     const titleText = typeof project?.title === "string" && project.title.trim()
       ? project.title.trim()
       : "Без названия";
-    const phrase = `${COPY_HINT} «${titleText}»`;
-    let copied = false;
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(phrase);
-        copied = true;
-      }
-    } catch {
-      copied = false;
-    }
-    hint.textContent = copied
-      ? "Фраза скопирована. Вернитесь в чат с агентом."
-      : `Вернитесь в чат с агентом и напишите: ${phrase}`;
+    requestAgentPrompt({
+      title: "Ответить агенту в чате",
+      prompt: `Продолжи проект «${titleText}» (ID: ${project?.id || "не указан"}). Покажи мне только вопросы, которые сейчас блокируют проект, и дождись моих ответов. После ответа обнови состояние проекта.`,
+    }, chat);
   });
   controls.append(refresh, chat);
-  card.append(heading, text, controls, hint);
+  card.append(heading, text, controls);
   root.append(card);
   return true;
 }

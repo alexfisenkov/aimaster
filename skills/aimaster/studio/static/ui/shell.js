@@ -26,8 +26,6 @@ import { renderNeedAnswer } from "./need-answer.js";
 import { decoratePromptCards, decorateResultCards } from "./card-decorate.js";
 import { decorateSceneReorder } from "./card-reorder.js";
 import { renderDecisionHistory } from "./decision-history.js";
-import { renderStageReview } from "./stage-review.js";
-import { buildReopenControl } from "./scenario-reopen.js";
 import {
   getRegisteredStep,
   registerStep,
@@ -44,6 +42,7 @@ import { renderAudioStep } from "./step-audio.js";
 import { renderAssemblyStep } from "./step-assembly.js";
 import { renderImagesStep } from "./step-images.js";
 import { renderVideoStep } from "./step-video.js";
+import { requestAgentPrompt } from "./chat-prompt-dialog.js";
 
 // Tone only — the label TEXT for every status comes from the one shared
 // STATUS_LABELS dictionary in state.js (also used by the rail), so the two
@@ -179,7 +178,7 @@ function buildScenarioSlot(snapshot, selectedSceneId) {
 }
 
 export function topbarMetaLabels(project) {
-  const labels = ["Мои проекты"];
+  const labels = ["AI Мастерская"];
   const typeLabel = resolveTypeLabel(project?.type);
   const modeLabel = resolveModeLabel(project?.mode);
   if (typeLabel) {
@@ -249,7 +248,18 @@ function paintTopbar(container, state) {
   historyToggle.addEventListener("click", () => {
     document.dispatchEvent(new CustomEvent("studio:history-toggle", { bubbles: true }));
   });
-  controls.append(historyToggle);
+  const agentPrompt = document.createElement("button");
+  agentPrompt.type = "button";
+  agentPrompt.className = "agent-prompt-button agent-prompt-button-primary";
+  agentPrompt.textContent = "Запрос агенту";
+  agentPrompt.addEventListener("click", () => {
+    const stage = state?.viewedStage || state?.snapshot?.view_stage?.current_stage || "текущий шаг";
+    requestAgentPrompt({
+      title: "Продолжить проект в чате",
+      prompt: `Продолжи проект «${project.title || project.id}» (ID: ${project.id}). Открой его текущее состояние и помоги мне с этапом «${STAGE_LABELS[stage] || stage}». Сначала коротко скажи, что уже готово и какое одно действие сейчас логичнее всего. Ничего внешнего и платного не запускай без моего выбора маршрута и отдельного разрешения.`,
+    }, agentPrompt);
+  });
+  controls.append(agentPrompt, historyToggle);
   container.append(identity, controls);
 }
 
@@ -417,20 +427,6 @@ function appendViewedStep(main, state, scenarioOptions) {
   if (!viewedStage) {
     return;
   }
-  if (viewedStage === currentStage) {
-    const reopen = buildReopenControl({
-      viewStage: state.snapshot?.view_stage,
-      actions: state.snapshot?.actions,
-      revision: state.snapshot?.revision,
-      projectId: state.snapshot?.active_project?.id,
-    });
-    if (reopen) {
-      const controls = document.createElement("div");
-      controls.className = "step-global-actions";
-      controls.append(reopen);
-      main.append(controls);
-    }
-  }
   const summary = buildStepSummary(viewedStage, state.snapshot?.active_project?.type);
   if (summary) {
     main.append(summary);
@@ -439,17 +435,14 @@ function appendViewedStep(main, state, scenarioOptions) {
   surface.className = "step-surface";
   surface.dataset.hook = "step-surface";
   surface.dataset.stage = viewedStage;
-  surface.dataset.readOnly = String(viewedStage !== currentStage);
+  surface.dataset.readOnly = "true";
   renderRegisteredStep(viewedStage, surface, {
     state,
     stage: viewedStage,
-    readOnly: viewedStage !== currentStage,
+    readOnly: true,
     scenarioOptions,
   });
   main.append(surface);
-  if (viewedStage === currentStage) {
-    appendStageReview(main, state);
-  }
 }
 
 /**
@@ -499,10 +492,6 @@ function appendMediaGallery(main, state, { snapshot = state.snapshot, decorate =
 // "Вернуть на доработку" bar -- each independently gated on the current
 // stage (see ui/stage-review.js's renderStageReview), appended after the
 // gallery so review controls always follow the material they review.
-function appendStageReview(main, state) {
-  renderStageReview(main, state.snapshot);
-}
-
 for (const stage of Object.keys(STAGE_LABELS)) {
   registerStep(stage, {
     title: STAGE_LABELS[stage],

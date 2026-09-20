@@ -47,6 +47,7 @@ export function createAppController({
   setActiveProject,
   reportFailure,
   isDocumentVisible,
+  preferredProjectId = null,
   now = Date.now,
   liveness = createLivenessScheduler(),
   requestGuard = createRequestGuard(),
@@ -182,6 +183,15 @@ export function createAppController({
       const data = await fetchProjects();
       const projects = Array.isArray(data?.projects) ? data.projects : [];
       store.setProjects(projects);
+      if (typeof preferredProjectId === "string") {
+        const preferred = projects.find((project) => project?.id === preferredProjectId);
+        if (!preferred) {
+          reportFailure({ code: "project_not_found" });
+          return;
+        }
+        await openProject(preferred.id);
+        return;
+      }
       if (projects.length === 0) {
         store.setStatus("empty");
         return;

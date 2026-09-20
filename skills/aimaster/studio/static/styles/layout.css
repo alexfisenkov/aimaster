@@ -10,17 +10,17 @@
 
 .app-shell {
   display: grid;
-  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   /* auto, not a fixed length: a long title/type/mode/status combination
      must be able to wrap and grow the row rather than get clipped or
      encroach on the main/inspector row below it. */
   grid-template-rows: auto 1fr;
   grid-template-areas:
-    "rail topbar"
-    "rail main";
+    "topbar"
+    "main";
   min-height: 100vh;
   max-width: var(--shell-max-width);
-  margin-inline: 0;
+  margin-inline: auto;
   background: var(--color-bg);
 }
 

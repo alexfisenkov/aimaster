@@ -7,6 +7,7 @@ import { prunePendingRequests } from "./paid-action-state.js";
 import { buildSimpleButton, buildCommentForm, buildStatusLine, markControlHooks } from "./card-forms.js";
 import { draftKey } from "./card-drafts.js";
 import { formatSceneRange, hasLoadableAsset, buildAssetPlaceholder, markAssetError } from "./media-asset.js";
+import { requestAgentPrompt } from "./chat-prompt-dialog.js";
 
 const STATUS_LABELS = Object.freeze({ none: "Не начат", working: "В работе", ready: "Готов, ждёт решения", accepted: "Принято" });
 const KINDS = Object.freeze({
@@ -136,6 +137,47 @@ export function renderPositionCard(model, { modeControl = null } = {}) {
     const note = document.createElement("p"); note.className = "position-material-note";
     note.textContent = model.result.retired ? "Убрано из работы" : "Скрыто"; content.append(note);
   }
+  const chatActions = document.createElement("div");
+  chatActions.className = "agent-prompt-actions";
+  const revisePrompt = document.createElement("button");
+  revisePrompt.type = "button";
+  revisePrompt.className = "agent-prompt-button";
+  revisePrompt.textContent = model.prompt?.prompt?.text ? "Изменить промпт" : "Подготовить промпт";
+  revisePrompt.addEventListener("click", () => {
+    requestAgentPrompt({
+      title: `${revisePrompt.textContent}: ${model.title}`,
+      prompt: `Открой проект «${model.projectId}» и позицию «${model.position.position_id}» (${model.title}). ${model.prompt?.prompt?.text ? "Предложи новую версию промпта с учётом моих правок. Сначала спроси, что именно я хочу изменить, и покажи готовый промпт до генерации." : "Подготовь подходящий промпт для этой позиции. Учти утверждённый сценарий, выбранные референсы и мои сохранённые инструкции для выбранной модели. До генерации покажи промпт мне."}`,
+    }, revisePrompt);
+  });
+  chatActions.append(revisePrompt);
+
+  const material = document.createElement("button");
+  material.type = "button";
+  material.className = "agent-prompt-button agent-prompt-button-primary";
+  material.textContent = model.result ? "Другой вариант" : "Создать через агента";
+  material.addEventListener("click", () => {
+    requestAgentPrompt({
+      title: `${material.textContent}: ${model.title}`,
+      prompt: `Открой проект «${model.projectId}» и позицию «${model.position.position_id}» (${model.title}). ${model.result ? "Подготовь новую вариацию текущего результата, сохранив утверждённые референсы и общий стиль." : "Подготовь создание материала для этой позиции."} Сначала проверь выбранный в чате MCP/инструмент и доступные в нём модели, покажи используемый промпт и дождись моего разрешения на один запуск.`,
+    }, material);
+  });
+  chatActions.append(material);
+
+  if (model.result) {
+    const replace = document.createElement("button");
+    replace.type = "button";
+    replace.className = "agent-prompt-button";
+    replace.textContent = "Заменить исходник";
+    replace.addEventListener("click", () => {
+      requestAgentPrompt({
+        title: `Заменить исходник: ${model.title}`,
+        prompt: `В проекте «${model.projectId}» замени материал позиции «${model.position.position_id}» (${model.title}) на файл, который я прикреплю к этому сообщению. Сначала проверь файл и покажи, что именно будет заменено. Не запускай генерацию без отдельного разрешения.`,
+        attachmentHint: "Прикрепите новый файл к сообщению в чате, затем вставьте скопированный текст. Дашборд сам файлы не загружает.",
+      }, replace);
+    });
+    chatActions.append(replace);
+  }
+  content.append(chatActions);
   if (model.current) {
     prunePendingRequests(model.projectId, model.actionEntries, model.lockTargetIds);
     const row = buildCardActionsRow({ actions: model.actions, record: model.result || {}, kind: "position-result",

@@ -1,0 +1,65 @@
+.chat-prompt-dialog {
+  width: min(680px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px);
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  box-shadow: 0 24px 80px rgb(20 24 28 / 24%);
+}
+
+.chat-prompt-dialog::backdrop { background: rgb(20 24 28 / 48%); }
+
+.chat-prompt-dialog-card {
+  display: grid;
+  gap: 14px;
+  padding: 24px;
+}
+
+.chat-prompt-dialog-card h2,
+.chat-prompt-dialog-card p { margin: 0; }
+.chat-prompt-dialog-description { color: var(--color-text-muted); }
+.chat-prompt-dialog-attachment {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--color-attention-bg);
+  color: var(--color-attention);
+}
+.chat-prompt-dialog textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+  font: inherit;
+  line-height: 1.5;
+}
+.chat-prompt-dialog-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.chat-prompt-dialog-controls button,
+.agent-prompt-button {
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+.chat-prompt-dialog-controls .chat-prompt-copy,
+.agent-prompt-button-primary {
+  border-color: var(--color-surface-inverse);
+  background: var(--color-surface-inverse);
+  color: var(--color-text-on-inverse);
+}
+.chat-prompt-dialog-status { min-height: 1.4em; color: var(--color-text-muted); }
+.agent-prompt-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
