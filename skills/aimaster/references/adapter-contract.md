@@ -4,9 +4,11 @@ Every capability follows: `discover`, `probe`, `prepare`, `execute`, `collect`, 
 
 - `discover`: inspect the MCP/tools/routes already connected in the current chat. Do not browse a provider site merely to discover a route.
 - `probe`: confirm current-session availability, relevant capability, authentication without secret values, and observable cost/limit. Present only models exposed by that verified route.
-- `prepare`: a reviewable prompt/job package and intended outputs.
+- `prepare`: a reviewable prompt/job package and intended outputs. Before every
+  external generation, complete [reference binding](reference-bindings.md).
 - `execute`: only after fresh approval for an external or paid action.
-- `collect`: bind results to `shot_id` and revision without guessing success.
+- `collect`: bind results to the exact Studio `pos:*` target (or legacy
+  `shot_id`) and revision without guessing success.
 - `validate`: technical evidence and visual evidence as separate fields.
 - `provenance`: adapter/model, settings, source, time, and artifact path/URI.
 
@@ -19,3 +21,8 @@ the [writing-guide gate](writing-guides.md). A guide the user selects is the
 creative specification for that prompt task, but never authorizes provider
 execution. Reusable opt-in guides live in the workspace catalogue; an existing
 `instructions/model-prompt-instructions.md` remains a supported general guide.
+
+Reference binding is a provider-neutral safety contract, not a universal prompt
+syntax: route, model and mode determine whether an observed native inline tag,
+structured file field/order, or hybrid form is used. Unknown mapping blocks
+preparation and execution; it never permits a paid probe or invented tag.

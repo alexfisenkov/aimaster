@@ -115,6 +115,35 @@
   font-weight: 600;
 }
 
+.reference-card-title {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.reference-card-source-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 9px 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.reference-card-source-status strong,
+.reference-card-voice-readonly strong {
+  color: var(--color-text);
+  text-align: right;
+}
+
+.reference-card-agent-actions {
+  margin-top: 8px;
+}
+
+.reference-card-agent-actions .agent-prompt-button {
+  flex: 1 1 86px;
+}
+
 .reference-card-sources {
   margin: 9px 0;
   padding: 0;
@@ -132,6 +161,14 @@
   border-radius: 8px;
   background: var(--color-surface);
   font-size: 0.75rem;
+}
+
+.reference-card-voice-readonly {
+  justify-content: space-between;
+}
+
+.reference-card-voice-readonly .reference-card-agent-actions {
+  width: 100%;
 }
 
 .reference-source-option + .reference-source-option {

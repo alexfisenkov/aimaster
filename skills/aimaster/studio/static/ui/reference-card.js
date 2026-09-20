@@ -107,6 +107,81 @@ function sourceControl(model, value, card, status, revision, key, draft) {
   return label;
 }
 
+function agentButton(label, className, detail) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  button.addEventListener("click", () => requestAgentPrompt(detail(), button));
+  return button;
+}
+
+function renderReadOnlySource(model, projectId) {
+  const wrap = document.createElement("div");
+  wrap.className = "reference-card-source-status";
+  const label = document.createElement("span");
+  label.textContent = "Источник";
+  const value = document.createElement("strong");
+  value.textContent = model.sourceLabel;
+  wrap.append(label, value);
+
+  const actions = document.createElement("div");
+  actions.className = "agent-prompt-actions reference-card-agent-actions";
+  const identity = `проект «${projectId}», референс «${model.referenceId}» (${model.name || model.tag})`;
+  actions.append(agentButton(
+    model.hasAsset ? "Заменить файл" : "Загрузить файл",
+    "agent-prompt-button agent-prompt-button-primary",
+    () => ({
+      title: `${model.hasAsset ? "Заменить" : "Загрузить"} референс: ${model.name || model.tag}`,
+      prompt: `Открой ${identity}. ${model.hasAsset ? "Замени текущий файл референса" : "Добавь файл референса"} на файл, который я прикреплю к этому сообщению. Сначала проверь вложение, подтверди точные project_id «${projectId}» и reference_id «${model.referenceId}», покажи, что изменится, и только затем подключи файл. Не запускай генерацию.`,
+      attachmentHint: "Прикрепите изображение к сообщению в чате. Вложение не входит в скопированный текст.",
+    }),
+  ));
+  actions.append(agentButton(
+    model.hasAsset ? "Сгенерировать замену" : "Сгенерировать",
+    "agent-prompt-button",
+    () => ({
+      title: `Сгенерировать референс: ${model.name || model.tag}`,
+      prompt: `Открой ${identity}. Подготовь ${model.hasAsset ? "замену текущего референса" : "новый референс"} через генерацию. Сначала подтверди точные project_id «${projectId}» и reference_id «${model.referenceId}», согласуй инструмент, доступную модель и промпт, затем дождись моего разрешения на один запуск. После результата покажи проверку и предложи подключение к этому референсу.`,
+    }),
+  ));
+  return { wrap, actions };
+}
+
+function renderReadOnlyVoice(model, projectId) {
+  const section = document.createElement("div");
+  section.className = "reference-card-voice reference-card-voice-readonly";
+  const label = document.createElement("span");
+  label.textContent = "Голос";
+  const state = document.createElement("strong");
+  state.textContent = model.voice.enabled
+    ? [model.voice.tag, model.voice.hasAsset ? "файл подключён" : "нужен файл"].filter(Boolean).join(" · ")
+    : "не используется";
+  section.append(label, state);
+  const actions = document.createElement("div");
+  actions.className = "agent-prompt-actions reference-card-agent-actions";
+  const identity = `проект «${projectId}», референс персонажа «${model.referenceId}» (${model.name || model.tag})`;
+  if (model.voice.enabled) {
+    actions.append(agentButton(model.voice.hasAsset ? "Заменить голос" : "Добавить голос", "agent-prompt-button agent-prompt-button-primary", () => ({
+      title: `${model.voice.hasAsset ? "Заменить" : "Добавить"} голос: ${model.name || model.tag}`,
+      prompt: `Открой ${identity}. ${model.voice.hasAsset ? "Замени файл голосового референса" : "Добавь голосовой референс"} файлом, который я прикреплю. Подтверди точные project_id «${projectId}» и reference_id «${model.referenceId}», проверь формат и содержимое файла, покажи, что изменится, и только затем подключи его.`,
+      attachmentHint: "Прикрепите MP3 или WAV к сообщению в чате. Вложение не входит в скопированный текст.",
+    })));
+    actions.append(agentButton("Не использовать голос", "agent-prompt-button", () => ({
+      title: `Не использовать голос: ${model.name || model.tag}`,
+      prompt: `Открой ${identity}. Отключи использование голосового референса штатной командой reference edit с voice_enabled=false. Сохрани файл и историю, не редактируй state.json вручную. Проверь актуальный этап и ревизию, затем сообщи результат.`,
+    })));
+  } else {
+    actions.append(agentButton("Добавить голос", "agent-prompt-button agent-prompt-button-primary", () => ({
+      title: `Добавить голос: ${model.name || model.tag}`,
+      prompt: `Открой ${identity}. Включи голосовой референс и подключи MP3 или WAV, который я прикреплю. Сначала подтверди точные project_id «${projectId}» и reference_id «${model.referenceId}», проверь файл и покажи, что изменится.`,
+      attachmentHint: "Прикрепите MP3 или WAV к сообщению в чате. Вложение не входит в скопированный текст.",
+    })));
+  }
+  section.append(actions);
+  return section;
+}
+
 export function renderReferenceCard(model, { projectId, revision }) {
   const card = document.createElement("article");
   card.className = "reference-card";
@@ -116,28 +191,37 @@ export function renderReferenceCard(model, { projectId, revision }) {
   const draft = resolveDraft(key, model, revision);
   card.append(mediaPreview(model));
 
-  const name = document.createElement("input");
-  name.type = "text";
-  name.className = "reference-card-name";
-  name.value = draft.name;
-  name.readOnly = !model.canEditReference;
-  name.disabled = draft.saving;
-  name.setAttribute("aria-label", `Название референса ${model.tag}`);
-  if (model.canEditReference) hook(name, model.referenceId, "edit-name");
+  const name = model.readOnly ? document.createElement("h4") : document.createElement("input");
+  name.className = model.readOnly ? "reference-card-title" : "reference-card-name";
+  if (model.readOnly) {
+    name.textContent = draft.name || model.tag;
+  } else {
+    name.type = "text";
+    name.value = draft.name;
+    name.readOnly = !model.canEditReference;
+    name.disabled = draft.saving;
+    name.setAttribute("aria-label", `Название референса ${model.tag}`);
+    if (model.canEditReference) hook(name, model.referenceId, "edit-name");
+  }
   card.append(name);
 
+  const status = statusLine(draft.message);
   const sources = document.createElement("fieldset");
   sources.className = "reference-card-sources";
   const legend = document.createElement("legend");
   legend.className = "visually-hidden";
   legend.textContent = `Источник референса ${model.tag}`;
-  const status = statusLine(draft.message);
   sources.append(
     legend,
     sourceControl(model, "upload", card, status, revision, key, draft),
     sourceControl(model, "generate", card, status, revision, key, draft),
   );
-  card.append(sources);
+  if (model.readOnly) {
+    const readOnlySource = renderReadOnlySource(model, projectId);
+    card.append(readOnlySource.wrap, readOnlySource.actions);
+  } else {
+    card.append(sources);
+  }
 
   const membership = document.createElement("p");
   membership.className = "reference-card-membership";
@@ -158,9 +242,11 @@ export function renderReferenceCard(model, { projectId, revision }) {
     }, sourceAction);
   });
   chatActions.append(sourceAction);
-  card.append(chatActions);
+  if (!model.readOnly) card.append(chatActions);
 
-  if (model.voice) {
+  if (model.voice && model.readOnly) {
+    card.append(renderReadOnlyVoice(model, projectId));
+  } else if (model.voice) {
     const voice = document.createElement("label");
     voice.className = "reference-card-voice";
     const checkbox = document.createElement("input");

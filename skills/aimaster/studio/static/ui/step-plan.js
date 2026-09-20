@@ -6,6 +6,22 @@ import { frameCardsModel, renderFrameCard, renderOneShotPrompt } from "./frame-c
 import { exactDraftActionTerminalStatus, isActionWorking } from "./prompt-editor.js";
 import { referenceGroups } from "./reference-library.js";
 import { renderReferenceCard } from "./reference-card.js";
+import { requestAgentPrompt } from "./chat-prompt-dialog.js";
+
+function requestReferenceControl(group, model) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "reference-add agent-prompt-button";
+  button.textContent = group.addLabel;
+  button.addEventListener("click", () => {
+    requestAgentPrompt({
+      title: `Добавить ${group.requestLabel}`,
+      prompt: `Открой проект «${model.projectId}». Я хочу добавить ${group.requestLabel} в референсы проекта. Спроси, прикреплю ли я готовый файл или нужно сгенерировать референс. Для файла сначала проверь вложение и предложи понятное внутреннее название и служебный тег. Для генерации сначала согласуй инструмент, доступную модель, промпт и один разрешённый запуск. После моего выбора создай референс и сообщи его точный reference_id.`,
+      attachmentHint: "Если у вас есть готовый референс, прикрепите изображение к сообщению в чате. Вложение не входит в скопированный текст.",
+    }, button);
+  });
+  return button;
+}
 
 function addReferenceControl(group, model, status) {
   const key = draftKey(model.projectId, "step-plan-add", group.kind);
@@ -266,7 +282,7 @@ export function renderPlanStep(root, { state, readOnly }) {
   heading.textContent = "Референсы проекта";
   const intro = document.createElement("p");
   intro.className = "plan-section-description";
-  intro.textContent = "Имя файла — это тег в промпте. Файлы передаются агенту в чате; загрузки из браузера здесь нет.";
+  intro.textContent = "Названия здесь помогают ориентироваться внутри проекта. Служебные теги для промптов назначает и проверяет агент. Файлы передаются агенту в чате; загрузки из браузера здесь нет.";
   library.append(heading, intro);
 
   const knownDrafts = new Set();
@@ -286,7 +302,9 @@ export function renderPlanStep(root, { state, readOnly }) {
       knownDrafts.add(rendered.draftKey);
       grid.append(rendered.card);
     }
-    if (model.canAdd) {
+    if (model.readOnly) {
+      grid.append(requestReferenceControl(group, model));
+    } else if (model.canAdd) {
       const status = document.createElement("p");
       status.className = "plan-status";
       status.setAttribute("role", "status");

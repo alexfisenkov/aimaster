@@ -3,10 +3,10 @@
 // into this surface.
 
 export const REFERENCE_GROUPS = Object.freeze([
-  Object.freeze({ kind: "character", title: "Персонажи", subtitle: "постоянные лица проекта, у каждого может быть голос", addLabel: "+ Добавить персонажа" }),
-  Object.freeze({ kind: "product", title: "Продукты", subtitle: "предметы, которые должны выглядеть одинаково", addLabel: "+ Добавить продукт" }),
-  Object.freeze({ kind: "location", title: "Локации", subtitle: "места, в которых идёт действие", addLabel: "+ Добавить локацию" }),
-  Object.freeze({ kind: "style", title: "Стиль", subtitle: "общая картинка: свет, цвет, оптика", addLabel: "+ Добавить стиль" }),
+  Object.freeze({ kind: "character", title: "Персонажи", subtitle: "постоянные лица проекта, у каждого может быть голос", addLabel: "+ Добавить персонажа", requestLabel: "персонажа" }),
+  Object.freeze({ kind: "product", title: "Продукты", subtitle: "предметы, которые должны выглядеть одинаково", addLabel: "+ Добавить продукт или предмет", requestLabel: "продукт или предмет" }),
+  Object.freeze({ kind: "location", title: "Локации", subtitle: "места, в которых идёт действие", addLabel: "+ Добавить локацию", requestLabel: "локацию" }),
+  Object.freeze({ kind: "style", title: "Стиль", subtitle: "общая картинка: свет, цвет, оптика", addLabel: "+ Добавить стиль", requestLabel: "стиль" }),
 ]);
 
 const SOURCE_LABELS = Object.freeze({
@@ -38,7 +38,7 @@ function assetCaption(reference) {
   return reference?.has_asset === true ? "ваш файл" : "нужен файл";
 }
 
-function referenceItem(project, reference, { canEditReference, canEditPrompt, canRefreshPrompt, actions }) {
+function referenceItem(project, reference, { readOnly, canEditReference, canEditPrompt, canRefreshPrompt, actions }) {
   if (!reference || reference.local === true || !SOURCE_LABELS[reference.source]) return null;
   if (!REFERENCE_GROUPS.some((group) => group.kind === reference.kind)) return null;
   const prompt = resolveReferencePrompt(project, reference);
@@ -65,6 +65,7 @@ function referenceItem(project, reference, { canEditReference, canEditPrompt, ca
     canEditPrompt,
     canRefreshPrompt,
     actions,
+    readOnly,
     ...membershipCounts(project.scenes, reference.reference_id),
   };
 }
@@ -86,6 +87,7 @@ export function referenceGroups(
     items: references
       .filter((reference) => reference?.kind === group.kind)
       .map((reference) => referenceItem(project, reference, {
+        readOnly,
         canEditReference,
         canEditPrompt,
         canRefreshPrompt,

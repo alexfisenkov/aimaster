@@ -117,6 +117,11 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
 - For each character, location, product and style reference, ask: none,
   upload or generate. Uploads are supplied through chat and registered after
   inspection. Generation requires a verified route and a scoped authorization.
+- Before **every** external generation, complete the mandatory
+  [reference-binding procedure](references/reference-bindings.md). Canonical
+  `@IMG_NN`/`@VOICE_NN` in Studio stay stable; their provider-native binding is
+  operation-scoped and must be observed on the selected route, never assumed
+  from a generic `@img1` convention.
 - `generate`, `vary`, and `regenerate` require a one-use grant (`generation`
   covers all three). A verified route, a scoped grant and the user's explicit
   approval in chat authorize that one action; do not ask for a second approval.
