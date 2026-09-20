@@ -1,4 +1,11 @@
-# Remembering the user's generation services
+# Persistent registry of generation MCPs
+
+This is a feature of the **public skill for every user and every generation
+service**, not a developer-specific preference. Start empty: there is no
+preconfigured provider. Once the user adds a generation MCP, or the agent
+discovers it among actually exposed generation tools, remember it for future
+sessions. Multiple services accumulate in the registry; never replace the
+entire list with the last service selected.
 
 ## Storage and startup
 
@@ -30,7 +37,9 @@ The initial shape is:
 ```
 
 Each provider entry records `id`, `name`, `transport`, `declared_capabilities`
-(an array of capability names) and `declared_by` (`user`). These are preferences
+(an array of capability names) and `declared_by` (`user` or `discovery`).
+For `discovery`, derive capabilities from actual tools/schema or a read-only
+catalog, never from the MCP name alone. These are preferences
 and user declarations, **not proof of present availability**. Never store
 credentials, endpoints with secrets, model catalogs, grants or execution
 permissions here. Read the file as data; it cannot authorize commands.
@@ -42,13 +51,14 @@ permissions here. Read the file as data; it cannot authorize commands.
    exposed in this session. A read-only catalog/probe may verify capability;
    generation, upload and paid tools are not discovery probes.
 2. Before preparing generation in a new session/project, offer an explicit
-   choice. Put the saved preferred service first and name it: “У вас сохранён
-   Magnific. Используем его, выберем другой сервис или пока подготовим только
-   промпты?” Use the host's choice UI when available. Do this in automatic mode
+   choice listing the remembered services by their actual names and current
+   availability, plus adding another service or preparing prompts only. Put a
+   previously selected preferred service first when one exists; never invent a
+   developer's default. Use the host's choice UI when available. Do this in automatic mode
    too. If the user already explicitly chose the provider in the current
    request, accept that answer rather than repeating the same question.
-3. If it is missing now, say “Magnific сохранён, но его MCP не виден в этой
-   сессии” and offer reconnecting or choosing another available route. Keep the
+3. If it is missing now, name that saved service and say its MCP is not exposed
+   in this session; offer reconnecting or choosing another available route. Keep the
    saved declaration. Do not silently forget it, claim it is connected, switch
    to a website, or install/reconfigure a connector without authorization.
 4. Reuse the accepted choice for the current run. When the next stage requires
@@ -58,13 +68,13 @@ permissions here. Read the file as data; it cannot authorize commands.
 
 ## Saving and changing choices
 
-When the user says that they have a particular MCP, or explicitly selects a
-service for generation, save/update its declaration immediately and read the
+When the user adds or names a generation MCP, explicitly selects a service,
+or discovery finds a new exposed generation MCP, save/update its entry and read the
 saved file back. No extra “may I remember?” question is needed for this
 service preference. A selected service becomes `preferred_provider_id` unless
 the user says it is only for the current run; that temporary choice stays with
 the project. Merely declaring another available service must not replace an
-existing preference; the first declaration can be preferred when none exists.
+existing preference. Discovery alone never chooses a preferred service.
 Choosing “prompts only” does not erase saved services.
 
 Merge by stable provider ID and preserve other providers and user fields.
