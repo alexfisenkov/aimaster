@@ -1,5 +1,5 @@
 import { audioLayerModel, renderAudioLayerCard } from "./audio-layer-card.js";
-import { renderStageActions } from "./stage-approval.js";
+import { renderStageActions, renderChatStageActions } from "./stage-approval.js";
 
 const LAYER_ORDER = Object.freeze(["atmos", "fx", "music", "voice"]);
 
@@ -30,6 +30,8 @@ export function renderAudioStep(root, { state, readOnly = false }) {
       description: model.readiness?.can_approve ? "Последний шаг — сборка." : "Примите каждый обязательный слой отдельно.",
       canApprove: model.readiness?.can_approve === true,
     });
+  } else if (readOnly) {
+    renderChatStageActions(surface, snapshot, "audio", { approveLabel: "Одобрить звук" });
   }
   root.append(surface);
 }

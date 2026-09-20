@@ -16,6 +16,7 @@
 
 import { buildCommentForm, buildSimpleButton, buildStatusLine } from "./card-forms.js";
 import { draftKey, pruneDrafts } from "./card-drafts.js";
+import { agentControl, exactTarget } from "./agent-control.js";
 
 /** Every stage that gets its own "Одобрить стадию"/"Вернуть на доработку"
  * bar -- `scenario` is excluded (ui/scenario.js's dedicated
@@ -142,5 +143,21 @@ export function renderStageActions(root, snapshot, {
     pruneDrafts(`${projectId}::stage::`, new Set([rejectKey]));
   }
 
+  return true;
+}
+
+export function renderChatStageActions(root, snapshot, stage, { approveLabel = "Одобрить стадию" } = {}) {
+  const projectId = snapshot?.active_project?.id;
+  if (!projectId || !STAGE_APPROVAL_TARGETS.includes(stage)) return false;
+  const wrap = document.createElement("div");
+  wrap.className = "stage-actions";
+  wrap.dataset.hook = "stage-actions-chat";
+  wrap.append(
+    agentControl({ label: approveLabel, title: approveLabel, targetId: stage, action: "approve-stage-chat", className: "agent-prompt-button agent-prompt-button-primary",
+      prompt: `Открой ${exactTarget({ projectId, targetId: stage, revision: snapshot.revision })}. Проверь readiness и обязательные результаты этой стадии. Если есть блокеры, перечисли их и не меняй состояние; иначе одобри стадию штатной командой Creator Studio и сообщи результат.` }),
+    agentControl({ label: "Вернуть на доработку", title: `Доработать стадию ${stage}`, targetId: stage, action: "reject-stage-chat",
+      prompt: `Открой ${exactTarget({ projectId, targetId: stage, revision: snapshot.revision })}. Спроси комментарий к доработке, покажи точное решение и после моего подтверждения верни стадию на доработку штатной командой Creator Studio.` }),
+  );
+  root.append(wrap);
   return true;
 }

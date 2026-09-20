@@ -84,6 +84,14 @@
   height: 100%;
   object-fit: cover;
 }
+.reference-card-preview video {
+  display: block;
+  width: 100%;
+  max-height: 12rem;
+  object-fit: cover;
+  border-radius: inherit;
+  background: #111;
+}
 
 .reference-card-tag,
 .reference-card-asset-caption {
@@ -557,6 +565,14 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+.frame-local-preview video {
+  display: block;
+  width: 100%;
+  max-height: 10rem;
+  object-fit: cover;
+  border-radius: inherit;
+  background: #111;
 }
 
 .frame-local-preview span {

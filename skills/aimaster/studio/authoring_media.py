@@ -10,7 +10,7 @@ registered `AssetIndex` entry into canonical project state. See
 from __future__ import annotations
 
 from . import domain
-from .assets import AssetIndex, REFERENCE_ROLES
+from .assets import AssetIndex, VIDEO_REFERENCE_ROLE
 from .authoring_support import (
     AuthoringError,
     find_scene,
@@ -23,6 +23,7 @@ from .authoring_support import (
     require_result_asset_role,
     require_stage_not_approved,
     require_video_mime,
+    require_video_reference_asset_role,
     require_voice_asset,
     resolve_current_group_member,
     safe_id,
@@ -215,6 +216,7 @@ def add_reference(
     name: str | None = None,
     asset_id: str | None = None,
     source: str = "upload",
+    usage: str = "reference",
     scene_id: str | None = None,
     all_scenes: bool = False,
 ) -> dict:
@@ -230,8 +232,13 @@ def add_reference(
     if asset_id is not None:
         safe_id(asset_id, "asset_id")
         _, mime_type = assets_index.resolve(asset_id)
-        require_image_mime(mime_type, "a reference's asset")
-        require_reference_asset_role(assets_index.role_of(asset_id), "a reference's asset")
+        role = assets_index.role_of(asset_id)
+        if kind == "video":
+            require_video_mime(mime_type, "a video reference's asset")
+            require_video_reference_asset_role(role, "a video reference's asset")
+        else:
+            require_image_mime(mime_type, "an image reference's asset")
+            require_reference_asset_role(role, "an image reference's asset")
 
     def mutator(state):
         _require_reference_writable(state, "reference add")
@@ -241,6 +248,7 @@ def add_reference(
                 kind=kind,
                 name=name,
                 source=source,
+                usage=usage,
                 scene_id=scene_id,
                 all_scenes=all_scenes,
             )
@@ -289,17 +297,24 @@ def attach_reference(
     safe_id(asset_id, "asset_id")
     _, mime_type = assets_index.resolve(asset_id)
     role = assets_index.role_of(asset_id)
-    is_voice = role == "voice" or mime_type.startswith("audio/")
-    if is_voice:
+    if role == "voice" or mime_type.startswith("audio/"):
         require_voice_asset(mime_type, role, "a voice reference's asset")
+        attachment_kind = "voice"
+    elif role == VIDEO_REFERENCE_ROLE or mime_type.startswith("video/"):
+        require_video_mime(mime_type, "a video reference's asset")
+        require_video_reference_asset_role(role, "a video reference's asset")
+        attachment_kind = "video"
     else:
-        require_image_mime(mime_type, "a reference's asset")
-        require_reference_asset_role(role, "a reference's asset")
+        require_image_mime(mime_type, "an image reference's asset")
+        require_reference_asset_role(role, "an image reference's asset")
+        attachment_kind = "image"
 
     def mutator(state):
         _require_reference_writable(state, "reference attach")
         try:
-            domain.attach_reference_asset(state, reference_id, asset_id, voice=is_voice)
+            domain.attach_reference_asset(
+                state, reference_id, asset_id, attachment_kind=attachment_kind
+            )
         except domain.DomainValidationError as error:
             raise AuthoringError(str(error)) from error
 

@@ -33,6 +33,8 @@ def position_specs(state, *, include_inactive=False):
     photo = state.get("project", {}).get("type") == "photo"
     specs = []
     for ref in state.get("references", []):
+        if ref.get("role") == "video":
+            continue
         if include_inactive or ref.get("source", "upload") == "generate":
             tag = ref["reference_id"]
             specs.append(_spec(f"ref:{tag}", "reference", "reference", tag,

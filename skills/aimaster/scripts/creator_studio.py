@@ -294,6 +294,7 @@ def command_reference_add(args):
             asset_id=args.asset_id,
             name=args.name,
             source=args.source,
+            usage=args.usage,
             scene_id=args.scene,
             all_scenes=args.all_scenes,
         )
@@ -930,17 +931,23 @@ def _add_reference_subcommands(subparsers) -> None:
     reference_add_cmd = reference_sub.add_parser("add", help="create a tagged project reference")
     reference_add_cmd.add_argument("workspace", type=Path)
     reference_add_cmd.add_argument("project")
-    reference_add_cmd.add_argument("--kind", required=True, choices=("character", "product", "location", "style"))
+    reference_add_cmd.add_argument("--kind", required=True, choices=("character", "product", "location", "style", "video"))
     reference_add_cmd.add_argument("--name", default=None)
     reference_add_cmd.add_argument("--asset-id", default=None, dest="asset_id")
     reference_add_cmd.add_argument("--source", choices=("upload", "generate"), default="upload")
+    reference_add_cmd.add_argument(
+        "--usage",
+        choices=("reference", "motion", "continue", "edit"),
+        default="reference",
+        help="video-reference purpose (ignored for image references)",
+    )
     inclusion = reference_add_cmd.add_mutually_exclusive_group()
     inclusion.add_argument("--scene", default=None)
     inclusion.add_argument("--all-scenes", action="store_true", dest="all_scenes")
     reference_add_cmd.add_argument("--expected-revision", required=True, type=int, dest="expected_revision")
     reference_add_cmd.set_defaults(handler=command_reference_add)
 
-    reference_attach_cmd = reference_sub.add_parser("attach", help="attach an image or enabled voice file")
+    reference_attach_cmd = reference_sub.add_parser("attach", help="attach an image, video or enabled voice file")
     reference_attach_cmd.add_argument("workspace", type=Path)
     reference_attach_cmd.add_argument("project")
     reference_attach_cmd.add_argument("--reference", required=True)
@@ -952,7 +959,7 @@ def _add_reference_subcommands(subparsers) -> None:
     reference_edit_cmd.add_argument("workspace", type=Path)
     reference_edit_cmd.add_argument("project")
     reference_edit_cmd.add_argument("--reference", required=True)
-    reference_edit_cmd.add_argument("--field", required=True, choices=("name", "source", "voice_enabled"))
+    reference_edit_cmd.add_argument("--field", required=True, choices=("name", "source", "usage", "voice_enabled"))
     reference_edit_cmd.add_argument("--value", required=True)
     reference_edit_cmd.add_argument("--expected-revision", required=True, type=int, dest="expected_revision")
     reference_edit_cmd.set_defaults(handler=command_reference_edit)

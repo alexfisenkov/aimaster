@@ -16,6 +16,7 @@ import { renderMediaGallery, renderReferencePanel } from "./media.js";
 import { renderScenario, renderSceneBlockVersions, scenarioModel } from "./scenario.js";
 import { scrollSceneIntoView } from "./timeline.js";
 import { renderNeedAnswer } from "./need-answer.js";
+import { agentControl, exactTarget } from "./agent-control.js";
 // Task 08 repair 1: card/stage decisions decorate the DOM ui/media.js's/
 // ui/scenario.js's own renderers already built (data-hook query, not an
 // import into either of those two modules -- see ui/card-decorate.js's own
@@ -259,7 +260,16 @@ function paintTopbar(container, state) {
       prompt: `Продолжи проект «${project.title || project.id}» (ID: ${project.id}). Открой его текущее состояние и помоги мне с этапом «${STAGE_LABELS[stage] || stage}». Сначала коротко скажи, что уже готово и какое одно действие сейчас логичнее всего. Ничего внешнего и платного не запускай без моего выбора маршрута и отдельного разрешения.`,
     }, agentPrompt);
   });
-  controls.append(agentPrompt, historyToggle);
+  const changeMode = agentControl({
+    label: "Сменить режим", title: "Сменить режим проекта", targetId: "project", action: "change-project-mode-chat",
+    prompt: `Открой ${exactTarget({ projectId: project.id, targetId: "project", revision: state?.snapshot?.revision })}. Текущий mode: ${project.mode}. Спроси, выбрать guided или autopilot, кратко объясни отличие и после моего подтверждения измени режим штатной командой Creator Studio. Не меняй текущую стадию и материалы.`,
+  });
+  const currentStage = state?.snapshot?.view_stage?.current_stage;
+  const reopen = currentStage && currentStage !== "scenario" ? agentControl({
+    label: "Вернуться к сценарию", title: "Вернуться к сценарию", targetId: "scenario", action: "reopen-scenario-chat",
+    prompt: `Открой ${exactTarget({ projectId: project.id, targetId: "scenario", revision: state?.snapshot?.revision })}. Текущая стадия: ${currentStage}. Проверь незавершённые действия. Объясни, что последующие этапы потребуется одобрить заново, спроси причину и моё явное подтверждение; затем выполни reopen-scenario штатной командой Creator Studio, сохранив материалы и историю.`,
+  }) : null;
+  controls.append(agentPrompt, changeMode, ...(reopen ? [reopen] : []), historyToggle);
   container.append(identity, controls);
 }
 

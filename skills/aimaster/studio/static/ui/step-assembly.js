@@ -1,6 +1,7 @@
 import { assemblyStripModel, formatAssemblyTime } from "./assembly-strip.js";
 import { buildSimpleButton, buildStatusLine, markControlHooks } from "./card-forms.js";
-import { renderStageActions } from "./stage-approval.js";
+import { renderStageActions, renderChatStageActions } from "./stage-approval.js";
+import { agentControl, exactTarget } from "./agent-control.js";
 import { hasLoadableAsset, buildAssetPlaceholder, markAssetError, createPersistentMediaPool } from "./media-asset.js";
 
 const finalVideoPool = createPersistentMediaPool(() => document.createElement("video"));
@@ -252,6 +253,13 @@ export function renderAssemblyStep(root, { state, readOnly = false }) {
     });
     assemble.disabled = model.actionWorking;
     controls.append(assemble);
+  } else if (readOnly) {
+    controls.append(agentControl({ label: model.finalReady ? "Пересобрать финал" : "Собрать финал", title: model.finalReady ? "Пересобрать финал" : "Собрать финал", targetId: "final", action: "assemble-chat", className: "agent-prompt-button agent-prompt-button-primary",
+      prompt: `Открой ${exactTarget({ projectId: model.project.id, targetId: "final", revision: snapshot.revision })}. Проверь принятые материалы, длительность, дорожки и readiness. Покажи план сборки и после моего подтверждения запусти assemble через рабочий чат; не подменяй отсутствующие материалы.` }));
+    if (model.project.type === "photo" && model.acceptedImages.length > 1) {
+      controls.append(agentControl({ label: "Изменить порядок", title: "Порядок финальных изображений", targetId: "final", action: "reorder-photo-final-chat",
+        prompt: `Открой ${exactTarget({ projectId: model.project.id, targetId: "final", revision: snapshot.revision })}. Покажи текущий порядок принятых изображений по scene_id, спроси желаемый порядок и после моего ответа примени его штатной командой Creator Studio без замены файлов.` }));
+    }
   }
   if (model.actionLabel) status.textContent = model.actionLabel;
   details.append(controls, status);
@@ -270,6 +278,8 @@ export function renderAssemblyStep(root, { state, readOnly = false }) {
         : model.project.type === "photo" ? "Примите хотя бы одно текущее изображение сцены." : "Сначала соберите и запишите финальный файл.",
       canApprove: readiness?.can_approve === true,
     });
+  } else if (readOnly) {
+    renderChatStageActions(surface, snapshot, "assembly", { approveLabel: "Принять финал" });
   }
   root.append(surface);
 }

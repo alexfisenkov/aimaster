@@ -1,6 +1,8 @@
 import { resolveActionErrorMessage, submitActionsSequentially } from "./actions.js";
 import { clearDraft, draftKey, getDraft, setDraft } from "./card-drafts.js";
 import { markControlHooks, noteCardFocusPending, OUTCOME_UNCONFIRMED_TEXT, requestProjectRefresh } from "./card-forms.js";
+import { requestAgentPrompt } from "./chat-prompt-dialog.js";
+import { exactTarget } from "./agent-control.js";
 
 const MODES = Object.freeze([
   Object.freeze({ id: "per_scene", title: "Кадр за кадром", description: "Каждая сцена генерируется отдельно, со своим промптом и решением." }),
@@ -80,7 +82,10 @@ export function renderGenMode(snapshot, { readOnly = false } = {}) {
         }
       });
     } else {
-      button.disabled = true;
+      button.addEventListener("click", () => requestAgentPrompt({
+        title: `Режим генерации: ${mode.title}`,
+        prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: "project", revision: model.revision })}. Установи gen_mode ${mode.id} (${mode.title}) штатной командой Creator Studio. Сначала объясни влияние на позиции и промпты и попроси моё подтверждение; ничего не генерируй.`,
+      }, button));
     }
     buttons.push(button);
     choices.append(button);

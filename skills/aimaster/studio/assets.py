@@ -39,7 +39,8 @@ RESULT_ROLE = "result"
 # not pair a role with a media type -- each call site that links an asset
 # in checks the role *and* the MIME type it needs.
 VOICE_ROLE = "voice"
-ASSET_ROLES = REFERENCE_ROLES | {RESULT_ROLE, VOICE_ROLE}
+VIDEO_REFERENCE_ROLE = "video_reference"
+ASSET_ROLES = REFERENCE_ROLES | {RESULT_ROLE, VOICE_ROLE, VIDEO_REFERENCE_ROLE}
 MAX_IMAGE_PIXELS = 25_000_000
 MAX_DECODED_IMAGE_BYTES = 128 * 1024 * 1024
 _DECODE_CHUNK_BYTES = 64 * 1024

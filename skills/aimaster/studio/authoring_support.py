@@ -26,7 +26,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from .assets import REFERENCE_ROLES, RESULT_ROLE, VOICE_ROLE, AssetIndex
+from .assets import (
+    REFERENCE_ROLES, RESULT_ROLE, VIDEO_REFERENCE_ROLE, VOICE_ROLE, AssetIndex,
+)
 from .projection import ProjectionError, validate_state
 from .questions import QuestionStore, _SAFE_ID
 from .store import ProjectStore
@@ -301,6 +303,13 @@ def require_reference_asset_role(role: str, label: str) -> None:
 
     if role not in REFERENCE_ROLES:
         raise AuthoringError(f"{label} must be registered with a reference role")
+
+
+def require_video_reference_asset_role(role: str, label: str) -> None:
+    if role != VIDEO_REFERENCE_ROLE:
+        raise AuthoringError(
+            f"{label} must be registered with the video_reference role"
+        )
 
 
 def require_voice_asset_role(role: str, label: str) -> None:

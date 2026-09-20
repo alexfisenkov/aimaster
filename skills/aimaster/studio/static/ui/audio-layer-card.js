@@ -4,6 +4,7 @@ import { buildCardActionsRow } from "./card-decorate.js";
 import { prunePendingRequests } from "./paid-action-state.js";
 import { markControlHooks } from "./card-forms.js";
 import { hasLoadableAsset, buildAssetPlaceholder, markAssetError, createPersistentMediaPool } from "./media-asset.js";
+import { agentControl, exactTarget } from "./agent-control.js";
 
 const LAYERS = Object.freeze({
   atmos: Object.freeze({ name: "Атмосфера", coverage: "весь ролик" }),
@@ -204,6 +205,31 @@ export function renderAudioLayerCard(model) {
     wave.append(bar);
   }
   card.append(wave, buildPlayer(model));
+  const chat = document.createElement("div");
+  chat.className = "agent-prompt-actions";
+  chat.append(
+    agentControl({ label: model.prompt?.prompt ? "Изменить описание" : "Подготовить описание", title: `${model.name}: описание`, targetId: model.position.position_id, action: "edit-audio-prompt-chat",
+      prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.position.position_id, versionId: model.prompt?.prompt?.version_id, revision: model.revision })}. Спроси пожелания к слою «${model.name}», подготовь новое описание и покажи его до записи штатной командой Creator Studio.` }),
+    agentControl({ label: model.result ? "Другой вариант" : "Создать слой", title: `${model.name}: создать`, targetId: model.position.position_id, action: "generate-audio-chat", className: "agent-prompt-button agent-prompt-button-primary",
+      prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.position.position_id, versionId: model.prompt?.prompt?.version_id, revision: model.revision })}. Проверь точный текущий промпт, обязательные голосовые файлы и доступный в этом чате инструмент. Покажи план и дождись моего разрешения на один запуск; не угадывай модель или доступность.` }),
+    agentControl({ label: model.result ? "Заменить аудиофайл" : "Загрузить аудиофайл", title: `${model.name}: ${model.result ? "заменить" : "загрузить"} файл`, targetId: model.position.position_id, action: "upload-audio-chat",
+      prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.position.position_id, versionId: model.result?.version_id || model.result?.result_id, revision: model.revision })}. Проверь прикреплённый аудиофайл и ${model.result ? "замени текущий результат этого слоя" : "подключи его как результат этого слоя"} штатной командой Creator Studio. Не запускай генерацию.`,
+      attachmentHint: "Прикрепите аудиофайл к сообщению в чате. Вложение не входит в скопированный текст." }),
+  );
+  if (model.result) {
+    const versionId = model.result.version_id || model.result.result_id;
+    chat.append(
+      agentControl({ label: "Принять слой", title: `Принять: ${model.name}`, targetId: versionId, action: "approve-audio-chat",
+        prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.position.position_id, versionId, revision: model.revision })}. Проверь соответствие результата позиции и прими именно эту версию штатной командой Creator Studio.` }),
+      agentControl({ label: "Отклонить", title: `Отклонить: ${model.name}`, targetId: versionId, action: "reject-audio-chat",
+        prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.position.position_id, versionId, revision: model.revision })}. Спроси причину и отклони именно эту версию штатной командой Creator Studio.` }),
+      agentControl({ label: model.result.hidden ? "Показать" : "Скрыть", title: `${model.result.hidden ? "Показать" : "Скрыть"}: ${model.name}`, targetId: versionId, action: "toggle-audio-hidden-chat",
+        prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.position.position_id, versionId, revision: model.revision })}. ${model.result.hidden ? "Снова покажи" : "Скрой"} именно эту версию штатной командой Creator Studio, сохранив историю.` }),
+      agentControl({ label: model.result.retired ? "Вернуть в работу" : "Убрать из работы", title: `${model.result.retired ? "Вернуть" : "Убрать"}: ${model.name}`, targetId: versionId, action: "toggle-audio-retired-chat",
+        prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.position.position_id, versionId, revision: model.revision })}. ${model.result.retired ? "Верни" : "Убери"} именно эту версию ${model.result.retired ? "в работу" : "из работы без удаления"} штатной командой Creator Studio.` }),
+    );
+  }
+  card.append(chat);
   if (model.current) {
     prunePendingRequests(model.projectId, model.actionEntries, model.lockTargetIds);
     const row = buildCardActionsRow({

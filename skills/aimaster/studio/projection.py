@@ -168,6 +168,7 @@ _REFERENCE_KEYS = {
     "local",
     "scene_id",
     "voice",
+    "usage",
 }
 _REFERENCE_VOICE_KEYS = {"enabled", "tag", "asset_id"}
 _REFERENCE_KIND_BY_ROLE = {
@@ -176,8 +177,10 @@ _REFERENCE_KIND_BY_ROLE = {
     "product": "product",
     "location": "location",
     "style": "style",
+    "video": "video",
 }
 _REFERENCE_SOURCES = {"upload", "generate"}
+_VIDEO_REFERENCE_USAGES = {"reference", "motion", "continue", "edit"}
 _RESULT_KEYS = {
     "result_id",
     "scene_id",
@@ -664,6 +667,8 @@ def _sanitize_reference(reference, context, asset_url, *, hidden_link_keys=froze
         raise ProjectionError(f"{context}.role is not supported")
     tag = _string(reference.get("tag", reference_id), f"{context}.tag")
     source = _enum(reference.get("source", "upload"), _REFERENCE_SOURCES, f"{context}.source")
+    if role == "video" and source != "upload":
+        raise ProjectionError(f"{context}.source must be upload for a video reference")
     local = reference.get("local", "scene_id" in reference)
     local = _boolean(local, f"{context}.local")
     result = {
@@ -675,11 +680,20 @@ def _sanitize_reference(reference, context, asset_url, *, hidden_link_keys=froze
         "local": local,
         "has_asset": "asset_id" in reference,
     }
+    if role == "video":
+        result["media_type"] = "video"
+        result["usage"] = _enum(
+            reference.get("usage", "reference"),
+            _VIDEO_REFERENCE_USAGES,
+            f"{context}.usage",
+        )
     if "scene_id" in reference:
         result["scene_id"] = _string(reference["scene_id"], f"{context}.scene_id")
     if "asset_id" in reference:
         result["asset_id"] = _string(reference["asset_id"], f"{context}.asset_id")
         result = _add_asset_url(result, context, asset_url)
+        if role == "video":
+            result["playable_asset_url"] = result["asset_url"]
 
     voice = _exact_keys(reference.get("voice", {"enabled": False}), _REFERENCE_VOICE_KEYS, f"{context}.voice")
     clean_voice = {"enabled": _boolean(voice.get("enabled"), f"{context}.voice.enabled")}
@@ -1290,7 +1304,13 @@ def validate_state(state: dict) -> None:
         )
     for position, item in enumerate(_list(state.get("image_prompts", []), "image_prompts")):
         _sanitize_prompt(item, f"image_prompts[{position}]")
-    for position, item in enumerate(_list(state.get("references", []), "references")):
+    references = _list(state.get("references", []), "references")
+    if project_type == "photo" and any(
+        isinstance(item, dict) and item.get("role") == "video"
+        for item in references
+    ):
+        raise ProjectionError("video references require video/mixed project")
+    for position, item in enumerate(references):
         _sanitize_reference(item, f"references[{position}]", _identity_asset_url)
     for position, item in enumerate(_list(state.get("image_results", []), "image_results")):
         _sanitize_result(item, f"image_results[{position}]", _identity_asset_url)

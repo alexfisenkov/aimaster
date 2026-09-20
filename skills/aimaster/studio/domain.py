@@ -71,13 +71,14 @@ HISTORY_KINDS = {
 _HISTORY_ACTORS = frozenset({"you", "agent"})
 _HISTORY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 _HISTORY_FIELDS = frozenset({"text", "title", "duration"})
-_HISTORY_REFERENCE_FIELDS = frozenset({"name", "source", "voice_enabled"})
+_HISTORY_REFERENCE_FIELDS = frozenset({"name", "source", "usage", "voice_enabled"})
 _HISTORY_ATTACHMENT_FIELDS = frozenset({"asset", "voice_asset"})
 _HISTORY_MODES = frozenset({"guided", "autopilot"})
 _GENERATION_MODES = frozenset({"per_scene", "one_shot"})
 _VIDEO_MODES = frozenset({"first", "firstlast", "references"})
-_REFERENCE_TAG_PREFIXES = frozenset({"IMG", "VOICE"})
-_PROMPT_TAG = re.compile(r"@((?:IMG|VOICE)_\d+)(?![A-Za-z0-9_])")
+_REFERENCE_TAG_PREFIXES = frozenset({"IMG", "VID", "VOICE"})
+_PROMPT_TAG = re.compile(r"@((?:IMG|VID|VOICE)_\d+)(?![A-Za-z0-9_])")
+_VIDEO_REFERENCE_USAGES = frozenset({"reference", "motion", "continue", "edit"})
 _REFERENCE_ACTIONS = (
     "reference-add",
     "reference-edit",
@@ -180,7 +181,7 @@ def next_tag(state: dict, prefix: str) -> str:
 
     _require_mapping(state, "state")
     if prefix not in _REFERENCE_TAG_PREFIXES:
-        raise DomainValidationError("reference tag prefix must be IMG or VOICE")
+        raise DomainValidationError("reference tag prefix must be IMG, VID or VOICE")
     references = state.get("references", [])
     if not isinstance(references, list):
         raise DomainValidationError("references must be a list")
@@ -188,7 +189,7 @@ def next_tag(state: dict, prefix: str) -> str:
     used = set()
     for position, reference in enumerate(references):
         reference = _require_mapping(reference, f"references[{position}]")
-        if prefix == "IMG":
+        if prefix in {"IMG", "VID"}:
             candidates = (reference.get("tag"), reference.get("reference_id"))
         else:
             voice = reference.get("voice", {})
@@ -233,15 +234,22 @@ def add_reference(
     kind: str,
     name: str | None,
     source: str,
+    usage: str = "reference",
     scene_id: str | None = None,
     all_scenes: bool = False,
 ) -> dict:
     """Add one canonical reference and allocate its tag in this mutation."""
 
-    if kind not in {"character", "product", "location", "style"}:
+    if kind not in {"character", "product", "location", "style", "video"}:
         raise DomainValidationError("reference kind is not supported")
+    if kind == "video" and state.get("project", {}).get("type") == "photo":
+        raise DomainValidationError("video references require video/mixed project")
     if source not in {"upload", "generate"}:
         raise DomainValidationError("reference source must be upload or generate")
+    if kind == "video" and source != "upload":
+        raise DomainValidationError("a video reference must use upload source")
+    if kind == "video" and usage not in _VIDEO_REFERENCE_USAGES:
+        raise DomainValidationError("video reference usage is not supported")
     if name is not None and (not isinstance(name, str) or len(name) > 200):
         raise DomainValidationError("reference name must be a string of at most 200 characters")
     if scene_id is not None and all_scenes:
@@ -256,7 +264,7 @@ def add_reference(
             raise DomainValidationError(f"unknown or duplicate scene_id: {scene_id!r}")
         local_scene = matches[0]
 
-    tag = next_tag(state, "IMG")
+    tag = next_tag(state, "VID" if kind == "video" else "IMG")
     entry = {
         "reference_id": tag,
         "role": kind,
@@ -266,6 +274,8 @@ def add_reference(
         "local": local_scene is not None,
         "voice": {"enabled": False},
     }
+    if kind == "video":
+        entry["usage"] = usage
     if local_scene is not None:
         entry["scene_id"] = scene_id
     _reference_collection(state).append(entry)
@@ -297,7 +307,15 @@ def edit_reference(state: dict, reference_id: str, field: str, value) -> dict:
     elif field == "source":
         if value not in {"upload", "generate"}:
             raise DomainValidationError("reference source must be upload or generate")
+        if reference.get("role") == "video" and value != "upload":
+            raise DomainValidationError("a video reference must use upload source")
         reference["source"] = value
+    elif field == "usage":
+        if reference.get("role") != "video":
+            raise DomainValidationError("only a video reference can have usage")
+        if value not in _VIDEO_REFERENCE_USAGES:
+            raise DomainValidationError("video reference usage is not supported")
+        reference["usage"] = value
     elif field == "voice_enabled":
         if not isinstance(value, bool):
             raise DomainValidationError("voice_enabled must be a boolean")
@@ -324,9 +342,11 @@ def edit_reference(state: dict, reference_id: str, field: str, value) -> dict:
     return copy.deepcopy(reference)
 
 
-def attach_reference_asset(state: dict, reference_id: str, asset_id: str, *, voice: bool) -> dict:
+def attach_reference_asset(
+    state: dict, reference_id: str, asset_id: str, *, attachment_kind: str
+) -> dict:
     reference = find_reference(state, reference_id)
-    if voice:
+    if attachment_kind == "voice":
         if reference.get("role") != "character":
             raise DomainValidationError("only a character reference can have a voice")
         voice_state = reference.get("voice")
@@ -334,9 +354,18 @@ def attach_reference_asset(state: dict, reference_id: str, asset_id: str, *, voi
             raise DomainValidationError("voice must be enabled before attaching its file")
         voice_state["asset_id"] = asset_id
         field = "voice_asset"
-    else:
+    elif attachment_kind == "video":
+        if reference.get("role") != "video":
+            raise DomainValidationError("a video asset requires a video reference")
         reference["asset_id"] = asset_id
         field = "asset"
+    elif attachment_kind == "image":
+        if reference.get("role") == "video":
+            raise DomainValidationError("a video reference requires a video asset")
+        reference["asset_id"] = asset_id
+        field = "asset"
+    else:
+        raise DomainValidationError("reference attachment kind is not supported")
     append_history(
         state,
         "you",
@@ -433,8 +462,8 @@ def missing_tags(text: str, included_tags) -> list[str]:
     missing = []
     seen = set()
     for tag in included_tags:
-        if not isinstance(tag, str) or not re.fullmatch(r"(?:IMG|VOICE)_\d+", tag):
-            raise DomainValidationError("included tag must use IMG_NN or VOICE_NN")
+        if not isinstance(tag, str) or not re.fullmatch(r"(?:IMG|VID|VOICE)_\d+", tag):
+            raise DomainValidationError("included tag must use IMG_NN, VID_NN or VOICE_NN")
         if tag not in present and tag not in seen:
             missing.append(tag)
             seen.add(tag)
@@ -475,7 +504,7 @@ def _lowest_style_tag(state: dict) -> str | None:
 def _ensure_reference_default_prompt(state: dict, reference: dict) -> dict | None:
     """Create a generated reference's first prompt only at an explicit write."""
 
-    if reference.get("source") != "generate":
+    if reference.get("source") != "generate" or reference.get("role") == "video":
         return None
     links = reference.setdefault("links", {})
     if not isinstance(links, dict):
@@ -522,7 +551,9 @@ def _active_block_version_id(scene: dict):
     return active
 
 
-def _scene_prompt_basis(state: dict, scene: dict) -> dict:
+def _scene_prompt_basis(
+    state: dict, scene: dict, *, include_video_references: bool = False
+) -> dict:
     title = scene.get("title", "")
     if not isinstance(title, str):
         raise DomainValidationError("scene.title must be a string")
@@ -532,11 +563,37 @@ def _scene_prompt_basis(state: dict, scene: dict) -> dict:
     reference_ids = links.get("reference_ids", [])
     if not isinstance(reference_ids, list) or not all(isinstance(item, str) for item in reference_ids):
         raise DomainValidationError("scene.links.reference_ids must be a list of strings")
+    video_references_by_id = {
+        item.get("reference_id"): item
+        for item in state.get("references", [])
+        if isinstance(item, dict) and item.get("role") == "video"
+    }
+    effective_reference_ids = (
+        reference_ids
+        if include_video_references
+        else [identity for identity in reference_ids if identity not in video_references_by_id]
+    )
     basis = {
         "title": title,
         "block_version_id": _active_block_version_id(scene),
-        "reference_ids": sorted(set(reference_ids)),
+        "reference_ids": sorted(set(effective_reference_ids)),
     }
+    if include_video_references:
+        video_references = [
+            {
+                "reference_id": identity,
+                "role": "video",
+                "asset_id": video_references_by_id[identity].get("asset_id"),
+                "usage": video_references_by_id[identity].get("usage", "reference"),
+            }
+            for identity in sorted(set(reference_ids))
+            if identity in video_references_by_id
+        ]
+        # Preserve every pre-video-reference prompt basis byte-for-byte. The
+        # key appears only once a scene actually includes a video reference;
+        # removing the final one then makes the old populated basis stale.
+        if video_references:
+            basis["video_references"] = video_references
     if state.get("project", {}).get("type") != "photo":
         duration = scene.get("duration_ms")
         if duration is None:
@@ -568,7 +625,11 @@ def prompt_basis(state: dict, spec: dict) -> dict:
                    if isinstance(item, dict) and item.get("scene_id") == owner_id]
         if len(matches) != 1:
             raise DomainValidationError("prompt scene owner is missing or duplicated")
-        return _scene_prompt_basis(state, matches[0])
+        return _scene_prompt_basis(
+            state,
+            matches[0],
+            include_video_references=spec.get("kind") == "video",
+        )
     if owner_kind == "reference":
         matches = [item for item in state.get("references", [])
                    if isinstance(item, dict) and item.get("reference_id") == owner_id]
@@ -587,7 +648,12 @@ def prompt_basis(state: dict, spec: dict) -> dict:
         return {
             "gen_mode": state.get("gen_mode", "per_scene"),
             "scenes": [
-                {"scene_id": scene.get("scene_id"), **_scene_prompt_basis(state, scene)}
+                {
+                    "scene_id": scene.get("scene_id"),
+                    **_scene_prompt_basis(
+                        state, scene, include_video_references=True
+                    ),
+                }
                 for scene in scenes
             ],
         }
@@ -608,8 +674,10 @@ def validate_prompt_tags(text: str, spec: dict) -> None:
 
     spec = _require_mapping(spec, "position spec")
     if spec.get("kind") in {"reference", "image", "first_frame", "last_frame"}:
-        if any(tag.startswith("VOICE_") for tag in extract_tags(text)):
-            raise DomainValidationError("@VOICE_NN is not allowed in a static image prompt")
+        if any(tag.startswith(("VID_", "VOICE_")) for tag in extract_tags(text)):
+            raise DomainValidationError(
+                "@VID_NN and @VOICE_NN are not allowed in a static image prompt"
+            )
 
 
 def set_scene_frame_plan(state: dict, scene_id: str, *, first=None, last=None) -> dict:

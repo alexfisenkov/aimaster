@@ -17,6 +17,7 @@ import {
 } from "./card-forms.js";
 import { buildReorderOrder } from "./card-reorder.js";
 import { storyboardModel } from "./scenario.js";
+import { agentControl, exactTarget } from "./agent-control.js";
 
 const REVISION_SENT_TEXT = "Отправлено, ждём ответа в чате";
 const SCENE_SAVE_FAILURE_TEXT = "Не удалось сохранить правку. Проверьте актуальность сценария в чате.";
@@ -65,7 +66,7 @@ function makeHookedButton({ text, targetId, action, className = "step-scenario-b
   return button;
 }
 
-function buildScriptSection(model) {
+function buildScriptSection(model, readOnly = false) {
   const section = document.createElement("section");
   section.className = "step-scenario-section step-scenario-script";
   section.append(
@@ -156,6 +157,9 @@ function buildScriptSection(model) {
   section.append(textarea);
   if (model.canEdit) {
     section.append(controls, status);
+  } else if (readOnly) {
+    section.append(agentControl({ label: "Изменить сценарий", title: "Изменить сценарий", targetId: "scenario", action: "edit-script-chat",
+      prompt: `Открой проект: ${exactTarget({ projectId: model.projectId, targetId: "scenario", versionId: model.activeScriptVersionId, revision: model.revision })}. Спроси, что изменить, подготовь новую версию сценария, покажи её целиком и только после моего подтверждения запиши через штатную команду Creator Studio.` }));
   }
   return section;
 }
@@ -179,7 +183,7 @@ function validateSceneValues(values, isPhoto) {
   };
 }
 
-function buildSceneRow(model, scene, sceneIds) {
+function buildSceneRow(model, scene, sceneIds, readOnly = false) {
   const isPhoto = model.projectType === "photo";
   const key = draftKey(model.projectId, "step-scenario", scene.sceneId);
   let draft = getDraft(key);
@@ -396,10 +400,21 @@ function buildSceneRow(model, scene, sceneIds) {
   row.append(fields);
   if (model.canReorder) row.append(reorder);
   if (model.canEdit) row.append(editor);
+  if (readOnly) {
+    const chat = document.createElement("div");
+    chat.className = "agent-prompt-actions";
+    chat.append(
+      agentControl({ label: "Изменить кадр", title: `Изменить кадр ${scene.order}`, targetId: scene.sceneId, action: "edit-scene-chat",
+        prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: scene.sceneId, revision: model.revision })}. Спроси, какие поля кадра изменить (название, описание${isPhoto ? "" : ", длительность"}), покажи точную правку и после моего подтверждения примени её штатной командой Creator Studio.` }),
+      agentControl({ label: "Переставить", title: `Переставить кадр ${scene.order}`, targetId: scene.sceneId, action: "reorder-scene-chat",
+        prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: scene.sceneId, revision: model.revision })}. Спроси, на какую позицию переместить этот кадр, покажи новый полный порядок scene_id и после моего подтверждения примени reorder штатной командой Creator Studio.` }),
+    );
+    row.append(chat);
+  }
   return row;
 }
 
-function buildStoryboardSection(model) {
+function buildStoryboardSection(model, readOnly = false) {
   const section = document.createElement("section");
   section.className = "step-scenario-section step-storyboard";
   const heading = headingWithChips("Раскадровка по секундам", []);
@@ -417,7 +432,7 @@ function buildStoryboardSection(model) {
   const list = document.createElement("ol");
   list.className = "step-storyboard-list";
   const sceneIds = model.scenes.map((scene) => scene.sceneId);
-  for (const scene of model.scenes) list.append(buildSceneRow(model, scene, sceneIds));
+  for (const scene of model.scenes) list.append(buildSceneRow(model, scene, sceneIds, readOnly));
   section.append(list);
   if (model.scenes.length === 0) {
     const empty = document.createElement("p");
@@ -450,6 +465,9 @@ function buildStoryboardSection(model) {
       }
     });
     footer.append(add, addStatus);
+  } else if (readOnly) {
+    footer.append(agentControl({ label: "+ Добавить кадр", title: "Добавить кадр", targetId: "scenes", action: "scene-add-chat",
+      prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: "scenes", revision: model.revision })}. Спроси содержание нового кадра${model.projectType === "photo" ? "" : " и длительность"}, предложи его место в раскадровке и после моего подтверждения добавь штатной командой Creator Studio.` }));
   }
   if (model.totalDurationLabel) {
     const total = document.createElement("p");
@@ -544,9 +562,19 @@ export function renderScenarioStep(root, { state, readOnly }) {
     ...model.scenes.map((scene) => draftKey(model.projectId, "step-scenario", scene.sceneId)),
   ]);
   pruneDrafts(prefix, knownDrafts);
-  surface.append(buildScriptSection(model), buildStoryboardSection(model));
+  surface.append(buildScriptSection(model, readOnly), buildStoryboardSection(model, readOnly));
   if (!readOnly && state?.snapshot?.view_stage?.current_stage === "scenario") {
     surface.append(buildStepActions(model));
+  } else if (readOnly) {
+    const decisions = document.createElement("div");
+    decisions.className = "step-scenario-actions";
+    decisions.append(
+      agentControl({ label: "Одобрить сценарий", title: "Одобрить сценарий", targetId: "scenario", action: "approve-scenario-chat", className: "agent-prompt-button agent-prompt-button-primary",
+        prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: "scenario", versionId: model.activeScriptVersionId, revision: model.revision })}. Проверь, что сценарий и раскадровка полны. Если есть блокеры, перечисли их и не меняй состояние; иначе одобри сценарий штатной командой Creator Studio и сообщи результат.` }),
+      agentControl({ label: "Отправить на доработку", title: "Доработать сценарий", targetId: "scenario", action: "revise-scenario-chat",
+        prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: "scenario", versionId: model.activeScriptVersionId, revision: model.revision })}. Спроси замечания, предложи план доработки и после моего подтверждения запусти revise-scenario в рабочем чате.` }),
+    );
+    surface.append(decisions);
   }
   root.append(surface);
 }

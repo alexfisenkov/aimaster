@@ -117,9 +117,14 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
 - For each character, location, product and style reference, ask: none,
   upload or generate. Uploads are supplied through chat and registered after
   inspection. Generation requires a verified route and a scoped authorization.
+- Ask also about existing video clips: should they guide appearance, transfer
+  motion, continue a scene, or be edited? Read [video inputs](references/video-inputs.md)
+  before planning these operations. Store video references through the CLI as
+  `kind=video`, `source=upload`, with the chosen `usage`; do not disguise video
+  as an image reference or infer support from a model's brand/version.
 - Before **every** external generation, complete the mandatory
   [reference-binding procedure](references/reference-bindings.md). Canonical
-  `@IMG_NN`/`@VOICE_NN` in Studio stay stable; their provider-native binding is
+  `@IMG_NN`/`@VOICE_NN`/`@VID_NN` in Studio stay stable; their provider-native binding is
   operation-scoped and must be observed on the selected route, never assumed
   from a generic `@img1` convention.
 - `generate`, `vary`, and `regenerate` require a one-use grant (`generation`

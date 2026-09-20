@@ -7,11 +7,14 @@ requires authorization; execution still needs its scoped approval.
 
 ## Canonical and native forms
 
-Keep canonical Studio references stable: `@IMG_NN` and `@VOICE_NN` identify the
+Keep canonical Studio references stable: `@IMG_NN`, `@VOICE_NN` and `@VID_NN` identify the
 creative asset/version in the canonical prompt/state. They are not a promise of
 provider syntax. Bind every media input that the operation uses, including
 character/location/product/style references, first/last frames and voice or
-other audio references—even when the canonical prose has no corresponding tag.
+other audio references, plus source videos and their selected usage—even when
+the canonical prose has no corresponding tag. For video operations follow
+[video inputs](video-inputs.md); source-video extension, motion transfer and
+last-frame continuation require different verified request shapes.
 For this one operation, determine the selected route + model + mode's actual
 UI/MCP schema and record each intended input as:
 

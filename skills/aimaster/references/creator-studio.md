@@ -151,12 +151,13 @@ duration and order.
 
 ```bash
 creator_studio.py asset register WS --path media/<file> \
-  --role {character,location,object,product,result,style,voice}
-creator_studio.py reference add WS P --kind {character,product,location,style} \
+  --role {character,location,object,product,result,style,voice,video_reference}
+creator_studio.py reference add WS P --kind {character,product,location,style,video} \
   [--name "…"] [--asset-id ID] [--source {upload,generate}] \
+  [--usage {reference,motion,continue,edit}] \
   [--scene SCENE | --all-scenes] --expected-revision N
 creator_studio.py reference edit WS P --reference IMG_NN \
-  --field {name,source,voice_enabled} --value VALUE --expected-revision N
+  --field {name,source,voice_enabled,usage} --value VALUE --expected-revision N
 creator_studio.py reference attach WS P --reference IMG_NN --asset-id ID --expected-revision N
 creator_studio.py reference toggle WS P --scene SCENE --reference IMG_NN \
   (--on | --off) --expected-revision N
@@ -170,6 +171,14 @@ creator_studio.py scene video-mode WS P --scene SCENE \
 Image references accept PNG/JPEG/WebP in their matching role. A character voice
 is MP3/WAV registered as `voice`: enable `voice_enabled` first, then attach it.
 A sound-layer result is MP3/WAV registered as `result`. No browser upload exists.
+
+Video references accept validated MP4/WebM registered as `video_reference`.
+Use `reference add --kind video --source upload --usage …`; they receive `VID_NN`.
+The usage describes intent, not a promise that a provider supports it. Video
+references go to motion/one-shot jobs only, never static image or audio jobs;
+they have no generated image position. Read [video inputs](video-inputs.md).
+To reuse a prior scene, copy its verified output into a new local media file
+and register that copy as `video_reference`; preserve the original result role.
 
 `scene plan` and `project set-gen-mode` belong to `image_plan`. `scene
 video-mode` belongs to `motion`: `first` requires the planned first-frame

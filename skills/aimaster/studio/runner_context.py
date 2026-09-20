@@ -73,10 +73,17 @@ def _included_references(state, spec, *, for_generation=False):
             scenes = scenes[-1:] if spec.get("layer") == "voice" else []
         allowed_ids = {identity for scene in scenes for identity in scene.get("links", {}).get("reference_ids", [])}
         refs = [r for r in state.get("references", []) if r.get("reference_id") in allowed_ids]
+        if kind in {"video", "oneshot"}:
+            pass
+        else:
+            refs = [r for r in refs if r.get("role") != "video"]
         voice = kind in {"video", "oneshot"} or (kind == "audio" and spec.get("layer") == "voice")
     result = []
     for ref in refs:
         item = {"reference_id": ref["reference_id"], "kind": ref.get("role"), "name": ref.get("label", "")}
+        if ref.get("role") == "video":
+            item["usage"] = ref.get("usage", "reference")
+            item["media_type"] = "video"
         if kind != "audio":
             item["tag"] = ref.get("tag", ref["reference_id"])
             asset = ref.get("asset_id")
@@ -164,7 +171,7 @@ def build_action_context(state, action):
             raise domain.DomainValidationError("prompt contains excluded or unavailable reference tags")
         if any(ref.get("tag") and (not isinstance(ref.get("asset_id"), str) or not ref["asset_id"].strip())
                for ref in item["references"]):
-            raise domain.DomainValidationError("generation requires every included image reference asset")
+            raise domain.DomainValidationError("generation requires every included reference asset")
     if kind in {"prompts-generate", "assemble"} or any(s["kind"] == "oneshot" for s in specs):
         context["scenes"] = [_scene_context(s) for s in _ordered_scenes(state)]
     if kind == "assemble":

@@ -1,5 +1,5 @@
-const PROMPT_TAG_PATTERN = /@((?:IMG|VOICE)_\d+)(?![A-Za-z0-9_])/g;
-const CANONICAL_TAG_PATTERN = /^(?:IMG|VOICE)_\d+$/;
+const PROMPT_TAG_PATTERN = /@((?:IMG|VOICE|VID)_\d+)(?![A-Za-z0-9_])/g;
+const CANONICAL_TAG_PATTERN = /^(?:IMG|VOICE|VID)_\d+$/;
 
 export function extractTags(text) {
   if (typeof text !== "string") return [];

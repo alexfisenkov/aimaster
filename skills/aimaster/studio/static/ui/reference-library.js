@@ -7,6 +7,7 @@ export const REFERENCE_GROUPS = Object.freeze([
   Object.freeze({ kind: "product", title: "Продукты", subtitle: "предметы, которые должны выглядеть одинаково", addLabel: "+ Добавить продукт или предмет", requestLabel: "продукт или предмет" }),
   Object.freeze({ kind: "location", title: "Локации", subtitle: "места, в которых идёт действие", addLabel: "+ Добавить локацию", requestLabel: "локацию" }),
   Object.freeze({ kind: "style", title: "Стиль", subtitle: "общая картинка: свет, цвет, оптика", addLabel: "+ Добавить стиль", requestLabel: "стиль" }),
+  Object.freeze({ kind: "video", title: "Видеореференсы", subtitle: "загруженные примеры движения, продолжения или монтажа", addLabel: "+ Добавить видеореференс", requestLabel: "видеореференс" }),
 ]);
 
 const SOURCE_LABELS = Object.freeze({
@@ -58,6 +59,9 @@ function referenceItem(project, reference, { readOnly, canEditReference, canEdit
     sourceLabel: SOURCE_LABELS[reference.source],
     hasAsset: reference.has_asset === true,
     assetUrl: typeof reference.asset_url === "string" ? reference.asset_url : null,
+    playableAssetUrl: typeof reference.playable_asset_url === "string" ? reference.playable_asset_url : null,
+    mediaType: reference.media_type,
+    usage: reference.usage || "reference",
     assetCaption: assetCaption(reference),
     voice,
     prompt,
@@ -82,7 +86,7 @@ export function referenceGroups(
 ) {
   const project = snapshot?.active_project;
   const references = Array.isArray(project?.references) ? project.references : [];
-  return REFERENCE_GROUPS.map((group) => ({
+  return REFERENCE_GROUPS.filter((group) => !(group.kind === "video" && project?.type === "photo")).map((group) => ({
     ...group,
     items: references
       .filter((reference) => reference?.kind === group.kind)

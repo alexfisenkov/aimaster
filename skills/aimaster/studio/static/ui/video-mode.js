@@ -1,6 +1,8 @@
 import { submitActionsSequentially, resolveActionErrorMessage } from "./actions.js";
 import { draftKey, getDraft, setDraft, clearDraft } from "./card-drafts.js";
 import { markControlHooks, noteCardFocusPending, requestProjectRefresh, OUTCOME_UNCONFIRMED_TEXT } from "./card-forms.js";
+import { requestAgentPrompt } from "./chat-prompt-dialog.js";
+import { exactTarget } from "./agent-control.js";
 
 export function videoModeModel(snapshot, scene, { readOnly = false } = {}) {
   const positions = snapshot.active_project?.positions || [];
@@ -12,7 +14,7 @@ export function videoModeModel(snapshot, scene, { readOnly = false } = {}) {
     firstlast: !scene.need_first || !scene.need_last ? "Нужные кадры не отмечены на шаге промптов." : !first ? "Первый кадр ещё не принят." : !last ? "Последний кадр ещё не принят." : "",
     references: "",
   };
-  return { sceneId: scene.scene_id, projectId: snapshot.active_project.id, revision: snapshot.revision,
+  return { sceneId: scene.scene_id, projectId: snapshot.active_project.id, revision: snapshot.revision, readOnly,
     firstAccepted: first, lastAccepted: last, selected: scene.video_mode || (scene.need_first ? "first" : "references"),
     choices: [["first", "Из первого кадра"], ["firstlast", "Первый и последний кадр"], ["references", "По референсам и промпту"]]
       .map(([mode, label]) => ({ mode, label, reason: reasons[mode], enabled: current && !reasons[mode] })) };
@@ -29,12 +31,17 @@ export function renderVideoMode(model) {
   for (const choice of model.choices) {
     const button = document.createElement("button"); button.type = "button"; button.className = "video-mode-choice";
     markControlHooks(button, model.sceneId, `video-mode-${choice.mode}`);
-    button.disabled = !choice.enabled || draft?.saving === true;
+    button.disabled = !model.readOnly && (!choice.enabled || draft?.saving === true);
     button.setAttribute("aria-pressed", String(choice.mode === model.selected));
     const title = document.createElement("span"); title.textContent = `${choice.mode === model.selected ? "● " : "○ "}${choice.label}`;
     const reason = document.createElement("span"); reason.className = "video-mode-reason"; reason.textContent = choice.reason;
     button.append(title, reason);
     button.addEventListener("click", async () => {
+      if (model.readOnly) {
+        requestAgentPrompt({ title: `Оживить кадр: ${choice.label}`,
+          prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.sceneId, revision: model.revision })}. Установи video_mode ${choice.mode} (${choice.label}) штатной командой Creator Studio. Проверь необходимые принятые кадры и референсы, сообщи блокеры и попроси подтверждение перед изменением; генерацию не запускай.` }, button);
+        return;
+      }
       if (choice.mode === model.selected) return;
       noteCardFocusPending(model.sceneId, `video-mode-${choice.mode}`);
       status.textContent = "Сохраняется…"; setDraft(key, { saving: true, message: status.textContent });

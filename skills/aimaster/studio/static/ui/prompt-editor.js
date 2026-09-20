@@ -1,4 +1,5 @@
 import { resolveActionErrorMessage, submitAction, submitActionsSequentially } from "./actions.js";
+import { agentControl, exactTarget } from "./agent-control.js";
 import { clearDraft, draftKey, getDraft, setDraft } from "./card-drafts.js";
 import {
   markControlHooks,
@@ -323,7 +324,15 @@ export function renderPromptEditor(model, { projectId, revision }) {
     sync();
     section.append(header, textarea, tagsSlot, actions, status);
   } else {
-    section.append(header, textarea, tagsSlot);
+    const actions = document.createElement("div");
+    actions.className = "agent-prompt-actions";
+    actions.append(
+      agentControl({ label: "Изменить промпт", title: `Изменить: ${model.label}`, targetId: model.positionId, action: "edit-prompt-chat",
+        prompt: `Открой ${exactTarget({ projectId, targetId: model.positionId, versionId: model.prompt.version_id, revision })}. Спроси, что изменить, сохрани обязательные теги, покажи новую версию целиком и после моего подтверждения запиши её штатной командой Creator Studio.` }),
+      agentControl({ label: "Обновить по проекту", title: `Обновить: ${model.label}`, targetId: model.positionId, action: "prompt-refresh-chat",
+        prompt: `Открой ${exactTarget({ projectId, targetId: model.positionId, versionId: model.prompt.version_id, revision })}. Проверь актуальные сцену, план кадров и включённые референсы, затем подготовь prompt-refresh через рабочий чат. Покажи причину обновления и новый промпт; генерацию не запускай.` }),
+    );
+    section.append(header, textarea, tagsSlot, actions);
   }
 
   const stale = renderPromptRefreshNotice(model, { projectId, revision });

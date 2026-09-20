@@ -9,6 +9,8 @@ import {
 import { promptEditorModel, renderPromptEditor, isActionWorking } from "./prompt-editor.js";
 import { resolveSceneDisplayText } from "./scenario.js";
 import { resolveSceneOrder, resolveSceneRange } from "./timeline.js";
+import { requestAgentPrompt } from "./chat-prompt-dialog.js";
+import { exactTarget } from "./agent-control.js";
 
 const FRAME_STATUS_LABELS = Object.freeze({
   waiting: "Ждёт промпта",
@@ -22,6 +24,7 @@ export function promptTags(project, scene, { voice = false } = {}) {
   const items = [];
   for (const reference of Array.isArray(project?.references) ? project.references : []) {
     if (!included.has(reference?.reference_id) || typeof reference?.tag !== "string") continue;
+    if (reference.kind === "video" && !voice) continue;
     items.push({ tag: reference.tag, label: reference.label || "" });
     if (
       voice &&
@@ -197,7 +200,10 @@ export function frameCardsModel(snapshot, { readOnly = false } = {}) {
             referenceId: reference.reference_id,
             tag: reference.tag,
             label: reference.label || "",
-            assetUrl: typeof reference.asset_url === "string" ? reference.asset_url : null,
+            assetUrl: typeof (reference.playable_asset_url || reference.asset_url) === "string" ? (reference.playable_asset_url || reference.asset_url) : null,
+            kind: reference.kind,
+            mediaType: reference.media_type,
+            usage: reference.usage || "reference",
           })),
         framePlan: isPhoto
           ? null
@@ -210,6 +216,8 @@ export function frameCardsModel(snapshot, { readOnly = false } = {}) {
         status: frameStatus(statusPrompts, globalBusy),
         statusLabel: FRAME_STATUS_LABELS[frameStatus(statusPrompts, globalBusy)],
         canAddLocal: rights.canAddLocal,
+        readOnly,
+        projectType: project.type,
         projectId: project.id,
         revision: snapshot.revision,
       };
@@ -297,7 +305,10 @@ function choiceButton(card, model, choice, status, key) {
       }),
     );
   } else {
-    button.disabled = true;
+    button.addEventListener("click", () => requestAgentPrompt({
+      title: `${choice.included ? "Убрать" : "Добавить"} референс ${choice.tag}`,
+      prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.sceneId, revision: model.revision })}. ${choice.included ? "Убери" : "Добавь"} reference_id «${choice.referenceId}» (${choice.tag}) в референсы этой сцены штатной командой Creator Studio. Покажи влияние на промпты и попроси подтверждение перед изменением.`,
+    }, button));
   }
   return button;
 }
@@ -331,7 +342,10 @@ function planButton(card, model, edge, selected, status, key) {
       }),
     );
   } else {
-    button.disabled = true;
+    button.addEventListener("click", () => requestAgentPrompt({
+      title: `${selected ? "Убрать" : "Добавить"} ${edge === "first" ? "первый" : "последний"} кадр`,
+      prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.sceneId, revision: model.revision })}. Установи ${edge}=${!selected} в плане кадров штатной командой Creator Studio. Покажи, какие позиции и промпты изменятся, и попроси подтверждение; ничего не генерируй.`,
+    }, button));
   }
   return button;
 }
@@ -352,10 +366,12 @@ function renderLocalReferences(card, model, status, key) {
     const preview = document.createElement("div");
     preview.className = "frame-local-preview";
     if (reference.assetUrl) {
-      const image = document.createElement("img");
-      image.src = reference.assetUrl;
-      image.alt = reference.label ? `Разовый референс: ${reference.label}` : "Разовый референс";
-      preview.append(image);
+      const isVideo = reference.kind === "video" || reference.mediaType === "video";
+      const media = document.createElement(isVideo ? "video" : "img");
+      media.src = reference.assetUrl;
+      if (isVideo) { media.controls = true; media.preload = "metadata"; }
+      else media.alt = reference.label ? `Разовый референс: ${reference.label}` : "Разовый референс";
+      preview.append(media);
     }
     const tag = document.createElement("span");
     tag.textContent = reference.tag;
@@ -363,16 +379,31 @@ function renderLocalReferences(card, model, status, key) {
     const label = document.createElement("span");
     label.className = "frame-local-label";
     label.textContent = reference.label;
-    item.append(preview, label);
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "agent-prompt-button";
+    edit.textContent = "Изменить";
+    edit.addEventListener("click", () => requestAgentPrompt({
+      title: `Изменить локальный референс ${reference.tag}`,
+      prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: reference.referenceId, revision: model.revision })}. Это локальный референс сцены «${model.sceneId}»${reference.kind === "video" ? `, kind video, текущее usage ${reference.usage}` : ""}. Спроси, нужно ли изменить название, файл${reference.kind === "video" ? " или usage (reference, motion, continue, edit)" : ""}; покажи точную правку и попроси подтверждение перед штатной командой Creator Studio.`,
+      attachmentHint: "Если меняется файл, прикрепите его к сообщению в чате. Вложение не входит в скопированный текст.",
+    }, edit));
+    item.append(preview, label, edit);
     items.append(item);
   }
-  if (model.canAddLocal) {
+  if (model.canAddLocal || model.readOnly) {
     const add = document.createElement("button");
     add.type = "button";
     add.className = "frame-local-add";
     add.textContent = "+ Добавить";
     markControlHooks(add, model.sceneId, "add-local-reference");
-    add.addEventListener("click", () =>
+    add.addEventListener("click", () => {
+      if (model.readOnly) {
+        requestAgentPrompt({ title: `Добавить референс только для кадра ${model.order}`,
+          prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.sceneId, revision: model.revision })}. Добавь локальный ${model.projectType === "photo" ? "референс-изображение" : "референс"} только для этой сцены из файла, который я прикреплю. Сначала проверь файл, предложи label и тег, покажи изменение и попроси подтверждение.${model.projectType === "photo" ? " Видеореференсы для photo-проекта не поддерживаются: если приложено видео, предложи извлечь подходящий стоп-кадр только с моего разрешения, затем подключить изображение." : ""}`,
+          attachmentHint: model.projectType === "photo" ? "Прикрепите изображение. Если приложено видео, агент сначала запросит разрешение на извлечение стоп-кадра." : "Прикрепите файл к сообщению в чате. Вложение не входит в скопированный текст." }, add);
+        return;
+      }
       submitFrameDecision({
         card,
         model,
@@ -388,8 +419,8 @@ function renderLocalReferences(card, model, status, key) {
           scene_id: model.sceneId,
         },
         status,
-      }),
-    );
+      });
+    });
     items.append(add);
   }
   section.append(heading, hint, items);

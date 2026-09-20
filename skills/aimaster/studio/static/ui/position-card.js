@@ -8,6 +8,7 @@ import { buildSimpleButton, buildCommentForm, buildStatusLine, markControlHooks 
 import { draftKey } from "./card-drafts.js";
 import { formatSceneRange, hasLoadableAsset, buildAssetPlaceholder, markAssetError } from "./media-asset.js";
 import { requestAgentPrompt } from "./chat-prompt-dialog.js";
+import { renderChatStageActions } from "./stage-approval.js";
 
 const STATUS_LABELS = Object.freeze({ none: "Не начат", working: "В работе", ready: "Готов, ждёт решения", accepted: "Принято" });
 const KINDS = Object.freeze({
@@ -176,6 +177,13 @@ export function renderPositionCard(model, { modeControl = null } = {}) {
       }, replace);
     });
     chatActions.append(replace);
+    const resultVersionId = model.result.version_id || model.result.result_id;
+    chatActions.append(
+      requestDecisionButton("Принять результат", "approve", model, resultVersionId),
+      requestDecisionButton("Отклонить", "reject", model, resultVersionId),
+      requestDecisionButton(model.result.hidden ? "Показать" : "Скрыть", model.result.hidden ? "unhide" : "hide", model, resultVersionId),
+      requestDecisionButton(model.result.retired ? "Вернуть в работу" : "Убрать из работы", model.result.retired ? "restore" : "retire", model, resultVersionId),
+    );
   }
   content.append(chatActions);
   if (model.current) {
@@ -191,8 +199,21 @@ export function renderPositionCard(model, { modeControl = null } = {}) {
   return card;
 }
 
+function requestDecisionButton(label, decision, model, versionId) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = decision === "approve" ? "agent-prompt-button agent-prompt-button-primary" : "agent-prompt-button";
+  button.textContent = label;
+  button.addEventListener("click", () => requestAgentPrompt({
+    title: `${label}: ${model.title}`,
+    prompt: `Открой проект «${model.projectId}», position_id «${model.position.position_id}», result version_id «${versionId}», snapshot revision ${model.revision}. Проверь, что версия всё ещё принадлежит этой позиции. ${decision === "approve" ? "Прими именно эту версию" : decision === "reject" ? "Спроси причину и отклони именно эту версию" : decision === "hide" ? "Скрой именно эту версию из обычного просмотра" : decision === "unhide" ? "Снова покажи именно эту версию" : decision === "retire" ? "Убери именно эту версию из работы без удаления истории" : "Верни именно эту версию в работу"} штатной командой Creator Studio и сообщи проверенный результат.`,
+  }, button));
+  return button;
+}
+
 export function renderPositionStageApproval(root, snapshot, stage, { readOnly = false } = {}) {
-  if (readOnly || snapshot.view_stage?.current_stage !== stage) return;
+  if (readOnly) { renderChatStageActions(root, snapshot, stage, { approveLabel: stage === "motion" ? "Одобрить видео" : "Одобрить шаг" }); return; }
+  if (snapshot.view_stage?.current_stage !== stage) return;
   const project = snapshot.active_project;
   const readiness = project.stage_readiness?.stage === stage ? project.stage_readiness : null;
   const allowed = snapshot.view_stage?.allowed_actions || [];

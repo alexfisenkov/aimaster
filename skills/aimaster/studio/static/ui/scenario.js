@@ -369,6 +369,7 @@ export function storyboardModel(snapshot, { readOnly = false } = {}) {
     revision: Number.isFinite(snapshot?.revision) ? snapshot.revision : undefined,
     activeScriptText: activeScript?.text || "",
     activeScriptVersion: activeScript?.ordinal || null,
+    activeScriptVersionId: activeScript?.versionId || null,
     scriptApproved: !current,
     canEdit: current && allowedActions.includes("edit"),
     canAdd: current && allowedActions.includes("scene-add"),

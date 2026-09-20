@@ -16,8 +16,10 @@ function requestReferenceControl(group, model) {
   button.addEventListener("click", () => {
     requestAgentPrompt({
       title: `Добавить ${group.requestLabel}`,
-      prompt: `Открой проект «${model.projectId}». Я хочу добавить ${group.requestLabel} в референсы проекта. Спроси, прикреплю ли я готовый файл или нужно сгенерировать референс. Для файла сначала проверь вложение и предложи понятное внутреннее название и служебный тег. Для генерации сначала согласуй инструмент, доступную модель, промпт и один разрешённый запуск. После моего выбора создай референс и сообщи его точный reference_id.`,
-      attachmentHint: "Если у вас есть готовый референс, прикрепите изображение к сообщению в чате. Вложение не входит в скопированный текст.",
+      prompt: group.kind === "video"
+        ? `Открой проект «${model.projectId}». Добавь видеореференс только из файла, который я прикреплю. Сначала проверь видео, спроси назначение usage: reference, motion, continue или edit, предложи название и затем создай kind video штатной командой Creator Studio. Сообщи точный reference_id VID_NN. Не предлагай генерацию изображения.`
+        : `Открой проект «${model.projectId}». Я хочу добавить ${group.requestLabel} в референсы проекта. Спроси, прикреплю ли я готовый файл или нужно сгенерировать референс. Для файла сначала проверь вложение и предложи понятное внутреннее название и служебный тег. Для генерации сначала согласуй инструмент, доступную модель, промпт и один разрешённый запуск. После моего выбора создай референс и сообщи его точный reference_id.`,
+      attachmentHint: group.kind === "video" ? "Прикрепите видео к сообщению в чате. Вложение не входит в скопированный текст." : "Если у вас есть готовый референс, прикрепите изображение к сообщению в чате. Вложение не входит в скопированный текст.",
     }, button);
   });
   return button;
@@ -174,7 +176,11 @@ function generationHeader(model) {
       }
     });
   } else {
-    button.disabled = true;
+    button.textContent = model.readiness?.can_approve ? "Обновить все промпты" : "Написать промпты";
+    button.addEventListener("click", () => requestAgentPrompt({
+      title: button.textContent,
+      prompt: `Открой проект «${model.projectId}» на snapshot revision ${model.revision}, стадия image_plan. ${model.readiness?.can_approve ? "Проверь существующие промпты и предложи обновление только устаревших." : "Подготовь недостающие промпты."} Используй утверждённый сценарий, выбранный gen_mode, включённые референсы и сохранённые инструкции для реально выбранной модели. Покажи промпты до записи; генерацию материалов не запускай.`,
+    }, button));
   }
   header.append(button, status);
   return header;
@@ -256,6 +262,12 @@ function readinessPanel(model) {
         }
       }
     });
+  } else if (model.readOnly) {
+    approve.disabled = false;
+    approve.addEventListener("click", () => requestAgentPrompt({
+      title: "Одобрить промпты",
+      prompt: `Открой проект «${model.projectId}», target_id «image_plan», snapshot revision ${model.revision}. Проверь readiness, обязательные позиции, теги и актуальность промптов. Если есть блокеры, перечисли их и не меняй состояние; иначе одобри image_plan штатной командой Creator Studio.`,
+    }, approve));
   }
   panel.append(approve, status);
   return panel;

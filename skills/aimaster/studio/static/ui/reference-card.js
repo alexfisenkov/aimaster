@@ -50,11 +50,25 @@ function resolveDraft(key, model, revision) {
 function mediaPreview(model) {
   const wrap = document.createElement("div");
   wrap.className = "reference-card-preview";
-  if (model.assetUrl) {
-    const image = document.createElement("img");
-    image.src = model.assetUrl;
-    image.alt = model.name ? `Референс: ${model.name}` : `Референс ${model.tag}`;
-    wrap.append(image);
+  const previewUrl = model.playableAssetUrl || model.assetUrl;
+  if (previewUrl) {
+    const media = document.createElement(model.kind === "video" ? "video" : "img");
+    media.src = previewUrl;
+    if (model.kind === "video") { media.controls = true; media.preload = "metadata"; }
+    else media.alt = model.name ? `Референс: ${model.name}` : `Референс ${model.tag}`;
+    wrap.append(media);
+    if (model.kind === "video") {
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "agent-prompt-button";
+      open.dataset.action = "open";
+      open.textContent = "Открыть видео";
+      open.addEventListener("click", () => open.dispatchEvent(new CustomEvent("studio:open-viewer", {
+        bubbles: true,
+        detail: { kind: "video", asset: { assetUrl: previewUrl, assetId: model.referenceId, caption: model.name || model.tag } },
+      })));
+      wrap.append(open);
+    }
   }
   const tag = document.createElement("span");
   tag.className = "reference-card-tag";
@@ -134,10 +148,10 @@ function renderReadOnlySource(model, projectId) {
     () => ({
       title: `${model.hasAsset ? "Заменить" : "Загрузить"} референс: ${model.name || model.tag}`,
       prompt: `Открой ${identity}. ${model.hasAsset ? "Замени текущий файл референса" : "Добавь файл референса"} на файл, который я прикреплю к этому сообщению. Сначала проверь вложение, подтверди точные project_id «${projectId}» и reference_id «${model.referenceId}», покажи, что изменится, и только затем подключи файл. Не запускай генерацию.`,
-      attachmentHint: "Прикрепите изображение к сообщению в чате. Вложение не входит в скопированный текст.",
+      attachmentHint: model.kind === "video" ? "Прикрепите видео к сообщению в чате. Вложение не входит в скопированный текст." : "Прикрепите изображение к сообщению в чате. Вложение не входит в скопированный текст.",
     }),
   ));
-  actions.append(agentButton(
+  if (model.kind !== "video") actions.append(agentButton(
     model.hasAsset ? "Сгенерировать замену" : "Сгенерировать",
     "agent-prompt-button",
     () => ({
@@ -145,6 +159,10 @@ function renderReadOnlySource(model, projectId) {
       prompt: `Открой ${identity}. Подготовь ${model.hasAsset ? "замену текущего референса" : "новый референс"} через генерацию. Сначала подтверди точные project_id «${projectId}» и reference_id «${model.referenceId}», согласуй инструмент, доступную модель и промпт, затем дождись моего разрешения на один запуск. После результата покажи проверку и предложи подключение к этому референсу.`,
     }),
   ));
+  if (model.kind === "video") actions.append(agentButton("Изменить назначение", "agent-prompt-button", () => ({
+    title: `Назначение видеореференса: ${model.name || model.tag}`,
+    prompt: `Открой ${identity}. Текущее usage: ${model.usage}. Спроси, какое назначение выбрать: reference, motion, continue или edit, объясни разницу и после моего подтверждения измени поле usage штатной командой Creator Studio.`,
+  })));
   return { wrap, actions };
 }
 
