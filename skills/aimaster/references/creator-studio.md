@@ -26,7 +26,8 @@ Store the accepted answer through the question lifecycle, then apply `one-shot`
 as `one_shot` or `per-scene` as `per_scene` at `image_plan` with
 `project set-gen-mode`; do not rely on the default value.
 
-In chat, first discover the MCP/tools/routes already connected to the user. Do
+At activation read [saved provider preferences](provider-preferences.md) across
+projects, then in chat discover the MCP/tools/routes exposed in this session. Do
 not browse a provider website merely to discover one. Live-probe the selected
 route and present only models actually exposed by that verified route. For each
 newly selected model and relevant prompt task/stage, run the

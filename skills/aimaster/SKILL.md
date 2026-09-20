@@ -5,6 +5,11 @@ description: Use when turning a text or voice video idea into a script, storyboa
 
 ## Установка с нуля (первое обращение)
 
+При каждом включении навыка сначала прочитай постоянные предпочтения по
+сервисам согласно [памяти подключений](references/provider-preferences.md),
+даже если текущий проект новый. Сохраняй заявленные пользователем MCP и его
+выбор; перезапуск чата или смена workspace не должны стирать эту информацию.
+
 Если workspace новый или пустой, сначала предложи пользователю пройти
 [процедуру установки](references/getting-started.md). Сначала создаётся один
 выбранный владельцем постоянный workspace; затем доступны два независимых
@@ -104,7 +109,11 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
 
 ## External actions and recovery
 
-- In chat, first discover the MCP/tools/routes already connected to the user.
+- First load [saved provider preferences](references/provider-preferences.md),
+  then discover MCP/tools/routes exposed in this session. Offer the saved
+  preferred service first; keep an unavailable saved service as a declaration,
+  not as verified access. Persist user declarations/selections and read back.
+  Selection stays in chat and must be offered in each new session/project.
   Do not browse a provider site merely to discover a route. Live-probe the
   selected route, then present only models actually exposed by that verified
   route. A declared candidate is `needs_chat_setup` until the current session

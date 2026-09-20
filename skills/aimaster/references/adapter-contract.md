@@ -2,7 +2,7 @@
 
 Every capability follows: `discover`, `probe`, `prepare`, `execute`, `collect`, `validate`, `provenance`.
 
-- `discover`: inspect the MCP/tools/routes already connected in the current chat. Do not browse a provider site merely to discover a route.
+- `discover`: first load [saved provider preferences](provider-preferences.md), then inspect the MCP/tools/routes exposed in the current chat. Offer the preferred saved provider first; a missing tool does not delete the saved declaration. Persist explicit user choices with read-back. Do not browse a provider site merely to discover a route.
 - `probe`: confirm current-session availability, relevant capability, authentication without secret values, and observable cost/limit. Present only models exposed by that verified route.
 - `prepare`: a reviewable prompt/job package and intended outputs. Before every
   external generation, complete [reference binding](reference-bindings.md).

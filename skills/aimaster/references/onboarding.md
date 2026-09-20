@@ -1,5 +1,9 @@
 # Onboarding knowledge and adapters
 
+For current Studio projects, persistent provider choices are described in
+[provider preferences](provider-preferences.md). Read them at every activation;
+the configuration below is legacy T2 and is not the cross-project preference file.
+
 Use configuration only when the user wants to connect their own knowledge or
 capability candidates. Copy `config.example.json` into the video project as
 `director.config.json`; keep local knowledge paths relative to that file.
