@@ -14,15 +14,10 @@
 import {
   displayProjectTitle,
   filterProjects,
-  MODE_LABELS,
   PROJECT_FILTERS,
-  resolveModeLabel,
   resolveTypeLabel,
   STAGE_LABELS,
 } from "./state.js";
-import { resolveActionErrorMessage, submitActionsSequentially } from "./actions.js";
-import { clearDraft, draftKey, getDraft, setDraft } from "./card-drafts.js";
-import { OUTCOME_UNCONFIRMED_TEXT, requestProjectRefresh } from "./card-forms.js";
 
 const FILTER_LABELS = Object.freeze({
   all: "Все",
@@ -30,8 +25,6 @@ const FILTER_LABELS = Object.freeze({
   review: "На проверке",
   done: "Завершённые",
 });
-
-let pendingModeFocus = null;
 
 function selectProject(projectId) {
   document.dispatchEvent(
@@ -119,64 +112,8 @@ function buildSkeleton(root) {
   channelLink.textContent = "Канал";
   footer.append(channelLink);
 
-  const modePanel = document.createElement("section");
-  modePanel.className = "rail-mode";
-  const modeHeading = document.createElement("h2");
-  modeHeading.className = "rail-mode-heading";
-  modeHeading.textContent = "Режим работы";
-  const modeList = document.createElement("div");
-  modeList.className = "rail-mode-list";
-  const modeEntries = new Map();
-  for (const mode of Object.keys(MODE_LABELS)) {
-    const entry = document.createElement("button");
-    entry.type = "button";
-    entry.className = "rail-mode-option";
-    entry.dataset.mode = mode;
-    const label = document.createElement("span");
-    label.textContent = resolveModeLabel(mode);
-    entry.append(label);
-    entry.addEventListener("click", async () => {
-      const context = entry.__modeContext;
-      if (!context || context.modeDraft?.saving === true || context.key === context.mode
-        || !context.projectId || !Number.isFinite(context.revision)) return;
-      const { modeDraftKey, projectId, revision, key, controls, modeStatus } = context;
-      const shouldRestoreFocus = document.activeElement === entry;
-      if (shouldRestoreFocus) {
-        pendingModeFocus = { projectId, mode: key, element: entry };
-      }
-      modeStatus.textContent = "Сохраняется…";
-      setDraft(modeDraftKey, { message: modeStatus.textContent, saving: true, lastAction: `set-mode:${key}` });
-      const result = await submitActionsSequentially({
-        actions: [{ actionType: "set-mode", targetId: "project", payload: { mode: key } }],
-        expectedRevision: revision,
-        controls,
-      });
-      if (result.ok && result.confirmed !== false && result.completed === 1) {
-        modeStatus.textContent = "Сохранено";
-        setDraft(modeDraftKey, { message: modeStatus.textContent, saving: false, savedRevision: result.confirmedRevision, lastAction: `set-mode:${key}` });
-        requestProjectRefresh(projectId);
-      } else {
-        modeStatus.textContent = result.ok ? OUTCOME_UNCONFIRMED_TEXT : resolveActionErrorMessage(result.code);
-        setDraft(modeDraftKey, { message: modeStatus.textContent, saving: false, lastAction: `set-mode:${key}` });
-        if (!result.ok && ["revision_conflict", "action_failed"].includes(result.code)) requestProjectRefresh(projectId);
-      }
-    });
-    modeList.append(entry);
-    modeEntries.set(mode, entry);
-  }
-  const modeHint = document.createElement("p");
-  modeHint.className = "rail-mode-hint";
-  modeHint.textContent = "Агент задаёт вопросы в чате и ждёт ответа. Здесь видно только, что работа на паузе.";
-  modePanel.append(modeHeading, modeList, modeHint);
-
-  root.append(brand, searchWrap, filterGroup, listRegion, modePanel, footer);
-
-  const modeStatus = document.createElement("p");
-  modeStatus.className = "rail-mode-status";
-  modeStatus.setAttribute("role", "status");
-  modeStatus.setAttribute("aria-live", "polite");
-  modePanel.append(modeStatus);
-  return { searchInput, filterButtons, list, emptyMessage, modeEntries, modeStatus };
+  root.append(brand, searchWrap, filterGroup, listRegion, footer);
+  return { searchInput, filterButtons, list, emptyMessage };
 }
 
 /**
@@ -298,35 +235,6 @@ export function renderProjectRail(root, state) {
   }
   for (const [key, button] of refs.filterButtons) {
     button.setAttribute("aria-pressed", String(key === filter));
-  }
-
-  const selectedProject = projects.find((project) => project?.id === selectedProjectId);
-  const activeProject = state?.snapshot?.active_project;
-  const mode = activeProject?.id === selectedProjectId ? activeProject.mode : selectedProject?.mode;
-  const projectId = activeProject?.id === selectedProjectId ? activeProject.id : selectedProject?.id;
-  const revision = Number.isFinite(state?.snapshot?.revision) ? state.snapshot.revision : null;
-  const modeDraftKey = projectId ? draftKey(projectId, "rail-mode", "project") : null;
-  let modeDraft = modeDraftKey ? getDraft(modeDraftKey) : undefined;
-  if (modeDraftKey && Number.isFinite(modeDraft?.savedRevision) && revision > modeDraft.savedRevision) {
-    clearDraft(modeDraftKey);
-    modeDraft = undefined;
-  }
-  refs.modeStatus.textContent = modeDraft?.message || "";
-  for (const [key, entry] of refs.modeEntries) {
-    entry.dataset.selected = String(key === mode);
-    entry.setAttribute("aria-pressed", String(key === mode));
-    entry.disabled = !projectId || !Number.isFinite(revision) || modeDraft?.saving === true;
-    entry.__modeContext = { projectId, revision, key, mode, modeDraftKey, modeDraft, controls: [...refs.modeEntries.values()], modeStatus: refs.modeStatus };
-    if (pendingModeFocus?.element === entry && pendingModeFocus.projectId === projectId && pendingModeFocus.mode === key) {
-      const active = document.activeElement;
-      const focusMovedElsewhere = active && active !== entry && active !== document.body;
-      if (focusMovedElsewhere) {
-        pendingModeFocus = null;
-      } else if (!entry.disabled) {
-        entry.focus();
-        pendingModeFocus = null;
-      }
-    }
   }
 
   paintList(refs, projects, filter, query, selectedProjectId);

@@ -43,7 +43,7 @@
 }
 
 .topbar-brand {
-  display: none;
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   font-weight: 800;
@@ -60,7 +60,7 @@
 }
 
 .topbar-menu-toggle {
-  display: none;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   width: var(--touch-target-min);
@@ -188,13 +188,23 @@
 /* ---------------------------------------------------------------------- */
 
 .project-rail {
-  grid-area: rail;
   display: flex;
   flex-direction: column;
   min-height: 0;
   border-right: 0;
   background: var(--color-surface-inverse);
   color: var(--color-text-on-inverse);
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 60;
+  width: min(360px, 82vw);
+  transform: translateX(-100%);
+  transition: transform var(--transition-base);
+}
+
+.project-rail[data-open="true"] {
+  transform: translateX(0);
+  box-shadow: var(--shadow-overlay);
 }
 
 .rail-brand {
@@ -330,50 +340,6 @@
   padding: var(--space-4) var(--space-3);
   color: #9aa1a8;
   font-size: var(--font-size-sm);
-}
-
-.rail-mode {
-  margin: 12px 16px 0;
-  padding: 12px;
-  border-radius: 10px;
-  background: #191c20;
-}
-
-.rail-mode-heading {
-  margin-bottom: 8px;
-  color: #8e959d;
-  font-size: 11px;
-  font-weight: 400;
-}
-
-.rail-mode-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 9px;
-  background: #101215;
-}
-
-.rail-mode-option {
-  min-height: 32px;
-  padding: 7px 10px;
-  border-radius: 7px;
-  color: #9aa1a8;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.rail-mode-option[data-selected="true"] {
-  background: #e9ebed;
-  color: #101215;
-}
-
-.rail-mode-hint {
-  margin-top: 10px;
-  color: #8e959d;
-  font-size: 11px;
-  line-height: 1.5;
 }
 
 .rail-footer {
@@ -592,6 +558,40 @@
   display: none;
 }
 
+.rail-backdrop[data-open="true"] {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgba(23, 24, 26, 0.4);
+  border: none;
+  padding: 0;
+}
+
+.topbar-menu-toggle[aria-expanded="true"] {
+  position: fixed;
+  top: var(--space-3);
+  right: var(--space-3);
+  left: auto;
+}
+
+.topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon {
+  background: transparent;
+}
+
+.topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon::before,
+.topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon::after {
+  top: 0;
+}
+
+.topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon::before {
+  transform: rotate(45deg);
+}
+
+.topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon::after {
+  transform: rotate(-45deg);
+}
+
 /* ---------------------------------------------------------------------- */
 /* Narrow screens: rail becomes an off-canvas panel, inspector stacks.    */
 /* ---------------------------------------------------------------------- */
@@ -616,42 +616,6 @@
     min-height: 0;
   }
 
-  .topbar-menu-toggle {
-    display: inline-flex;
-  }
-
-  .topbar-brand {
-    /* Brand must be visible in the mobile top bar without opening the
-       rail; the rail's own copy stays for desktop, where it is always
-       visible, so it is not also duplicated in the topbar there. */
-    display: inline-flex;
-  }
-
-  .project-rail {
-    position: fixed;
-    inset: 0 18% 0 0;
-    z-index: 60;
-    transform: translateX(-100%);
-    transition: transform var(--transition-base);
-  }
-
-  .project-rail[data-open="true"] {
-    transform: translateX(0);
-    /* Shadow only while open: applying it to the closed, off-screen panel
-       let a sliver of it bleed in at the viewport edge. */
-    box-shadow: var(--shadow-overlay);
-  }
-
-  .rail-backdrop[data-open="true"] {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 55;
-    background: rgba(23, 24, 26, 0.4);
-    border: none;
-    padding: 0;
-  }
-
   /* Open state: the same button now means "close". Its accessible name
      switches in app.js; here the hamburger's two outer bars rotate into an
      "✕" (the middle bar hides) and the button itself detaches from the
@@ -659,30 +623,6 @@
      backdrop's 18% strip reserved by `.project-rail`'s `inset`, never over
      the open panel's own brand/search/rows (its 82%-wide content sits to
      the left of this corner at any width this breakpoint covers). */
-  .topbar-menu-toggle[aria-expanded="true"] {
-    position: fixed;
-    top: var(--space-3);
-    right: var(--space-3);
-    left: auto;
-  }
-
-  .topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon {
-    background: transparent;
-  }
-
-  .topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon::before,
-  .topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon::after {
-    top: 0;
-  }
-
-  .topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon::before {
-    transform: rotate(45deg);
-  }
-
-  .topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon::after {
-    transform: rotate(-45deg);
-  }
-
   .inspector {
     border-left: none;
     border-top: 1px solid var(--color-border);

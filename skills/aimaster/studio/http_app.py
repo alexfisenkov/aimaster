@@ -9,7 +9,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Mapping
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 from .assets import AssetError, AssetIndex
 from .ledger import (
@@ -250,8 +250,20 @@ class StudioApplication:
         if not isinstance(raw_path, str) or not raw_path.startswith("/"):
             raise ValueError("request target must be origin-form")
         parsed = urlsplit(raw_path)
-        if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
-            raise ValueError("query and absolute request targets are unsupported")
+        if parsed.scheme or parsed.netloc or parsed.fragment:
+            raise ValueError("absolute request targets and fragments are unsupported")
+        if parsed.query:
+            # Project selection belongs only to the dashboard document. API
+            # routes retain their existing exact-path contract.
+            pairs = parse_qsl(parsed.query, keep_blank_values=True,
+                              strict_parsing=True, errors="strict")
+            if parsed.path != "/" or len(pairs) != 1 or pairs[0][0] != "project":
+                raise ValueError("unsupported query")
+            project_id = pairs[0][1]
+            if (not project_id or project_id in {".", ".."}
+                    or any(char in project_id for char in ("/", "\\", "\0"))
+                    or any(ord(char) < 32 for char in project_id)):
+                raise ValueError("invalid project selector")
         try:
             return unquote(parsed.path, errors="strict")
         except (UnicodeDecodeError, ValueError) as error:

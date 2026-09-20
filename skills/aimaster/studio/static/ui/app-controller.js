@@ -196,7 +196,11 @@ export function createAppController({
         store.setStatus("empty");
         return;
       }
-      await openProject(projects[0].id);
+      if (projects.length === 1) {
+        await openProject(projects[0].id);
+        return;
+      }
+      store.setStatus("choose");
     } catch (error) {
       reportFailure(error);
     }
@@ -214,6 +218,11 @@ export function createAppController({
     store.setHistoryOpen(false);
   }
 
+  function showProjectPicker() {
+    requestGuard.next();
+    store.clearProjectSelection(store.getState().projects.length === 0 ? "empty" : "choose");
+  }
+
   return {
     openProject,
     refreshProjectSnapshot,
@@ -224,6 +233,7 @@ export function createAppController({
     viewStage,
     toggleHistory,
     closeHistory,
+    showProjectPicker,
     liveness,
     requestGuard,
   };

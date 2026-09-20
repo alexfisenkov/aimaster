@@ -25,6 +25,16 @@
 
     <div class="app-shell">
       <header class="topbar" data-hook="topbar">
+        <button
+          class="topbar-menu-toggle"
+          data-hook="rail-toggle"
+          type="button"
+          aria-controls="project-rail"
+          aria-expanded="false"
+        >
+          <span class="topbar-menu-icon" aria-hidden="true"></span>
+          <span class="visually-hidden">Открыть панель проектов</span>
+        </button>
         <div class="topbar-brand">
           <span class="topbar-brand-mark" aria-hidden="true"></span>
           <span>AI Мастерская</span>
@@ -35,12 +45,27 @@
       <main class="main-content" id="main" data-hook="main" tabindex="-1"></main>
 
       <aside
+        class="project-rail"
+        id="project-rail"
+        data-hook="project-rail"
+        aria-label="Проекты"
+      ></aside>
+
+      <aside
         class="history-panel"
         data-hook="history-panel"
         aria-label="История решений"
         hidden
       ></aside>
     </div>
+
+    <button
+      class="rail-backdrop"
+      data-hook="rail-backdrop"
+      type="button"
+      aria-label="Закрыть панель проектов"
+      tabindex="-1"
+    ></button>
 
     <div
       class="visually-hidden"

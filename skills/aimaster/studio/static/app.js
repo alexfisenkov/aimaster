@@ -24,7 +24,8 @@
 
 import { createStore } from "./ui/state.js";
 import { renderShell } from "./ui/shell.js";
-import { deriveRailChrome } from "./ui/shell-runtime.js";
+import { renderProjectRail } from "./ui/rail.js";
+import { setActiveProject } from "./ui/actions.js";
 import { createAppController } from "./ui/app-controller.js";
 import { attachViewerOpenListener } from "./ui/viewer.js";
 import { applyHistoryBackgroundInert, trapHistoryPanelTab } from "./ui/history-panel.js";
@@ -103,8 +104,8 @@ const controller = createAppController({
   fetchSnapshot: (projectId) => fetchJson(`/api/projects/${encodeURIComponent(projectId)}/snapshot`),
   fetchProjects: () => fetchJson("/api/projects"),
   paintShell: (state) => renderShell(shellRoot, state),
-  paintRail: () => {},
-  setActiveProject: () => {},
+  paintRail: (state) => renderProjectRail(railRoot, state),
+  setActiveProject,
   reportFailure,
   isDocumentVisible: () => document.visibilityState === "visible",
   preferredProjectId,
@@ -136,13 +137,13 @@ window.addEventListener("focus", controller.refreshOnReturn);
 document.addEventListener("studio:project-selected", (event) => {
   const projectId = event?.detail?.projectId;
   if (typeof projectId === "string" && projectId) {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("project", projectId);
+    window.history.pushState({ projectId }, "", nextUrl);
     controller.openProject(projectId);
   }
-  // Mobile-only: on desktop the rail is always the visible, persistent
-  // column (deriveRailChrome never reports it inert there), so closing it
-  // here has no visible effect and must not steal focus into #main away
-  // from the project button a desktop/keyboard user just activated.
-  const wasOpen = mobileRailQuery.matches && railOpenIntent;
+  // Selecting a project closes the drawer at every viewport width.
+  const wasOpen = railOpenIntent;
   closeRail();
   // On mobile the rail (and the button that had focus) just became inert;
   // move attention to the content that's now loading instead of leaving
@@ -198,45 +199,33 @@ document.addEventListener("studio:stage-viewed", (event) => {
     ?.focus();
 });
 
-// --- Mobile rail: local, server-independent chrome -----------------------
+// --- Project drawer: local, server-independent chrome --------------------
 //
 // A single function, setRailOpen, drives the panel and backdrop together,
 // so they can never desync: `data-open` is set on (or removed from) both
 // elements atomically, and `inert`/`aria-expanded`/the toggle's accessible
-// name always match what deriveRailChrome (ui/shell-runtime.js) computes
-// for the current layout x intent pair -- never just whatever the last
-// click happened to leave behind. Closed also means `inert` on the rail,
+// name always match the current intent. Closed also means `inert` on the rail,
 // not just visually off-screen -- a `transform` alone still leaves its
 // search input/buttons in the Tab order and the accessibility tree even
 // though nothing is visible.
 
-// Must match layout.css's `@media (max-width: 900px)` off-canvas breakpoint.
-const mobileRailQuery = window.matchMedia("(max-width: 900px)");
-
-// The user's last explicit open/close choice. Only meaningful on the
-// narrow layout -- deriveRailChrome ignores it entirely on a wide one, so
-// a drawer left "open" on a phone and then resized to desktop can never
-// leave the always-visible desktop rail `inert`.
 let railOpenIntent = false;
+const historyModalQuery = window.matchMedia("(max-width: 900px)");
 
 function setRailOpen(open) {
   railOpenIntent = open;
   if (!railRoot) {
     return;
   }
-  const { open: resolvedOpen, inert } = deriveRailChrome(mobileRailQuery.matches, railOpenIntent);
-  if (resolvedOpen) {
+  if (railOpenIntent) {
     railRoot.setAttribute("data-open", "true");
     railBackdrop?.setAttribute("data-open", "true");
   } else {
     railRoot.removeAttribute("data-open");
     railBackdrop?.removeAttribute("data-open");
   }
-  railRoot.inert = inert;
-  // The toggle is hidden (display: none) outside the off-canvas layout, so
-  // it is never really "expanded" there -- but keep the state honest
-  // rather than relying on that CSS fact alone.
-  const expanded = mobileRailQuery.matches && resolvedOpen;
+  railRoot.inert = !railOpenIntent;
+  const expanded = railOpenIntent;
   railToggle?.setAttribute("aria-expanded", String(expanded));
   if (railToggleLabel) {
     railToggleLabel.textContent = expanded ? "Закрыть панель проектов" : "Открыть панель проектов";
@@ -249,23 +238,21 @@ function closeRail() {
 
 function openRail() {
   setRailOpen(true);
-  if (mobileRailQuery.matches) {
-    railRoot?.querySelector("input, button")?.focus();
-  }
+  railRoot?.querySelector("input, button")?.focus();
 }
 
 function syncHistoryBackground() {
   applyHistoryBackgroundInert(
     shellRoot,
     Boolean(store.getState().historyOpen),
-    mobileRailQuery.matches,
+    historyModalQuery.matches,
   );
 }
 
 function closeHistory() {
   // Remove mobile inert before the synchronous store commit repaints the
   // topbar and restores focus to its newly-built history button.
-  applyHistoryBackgroundInert(shellRoot, false, mobileRailQuery.matches);
+  applyHistoryBackgroundInert(shellRoot, false, historyModalQuery.matches);
   controller.closeHistory();
   setRailOpen(false);
 }
@@ -299,7 +286,7 @@ railBackdrop?.addEventListener("click", () => {
 document.addEventListener("keydown", (event) => {
   if (
     store.getState().historyOpen &&
-    trapHistoryPanelTab(historyPanel, event, mobileRailQuery.matches)
+    trapHistoryPanelTab(historyPanel, event, historyModalQuery.matches)
   ) {
     return;
   }
@@ -308,29 +295,40 @@ document.addEventListener("keydown", (event) => {
   } else if (event.key === "Escape" && railOpenIntent) {
     closeRail();
     railToggle?.focus();
+  } else if (event.key === "Tab" && railOpenIntent && railRoot) {
+    const focusable = [...railRoot.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), [tabindex="0"]')]
+      .filter((node) => !node.hidden);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 });
 
-// Crossing the breakpoint in either direction -- rotating a device,
-// resizing a window, with no click at all -- must resync `inert`/
-// `data-open` to the layout that is now actually visible. Re-running the
-// same setRailOpen used everywhere else (rather than a bespoke handler) is
-// what guarantees the wide layout is always reported open and never inert.
-mobileRailQuery.addEventListener("change", () => {
-  if (store.getState().historyOpen) {
-    railOpenIntent = false;
-  }
-  setRailOpen(railOpenIntent);
-  syncHistoryBackground();
-  if (store.getState().historyOpen && mobileRailQuery.matches) {
-    historyPanel?.querySelector('[data-hook="history-close"]')?.focus();
-  }
-});
+historyModalQuery.addEventListener("change", syncHistoryBackground);
 
-// Paint the initial chrome immediately: on a narrow first load the closed
+// Paint the initial chrome immediately: on first load the closed
 // panel must already be `inert`, not just off-screen, or its search field
 // stays reachable by Tab despite being invisible.
 setRailOpen(railOpenIntent);
 syncHistoryBackground();
 
 controller.loadProjectIndex();
+
+window.addEventListener("popstate", () => {
+  const projectId = new URL(window.location.href).searchParams.get("project");
+  if (projectId) {
+    controller.openProject(projectId);
+    return;
+  }
+  controller.showProjectPicker();
+});

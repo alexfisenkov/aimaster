@@ -340,6 +340,19 @@ export function createStore(initial) {
         selectedSceneOrigin: null,
       });
     },
+    clearProjectSelection(status = "choose") {
+      return commit({
+        ...state,
+        selectedProjectId: null,
+        status,
+        snapshot: null,
+        stageTabs: [],
+        viewedStage: null,
+        error: null,
+        selectedSceneId: null,
+        selectedSceneOrigin: null,
+      });
+    },
     /**
      * Adopt a freshly fetched `/api/projects/{id}/snapshot` payload. A
      * `gate_status` of `blocked` surfaces as shell status `blocked` so the

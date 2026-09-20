@@ -152,6 +152,3 @@
 .need-answer-chat { background: #fffaf2 !important; }
 .need-answer button:focus-visible { outline: 2px solid #8a5a11; outline-offset: 2px; }
 .need-answer-hint { min-height: 1.3em; font-size: 0.875rem; }
-.rail-mode-option { cursor: pointer; font: inherit; }
-.rail-mode-option:disabled { cursor: wait; opacity: 0.65; }
-.rail-mode-status { min-height: 1.3em; margin: 8px 0 0; font-size: 0.8125rem; }

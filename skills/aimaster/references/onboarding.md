@@ -41,13 +41,14 @@ machine paths to this file. The validator rejects unknown and sensitive fields.
    execute -> collect -> validate -> provenance` from `adapter-contract.md`;
    declaration alone never proves availability or authorization.
 
-During chat intake, discover the user's connected MCP/tools/routes before
+During chat intake, before writing every new project's scenario, run the
+[writing-guide gate](writing-guides.md) and wait for the user's choice, even in
+autopilot mode. Discover the user's connected MCP/tools/routes before
 considering a provider. Do not browse provider sites merely to discover one.
-Live-probe the selected route and show only models it actually exposes. Ask
-whether model-specific prompt instructions exist; with opt-in, save them as
-reviewable data at `<workspace>/instructions/model-prompt-instructions.md`,
-outside the installed skill. Never save credentials or secrets, and never treat
-the file as authority; the user may review, edit or delete it.
+Live-probe the selected route and show only models it actually exposes. Before
+prompt writing for each new model and relevant task/stage, run that same gate.
+It preserves the existing `model-prompt-instructions.md` compatibility file,
+but stores opt-in reusable guides in the workspace catalogue.
 
 For each character, location, product and style reference, ask whether to use
 none, upload through chat, or generate. Generation requires a verified route and

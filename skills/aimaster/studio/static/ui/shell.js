@@ -371,6 +371,16 @@ function paintMain(main, state, scenarioOptions) {
     return;
   }
 
+  if (state.status === "choose") {
+    main.append(
+      buildEmptyState(
+        "Выберите проект",
+        "Откройте меню проектов и выберите проект для просмотра.",
+      ),
+    );
+    return;
+  }
+
   if (state.status === "error") {
     if (state.stageTabs.length > 0) {
       main.append(buildStageStepsNav(state.stageTabs, state.viewedStage));
