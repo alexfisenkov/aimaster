@@ -35,6 +35,12 @@ external action happened.
 
 ## Start a new project
 
+Respect the bundled [LICENSE](LICENSE): user-owned knowledge, settings and local
+text instructions may be customized; changing the runtime code in `studio/` or
+`scripts/` requires prior permission from the rights holder. Keep personal
+materials outside the installed package. Official updates are permitted;
+do not silently patch the engine during setup or troubleshooting.
+
 1. Ask for `guided` or `autopilot`. Guided asks only material questions;
    autopilot records safe assumptions and continues local preparation. Both
    obey stage approvals and external-action boundaries. Studio mode can later

@@ -1,31 +1,34 @@
-# Aimaster
+# AI Мастерская
 
-A portable agent skill for turning a text or voice idea into a reviewed video
-production package. It keeps one canonical project state, preserves history,
-and never treats an unavailable external tool as a completed action.
+Этот навык помогает превратить текстовую или голосовую идею в сценарий, кадры,
+промпты и материалы для ролика. Агент ведёт проект в чате, сохраняет историю
+работы и не выдаёт незапущенное действие за выполненное.
 
-## Package contents
+## Что внутри
 
-- `SKILL.md` routes the workflow and approval gates.
-- `references/creator-studio.md` is the current workflow and command reference.
-- `scripts/creator_studio.py` and `studio/` create and mutate Studio state.
-- `references/phases/`, `references/state-and-cli.md`, and
-  `scripts/state_cli.py` remain only for explicitly continued legacy projects.
-- `scripts/validate_config.py` validates knowledge and adapter declarations.
-- `config.example.json` is a portable configuration example.
-- `scripts/creator_studio_bot.py` is an optional owner-only Telegram controller;
-  importing or using the core does not start it.
+- `SKILL.md` объясняет агенту порядок работы и где нужно согласие пользователя.
+- `references/getting-started.md` — первые шаги для пользователя.
+- `references/creator-studio.md` — подробный справочник команд для агента.
+- `scripts/creator_studio.py` и `studio/` сохраняют проекты и открывают их в браузере.
+- `scripts/creator_studio_bot.py` при отдельном ручном запуске подключает Telegram.
+- `references/phases/`, `references/state-and-cli.md` и `scripts/state_cli.py`
+  нужны только для продолжения старых проектов, которые уже используют этот формат.
 
-## Install and remove
+## Установка и удаление
 
-Place this entire folder in the skills directory documented by your agent
-runtime, without renaming files inside it. To remove the skill, delete only the
-copy or link you installed. Video project folders are separate and must not be
-removed with the skill.
+Пользоваться навыком и настраивать свои инструкции можно по [авторским условиям](LICENSE).
+Код движка меняется только по согласованию с владельцем. Для личных материалов
+используйте отдельную папку — так их не затронет обновление навыка.
 
-## Start a new project locally
+Поместите всю эту папку в каталог навыков, указанный в документации вашего
+агента, и не переименовывайте файлы внутри. При удалении навыка удаляйте только
+установленную копию или ссылку. Папки с вашими проектами должны храниться
+отдельно; при удалении навыка их сохраняйте.
 
-From this package directory:
+## Первый проект
+
+Папка проектов должна находиться вне установленной копии навыка. Откройте
+терминал в каталоге `skills/aimaster` и выполните:
 
 ```bash
 AIMASTER_WORKSPACE="$HOME/Documents/AI-Master-Projects"
@@ -34,22 +37,20 @@ python3 scripts/creator_studio.py project create "$AIMASTER_WORKSPACE" first-vid
   --title "First video" --type video --mode guided
 ```
 
-The browser is optional. Start it only when the user wants the dashboard:
+Страница проекта в браузере необязательна. Открывайте её, только когда она нужна:
 
 ```bash
 python3 scripts/creator_studio.py serve "$AIMASTER_WORKSPACE" --port 0
 ```
 
-Read [the Studio reference](references/creator-studio.md) for stages, positions,
-chat commands and grants. This package is self-contained: Studio operation does
-not depend on the repository demo, a personal profile, ffmpeg, or an external
-validator.
+Начните с [инструкции для пользователя](references/getting-started.md). Стадии,
+точные команды и правила согласования описаны в
+[справочнике для агента](references/creator-studio.md).
 
-The Studio core and CLI use local files and loopback HTTP. The optional bot
-entrypoint makes limited Telegram Bot API requests only when a user explicitly
-launches it with owner-only environment configuration. It is a controller, not
-an LLM or speech recognizer, and cannot wake an inactive creative agent.
+Основная работа идёт с локальными файлами. Telegram подключается только после
+явного ручного запуска и только для указанного владельца; сам по себе он не
+запускает агента и не создаёт материалы.
 
-For an existing legacy `state_cli.py` project, keep using its old phase and
-state references. Never mix the legacy and Studio layouts in one project or
-migrate one implicitly into the other.
+Если старый проект уже использует `state_cli.py`, продолжайте работать с ним по
+старым справочным файлам. Не смешивайте два формата в одной папке и не переносите
+проект между ними без отдельного решения.
