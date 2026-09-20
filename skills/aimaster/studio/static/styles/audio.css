@@ -1,0 +1,113 @@
+.step-audio {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.step-audio > h2,
+.audio-layer-card h3 {
+  margin: 0;
+}
+
+.audio-step-hint,
+.audio-coverage,
+.audio-voices {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.audio-layer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+}
+
+.audio-layer-card[data-status="accepted"] {
+  border-color: #bfe2cc;
+}
+
+.audio-layer-header,
+.audio-voices,
+.audio-player-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.audio-coverage {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.audio-status-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.audio-status-chip[data-status="accepted"] {
+  background: var(--color-accent-bg);
+  color: var(--color-accent-strong);
+}
+
+.audio-voice-chip {
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: #eef3fa;
+  color: #2f4e76;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.audio-voice-missing {
+  color: var(--color-attention);
+  font-size: 12px;
+}
+
+.audio-wave {
+  display: flex;
+  align-items: end;
+  gap: 2px;
+  height: 56px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--color-surface-sunken);
+}
+
+.audio-wave-bar {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--color-accent);
+}
+
+.audio-wave-bar-2 { height: 12px; }
+.audio-wave-bar-3 { height: 17px; }
+.audio-wave-bar-4 { height: 22px; }
+.audio-wave-bar-5 { height: 28px; }
+.audio-wave-bar-6 { height: 34px; }
+.audio-wave-bar-7 { height: 42px; }
+
+.audio-player {
+  flex: 1 1 320px;
+  min-width: 220px;
+  max-width: 100%;
+}
+
+.audio-open-button {
+  min-height: 44px;
+}
+
+@media (max-width: 900px) {
+  .audio-layer-card { padding: 16px; }
+  .audio-coverage { width: 100%; margin-left: 0; }
+}

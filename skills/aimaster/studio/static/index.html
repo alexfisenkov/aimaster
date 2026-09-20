@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Мастерская</title>
+    <link rel="stylesheet" href="/static/styles/tokens.css" />
+    <link rel="stylesheet" href="/static/styles/base.css" />
+    <link rel="stylesheet" href="/static/styles/layout.css" />
+    <link rel="stylesheet" href="/static/styles/media.css" />
+    <link rel="stylesheet" href="/static/styles/scenario.css" />
+    <link rel="stylesheet" href="/static/styles/step-scenario.css" />
+    <link rel="stylesheet" href="/static/styles/plan.css" />
+    <link rel="stylesheet" href="/static/styles/audio.css" />
+    <link rel="stylesheet" href="/static/styles/assembly.css" />
+    <link rel="stylesheet" href="/static/styles/positions.css" />
+    <link rel="stylesheet" href="/static/styles/actions.css" />
+    <link rel="stylesheet" href="/static/styles/shell.css" />
+    <link rel="stylesheet" href="/static/styles/history.css" />
+    <link rel="stylesheet" href="/static/styles/more-menu.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Перейти к содержимому</a>
+
+    <button
+      type="button"
+      class="rail-backdrop"
+      data-hook="rail-backdrop"
+    >
+      <span class="visually-hidden">Закрыть панель проектов</span>
+    </button>
+
+    <div class="app-shell">
+      <header class="topbar" data-hook="topbar">
+        <button
+          type="button"
+          class="topbar-menu-toggle"
+          data-hook="rail-toggle"
+          aria-expanded="false"
+          aria-controls="project-rail"
+        >
+          <span class="topbar-menu-icon" aria-hidden="true"></span>
+          <span class="visually-hidden">Открыть панель проектов</span>
+        </button>
+        <div class="topbar-brand">
+          <span class="topbar-brand-mark" aria-hidden="true"></span>
+          <span>AI Мастерская</span>
+        </div>
+        <div class="topbar-content" data-hook="topbar-content"></div>
+      </header>
+
+      <aside
+        class="project-rail"
+        id="project-rail"
+        data-hook="project-rail"
+        aria-label="Проекты"
+      ></aside>
+
+      <main class="main-content" id="main" data-hook="main" tabindex="-1"></main>
+
+      <aside
+        class="history-panel"
+        data-hook="history-panel"
+        aria-label="История решений"
+        hidden
+      ></aside>
+    </div>
+
+    <div
+      class="visually-hidden"
+      data-hook="live-region"
+      role="status"
+      aria-live="polite"
+    ></div>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>

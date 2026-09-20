@@ -1,0 +1,70 @@
+.card-actions-buttons {
+  position: relative;
+}
+
+.more-menu {
+  position: static;
+  display: inline-flex;
+}
+
+.more-menu-trigger {
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: 9px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.more-menu-popup {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.more-menu-popup[hidden] {
+  display: none;
+}
+
+.more-menu-control,
+.more-menu-popup > .card-comment-wrap,
+.more-menu-popup > .card-reorder-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
+.more-menu-popup .card-action-button,
+.more-menu-popup .card-reorder-button {
+  width: 100%;
+  text-align: left;
+}
+
+.more-menu-item {
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+  font-size: 13px;
+}
+
+.more-menu-item:hover {
+  background: var(--color-surface-sunken);
+}

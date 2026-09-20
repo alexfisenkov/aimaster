@@ -1,0 +1,506 @@
+/*
+ * Scenario surface: stage-1 script panel (ui/scenario.js) and, from
+ * image_plan onward, the two-pane scene-block/timeline layout
+ * (ui/scenario.js + ui/timeline.js). Tokens only, from styles/tokens.css --
+ * `.media-version-badge`/`.media-current-badge` are reused as-is from
+ * styles/media.css rather than redefined here.
+ */
+
+.scenario {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Stage 1: whole-script panel.                                           */
+/* ---------------------------------------------------------------------- */
+
+.scenario-script {
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.script-version-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.script-version {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.script-version[data-selected="true"] {
+  border-width: 2px;
+  border-color: #bfe2cc;
+  background: #f6fbf8;
+}
+
+.script-version-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.script-version-reason {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.script-version-text {
+  font-size: var(--font-size-base);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* Task 14 leftover 5: the read-only approved-script summary's own
+   collapsed version rows (ui/scenario.js's buildCollapsedScriptVersionItem)
+   -- native <details>/<summary>, so no extra script owns the toggle. The
+   summary row reuses `.script-version-meta`'s own layout instead of a
+   third copy of the same flex recipe. */
+.script-version-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  list-style: none;
+}
+
+.script-version-summary::-webkit-details-marker {
+  display: none;
+}
+
+.script-version-summary::before {
+  content: "\25B8";
+  color: var(--color-text-subtle);
+  transition: transform var(--transition-fast);
+}
+
+.script-version-details[open] > .script-version-summary::before {
+  transform: rotate(90deg);
+}
+
+.script-version-details .script-version-text {
+  margin-top: var(--space-2);
+}
+
+.scenario-questions .question-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.question-entry {
+  border: 1px solid var(--color-attention);
+  background: var(--color-attention-bg);
+  border-radius: var(--radius-md);
+}
+
+.question-entry-button {
+  display: block;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: var(--space-3);
+  color: var(--color-attention);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-align: left;
+}
+
+.scenario-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.scenario-approve-button,
+.scenario-revise-button {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+}
+
+.scenario-approve-button {
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.scenario-approve-button:disabled,
+.scenario-revise-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.scenario-revise-button {
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+}
+
+.scenario-action-status {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  min-height: 1em;
+}
+
+/* Repair, 2026-09-17 (ticket 06 condition 2): the read-only script echo
+   shown from image_plan onward, above the per-scene blocks or the "Сцены
+   ещё не созданы" empty state -- spec's "завершённая стадия не исчезает". */
+.scenario-script-approved {
+  margin-bottom: var(--space-4);
+}
+
+/* Ticket 16 (G05): "Вернуться к сценарию" -- appended after the read-only
+   approved-script echo, on every "scenes" stage other than the reopened
+   `scenario` one itself. Reuses styles/actions.css's own `.card-*` button/
+   confirm-form/status classes (`.card-comment-wrap`, `.card-confirm-form`,
+   `.card-comment-actions`, `.card-action-button`, `.card-action-status`,
+   `.card-busy-notice`) so this one extra control looks and behaves exactly
+   like every other confirm-guarded action in this codebase -- this rule
+   only places it under the summary with the same rhythm as the rest of the
+   panel. */
+.scenario-reopen {
+  margin-top: var(--space-3);
+}
+
+/* Ticket 16: the reopened panel itself (`buildReopenedScriptPanel`) --
+   same look as `.scenario-script-approved`, plus the live approve/revise
+   row it carries instead of the "Одобрен" badge; `.scenario-actions` above
+   already styles that row identically to stage 1's own. */
+.scenario-script-reopened {
+  margin-bottom: var(--space-4);
+}
+
+/* ---------------------------------------------------------------------- */
+/* image_plan onward: two-pane layout -- timeline (left) + scene blocks.  */
+/* ---------------------------------------------------------------------- */
+
+.scenario-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Repair, 2026-09-17 (ticket 06 condition 7): "Все сцены" -- clears the
+   scene selection and returns the inspector to whole-project materials. */
+.scenario-panel-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.scenario-deselect-button {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  font-weight: 600;
+}
+
+.scenario-deselect-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.scenario-block-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.scenario-block {
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.scenario-block[data-selected="true"] {
+  border-width: 2px;
+  border-color: #bfe2cc;
+}
+
+.scenario-block-select {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  background: var(--color-surface-sunken);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.scenario-block[data-selected="true"] .scenario-block-select {
+  background: #f6fbf8;
+}
+
+.scenario-block-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-surface-inverse);
+  color: var(--color-text-on-inverse);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.scenario-block-range {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+.scenario-block-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.scenario-block-text {
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.scenario-block-overlap-badge,
+.scenario-block-linkage-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.scenario-block-overlap-badge {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+
+.scenario-block-linkage-badge {
+  color: var(--color-attention);
+  background: var(--color-attention-bg);
+}
+
+/* --- inline scene edit form --- */
+
+.scenario-edit-toggle {
+  align-self: flex-start;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  font-weight: 600;
+}
+
+.scenario-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+/* `display:flex` above would otherwise win over the UA stylesheet's own
+   `[hidden] { display: none }` rule (an author class selector always beats
+   that default-priority attribute selector) -- caught live in the browser
+   gate, where the form rendered permanently open. */
+.scenario-edit-form[hidden] {
+  display: none;
+}
+
+.scenario-edit-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.scenario-edit-textarea {
+  min-height: 96px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-surface);
+  font-size: 13px;
+  resize: vertical;
+}
+
+.scenario-edit-reason {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  font-size: 16px;
+}
+
+.scenario-edit-status {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  min-height: 1em;
+}
+
+.scenario-edit-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.scenario-edit-actions button {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+}
+
+.scenario-edit-actions button[type="submit"] {
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.scenario-edit-actions button[type="button"] {
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Media scene tags (ui/media.js) made clickable by this task -- the      */
+/* "плеер вёл к сцене" link back to the scenario/timeline. The shared     */
+/* `.media-scene-tag` look itself is styles/media.css's own rule (task 07,*/
+/* out of this task's zone); this only adds the interactive affordance    */
+/* the `-button` modifier class needs, since base.css's plain `button`    */
+/* reset alone gives no visual hint that it is clickable.                 */
+/* ---------------------------------------------------------------------- */
+
+.media-scene-tag-button {
+  cursor: pointer;
+  /* Repair, 2026-09-17 (ticket 06 condition 6: "Цели меток сцен -- не
+     меньше 44 px"). The shared `.media-scene-tag` pill (styles/media.css)
+     has no minimum size of its own -- correct for the plain, non-
+     interactive span variant, but this button modifier is a real tap
+     target and needs one explicitly. `min-height` alone (not `min-width`)
+     keeps a multi-word label from being forced needlessly wide while
+     still meeting the target on the dimension a short label could
+     otherwise fail on. */
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-2);
+}
+
+.media-scene-tag-button:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent-strong);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Timeline panel (ui/timeline.js).                                       */
+/* ---------------------------------------------------------------------- */
+
+/* Mobile: natural DOM order (scenario.js appends the scenario panel, then
+   ui/timeline.js's nav, into the same `.scenario-layout`) already reads
+   scenario before timeline, matching spec §10's mobile stacking order --
+   no `order` override needed here. Desktop's grid-template-areas below
+   repositions the timeline visually to the left independent of that DOM
+   order, without touching reading order. */
+
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.timeline-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  text-align: left;
+}
+
+.timeline-entry[data-selected="true"] {
+  border-width: 2px;
+  border-color: var(--color-accent);
+  background: var(--color-accent-bg);
+}
+
+.timeline-entry-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-surface-sunken);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.timeline-entry-range {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.timeline-entry-overlap {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Desktop: timeline becomes a narrow left rail beside the scene blocks.  */
+/* Placed via grid-template-areas, independent of DOM order, so the       */
+/* mobile "scenario before timeline" reading order above needs no        */
+/* override here.                                                        */
+/* ---------------------------------------------------------------------- */
+
+@media (min-width: 901px) {
+  .scenario-layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-areas: "timeline scenario";
+    align-items: start;
+    gap: var(--space-4);
+  }
+
+  .timeline-panel {
+    grid-area: timeline;
+    position: sticky;
+    top: var(--space-4);
+  }
+
+  .scenario-panel {
+    grid-area: scenario;
+    min-width: 0;
+  }
+}

@@ -1,0 +1,15 @@
+# State and CLI
+
+This is `state_cli.py`'s own state and CLI — a separate system from the optional
+[Creator Studio dashboard](creator-studio.md) and its `creator_studio.py`/`state.json`
+schema; do not mix the two in one project folder.
+
+`state.json` is the only current-state source. It is JSON (and therefore human-readable YAML 1.2), stored inside one video's project folder. Use `python3 scripts/state_cli.py --help` and subcommand help for the public interface.
+
+Core commands: `init`, `add-shot`, `edit-shot`, `revise`, `approve`, `approve-shot`, `advance`, `capability`, `qa`, `blocker`, and `handoff`. `init` refuses an existing `state.json`; use `--config` and `--check-required-files` for validated onboarding, and `--assumptions-json` to persist autopilot assumptions. The selected mode never changes inside a run. `add-shot` and `edit-shot` work only in `storyboard`; each edit appends history for that `shot_id`, preserves every other shot, and resets storyboard approval. `revise` preserves prompt, settings, adapter, target-model decision, QA, reason, provenance, and artifact reference, but only in its matching `images` or `motion` stage. Its artifact must already exist as a file physically contained by the project root. `approve-shot` works only in the matching stage and rechecks the active artifact plus technical QA; visual QA remains separate. `advance` accepts only the next stage. `qa` records project-level technical and visual outcomes; `blocker` keeps open and resolved blockers explicit. `handoff` is available in `assembly`, records the assembly outcome, and includes sources, active artifacts, order, durations, script, comments, QA, capabilities, and blockers without executing external actions. Both handoff and completion revalidate every active image and motion artifact at point of use; post-approval deletion or symlink escape is rejected. State mutation and handoff reject absolute, traversal, and personal artifact paths.
+
+Capability IDs are exactly `transcription`, `knowledge`, `image_generation`, `image_to_video`, `visual_inspection`, `file_delivery`, `montage`, `telegram_transport`, `design_social_context`, and `agent_handoff`. A fallback is complete only at `fallback_accepted`; `fallback_prepared` remains handoff work. Completion requires the handoff artifact to exist, passed technical QA for all active revisions and the project, explicit visual QA with a reason when it was not run, no unresolved capability, and no open blocker.
+
+Every mutation writes through a flushed and fsynced temporary file followed by atomic replacement. Before replacing an existing state, the CLI atomically writes its last valid contents to `state.previous.json`. Use that file for recovery after an interrupted or failed mutation; do not treat it as a second current-state source.
+
+Keep brief/transcript, storyboard, prompts, images, video, QA, and handoff artifacts in separate project subfolders. All recorded artifact paths and handoff output paths must be relative to the project folder.

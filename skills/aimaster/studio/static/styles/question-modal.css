@@ -1,0 +1,367 @@
+/*
+ * Question modal (ui/question-dialog.js + ui/question-panel.js, re-exported
+ * from ui/question-modal.js -- ticket 14) -- the dashboard's own answer
+ * surface for the shared Question contract (spec §6). Overlay shape
+ * mirrors styles/media.css's `.media-viewer-*` (fixed, centered, backdrop
+ * + shadowed surface) but stays a separate file/class family, as the
+ * ticket's own zone requires -- the two dialogs are never open together,
+ * but nothing here assumes that.
+ *
+ * Concept: docs/design/concepts/ai-workshop-question-modal.png. The
+ * primary "Продолжить" button there reads as near-black, not the app's
+ * usual green accent (`--color-accent`, used for approve/accept elsewhere)
+ * -- `--color-surface-inverse`/`--color-text-on-inverse` (tokens.css)
+ * already exist for exactly that dark-surface pairing and are reused
+ * as-is here rather than inventing a new token pair for one button.
+ *
+ * Also styles the always-visible "Вопросы" panel (ui/question-panel.js's
+ * `renderQuestionsPanel`) -- the entry point that stays reachable even at
+ * `blocked` with no scenario yet (ticket 14).
+ */
+
+/* ---------------------------------------------------------------------- */
+/* Overlay                                                                 */
+/* ---------------------------------------------------------------------- */
+
+.question-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+}
+
+.question-modal-overlay[hidden] {
+  display: none;
+}
+
+.question-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: rgba(23, 24, 26, 0.72);
+}
+
+.question-modal-dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: min(92vw, 560px);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
+}
+
+.question-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.question-modal-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+}
+
+.question-modal-close {
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-lg);
+  line-height: 1;
+  color: var(--color-text-muted);
+}
+
+.question-modal-close::before {
+  content: "\2715";
+}
+
+.question-modal-close:hover {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+}
+
+.question-modal-title {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  line-height: var(--line-height-tight);
+}
+
+.question-modal-subtitle {
+  margin-top: calc(-1 * var(--space-2));
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.question-modal-subtitle:empty {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Options                                                                 */
+/* ---------------------------------------------------------------------- */
+
+.question-modal-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.question-modal-options[hidden] {
+  display: none;
+}
+
+.question-modal-option {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.question-modal-option[data-selected="true"] {
+  border-color: var(--color-focus-ring);
+  background: var(--color-accent-bg);
+}
+
+.question-modal-option-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  cursor: pointer;
+}
+
+.question-modal-option-input {
+  /* Native control, not hidden -- state is carried by :checked itself, the
+     one signal every input method (mouse, keyboard, screen reader) shares;
+     `data-selected` on the row is a *visual* echo of the same fact, never
+     the only one (spec §10, "цвет не единственный носитель состояния"). */
+  margin-top: 3px;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--color-focus-ring);
+  flex-shrink: 0;
+}
+
+.question-modal-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.question-modal-option-label {
+  font-weight: 600;
+}
+
+.question-modal-option-description {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.question-modal-free-text-wrap {
+  border: none;
+}
+
+.question-modal-free-text-wrap .question-modal-custom-label {
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------------- */
+/* "Свой вариант"                                                         */
+/* ---------------------------------------------------------------------- */
+
+.question-modal-custom[hidden] {
+  display: none;
+}
+
+.question-modal-custom-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.question-modal-custom-textarea {
+  min-height: 88px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: var(--font-size-base);
+  font-family: inherit;
+  color: var(--color-text);
+  resize: vertical;
+}
+
+/* Ticket 14 repair, condition 8: the field's own format constraints
+   (length/pattern/allowed values), shown proactively -- before any submit
+   attempt, not only as a rejection inside .question-modal-status after
+   one. */
+.question-modal-hint {
+  margin-top: var(--space-1);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-sm);
+}
+
+.question-modal-hint:empty {
+  display: none;
+}
+
+.question-modal-custom-counter {
+  display: block;
+  margin-top: var(--space-1);
+  text-align: right;
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-sm);
+}
+
+.question-modal-custom-counter[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Status + footer                                                        */
+/* ---------------------------------------------------------------------- */
+
+.question-modal-status {
+  min-height: 1em;
+  color: var(--color-attention);
+  font-size: var(--font-size-sm);
+}
+
+.question-modal-status:empty {
+  display: none;
+}
+
+.question-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.question-modal-defer,
+.question-modal-submit {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+}
+
+.question-modal-defer {
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+}
+
+.question-modal-defer:hover {
+  background: var(--color-surface-sunken);
+}
+
+/* Deliberately not `--color-accent` (green, "approve/accept" elsewhere) --
+   see the file banner: the concept's own primary button here is a dark,
+   near-black surface, matched with the existing inverse-surface tokens. */
+.question-modal-submit {
+  background: var(--color-surface-inverse);
+  color: var(--color-text-on-inverse);
+}
+
+.question-modal-submit:hover {
+  background: #000000;
+}
+
+.question-modal-defer:disabled,
+.question-modal-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Accepted-answer read-only view (409 already_answered on this modal's   */
+/* own submit -- ui/question-modal.js's showAcceptedAnswer).              */
+/* ---------------------------------------------------------------------- */
+
+.question-modal-accepted[hidden] {
+  display: none;
+}
+
+.question-modal-accepted-text {
+  color: var(--color-text);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Always-visible questions panel (ui/question-modal.js's                 */
+/* renderQuestionsPanel) -- reachable even at `blocked` with no scenario.  */
+/* ---------------------------------------------------------------------- */
+
+.questions-panel {
+  border: 1px solid var(--color-attention);
+  border-radius: var(--radius-lg);
+  background: var(--color-attention-bg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.questions-panel h2 {
+  font-size: var(--font-size-md);
+  color: var(--color-text);
+}
+
+.questions-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.questions-panel-item {
+  display: block;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  text-align: left;
+  font-weight: 600;
+}
+
+.questions-panel-item:hover {
+  background: var(--color-surface-sunken);
+}
+
+.questions-panel-item-text {
+  display: block;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Narrow screens: dialog fills the viewport width, footer stacks so both  */
+/* buttons keep a full 44px tap target (spec §10).                        */
+/* ---------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .question-modal-overlay {
+    padding: var(--space-3);
+  }
+
+  .question-modal-dialog {
+    width: 100%;
+  }
+
+  .question-modal-footer {
+    flex-direction: column-reverse;
+  }
+
+  .question-modal-defer,
+  .question-modal-submit {
+    width: 100%;
+  }
+}

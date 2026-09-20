@@ -1,0 +1,415 @@
+/*
+ * References, versioned prompts, image/video result cards and the shared
+ * lightbox/player overlay (ui/media.js, ui/viewer.js). Tokens only, from
+ * styles/tokens.css -- no new colors or spacing scale.
+ */
+
+/* ---------------------------------------------------------------------- */
+/* Shared small pieces: badges, tags, captions, placeholders, empty state. */
+/* ---------------------------------------------------------------------- */
+
+.media-version-badge,
+.media-scene-tag,
+.media-status-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-surface-sunken);
+}
+
+.media-version-badge {
+  color: var(--color-text);
+}
+
+.media-status-tag {
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+  border-color: transparent;
+}
+
+.media-status-tag[data-tone="neutral"] {
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+}
+
+.media-status-tag[data-tone="attention"] {
+  color: var(--color-attention);
+  background: var(--color-attention-bg);
+}
+
+.media-status-tag[data-tone="danger"] {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+
+.media-status-tag[data-tone="success"] {
+  color: var(--color-accent-strong);
+  background: var(--color-accent-bg);
+}
+
+/* "Текущая" / "Скрыто" -- state carried by visible text, not only by the
+   color these otherwise share with .media-status-tag. */
+.media-current-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-accent-strong);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-accent-strong);
+}
+
+.media-hidden-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border-strong);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.media-item-caption {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  overflow-wrap: break-word;
+}
+
+.media-empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* Safe placeholder for a broken/deleted asset -- neutral tone, readable
+   text, never a blank box or a browser broken-image icon. Sized to match
+   whatever thumbnail slot it replaces via the parent button's aspect-ratio. */
+.media-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 96px;
+  background: #eceef0;
+  border-radius: 12px;
+  text-align: center;
+  padding: var(--space-2);
+}
+
+.media-placeholder p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Reference groups (inspector).                                          */
+/* ---------------------------------------------------------------------- */
+
+.media-reference-group-label {
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-2);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.media-reference-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.media-reference-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.media-reference-item[data-selected="true"] .media-thumb-button {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.media-thumb-button {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  min-height: var(--touch-target-min);
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+}
+
+.media-thumb-button img,
+.media-thumb-button video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.media-duration-badge {
+  position: absolute;
+  right: var(--space-1);
+  bottom: var(--space-1);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: rgba(23, 24, 26, 0.72);
+  color: var(--color-text-on-inverse);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Versioned prompts (inspector).                                         */
+/* ---------------------------------------------------------------------- */
+
+.media-prompt-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.media-prompt-entry {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.media-prompt-entry[data-selected="true"] {
+  /* Border width changes, not only its color: the base entry always has a
+     1px border, so a color-only swap here would be a color-only state
+     cue. */
+  border-width: 2px;
+  border-color: var(--color-accent);
+  background: var(--color-accent-bg);
+}
+
+.media-prompt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.media-prompt-text {
+  font-size: var(--font-size-sm);
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Image/video result galleries (main surface).                           */
+/* ---------------------------------------------------------------------- */
+
+.media-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+.media-result-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+  padding: var(--space-3);
+}
+
+.media-result-card[data-selected="true"] {
+  /* Border width changes, not only its color -- same reasoning as
+     .media-prompt-entry above. */
+  border-width: 2px;
+  border-color: #bfe2cc;
+}
+
+.media-result-card[data-hidden="true"] {
+  opacity: 0.6;
+}
+
+.media-result-card .media-thumb-button {
+  aspect-ratio: 16 / 9;
+}
+
+/* A result whose generation hasn't produced a file yet (ui/media.js's
+   `notYetGenerated`) uses this same button, disabled, so its layout matches
+   a loaded sibling card; the dimmed, default (not pointer) cursor keeps it
+   from looking clickable when there is nothing to open. */
+.media-thumb-button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.media-item-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.media-item-footer .media-item-caption {
+  flex-basis: 100%;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Lightbox / native player overlay.                                      */
+/* ---------------------------------------------------------------------- */
+
+.media-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+}
+
+.media-viewer-overlay[hidden] {
+  display: none;
+}
+
+.media-viewer-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: rgba(23, 24, 26, 0.72);
+}
+
+.media-viewer-dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: min(90vw, 1100px);
+  max-height: 90vh;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
+}
+
+.media-viewer-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.media-viewer-toolbar button {
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  font-weight: 600;
+}
+
+.media-viewer-toolbar button:hover {
+  background: var(--color-surface-sunken);
+}
+
+.media-viewer-body {
+  display: flex;
+  min-height: 200px;
+  overflow: auto;
+  /* No align-items/justify-content:center here -- on a scrollable flex
+     container, centering via alignment clips the "negative" side of any
+     overflow (the browser never lets you scroll to it), which is exactly
+     why a zoomed-in image used to be unreachable at its top/left edge.
+     Centering instead comes from margin:auto on the single flex child
+     (.media-viewer-image/.media-viewer-video below) -- a real, resolved
+     margin rather than an alignment offset, so once the content overflows
+     the auto margins collapse toward 0 and the full scrollable area,
+     starting at the very top-left corner, stays reachable. */
+}
+
+.media-viewer-image {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: auto;
+  border-radius: var(--radius-md);
+  cursor: default;
+  transition: transform var(--transition-base);
+}
+
+/* Zoom-in affordance only where zooming is actually possible -- mirrors
+   the "Увеличить" button's own hidden state: ui/viewer.js's configureZoom
+   sets data-zoomable from the same resolveZoomTarget() plan that decides
+   zoomButton.hidden, so this never shows on an image already displayed at
+   its full natural size (nowhere further to grow). */
+.media-viewer-image[data-zoomable="true"] {
+  cursor: zoom-in;
+}
+
+.media-viewer-image[data-zoomed="true"] {
+  /* Width/height come from an inline style (ui/viewer.js's toggleZoom, set
+     to the image's real natural pixel size via resolveZoomTarget) -- a
+     fixed pixel target, not a CSS percentage: a percentage here would
+     resolve against .media-viewer-body's auto (shrink-to-fit) width, which
+     cannot guarantee the zoomed image ends up any bigger than it already
+     was. These two only lift the *unzoomed* rule's caps so the inline size
+     can take effect. */
+  max-width: none;
+  max-height: none;
+  cursor: zoom-out;
+}
+
+.media-viewer-video {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: auto;
+  border-radius: var(--radius-md);
+  background: #000;
+}
+
+.media-viewer-caption {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+.media-viewer-caption:empty {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Narrow screens: tighter grids, dialog fills the viewport width.        */
+/* ---------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .media-reference-group {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .media-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  .media-viewer-overlay {
+    padding: var(--space-3);
+  }
+
+  .media-viewer-dialog {
+    max-width: 100%;
+  }
+}

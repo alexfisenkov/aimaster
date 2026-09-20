@@ -1,0 +1,710 @@
+/*
+ * Two-zone shell: project rail | project surface. The former inspector is
+ * deliberately retained below only as rollback CSS; Task 33 removes it from
+ * the live grid and uses the fixed history sheet instead.
+ */
+
+:root {
+  --shell-breakpoint: 900px;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  /* auto, not a fixed length: a long title/type/mode/status combination
+     must be able to wrap and grow the row rather than get clipped or
+     encroach on the main/inspector row below it. */
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "rail topbar"
+    "rail main";
+  min-height: 100vh;
+  max-width: var(--shell-max-width);
+  margin-inline: 0;
+  background: var(--color-bg);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Top bar: title, result type, creative mode (display-only), status.     */
+/* ---------------------------------------------------------------------- */
+
+.topbar {
+  grid-area: topbar;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: var(--space-2);
+  column-gap: var(--space-4);
+  min-height: var(--topbar-height);
+  padding: 26px 30px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+  min-width: 0;
+}
+
+.topbar-brand {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 800;
+  font-size: var(--font-size-base);
+  flex: 0 0 auto;
+}
+
+.topbar-brand-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, #e9ebed, #9aa1a8);
+  flex: 0 0 auto;
+}
+
+.topbar-menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  border-radius: var(--radius-sm);
+  flex: 0 0 auto;
+  /* The rail is `position: fixed` and covers the full viewport height,
+     including this button's spot in the static-positioned top bar. Its
+     own stacking context above the rail (z-index 60) and the backdrop
+     (55) keeps it clickable to close the panel while the panel is open. */
+  position: relative;
+  z-index: 61;
+}
+
+.topbar-menu-toggle:hover {
+  background: var(--color-surface-sunken);
+}
+
+.topbar-menu-icon,
+.topbar-menu-icon::before,
+.topbar-menu-icon::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.topbar-menu-icon {
+  position: relative;
+}
+
+.topbar-menu-icon::before,
+.topbar-menu-icon::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+
+.topbar-menu-icon::before {
+  top: -6px;
+}
+
+.topbar-menu-icon::after {
+  top: 6px;
+}
+
+.topbar-identity {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  justify-content: center;
+}
+
+.topbar-title {
+  /* No ellipsis/nowrap: the title must wrap in full, never truncate. */
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.18;
+  letter-spacing: -0.01em;
+  overflow-wrap: break-word;
+}
+
+.topbar-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-subtle);
+  font-size: 12px;
+  order: -1;
+}
+
+.topbar-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 0 0 auto;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  border: 0;
+}
+
+.status-pill::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.status-pill[data-tone="ready"] {
+  color: var(--color-accent-strong);
+  background: var(--color-accent-bg);
+  border-color: transparent;
+}
+
+.status-pill[data-tone="attention"] {
+  color: var(--color-attention);
+  background: var(--color-attention-bg);
+  border-color: transparent;
+}
+
+.status-pill[data-tone="danger"] {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border-color: transparent;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Project rail: brand, search, filters, project index, channel link.     */
+/* ---------------------------------------------------------------------- */
+
+.project-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 0;
+  background: var(--color-surface-inverse);
+  color: var(--color-text-on-inverse);
+}
+
+.rail-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 18px 16px 16px;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.rail-brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, #e9ebed, #9aa1a8);
+  flex: 0 0 auto;
+}
+
+.rail-search {
+  padding: 0 16px 12px;
+}
+
+.rail-search-label {
+  /* Real, visible caption: the placeholder alone measures well under
+     4.5:1 and disappears once typing starts, so it cannot be the field's
+     only description. */
+  display: block;
+  margin-bottom: var(--space-1);
+  color: #8e959d;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.rail-search input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #2f343a;
+  border-radius: 9px;
+  background: #191c20;
+  color: #e9ebed;
+  /* >=16px, not --font-size-base (15px): below 16px, iOS Safari zooms the
+     whole page in on focus instead of just showing the keyboard. */
+  font-size: 16px;
+}
+
+.rail-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0 16px 12px;
+}
+
+.rail-filters button {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid #2f343a;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9aa1a8;
+  background: transparent;
+}
+
+.rail-filters button[aria-pressed="true"] {
+  background: #e9ebed;
+  border-color: #e9ebed;
+  color: #101215;
+}
+
+.rail-list-region {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+
+.rail-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.rail-project {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  text-align: left;
+  min-height: 52px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+
+.rail-project:hover {
+  background: #191c20;
+}
+
+.rail-project[aria-current="true"] {
+  position: relative;
+  background: #1e2226;
+  border-color: transparent;
+}
+
+.rail-project[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 10px auto 10px 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-accent);
+}
+
+.rail-project-title {
+  font-weight: 600;
+  color: #e9ebed;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.rail-project-meta {
+  font-size: 11px;
+  color: #9aa1a8;
+}
+
+.rail-empty {
+  padding: var(--space-4) var(--space-3);
+  color: #9aa1a8;
+  font-size: var(--font-size-sm);
+}
+
+.rail-mode {
+  margin: 12px 16px 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: #191c20;
+}
+
+.rail-mode-heading {
+  margin-bottom: 8px;
+  color: #8e959d;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.rail-mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 9px;
+  background: #101215;
+}
+
+.rail-mode-option {
+  min-height: 32px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  color: #9aa1a8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rail-mode-option[data-selected="true"] {
+  background: #e9ebed;
+  color: #101215;
+}
+
+.rail-mode-hint {
+  margin-top: 10px;
+  color: #8e959d;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.rail-footer {
+  padding: 12px 16px 16px;
+  border-top: 1px solid #2f343a;
+}
+
+.rail-channel-link {
+  /* Text stays small per spec ("маленькая ссылка"); the tap target is
+     still padded up to the 44px minimum, matching how iOS/Android
+     guidelines keep a compact label but a full-size hit area. */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  min-width: var(--touch-target-min);
+  padding-inline: var(--space-2);
+  margin-inline-start: calc(var(--space-2) * -1);
+  color: #8e959d;
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.rail-channel-link:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Main surface: stage steps + scenario slot.                              */
+/* ---------------------------------------------------------------------- */
+
+.main-content {
+  grid-area: main;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  max-width: var(--main-max-width);
+  padding: 26px 30px 70px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.main-content:focus-visible {
+  outline: none;
+}
+
+.stage-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.stage-steps ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stage-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+}
+
+.stage-step[data-current="true"] {
+  /* accent-strong, not accent: white text on the base accent green is
+     only 3.49:1 (fails WCAG AA 4.5:1 at this font size); accent-strong
+     measures ~5.4:1. */
+  color: var(--color-text-on-accent);
+  background: var(--color-surface-inverse);
+  border-color: var(--color-surface-inverse);
+}
+
+.stage-step[data-completed="true"]:not([data-current="true"]) {
+  color: var(--color-accent-strong);
+  border-color: #bfe2cc;
+  background: var(--color-accent-bg);
+}
+
+.stage-step-mark {
+  font-size: var(--font-size-sm);
+  line-height: 1;
+}
+
+.content-slot {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  padding: 22px 24px;
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.blocked-notice {
+  /* Neutral, not an error tone: "blocked" means "waiting on your answer",
+     a normal workflow state, not a failure. Sits above the scenario slot,
+     which stays rendered underneath (spec §9: blocked keeps access to
+     completed stages and does not remove the current stage's slot). */
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-sunken);
+  padding: var(--space-4) var(--space-5);
+  text-align: center;
+}
+
+.blocked-notice h2 {
+  font-size: var(--font-size-md);
+  margin-bottom: var(--space-1);
+}
+
+.blocked-notice p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.empty-state {
+  max-width: 32rem;
+  margin-inline: auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+}
+
+.empty-state h2 {
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+}
+
+.empty-state-action {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-inverse);
+  color: var(--color-text-on-inverse);
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.retry-button {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  font-weight: 600;
+}
+
+.retry-button:hover {
+  background: var(--color-surface-sunken);
+}
+
+/* Skeleton layout used only while status is "loading". */
+.stage-skeleton {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.stage-skeleton .skeleton {
+  height: 18px;
+}
+
+.stage-skeleton .skeleton:first-child {
+  width: 40%;
+  height: 24px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Inspector: slot for tasks 07-08 (versions, references, decisions).     */
+/* ---------------------------------------------------------------------- */
+
+.inspector {
+  grid-area: inspector;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 22px 18px;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.inspector h2 {
+  font-size: var(--font-size-base);
+  margin-bottom: var(--space-2);
+}
+
+.inspector p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Off-canvas backdrop for the rail on narrow screens.                    */
+/* ---------------------------------------------------------------------- */
+
+.rail-backdrop {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Narrow screens: rail becomes an off-canvas panel, inspector stacks.    */
+/* ---------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    /* auto, not a fixed topbar row height -- see the desktop rule above. */
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      "topbar"
+      "main";
+    /* The desktop rule's `min-height: 100vh` has no `1fr` row to absorb it
+       here -- all three rows are `auto`, so CSS Grid's track-sizing
+       "Maximize Tracks" step would otherwise split the leftover 100vh
+       three ways and stretch the topbar's own auto row to roughly a third
+       of the viewport, leaving it empty padding above/below its actual
+       (much shorter) content. On this narrow layout the page is a normal
+       flow document, already given a full-viewport minimum by
+       `body { min-height: 100% }` in base.css, so the shell itself needs
+       no height floor of its own. */
+    min-height: 0;
+  }
+
+  .topbar-menu-toggle {
+    display: inline-flex;
+  }
+
+  .topbar-brand {
+    /* Brand must be visible in the mobile top bar without opening the
+       rail; the rail's own copy stays for desktop, where it is always
+       visible, so it is not also duplicated in the topbar there. */
+    display: inline-flex;
+  }
+
+  .project-rail {
+    position: fixed;
+    inset: 0 18% 0 0;
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform var(--transition-base);
+  }
+
+  .project-rail[data-open="true"] {
+    transform: translateX(0);
+    /* Shadow only while open: applying it to the closed, off-screen panel
+       let a sliver of it bleed in at the viewport edge. */
+    box-shadow: var(--shadow-overlay);
+  }
+
+  .rail-backdrop[data-open="true"] {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(23, 24, 26, 0.4);
+    border: none;
+    padding: 0;
+  }
+
+  /* Open state: the same button now means "close". Its accessible name
+     switches in app.js; here the hamburger's two outer bars rotate into an
+     "✕" (the middle bar hides) and the button itself detaches from the
+     topbar's normal flow to a fixed top-right corner -- inside the
+     backdrop's 18% strip reserved by `.project-rail`'s `inset`, never over
+     the open panel's own brand/search/rows (its 82%-wide content sits to
+     the left of this corner at any width this breakpoint covers). */
+  .topbar-menu-toggle[aria-expanded="true"] {
+    position: fixed;
+    top: var(--space-3);
+    right: var(--space-3);
+    left: auto;
+  }
+
+  .topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon {
+    background: transparent;
+  }
+
+  .topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon::before,
+  .topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon::after {
+    top: 0;
+  }
+
+  .topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon::before {
+    transform: rotate(45deg);
+  }
+
+  .topbar-menu-toggle[aria-expanded="true"] .topbar-menu-icon::after {
+    transform: rotate(-45deg);
+  }
+
+  .inspector {
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .topbar {
+    padding-inline: 16px;
+  }
+
+  .main-content {
+    padding: 18px 16px 48px;
+  }
+}
+
+/* Stage steps and rail project rows keep 44px targets even when the
+   viewport shrinks further (e.g. 200% browser zoom on a phone width). */
+@media (max-width: 480px) {
+  .app-shell {
+    max-width: 100%;
+  }
+
+  .topbar-title {
+    font-size: var(--font-size-md);
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "knowledge_sources": [
+    {
+      "id": "brand-guide",
+      "kind": "file",
+      "location": "knowledge/brand-guide.md",
+      "required": true
+    },
+    {
+      "id": "reference-page",
+      "kind": "url",
+      "location": "https://example.com/reference",
+      "required": false
+    }
+  ],
+  "adapters": [
+    {
+      "id": "manual-image-package",
+      "capability": "image_generation",
+      "kind": "manual",
+      "enabled": true
+    },
+    {
+      "id": "manual-motion-package",
+      "capability": "image_to_video",
+      "kind": "manual",
+      "enabled": true
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+# Служебное: отчёты критики, черновики, журналы.
+# Внутри бывают цитаты из материалов и личные данные — наружу не отдаём.
+.критики/
+.черновики/
+.журналы/
+.реестры/
+.critics/
+
+# Локальные настройки и секреты
+.env
+.env.*
+AGENTS.override.md
+__pycache__/
+*.py[cod]
+.DS_Store
+.studio/
+*.sqlite*
+studio-workspace/
+workspaces/
+media/
+node_modules/
