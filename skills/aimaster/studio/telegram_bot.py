@@ -547,7 +547,7 @@ class TelegramBotController:
         paired_owner = self.state.paired_owner()
         if owner_id is not None and paired_owner is not None and owner_id != paired_owner:
             raise TelegramBotError("Telegram owner does not match local pairing")
-        if owner_id is None and not isinstance(pairing_code, str):
+        if owner_id is None and (not isinstance(pairing_code, str) or not pairing_code):
             raise TelegramBotError("pairing code is required before owner-only startup")
         self.owner_id = owner_id if owner_id is not None else paired_owner
         self.pairing_code = pairing_code
@@ -630,7 +630,7 @@ class TelegramBotController:
                 self.state.record_ignored(update_id, fingerprint)
                 return []
             parts = text.strip().split(maxsplit=1)
-            if self.pairing_code is not None and (len(parts) != 2 or parts[1] != self.pairing_code):
+            if len(parts) != 2 or parts[1] != self.pairing_code:
                 self.state.record_ignored(update_id, fingerprint)
                 return []
             self.owner_id = self.state.pair_owner(sender_id)
