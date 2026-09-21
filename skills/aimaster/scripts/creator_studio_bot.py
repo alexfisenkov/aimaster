@@ -162,7 +162,7 @@ def main(
     environ=None,
     api_factory=TelegramBotApi,
     iterations=None,
-    token=None,
+    credential=None,
     owner_id=None,
     allow_pairing=False,
     after_iteration=None,
@@ -176,10 +176,10 @@ def main(
 
     args = build_parser().parse_args(argv)
     environment = os.environ if environ is None else environ
-    if token is None:
-        token = environment.get("TELEGRAM_STUDIO_BOT_TOKEN")
+    if credential is None:
+        credential = environment.get("TELEGRAM_STUDIO_BOT_TOKEN")
     owner_value = owner_id if owner_id is not None else environment.get("TELEGRAM_STUDIO_OWNER_ID")
-    if not token or (owner_value is None or owner_value == "") and not allow_pairing:
+    if not credential or (owner_value is None or owner_value == "") and not allow_pairing:
         print(
             "TELEGRAM_STUDIO_BOT_TOKEN and TELEGRAM_STUDIO_OWNER_ID are required",
             file=sys.stderr,
@@ -195,7 +195,7 @@ def main(
             return 2
     try:
         controller = TelegramBotController(args.workspace, owner_id, pairing_code=pairing_code)
-        api = api_factory(token)
+        api = api_factory(credential)
         completed = 0
         while iterations is None or completed < iterations:
             run_poll_iteration(controller, api, after_iteration=after_iteration)

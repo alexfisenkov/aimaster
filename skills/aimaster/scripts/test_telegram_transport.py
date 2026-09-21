@@ -164,7 +164,7 @@ class TelegramTransportSetupTests(unittest.TestCase):
             workspace = Path(directory)
             result = bot_main(
                 ["--workspace", str(workspace)],
-                token="123456789:" + "A" * 36,
+                credential="123456789:" + "A" * 36,
                 owner_id=501,
                 iterations=0,
             )

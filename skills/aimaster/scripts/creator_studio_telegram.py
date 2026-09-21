@@ -99,8 +99,8 @@ def run_setup_ui(*, token_store=None, pairing_store=None, open_browser=True):
                 if length <= 0 or length > 4096:
                     raise ValueError
                 raw = self.rfile.read(length).decode("utf-8")
-                token = urllib.parse.parse_qs(raw).get("token", [""])[0]
-                token_store.store(token)
+                submitted = urllib.parse.parse_qs(raw).get("token", [""])[0]
+                token_store.store(submitted)
                 code = pairing_store.store_new()
                 body = render_setup_html("Telegram подключён локально.", pairing_code=code).encode("utf-8")
                 self.server.setup_complete = True
@@ -170,8 +170,8 @@ class FileSecretStore:
     def __init__(self, path):
         self.path = Path(path)
 
-    def store(self, token: str):
-        token = validate_bot_token(token)
+    def store(self, value: str):
+        value = validate_bot_token(value)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         os.chmod(self.path.parent, 0o700)
         descriptor = os.open(
@@ -181,7 +181,7 @@ class FileSecretStore:
         )
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                handle.write(token)
+                handle.write(value)
                 handle.write("\n")
         finally:
             # fdopen closes on normal and exceptional writes.  The explicit
@@ -196,10 +196,10 @@ class FileSecretStore:
         if mode != 0o600:
             raise RuntimeError("Telegram token fallback file must have mode 0600")
         try:
-            token = self.path.read_text(encoding="utf-8").rstrip("\n")
+            value = self.path.read_text(encoding="utf-8").rstrip("\n")
         except OSError:
             raise RuntimeError("Telegram token fallback file cannot be read") from None
-        return validate_bot_token(token)
+        return validate_bot_token(value)
 
 
 class KeychainSecretStore:
@@ -210,8 +210,8 @@ class KeychainSecretStore:
         if not self.command:
             raise RuntimeError("macOS Keychain command is unavailable")
 
-    def store(self, token: str):
-        token = validate_bot_token(token)
+    def store(self, value: str):
+        value = validate_bot_token(value)
         result = subprocess.run(
             [
                 self.command,
@@ -223,7 +223,7 @@ class KeychainSecretStore:
                 _KEYCHAIN_SERVICE,
                 "-w",
             ],
-            input=f"{token}\n",
+            input=f"{value}\n",
             text=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -327,7 +327,7 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
         workspace, _, state = _workspace_state(args.workspace)
         secret_store = LocalSecretStore(_default_fallback_path())
         owner_id = state.paired_owner()
-        token = secret_store.load()
+        stored_value = secret_store.load()
         pairing_path = _default_fallback_path().with_name("telegram-pairing-code")
         pairing_code = pairing_path.read_text(encoding="utf-8").strip() if owner_id is None else None
         if runner is None:
@@ -347,13 +347,13 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
             paired_owner = controller.state.paired_owner()
             if paired_owner is None or mini_app is not None:
                 return
-            mini_app = serve_mini_app(studio.application, token, paired_owner)
+            mini_app = serve_mini_app(studio.application, stored_value, paired_owner)
             if tunnel_attempted:
                 return
             tunnel_attempted = True
             try:
                 tunnel, tunnel_url = start_cloudflared(mini_app.base_url)
-                TelegramBotApi(token).set_chat_menu_button(tunnel_url)
+                TelegramBotApi(stored_value).set_chat_menu_button(tunnel_url)
             except (OSError, RuntimeError, TelegramApiError):
                 # The local Mini App remains available for diagnostics; no
                 # false public URL or menu is advertised when the tunnel fails.
@@ -364,7 +364,7 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
         try:
             return runner(
                 ["--workspace", str(workspace)],
-                token=token,
+                credential=stored_value,
                 owner_id=owner_id,
                 allow_pairing=owner_id is None,
                 after_iteration=after_iteration,
