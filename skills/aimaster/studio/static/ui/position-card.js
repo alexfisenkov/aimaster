@@ -33,6 +33,8 @@ export function positionCardModel(snapshot, position, { readOnly = false } = {})
   if (!project || !spec) return null;
   const [promptCollection, resultCollection, promptLink, resultLink, promptLabel, kindLabel] = spec;
   const scene = (project.scenes || []).find((item) => item.scene_id === position.scene_id);
+  const orderedScenes = [...(project.scenes || [])].sort((left, right) => (left?.order || 0) - (right?.order || 0));
+  const sceneIndex = scene ? orderedScenes.findIndex((item) => item.scene_id === scene.scene_id) : -1;
   const reference = (project.references || []).find((item) => item.reference_id === position.tag);
   const owner = position.kind === "reference" ? reference : position.kind === "oneshot" ? project.oneshot : scene;
   const result = linkedRecord(project[resultCollection], owner?.links?.[resultLink]);
@@ -65,6 +67,8 @@ export function positionCardModel(snapshot, position, { readOnly = false } = {})
   return { position, projectId: project.id, revision: snapshot.revision, scene, title, kindLabel,
     status: position.status, statusLabel: STATUS_LABELS[position.status] || "", result, prompt,
     isVideo, current, actions, allowed, lockTargetIds, actionEntries: snapshot.actions || [],
+    continuityRequired: position.kind === "video" && project.gen_mode === "per_scene" && sceneIndex > 0,
+    continuityStrategy: scene?.continuity_strategy || null,
     durationLabel: isVideo && durationMs > 0 ? `${durationMs / 1000} с` : "",
     rangeLabel: project.type !== "photo" && scene && Number.isFinite(scene.start_ms) && Number.isFinite(scene.end_ms)
       ? formatSceneRange(scene.start_ms, scene.end_ms) : "" };
@@ -159,7 +163,7 @@ export function renderPositionCard(model, { modeControl = null } = {}) {
   material.addEventListener("click", () => {
     requestAgentPrompt({
       title: `${material.textContent}: ${model.title}`,
-      prompt: `Открой проект «${model.projectId}» и позицию «${model.position.position_id}» (${model.title}). ${model.result ? "Подготовь новую вариацию текущего результата, сохранив утверждённые референсы и общий стиль." : "Подготовь создание материала для этой позиции."} Сначала проверь выбранный в чате MCP/инструмент и доступные в нём модели, покажи используемый промпт и дождись моего разрешения на один запуск.`,
+      prompt: `Открой проект «${model.projectId}» и позицию «${model.position.position_id}» (${model.title}). ${model.result ? "Подготовь новую вариацию текущего результата, сохранив утверждённые референсы и общий стиль." : "Подготовь создание материала для этой позиции."}${model.continuityRequired ? ` Это per_scene-видео после первой сцены: continuity_strategy сейчас «${model.continuityStrategy || "не выбрана"}». До генерации обязательно предложи/подтверди previous_video, previous_last_frame или independent, запиши выбор через scene continuity и проверь read-back; без сохранённого выбора runtime отклонит generate.` : ""} Сначала проверь выбранный в чате MCP/инструмент и доступные в нём модели, покажи используемый промпт и дождись моего разрешения на один запуск. После загрузки референсов считай реальные provider-native теги/slots, вставь каждый обязательный inline-тег в финальный промпт с его ролью и перед запуском выполни обязательную проверку reference bindings; одни словесные названия референсов не считаются привязкой.`,
     }, material);
   });
   chatActions.append(material);

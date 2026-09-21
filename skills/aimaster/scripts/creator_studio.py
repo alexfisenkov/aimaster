@@ -530,6 +530,19 @@ def command_scene_video_mode(args):
     )
 
 
+def command_scene_continuity(args):
+    store = authoring.open_store(args.workspace)
+    _print(
+        authoring.set_continuity_strategy(
+            store,
+            args.project,
+            args.expected_revision,
+            scene_id=args.scene_id,
+            strategy=args.strategy,
+        )
+    )
+
+
 def command_question_answer(args):
     # Ticket 12 repair, condition 7: no more "try JSON, then fall back to
     # the raw string" -- that turned a free_text answer of "2026" into
@@ -832,6 +845,21 @@ def _add_scene_subcommands(subparsers) -> None:
         "--expected-revision", required=True, type=int, dest="expected_revision"
     )
     scene_video_mode_cmd.set_defaults(handler=command_scene_video_mode)
+    scene_continuity_cmd = scene_sub.add_parser(
+        "continuity", help="record the transition strategy for a later per-scene clip"
+    )
+    scene_continuity_cmd.add_argument("workspace", type=Path)
+    scene_continuity_cmd.add_argument("project")
+    scene_continuity_cmd.add_argument("--scene", required=True, dest="scene_id")
+    scene_continuity_cmd.add_argument(
+        "--strategy",
+        required=True,
+        choices=("previous_video", "previous_last_frame", "independent"),
+    )
+    scene_continuity_cmd.add_argument(
+        "--expected-revision", required=True, type=int, dest="expected_revision"
+    )
+    scene_continuity_cmd.set_defaults(handler=command_scene_continuity)
 
 def _add_scenes_subcommands(subparsers) -> None:
     scenes_cmd = subparsers.add_parser("scenes", help="author the stage-one storyboard")

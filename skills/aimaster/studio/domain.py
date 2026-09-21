@@ -67,6 +67,7 @@ HISTORY_KINDS = {
     "frame-plan-set": frozenset({"scene_id", "first", "last"}),
     "gen-mode-set": frozenset({"mode"}),
     "video-mode-set": frozenset({"scene_id", "mode"}),
+    "continuity-set": frozenset({"scene_id", "strategy"}),
 }
 _HISTORY_ACTORS = frozenset({"you", "agent"})
 _HISTORY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
@@ -76,6 +77,7 @@ _HISTORY_ATTACHMENT_FIELDS = frozenset({"asset", "voice_asset"})
 _HISTORY_MODES = frozenset({"guided", "autopilot"})
 _GENERATION_MODES = frozenset({"per_scene", "one_shot"})
 _VIDEO_MODES = frozenset({"first", "firstlast", "references"})
+_CONTINUITY_STRATEGIES = frozenset({"previous_video", "previous_last_frame", "independent"})
 _REFERENCE_TAG_PREFIXES = frozenset({"IMG", "VID", "VOICE"})
 _PROMPT_TAG = re.compile(r"@((?:IMG|VID|VOICE)_\d+)(?![A-Za-z0-9_])")
 _VIDEO_REFERENCE_USAGES = frozenset({"reference", "motion", "continue", "edit"})
@@ -707,6 +709,14 @@ def set_scene_frame_plan(state: dict, scene_id: str, *, first=None, last=None) -
     next_last = basis["need_last"] if last is None else last
     scene["need_first"] = next_first
     scene["need_last"] = next_last
+    if scene.get("continuity_strategy") == "previous_last_frame" and not next_first:
+        for key in (
+            "continuity_strategy",
+            "continuity_previous_scene_id",
+            "continuity_source_result_id",
+            "continuity_first_frame_result_id",
+        ):
+            scene.pop(key, None)
     mode = basis["video_mode"]
     if mode == "first" and not next_first:
         mode = "references"
@@ -736,6 +746,184 @@ def set_video_mode(state: dict, scene_id: str, mode: str) -> dict:
     scene["video_mode"] = mode
     append_history(state, "you", "video-mode-set", "motion", scene_id=scene_id, mode=mode)
     return frame_basis(scene)
+
+
+def _ordered_video_scenes(state: dict) -> list[dict]:
+    scenes = state.get("scenes", [])
+    if not isinstance(scenes, list):
+        raise DomainValidationError("scenes must be a list")
+    if any(not isinstance(scene, dict) for scene in scenes):
+        raise DomainValidationError("scenes must contain objects")
+    return sorted(scenes, key=lambda scene: scene.get("order", 0))
+
+
+def _accepted_linked_result(state: dict, collection: str, linked_id, label: str) -> dict:
+    if not isinstance(linked_id, str) or not linked_id:
+        raise DomainValidationError(f"{label} has no linked result")
+    items = state.get(collection, [])
+    if not isinstance(items, list):
+        raise DomainValidationError(f"{collection} must be a list")
+    matches = [
+        item
+        for item in items
+        if isinstance(item, dict)
+        and item.get("version_id", item.get("result_id")) == linked_id
+    ]
+    if len(matches) != 1:
+        raise DomainValidationError(f"{label} must name one exact result version")
+    result = matches[0]
+    if (
+        result.get("decision") != "approved"
+        or result.get("retired") is True
+        or result.get("hidden") is True
+        or not isinstance(result.get("asset_id"), str)
+        or not result["asset_id"].strip()
+    ):
+        raise DomainValidationError(f"{label} must be an active accepted result")
+    return result
+
+
+def _continuity_source(state: dict, scene: dict) -> tuple[dict, dict, str]:
+    ordered = _ordered_video_scenes(state)
+    index = next((i for i, item in enumerate(ordered) if item is scene), -1)
+    if index <= 0:
+        raise DomainValidationError("continuity strategy applies only after the first scene")
+    previous = ordered[index - 1]
+    previous_links = previous.get("links", {})
+    if not isinstance(previous_links, dict):
+        raise DomainValidationError("previous scene links must be an object")
+    source = _accepted_linked_result(
+        state,
+        "video_results",
+        previous_links.get("video_result_id"),
+        "previous scene video",
+    )
+    source_id = source.get("version_id", source.get("result_id"))
+    return previous, source, source_id
+
+
+def _scene_continue_reference(state: dict, scene: dict, source_id: str) -> dict:
+    links = scene.get("links", {})
+    reference_ids = links.get("reference_ids", []) if isinstance(links, dict) else []
+    references = state.get("references", [])
+    if not isinstance(reference_ids, list) or not isinstance(references, list):
+        raise DomainValidationError("scene references must be lists")
+    matches = [
+        reference
+        for reference in references
+        if isinstance(reference, dict)
+        and reference.get("reference_id") in reference_ids
+        and reference.get("role") == "video"
+        and reference.get("usage") == "continue"
+        and reference.get("local") is True
+        and reference.get("scene_id") == scene.get("scene_id")
+        and isinstance(reference.get("asset_id"), str)
+        and reference["asset_id"].strip()
+        and reference.get("continuity_source_result_id", source_id) == source_id
+    ]
+    if len(matches) != 1:
+        raise DomainValidationError(
+            "previous_video requires one scene-local video reference with usage=continue"
+        )
+    return matches[0]
+
+
+def set_continuity_strategy(state: dict, scene_id: str, strategy: str) -> str:
+    """Record the required transition choice for a later per-scene clip."""
+
+    if not isinstance(strategy, str) or strategy not in _CONTINUITY_STRATEGIES:
+        raise DomainValidationError(
+            "continuity strategy must be previous_video, previous_last_frame or independent"
+        )
+    scene = _video_scene(state, scene_id)
+    ordered = _ordered_video_scenes(state)
+    index = next((i for i, item in enumerate(ordered) if item is scene), -1)
+    if index <= 0:
+        raise DomainValidationError("continuity strategy applies only after the first scene")
+    if state.get("gen_mode", "per_scene") != "per_scene":
+        raise DomainValidationError("continuity strategy applies only to per_scene projects")
+    previous = source = source_id = None
+    if strategy != "independent":
+        previous, source, source_id = _continuity_source(state, scene)
+    if strategy == "previous_last_frame" and not frame_basis(scene)["need_first"]:
+        raise DomainValidationError(
+            "previous_last_frame requires a planned first frame before the motion stage"
+        )
+    if strategy == "previous_video":
+        reference = _scene_continue_reference(state, scene, source_id)
+        reference["continuity_source_result_id"] = source_id
+    if strategy == "previous_last_frame":
+        links = scene.get("links", {})
+        frame = _accepted_linked_result(
+            state,
+            "image_results",
+            links.get("first_frame_result_id") if isinstance(links, dict) else None,
+            "next scene first frame",
+        )
+        scene["continuity_first_frame_result_id"] = frame.get(
+            "version_id", frame.get("result_id")
+        )
+    scene["continuity_strategy"] = strategy
+    if strategy == "independent":
+        scene.pop("continuity_previous_scene_id", None)
+        scene.pop("continuity_source_result_id", None)
+        scene.pop("continuity_first_frame_result_id", None)
+    else:
+        scene["continuity_previous_scene_id"] = previous["scene_id"]
+        scene["continuity_source_result_id"] = source_id
+        if strategy != "previous_last_frame":
+            scene.pop("continuity_first_frame_result_id", None)
+    append_history(
+        state,
+        "you",
+        "continuity-set",
+        "motion",
+        scene_id=scene_id,
+        strategy=strategy,
+    )
+    return strategy
+
+
+def require_continuity_choice(state: dict, scene_id: str) -> None:
+    """Fail closed before generating any later per-scene video position."""
+
+    if state.get("gen_mode", "per_scene") != "per_scene":
+        return
+    scene = _video_scene(state, scene_id)
+    ordered = _ordered_video_scenes(state)
+    index = next((i for i, item in enumerate(ordered) if item is scene), -1)
+    if index <= 0:
+        return
+    strategy = scene.get("continuity_strategy")
+    if strategy not in _CONTINUITY_STRATEGIES:
+        raise DomainValidationError("per_scene video generation requires a continuity choice")
+    if strategy != "independent":
+        previous, source, source_id = _continuity_source(state, scene)
+        if (
+            scene.get("continuity_previous_scene_id") != previous.get("scene_id")
+            or scene.get("continuity_source_result_id") != source_id
+        ):
+            raise DomainValidationError("continuity source no longer matches the previous accepted video")
+    if strategy == "previous_last_frame":
+        basis = frame_basis(scene)
+        if not basis["need_first"] or basis["video_mode"] not in {"first", "firstlast"}:
+            raise DomainValidationError(
+                "previous_last_frame requires a planned first frame and first-frame video mode"
+            )
+        links = scene.get("links", {})
+        frame = _accepted_linked_result(
+            state,
+            "image_results",
+            links.get("first_frame_result_id") if isinstance(links, dict) else None,
+            "next scene first frame",
+        )
+        frame_id = frame.get("version_id", frame.get("result_id"))
+        if scene.get("continuity_first_frame_result_id") != frame_id:
+            raise DomainValidationError("continuity first frame is no longer the accepted frame")
+    if strategy == "previous_video":
+        reference = _scene_continue_reference(state, scene, source_id)
+        if reference.get("continuity_source_result_id") != source_id:
+            raise DomainValidationError("video reference is not linked to the previous accepted video")
 
 
 def set_gen_mode(state: dict, mode: str) -> str:
@@ -780,6 +968,8 @@ def _validate_history_params(kind: str, params) -> dict:
         modes = _HISTORY_MODES if kind == "mode-set" else _GENERATION_MODES if kind == "gen-mode-set" else _VIDEO_MODES
         if not isinstance(params["mode"], str) or params["mode"] not in modes:
             raise DomainValidationError("history.params.mode is not supported")
+    if "strategy" in params and params["strategy"] not in _CONTINUITY_STRATEGIES:
+        raise DomainValidationError("history.params.strategy is not supported")
     for key in ("first", "last"):
         if key in params and not isinstance(params[key], bool):
             raise DomainValidationError(f"history.params.{key} must be a boolean")

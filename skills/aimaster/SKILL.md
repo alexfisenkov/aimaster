@@ -155,11 +155,18 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
   before planning these operations. Store video references through the CLI as
   `kind=video`, `source=upload`, with the chosen `usage`; do not disguise video
   as an image reference or infer support from a model's brand/version.
+- For `per_scene`, before every scene after the first, run the mandatory
+  [continuity choice](references/continuity-choice.md): previous accepted video,
+  previous last frame, or independent clip. Recommend video continuation when
+  scene state is substantially unchanged and the live model schema supports it.
 - Before **every** external generation, complete the mandatory
   [reference-binding procedure](references/reference-bindings.md). Canonical
   `@IMG_NN`/`@VOICE_NN`/`@VID_NN` in Studio stay stable; their provider-native binding is
   operation-scoped and must be observed on the selected route, never assumed
-  from a generic `@img1` convention.
+  from a generic `@img1` convention. When the route exposes inline tags or
+  mention chips, every intended reference must appear by its exact observed
+  native token in the final outgoing prompt; prose names do not count. Run the
+  bundled binding validator and stop before a paid call unless it passes.
 - Before spending or uploading, run the stage preflight in the
   [completion loop](references/completion-loop.md). Generate only when the
   target position's stage is the current Studio stage. Future-stage prompts

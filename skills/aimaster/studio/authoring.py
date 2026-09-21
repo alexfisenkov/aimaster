@@ -74,6 +74,7 @@ from .authoring_scenes import (
     set_gen_mode,
     set_scene_frame_plan,
     set_scenes,
+    set_continuity_strategy,
     set_video_mode,
 )
 from .authoring_support import AuthoringError, open_assets, open_questions, open_store
@@ -91,6 +92,7 @@ __all__ = [
     "add_scene",
     "reorder_scenes",
     "set_scene_frame_plan",
+    "set_continuity_strategy",
     "set_video_mode",
     "set_gen_mode",
     "add_prompt_version",

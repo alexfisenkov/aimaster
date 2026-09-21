@@ -52,6 +52,26 @@ def _ordered_scenes(state):
     return sorted(state.get("scenes", []), key=lambda s: s.get("order", 0))
 
 
+def require_existing_video_action_continuity(state, target):
+    """Apply the per-scene guard to payload-only vary/regenerate targets."""
+
+    if not isinstance(target, str) or not target:
+        raise domain.DomainValidationError("result action target must be an identifier")
+    scene_ids = {
+        item.get("scene_id")
+        for item in state.get("video_results", [])
+        if isinstance(item, dict)
+        and target in {item.get("result_id"), item.get("version_id")}
+        and isinstance(item.get("scene_id"), str)
+        and item["scene_id"]
+    }
+    if not scene_ids:
+        return
+    if len(scene_ids) != 1:
+        raise domain.DomainValidationError("video result action target is ambiguous")
+    domain.require_continuity_choice(state, next(iter(scene_ids)))
+
+
 def _included_references(state, spec, *, for_generation=False):
     """Explicit scene membership; static images never inherit voice assets."""
     kind = spec["kind"]
@@ -152,6 +172,7 @@ def build_action_context(state, action):
             raise domain.DomainValidationError("generation requires a current prompt")
         if spec["kind"] == "video":
             scene = _scene(state, spec["scene_id"])
+            domain.require_continuity_choice(state, spec["scene_id"])
             require_accepted_frames(state, spec["scene_id"], domain.frame_basis(scene)["video_mode"])
         specs = [spec]
     elif kind == "prompts-generate":

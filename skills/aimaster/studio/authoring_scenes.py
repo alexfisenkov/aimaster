@@ -245,6 +245,30 @@ def set_video_mode(
     return {"project_id": project_id, "scene_id": scene_id, "mode": mode, "revision": new_state["revision"]}
 
 
+def set_continuity_strategy(
+    store: ProjectStore,
+    project_id: str,
+    expected_revision: int,
+    *,
+    scene_id: str,
+    strategy: str,
+) -> dict:
+    """Persist the chat-approved transition choice before video generation."""
+
+    def mutator(state):
+        decision_stages.ensure_action_allowed(state, "set-video-mode")
+        domain.set_continuity_strategy(state, scene_id, strategy)
+        decision_stages.apply_project_status(state)
+
+    _, new_state = mutate(store, project_id, expected_revision, mutator)
+    return {
+        "project_id": project_id,
+        "scene_id": scene_id,
+        "strategy": strategy,
+        "revision": new_state["revision"],
+    }
+
+
 def set_gen_mode(store: ProjectStore, project_id: str, expected_revision: int, mode: str) -> dict:
     """Chat door onto the same project generation-mode mutation as the worker."""
 

@@ -193,7 +193,13 @@ class Runner:
                 state = self.store.load(action["project_id"])
                 state["actions"] = self.ledger.pending_actions(action["project_id"], exclude_action_id=action["action_id"])
                 current = self._claim_is_current(action, state=state)
-                from .runner_context import CONTEXT_ACTION_TYPES, build_action_context
+                from .runner_context import (
+                    CONTEXT_ACTION_TYPES,
+                    build_action_context,
+                    require_existing_video_action_continuity,
+                )
+                if current and action["action_type"] in {"vary", "regenerate"}:
+                    require_existing_video_action_continuity(state, action["target_id"])
                 context = build_action_context(state, action) if current and action["action_type"] in CONTEXT_ACTION_TYPES else None
             except (StoreError, DomainValidationError, ProjectionError):
                 current = False

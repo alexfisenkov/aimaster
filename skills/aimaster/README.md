@@ -12,6 +12,7 @@
 - `references/writing-guides.md` — правила выбора, хранения и применения
   сценарных и model-prompt гайдов.
 - `scripts/creator_studio.py` и `studio/` сохраняют проекты и открывают их в браузере.
+- `scripts/validate_reference_bindings.py` проверяет теги и поля референсов перед внешней генерацией.
 - `scripts/creator_studio_bot.py` при отдельном ручном запуске подключает Telegram.
 - `references/phases/`, `references/state-and-cli.md` и `scripts/state_cli.py`
   нужны только для продолжения старых проектов, которые уже используют этот формат.

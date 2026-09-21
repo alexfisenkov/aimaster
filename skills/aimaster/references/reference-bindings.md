@@ -25,11 +25,17 @@ structured field/slot and order -> role`.
 The native form may be an inline tag, an ordered structured attachment field,
 or a hybrid. Never invent tag syntax, assume a universal `@img1`, or put fake
 tags into a structured provider's prompt. In a rich mention UI, insert the real
-chip and verify it rendered as a chip rather than plain text.
+chip and verify it rendered as a chip rather than plain text. A visible upload
+thumbnail does not prove prompt binding.
 
 For example, only after read-back a route may map `@IMG_01` to `@img1` and
 `@IMG_02` to the non-sequential `@img3`; the final text must then identify what
 each actual mention means (for example, character `@img1`, background `@img3`).
+If a live Magnific form exposes `@char1`, `@char2`, `@img1`, `@img2`, those
+exact observed tags—not the words “first character”, “cafe” or “product
+reference”—must appear in that operation's native prompt with their roles.
+This example does not reserve those names: the next upload/order/model may
+produce different tags.
 
 ## Procedure
 
@@ -51,17 +57,86 @@ each actual mention means (for example, character `@img1`, background `@img3`).
    mentions to the schema's
    verified role/position semantics and send files only in their observed
    fields/order: no internal unresolved tag belongs in the outgoing prompt.
-4. Audit the final outgoing prompt **and** attachment list, including all
+4. Build an operation manifest from the fresh Studio/claimed-job context,
+   not from memory or only from the files that happen to be visible in the
+   provider. Record the operation ID, current Studio revision, provider,
+   route, model, observation time, canonical `reference_id` and exact
+   `asset_id` for every expected input. Use
+   `transport=inline` for native tags/chips, `structured` for schema fields and
+   `hybrid` only when the verified route requires both. For inline/hybrid
+   inputs, the final prompt must contain every exact observed native token at
+   least once; prose names do not count. For structured/hybrid inputs, record
+   the exact field/slot. Native inline tokens and structured slots must be
+   one-to-one within the operation. Set `binding_source` to the observed
+   surface: `plain_text`, `rich_ui`, `structured_schema` or `hybrid`. With
+   `rich_ui`, `chip_verified=true` is mandatory for every inline/hybrid input
+   and may be recorded only after the final UI actually shows the mention
+   chip.
+5. Save the exact outgoing prompt as `prompt.txt` and the machine record as
+   `binding.json`, then run before the external call:
+
+```bash
+python3 scripts/validate_reference_bindings.py \
+  WS/projects/<id>/.generation/<operation-id>/binding.json \
+  WS/projects/<id>/.generation/<operation-id>/prompt.txt \
+  --context WS/projects/<id>/.generation/<operation-id>/claimed-job.json
+```
+
+   For a claimed job, save the exact JSON returned by `claim` as
+   `claimed-job.json`; `--context` is mandatory and the validator compares the
+   complete canonical tag/reference ID/asset ID set and state revision. Include
+   accepted frame inputs as canonical `FRAME_FIRST`/`FRAME_LAST` with
+   `reference_id` `frame:<scene-id>:first|last`. For a direct-chat operation
+   without a job, omit `--context` only after rebuilding the same complete set
+   through the reference's read-only state door and recording `action_id: none`
+   in `binding.md`.
+
+   A minimal inline record is:
+
+```json
+{
+  "schema_version": 1,
+  "operation_id": "action-or-direct-chat-id",
+  "provider": "observed provider",
+  "route": "observed route",
+  "model": "observed model",
+  "binding_source": "rich_ui",
+  "observed_at": "2026-09-21T00:00:00Z",
+  "state_revision": 7,
+  "references": [
+    {
+      "canonical": "@IMG_01",
+      "reference_id": "IMG_01",
+      "asset_id": "asset-id-from-current-context",
+      "native": "@char1",
+      "role": "main character",
+      "transport": "inline",
+      "chip_verified": true
+    }
+  ]
+}
+```
+
+   A structured entry uses `"slot": "video_reference[0]"` instead of
+   `native`; a hybrid entry contains both. Omit `chip_verified` when the
+   source is plain text or structured. The validator must return `status=valid`.
+   It fails on a missing exact native tag, an unresolved canonical tag, a
+   duplicate native tag/slot, incomplete operation provenance or an unverified
+   rich-UI chip. `@img10` does not satisfy `@img1`. This local check proves the
+   recorded manifest and prompt agree; it cannot by itself prove a provider
+   issued the tag or accepted the payload. Live schema/UI read-back in steps
+   2 and 6 remains mandatory.
+6. Audit the final outgoing prompt **and** attachment list, including all
    references when there are many: every included asset has the intended role
-   and mapping; no excluded or unbound asset remains. Save the operation's
-   binding record and exact native final prompt at
+   and mapping; no excluded or unbound asset remains. Save the human-readable
+   operation record at
    `WS/projects/<id>/.generation/<operation-id>/binding.md`, outside
    public/dashboard sanitized state. For a claimed job use its exact `action_id`
    as `<operation-id>`; for direct chat create a fresh unique ID and record
    `action_id: none` (there is no job to `finish`). Record project ID, action
    type, target position/version, observed state revision, source prompt version,
    any source result version, selected route/model/mode, and the full media
-   mapping. Do not confuse this record ID with authoring `--operation-id`
+   mapping and the validator result. Do not confuse this record ID with authoring `--operation-id`
    receipts. Strip secrets, signed URLs and provider
    credentials. The canonical prompt remains in Studio state. If the prompt
    was edited after a native tag/chip was inserted, re-read and verify that no
@@ -70,7 +145,7 @@ each actual mention means (for example, character `@img1`, background `@img3`).
    run, not a second approval request.
 
 If the route cannot expose a native binding, an upload/attachment did not read
-back, a role is unclear, or the final payload cannot be audited, stop at
+back, a role is unclear, the machine preflight fails, or the final payload cannot be audited, stop at
 `prepare`: a claimed job finishes `needs_chat`; a direct-chat operation stops
 and explains the blocker. Make no paid call. A live mapping does not override
 the selected writing guide or other creative constraints.

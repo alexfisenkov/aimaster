@@ -67,6 +67,7 @@ export const HISTORY_KIND_TEXT = Object.freeze({
   "frame-plan-set": () => "План кадров изменён",
   "gen-mode-set": () => "Способ генерации изменён",
   "video-mode-set": () => "Способ оживления изменён",
+  "continuity-set": () => "Связь с предыдущей сценой выбрана",
 });
 
 export function formatHistoryEntries(history) {

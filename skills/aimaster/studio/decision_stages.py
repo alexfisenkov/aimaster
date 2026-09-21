@@ -234,7 +234,9 @@ def build_reopen_mutation(ledger, project_id: str, payload, *, exclude_action_id
        both callers rather than assuming a wrapper neither can rely on.
 
     Scenes, prompts, results, references, assembly, their versions and
-    every card decision are untouched: only `milestones`,
+    every card decision are untouched, except that scene-local
+    `continuity_strategy` choices are cleared because a reopened scenario can
+    change which scene precedes which. Otherwise only `milestones`,
     `stage_decisions` and (via step 5) `project.status` change here.
     A milestone key the current sequences do not name (`qa`, written by a
     project file of the old stage model) is not touched either: nothing
@@ -251,6 +253,15 @@ def build_reopen_mutation(ledger, project_id: str, payload, *, exclude_action_id
             raise DecisionError("milestones must be an object")
         for stage in _stage_sequence(state):
             milestones[stage] = "draft"
+        for scene in state.get("scenes", []):
+            if isinstance(scene, dict):
+                for key in (
+                    "continuity_strategy",
+                    "continuity_previous_scene_id",
+                    "continuity_source_result_id",
+                    "continuity_first_frame_result_id",
+                ):
+                    scene.pop(key, None)
         history = state.setdefault("stage_decisions", [])
         if not isinstance(history, list):
             raise DecisionError("stage_decisions must be a list")

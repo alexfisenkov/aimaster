@@ -108,6 +108,10 @@ _SCENE_KEYS = {
     "need_first",
     "need_last",
     "video_mode",
+    "continuity_strategy",
+    "continuity_previous_scene_id",
+    "continuity_source_result_id",
+    "continuity_first_frame_result_id",
 }
 # Ticket 15 repair, поправка оркестратора 8: the reduced scene view stage
 # 1 exposes after a reopen (G05) -- identity, order, a video scene's own
@@ -169,6 +173,7 @@ _REFERENCE_KEYS = {
     "scene_id",
     "voice",
     "usage",
+    "continuity_source_result_id",
 }
 _REFERENCE_VOICE_KEYS = {"enabled", "tag", "asset_id"}
 _REFERENCE_KIND_BY_ROLE = {
@@ -480,6 +485,18 @@ def _sanitize_scene(scene, index, *, project_type, hidden_link_keys=frozenset())
             result[key] = value
         elif key == "video_mode":
             result[key] = _enum(value, {"first", "firstlast", "references"}, field)
+        elif key == "continuity_strategy":
+            result[key] = _enum(
+                value,
+                {"previous_video", "previous_last_frame", "independent"},
+                field,
+            )
+        elif key in {
+            "continuity_previous_scene_id",
+            "continuity_source_result_id",
+            "continuity_first_frame_result_id",
+        }:
+            result[key] = _string(value, field)
         elif key == "title":
             result[key] = _string(value, field, allow_empty=True)
             if len(result[key]) > 200:
@@ -501,6 +518,10 @@ def _sanitize_scene(scene, index, *, project_type, hidden_link_keys=frozenset())
                 "need_first",
                 "need_last",
                 "video_mode",
+                "continuity_strategy",
+                "continuity_previous_scene_id",
+                "continuity_source_result_id",
+                "continuity_first_frame_result_id",
             )
         ):
             raise ProjectionError(f"{context} must not contain timeline fields for photo")
@@ -694,6 +715,11 @@ def _sanitize_reference(reference, context, asset_url, *, hidden_link_keys=froze
         result = _add_asset_url(result, context, asset_url)
         if role == "video":
             result["playable_asset_url"] = result["asset_url"]
+    if "continuity_source_result_id" in reference:
+        result["continuity_source_result_id"] = _string(
+            reference["continuity_source_result_id"],
+            f"{context}.continuity_source_result_id",
+        )
 
     voice = _exact_keys(reference.get("voice", {"enabled": False}), _REFERENCE_VOICE_KEYS, f"{context}.voice")
     clean_voice = {"enabled": _boolean(voice.get("enabled"), f"{context}.voice.enabled")}

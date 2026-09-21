@@ -26,6 +26,19 @@
 В описании отдельно указать, что изменилось и что действительно проверено.
 Не заявлять успешные проверки, которые не выполнялись.
 
+## 2026.09.21.3
+
+- Для `per_scene` добавлен обязательный continuity choice перед каждой сценой после первой: previous accepted video, previous last frame или independent clip.
+- При почти неизменной сцене агент рекомендует продолжение через scene-local `video_reference` с `usage=continue`, но сначала проверяет live schema модели.
+- Предыдущее видео копируется в отдельный файл с новой ролью, оригинальный result не изменяется; rejected/hidden/retired/stale варианты не используются автоматически.
+- В карточке следующей сцены появилась кнопка «Связать с предыдущей сценой» с точным project/scene/result контекстом.
+- Выбор continuity теперь хранится в canonical scene state; runner блокирует генерацию каждой `per_scene`-сцены после первой, пока strategy и требуемый frame/video-reference не подтверждены read-back и не связаны с exact accepted result непосредственно предыдущей сцены.
+- Тот же continuity guard применяется к payload-only `vary` и `regenerate`, поэтому старый результат не обходит обязательный выбор.
+- Provider-native reference tags теперь проходят обязательную машинную проверку перед генерацией: карта содержит provider/route/model/revision/reference_id/asset_id, все inline-теги/mention chips должны точно присутствовать в финальном промпте, а structured inputs — иметь однозначные slots.
+- Проверка ловит пропущенные и дублированные теги, оставшиеся canonical-теги, неподтверждённые rich mention chips и совпадения вроде `@img1` внутри `@img10`.
+- Любой canonical `@IMG_NN`/`@VID_NN`/`@VOICE_NN`, которого нет в manifest как подтверждённого native token, блокирует запуск даже при пустом manifest.
+- Для claimed jobs validator сравнивает manifest с точным frozen context из `claim`, включая полный набор canonical reference/asset IDs и revision; пропущенный текущий референс блокирует запуск.
+
 ## 2026.09.21.2
 
 - Добавлен строгий реестр writing guides: modality/task/provider/model family/model/version и SHA файла. Автоматически предлагаются только точные действующие совпадения.
