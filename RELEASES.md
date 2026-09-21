@@ -46,6 +46,11 @@
 - Добавлен HMAC-проверяемый Mini App gateway для того же дашборда и optional Cloudflare Quick Tunnel; Windows остаётся вне выпуска.
 - Первый выпуск transport намеренно ограничен текстовыми сообщениями и командами; voice/photo/video/document intake и callback-меню остаются отдельным следующим этапом.
 
+## 2026.09.21.5
+
+- Mini App menu URL теперь явно помечается `#mini-app`.
+- Если Telegram SDK или `initData` не загрузились, Mini App показывает понятное сообщение вместо пустого белого экрана.
+
 ## 2026.09.21.2
 
 - Добавлен строгий реестр writing guides: modality/task/provider/model family/model/version и SHA файла. Автоматически предлагаются только точные действующие совпадения.

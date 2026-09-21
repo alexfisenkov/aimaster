@@ -109,9 +109,10 @@ class TelegramBotApi:
     def set_chat_menu_button(self, url: str):
         if not isinstance(url, str) or not url.startswith("https://"):
             raise TelegramApiError("Mini App URL must use HTTPS")
+        mini_url = url if url.endswith("#mini-app") else url + "#mini-app"
         result = self._call(
             "setChatMenuButton",
-            {"menu_button": {"type": "web_app", "text": "AI Мастерская", "web_app": {"url": url}}},
+            {"menu_button": {"type": "web_app", "text": "AI Мастерская", "web_app": {"url": mini_url}}},
             timeout=10,
         )
         if result is not True:
