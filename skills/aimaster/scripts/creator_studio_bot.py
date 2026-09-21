@@ -142,22 +142,41 @@ def build_parser():
     return parser
 
 
-def main(argv=None, *, environ=None, api_factory=TelegramBotApi, iterations=None):
+def main(
+    argv=None,
+    *,
+    environ=None,
+    api_factory=TelegramBotApi,
+    iterations=None,
+    token=None,
+    owner_id=None,
+    allow_pairing=False,
+):
+    """Run polling with injected local secrets or legacy environment values.
+
+    The transport setup entrypoint passes the token directly from local secure
+    storage, so it does not need to recreate a credential-bearing environment.
+    """
+
     args = build_parser().parse_args(argv)
     environment = os.environ if environ is None else environ
-    token = environment.get("TELEGRAM_STUDIO_BOT_TOKEN")
-    owner_text = environment.get("TELEGRAM_STUDIO_OWNER_ID")
-    if not token or not owner_text:
+    if token is None:
+        token = environment.get("TELEGRAM_STUDIO_BOT_TOKEN")
+    owner_value = owner_id if owner_id is not None else environment.get("TELEGRAM_STUDIO_OWNER_ID")
+    if not token or (owner_value is None or owner_value == "") and not allow_pairing:
         print(
             "TELEGRAM_STUDIO_BOT_TOKEN and TELEGRAM_STUDIO_OWNER_ID are required",
             file=sys.stderr,
         )
         return 2
-    try:
-        owner_id = int(owner_text)
-    except (TypeError, ValueError):
-        print("TELEGRAM_STUDIO_OWNER_ID must be an integer", file=sys.stderr)
-        return 2
+    if owner_value is None or owner_value == "":
+        owner_id = None
+    else:
+        try:
+            owner_id = int(owner_value)
+        except (TypeError, ValueError):
+            print("TELEGRAM_STUDIO_OWNER_ID must be an integer", file=sys.stderr)
+            return 2
     try:
         controller = TelegramBotController(args.workspace, owner_id)
         api = api_factory(token)

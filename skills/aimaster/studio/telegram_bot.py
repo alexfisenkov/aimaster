@@ -61,6 +61,9 @@ _COMMANDS = {
     "/help",
 }
 
+_INBOX_STATUSES = {"queued", "processing", "done", "outcome_unknown"}
+_MAX_CALLBACK_DATA_BYTES = 64
+
 
 class TelegramBotError(RuntimeError):
     """The local Telegram controller or its private journal refused input."""
@@ -71,6 +74,30 @@ class TelegramReply:
     chat_id: int
     text: str
     update_id: int
+
+
+def project_menu_payloads(projects) -> list[dict[str, str]]:
+    """Build safe, deterministic project-selection callback payloads.
+
+    Delivery as an inline keyboard and callback handling are transport concerns;
+    this offline helper only exposes the bounded Bot API payload contract.
+    """
+
+    payloads = []
+    for project in projects:
+        if not isinstance(project, dict):
+            raise TelegramBotError("project menu entry must be an object")
+        project_id = project.get("id")
+        title = project.get("title")
+        if not isinstance(project_id, str) or not project_id:
+            raise TelegramBotError("project menu id must be a non-empty string")
+        if not isinstance(title, str) or not title:
+            raise TelegramBotError("project menu title must be a non-empty string")
+        callback_data = f"project:{project_id}"
+        if len(callback_data.encode("utf-8")) > _MAX_CALLBACK_DATA_BYTES:
+            raise TelegramBotError("project menu callback data is too large")
+        payloads.append({"text": title, "callback_data": callback_data})
+    return sorted(payloads, key=lambda item: (item["text"], item["callback_data"]))
 
 
 def _timestamp() -> str:
@@ -152,6 +179,24 @@ class TelegramBotState:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS inbox (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    update_id INTEGER NOT NULL UNIQUE,
+                    chat_id INTEGER NOT NULL,
+                    workspace TEXT NOT NULL,
+                    project_id TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    outcome_text TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS inbox_next_item
+                    ON inbox(status, id);
                 """
             )
         finally:
@@ -351,6 +396,104 @@ class TelegramBotState:
         finally:
             connection.close()
 
+    def paired_owner(self):
+        """Return the locally paired Telegram owner id, if setup has one."""
+
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT value FROM metadata WHERE key='paired_owner_id'"
+            ).fetchone()
+            return int(row["value"]) if row is not None else None
+        finally:
+            connection.close()
+
+    def pair_owner(self, owner_id):
+        """Persist the one owner id; changing an existing pairing is refused."""
+
+        if isinstance(owner_id, bool) or not isinstance(owner_id, int) or owner_id <= 0:
+            raise TelegramBotError("owner id must be a positive integer")
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT value FROM metadata WHERE key='paired_owner_id'"
+            ).fetchone()
+            if row is not None:
+                paired_owner = int(row["value"])
+                if paired_owner != owner_id:
+                    raise TelegramBotError("Telegram owner is already paired")
+                return paired_owner
+            connection.execute(
+                "INSERT INTO metadata(key, value) VALUES ('paired_owner_id', ?)",
+                (str(owner_id),),
+            )
+            return owner_id
+
+    @staticmethod
+    def _public_inbox(row):
+        if row is None:
+            return None
+        return dict(row)
+
+    def enqueue_inbox(self, *, update_id, chat_id, workspace, project_id, text):
+        """Atomically record one selected-project free-form request.
+
+        ``update_id`` is the idempotency boundary inherited from Telegram, so a
+        polling replay cannot create a second local Codex job.
+        """
+
+        if isinstance(update_id, bool) or not isinstance(update_id, int) or update_id < 0:
+            raise TelegramBotError("update_id must be a non-negative integer")
+        if isinstance(chat_id, bool) or not isinstance(chat_id, int) or chat_id <= 0:
+            raise TelegramBotError("chat id must be a positive integer")
+        if not isinstance(workspace, str) or not workspace:
+            raise TelegramBotError("workspace must be a non-empty string")
+        if not isinstance(project_id, str) or not project_id:
+            raise TelegramBotError("project id must be a non-empty string")
+        if not isinstance(text, str) or not text.strip():
+            raise TelegramBotError("inbox text must be a non-empty string")
+        idempotency_key = f"telegram:{update_id}"
+        now = _timestamp()
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM inbox WHERE update_id=?", (update_id,)
+            ).fetchone()
+            if row is not None:
+                if (
+                    row["chat_id"] != chat_id
+                    or row["workspace"] != workspace
+                    or row["project_id"] != project_id
+                    or row["text"] != text
+                ):
+                    raise TelegramBotError("update_id belongs to different inbox content")
+                return self._public_inbox(row)
+            connection.execute(
+                "INSERT INTO inbox(update_id,chat_id,workspace,project_id,text,"
+                "idempotency_key,status,created_at) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)",
+                (update_id, chat_id, workspace, project_id, text, idempotency_key, now),
+            )
+            row = connection.execute(
+                "SELECT * FROM inbox WHERE update_id=?", (update_id,)
+            ).fetchone()
+            return self._public_inbox(row)
+
+    def dequeue_inbox(self):
+        """Claim the oldest queued item for a single local bridge worker."""
+
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM inbox WHERE status='queued' ORDER BY id LIMIT 1"
+            ).fetchone()
+            if row is None:
+                return None
+            connection.execute(
+                "UPDATE inbox SET status='processing', started_at=? WHERE id=?",
+                (_timestamp(), row["id"]),
+            )
+            claimed = connection.execute(
+                "SELECT * FROM inbox WHERE id=?", (row["id"],)
+            ).fetchone()
+            return self._public_inbox(claimed)
+
 class TelegramBotController:
     """Owner-only deterministic command and question controller."""
 
@@ -364,12 +507,17 @@ class TelegramBotController:
         questions_factory=None,
         state=None,
     ):
-        if isinstance(owner_id, bool) or not isinstance(owner_id, int):
-            raise TelegramBotError("owner id must be an integer")
+        if owner_id is not None and (
+            isinstance(owner_id, bool) or not isinstance(owner_id, int) or owner_id <= 0
+        ):
+            raise TelegramBotError("owner id must be a positive integer")
         workspace_path, _, _, private_root = resolve_workspace_paths(workspace)
         self.workspace = workspace_path
-        self.owner_id = owner_id
         self.state = state or TelegramBotState(private_root / TELEGRAM_DB_NAME)
+        paired_owner = self.state.paired_owner()
+        if owner_id is not None and paired_owner is not None and owner_id != paired_owner:
+            raise TelegramBotError("Telegram owner does not match local pairing")
+        self.owner_id = owner_id if owner_id is not None else paired_owner
         self._store_factory = store_factory or (lambda: authoring.open_store(self.workspace))
         self._ledger_factory = ledger_factory or (lambda: open_ledger(self.workspace))
         self._questions_factory = questions_factory or (
@@ -434,6 +582,28 @@ class TelegramBotController:
             return []
         update_id, sender_id, chat_id, chat_type, text = envelope
         fingerprint = _fingerprint(update)
+
+        # A bot configured locally but not yet paired accepts exactly the
+        # owner's first private /start.  No project store, ledger or question
+        # surface is opened on this path.
+        if self.owner_id is None:
+            if (
+                sender_id is None
+                or sender_id != chat_id
+                or chat_type != "private"
+                or not isinstance(text, str)
+                or text.strip().split("@", 1)[0].lower() != "/start"
+            ):
+                self.state.record_ignored(update_id, fingerprint)
+                return []
+            self.owner_id = self.state.pair_owner(sender_id)
+            existing = self.state.begin(
+                update_id,
+                fingerprint,
+                chat_id,
+                {"kind": "reply", "text": "Telegram owner paired."},
+            )
+            return self._execute(update_id, chat_id, existing["request"])
 
         # Security boundary: no selection, project, question or ledger access
         # occurs before both checks pass. Only the private update cursor is
@@ -569,7 +739,11 @@ class TelegramBotController:
         project_id = selection["project_id"]
         question = self._selected_or_first_question(chat_id, project_id)
         if question is None:
-            return {"kind": "reply", "text": "Сейчас нет вопроса, ожидающего ответа."}
+            return {
+                "kind": "inbox",
+                "project_id": project_id,
+                "text": text,
+            }
         if question["kind"] in {"single", "multi"} and text.isdigit():
             answer = resolve_cli_answer(
                 question,
@@ -664,6 +838,17 @@ class TelegramBotController:
             next_question = self._show_first_question(chat_id, request["project_id"])
             if next_question:
                 text = f"{text}\n\n{next_question}"
+            self.state.complete(update_id, text)
+            return [TelegramReply(chat_id, text, update_id)]
+        if kind == "inbox":
+            self.state.enqueue_inbox(
+                update_id=update_id,
+                chat_id=chat_id,
+                workspace=str(self.workspace),
+                project_id=request["project_id"],
+                text=request["text"],
+            )
+            text = "Запрос принят и ожидает локального агента на Mac."
             self.state.complete(update_id, text)
             return [TelegramReply(chat_id, text, update_id)]
         raise TelegramBotError("unsupported stored request kind")
