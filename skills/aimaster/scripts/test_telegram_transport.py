@@ -128,7 +128,7 @@ class TelegramTransportSetupTests(unittest.TestCase):
     """Local setup never accepts a token that could be malformed or leaked."""
 
     def test_token_validation_rejects_whitespace_and_accepts_botfather_shape(self):
-        token = "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi"
+        token = "123456789:" + "A" * 36
 
         self.assertEqual(validate_bot_token(token), token)
         with self.assertRaisesRegex(ValueError, "invalid Telegram bot token"):
@@ -145,10 +145,11 @@ class TelegramTransportSetupTests(unittest.TestCase):
             token_path = Path(directory) / "telegram-token"
             store = FileSecretStore(token_path)
 
-            store.store("123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi")
+            token = "123456789:" + "A" * 36
+            store.store(token)
 
             self.assertEqual(
-                store.load(), "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi"
+                store.load(), token
             )
             self.assertEqual(stat.S_IMODE(token_path.stat().st_mode), 0o600)
 
@@ -157,7 +158,7 @@ class TelegramTransportSetupTests(unittest.TestCase):
             workspace = Path(directory)
             result = bot_main(
                 ["--workspace", str(workspace)],
-                token="123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi",
+                token="123456789:" + "A" * 36,
                 owner_id=501,
                 iterations=0,
             )

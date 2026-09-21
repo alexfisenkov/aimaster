@@ -33,11 +33,12 @@ def init_data(token: str, user_id: int, auth_date: int) -> str:
 
 class MiniAppAuthTests(unittest.TestCase):
     def test_valid_init_data_returns_owner(self):
-        raw = init_data("123456:abcdefghijklmnopqrstuvwxyz", 501, int(time.time()))
-        self.assertEqual(validate_init_data(raw, "123456:abcdefghijklmnopqrstuvwxyz", 501)["id"], 501)
+        token = "123456:" + "a" * 32
+        raw = init_data(token, 501, int(time.time()))
+        self.assertEqual(validate_init_data(raw, token, 501)["id"], 501)
 
     def test_tampered_or_stale_data_is_rejected(self):
-        token = "123456:abcdefghijklmnopqrstuvwxyz"
+        token = "123456:" + "a" * 32
         raw = init_data(token, 501, int(time.time()) - 90000)
         with self.assertRaisesRegex(ValueError, "stale"):
             validate_init_data(raw, token, 501)
@@ -47,7 +48,7 @@ class MiniAppAuthTests(unittest.TestCase):
 
 class MiniAppGatewayTests(unittest.TestCase):
     def test_api_requires_valid_telegram_authorization(self):
-        token = "123456:abcdefghijklmnopqrstuvwxyz"
+        token = "123456:" + "a" * 32
 
         class Inner:
             origin = "http://127.0.0.1:8765"
@@ -75,7 +76,7 @@ class MiniAppGatewayTests(unittest.TestCase):
         self.assertEqual(inner.calls[0][1], "/api/projects")
 
     def test_encoded_api_separator_is_still_authenticated(self):
-        token = "123456:abcdefghijklmnopqrstuvwxyz"
+        token = "123456:" + "a" * 32
 
         class Inner:
             origin = "http://127.0.0.1:8765"
@@ -90,7 +91,7 @@ class MiniAppGatewayTests(unittest.TestCase):
         self.assertEqual(denied.status, 403)
 
     def test_snapshot_asset_urls_receive_short_lived_signed_tickets(self):
-        token = "123456:abcdefghijklmnopqrstuvwxyz"
+        token = "123456:" + "a" * 32
 
         class Inner:
             origin = "http://127.0.0.1:8765"

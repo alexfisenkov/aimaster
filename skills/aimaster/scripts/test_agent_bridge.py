@@ -65,7 +65,7 @@ class AgentBridgeTests(unittest.TestCase):
         result = run_codex_item(
             {"workspace": "/tmp/workspace", "project_id": "film-1", "text": "Проверь"},
             runner=lambda command, **kwargs: type(
-                "Completed", (), {"returncode": 0, "stdout": "token 123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi /Users/Alex/secret.txt", "stderr": ""}
+                "Completed", (), {"returncode": 0, "stdout": "token 123456:" + "A" * 36 + " /Users/Alex/secret.txt", "stderr": ""}
             )(),
         )
         self.assertNotIn("123456:", result)
