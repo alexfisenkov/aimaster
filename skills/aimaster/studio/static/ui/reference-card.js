@@ -178,7 +178,7 @@ function renderReadOnlySource(model, projectId) {
     "agent-prompt-button",
     () => ({
       title: `Сгенерировать референс: ${model.name || model.tag}`,
-      prompt: `Открой ${identity}. Подготовь ${model.hasAsset ? "замену текущего референса" : "новый референс"} через генерацию. Сначала подтверди точные project_id «${projectId}» и reference_id «${model.referenceId}», согласуй инструмент, доступную модель и промпт, затем дождись моего разрешения на один запуск. После результата покажи проверку и предложи подключение к этому референсу.`,
+      prompt: `Открой ${identity}. Подготовь ${model.hasAsset ? "замену текущего референса" : "новый референс"} через генерацию. Сначала подтверди exact target и его required stage. Если сейчас image_plan, только подготовь reference, model-specific guide и prompt; не вызывай provider, пока image_results не станет текущей стадией. На image_results заново проверь target/revision, согласуй инструмент, совместимую модель, prompt и один запуск. После результата немедленно выполни canonical collection и покажи его в дашборде.`,
     }),
   ));
   if (model.kind === "video") actions.append(agentButton("Изменить назначение", "agent-prompt-button", () => ({

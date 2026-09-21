@@ -4,6 +4,7 @@ Complete this procedure **before every external generation** (including vary
 and regenerate), after route/model/mode are verified and before any paid call.
 It is a binding check, not authorization: uploading is an external action and
 requires authorization; execution still needs its scoped approval.
+First pass the target-stage preflight in [the completion loop](completion-loop.md).
 
 ## Canonical and native forms
 

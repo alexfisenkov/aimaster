@@ -16,11 +16,29 @@ concise choices in chat and wait for an answer.
 - Do not repeat the question for a minor revision of the same current task
   after the user has accepted a guide choice.
 
-First read `<workspace>/instructions/index.md` if it exists. A matching saved
-guide is matched by its kind and, for prompts, its recorded model and task or
-stage. When one matches, name its title and offer: **use “Title”**, **upload a
-new guide**, or **no guide**. When none matches, offer: **upload a guide** or
-**no guide**.
+Before offering a saved guide, query the deterministic registry for the exact
+kind, modality and task. For a prompt, also supply the selected provider,
+model family, model and version that are actually known. Do not fill an unknown
+scope from context or treat a missing field as a wildcard:
+
+```bash
+python3 <skill>/scripts/guide_registry.py --workspace <workspace> match \
+  --kind prompt --modality video --task motion \
+  --provider <provider> --model-family <family> \
+  --model <model> --version <version>
+```
+
+Only entries in `matches` may be offered. An exact model/version match ranks
+ahead of a versioned family match; a family may cover other versions only when
+`family_all_versions` was explicitly registered. A generic prompt guide must be
+explicitly `model_agnostic` and remains bound to its registered modality and
+task. Entries reported in `stale` have a missing, unsafe, unreadable or changed
+file and must not be offered. This prevents, for example, an image guide for a
+Gemini/Nano Banana model from being offered for Seedance motion.
+
+When one or more valid guides match, name their titles and offer: **use
+“Title”**, **upload a new guide**, or **no guide**. When none matches, offer:
+**upload a guide** or **no guide**.
 
 After choosing a saved guide, read its entire current file before composing.
 If it is missing or unreadable, explain that and ask for a replacement or an
@@ -43,16 +61,39 @@ in the project question lifecycle where available.
 
 Reusable guides live outside the installed skill at `<workspace>/instructions/`
 and are available to every project in that workspace. Saving a newly uploaded
-guide requires explicit user opt-in. On opt-in, create the directory and a
-simple Markdown `index.md` if needed, preserve every existing guide, save the
-new guide under a distinct descriptive filename, append its title, kind, scope
-and path to the index, then read both the saved guide and index back.
+guide requires explicit user opt-in. First read the complete uploaded guide and
+resolve any ambiguity with the user. On opt-in, preserve every existing guide,
+save the new guide under a distinct descriptive filename below `instructions/`,
+then register its exact scope:
 
-For compatibility, discover an existing
-`<workspace>/instructions/model-prompt-instructions.md` as a general saved
-model-prompt guide and add an index entry without changing its contents. Never
-overwrite unrelated instructions or earlier guides. The user may review, edit
-or delete their own workspace guides.
+```bash
+python3 <skill>/scripts/guide_registry.py --workspace <workspace> register \
+  --id <stable-slug> --title "<title>" --path <relative-file.md> \
+  --kind prompt --modality video --task motion \
+  --provider <provider> --model-family <family> \
+  --model <model> --version <version>
+```
+
+Repeat `--modality`, `--task`, `--provider`, `--model-family`, `--model` or
+`--version` for additional explicit values. Use `--provider '*'`,
+`--family-all-versions` or `--model-agnostic` only when the guide itself and the
+user's confirmed intent truly have that wider scope. Scenario guides may omit
+model scope. The CLI writes only strict schema-v1 metadata to
+`<workspace>/instructions/guides.json`, computes the file SHA-256, preserves
+other entries and writes atomically. Read the JSON result and run `list` or the
+intended `match` after registration; do not claim it was saved from prose alone.
+
+`instructions/index.md`, `model-prompt-instructions.md` and other legacy files
+are discovery inputs only. Treat their scope as unknown/unclassified and never
+offer or auto-register them until their full contents have been read and the
+user has confirmed kind, modality, task and any provider/model/version scope.
+`--version` means the target model version, not the guide document's revision
+date. Repeated scope values form one combined applicability set; if a guide does
+not cover every listed model/version or modality/task combination, register
+separate entries rather than creating a false cross-product.
+Never overwrite unrelated instructions or earlier guides. The user may review,
+edit or delete their own workspace guides; an edited registered file becomes
+stale until it is deliberately registered again with a new hash.
 
 Keep credentials, secrets, access details and private correspondence out of
 these files. Saving or using a guide does not authorize a provider call; normal

@@ -421,13 +421,13 @@ function renderLocalReferences(card, model, status, key) {
     const add = document.createElement("button");
     add.type = "button";
     add.className = "frame-local-add";
-    add.textContent = "+ Добавить";
+    add.textContent = "+ Загрузить или сгенерировать";
     markControlHooks(add, model.sceneId, "add-local-reference");
     add.addEventListener("click", () => {
       if (model.readOnly) {
-        requestAgentPrompt({ title: `Добавить референс только для кадра ${model.order}`,
-          prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.sceneId, revision: model.revision })}. Добавь локальный ${model.projectType === "photo" ? "референс-изображение" : "референс"} только для этой сцены из файла, который я прикреплю. Сначала проверь файл, предложи label и тег, покажи изменение и попроси подтверждение.${model.projectType === "photo" ? " Видеореференсы для photo-проекта не поддерживаются: если приложено видео, предложи извлечь подходящий стоп-кадр только с моего разрешения, затем подключить изображение." : ""}`,
-          attachmentHint: model.projectType === "photo" ? "Прикрепите изображение. Если приложено видео, агент сначала запросит разрешение на извлечение стоп-кадра." : "Прикрепите файл к сообщению в чате. Вложение не входит в скопированный текст." }, add);
+        requestAgentPrompt({ title: `Добавить материал только для кадра ${model.order}`,
+          prompt: `Открой ${exactTarget({ projectId: model.projectId, targetId: model.sceneId, revision: model.revision })}. Для этой сцены нужен дополнительный кадр или локальный референс. Сначала учти мой текущий текст: если я уже написал «загрузить» или «сгенерировать», не спрашивай это повторно. Иначе предложи выбор: (1) загрузить готовый файл; (2) сгенерировать scene-local reference; ${model.projectType === "photo" ? "(3) сгенерировать итоговое изображение сцены." : "(3) подготовить первый/последний кадр композиции; (4) подготовить motion-клип позже."} Для upload следуй asset-intake: используй существующий placeholder, source=upload, без дубликата и регенерации. Для generated local reference уточни роль (character/product/location/style), создай reference с source=generate и scene_id «${model.sceneId}», подготовь его prompt и правильный writing guide; внешний запуск выполняй только на image_results после approval image_plan. ${model.projectType === "photo" ? "Для итогового изображения используй позицию сцены, не создавай лишний reference." : "Для первого/последнего кадра измени frame plan и prompt; не запускай motion на image_plan."} Покажи точное сопоставление с этой сценой и следующий допустимый этап.` ,
+          attachmentHint: model.projectType === "photo" ? "Если выбран upload, прикрепите изображение. Видео можно превратить в стоп-кадр только после отдельного согласования." : "Если выбран upload, прикрепите изображение или поддерживаемый видеореференс. Для генерации вложение не требуется." }, add);
         return;
       }
       submitFrameDecision({

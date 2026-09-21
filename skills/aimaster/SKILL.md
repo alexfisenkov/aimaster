@@ -144,7 +144,9 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
 - For every newly selected model and relevant prompt task/stage, before writing
   prompts, run the mandatory [writing-guide gate](references/writing-guides.md).
   A selected guide governs creative composition only; route verification and
-  scoped approval still govern external actions.
+  scoped approval still govern external actions. Offer saved guides only from
+  an exact `guide_registry.py match`; never carry an image guide into video,
+  motion or another model/version from chat memory or title similarity.
 - For each character, location, product and style reference, ask: none,
   upload or generate. Uploads are supplied through chat and registered after
   inspection. Generation requires a verified route and a scoped authorization.
@@ -158,6 +160,10 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
   `@IMG_NN`/`@VOICE_NN`/`@VID_NN` in Studio stay stable; their provider-native binding is
   operation-scoped and must be observed on the selected route, never assumed
   from a generic `@img1` convention.
+- Before spending or uploading, run the stage preflight in the
+  [completion loop](references/completion-loop.md). Generate only when the
+  target position's stage is the current Studio stage. Future-stage prompts
+  may be prepared, but their media generation must wait for that stage.
 - `generate`, `vary`, and `regenerate` require a one-use grant (`generation`
   covers all three). A verified route, a scoped grant and the user's explicit
   approval in chat authorize that one action; do not ask for a second approval.

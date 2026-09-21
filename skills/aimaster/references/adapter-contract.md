@@ -21,7 +21,10 @@ Before prompt preparation for each newly selected model and relevant task, use
 the [writing-guide gate](writing-guides.md). A guide the user selects is the
 creative specification for that prompt task, but never authorizes provider
 execution. Reusable opt-in guides live in the workspace catalogue; an existing
-`instructions/model-prompt-instructions.md` remains a supported general guide.
+`instructions/model-prompt-instructions.md` is discovery-only until its exact
+scope is classified and registered.
+Only a deterministic registry match for modality, task and model/version can be
+offered automatically; conversation reuse is not a match.
 
 Reference binding is a provider-neutral safety contract, not a universal prompt
 syntax: route, model and mode determine whether an observed native inline tag,

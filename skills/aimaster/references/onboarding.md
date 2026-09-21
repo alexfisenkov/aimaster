@@ -51,8 +51,9 @@ autopilot mode. Discover the user's connected MCP/tools/routes before
 considering a provider. Do not browse provider sites merely to discover one.
 Live-probe the selected route and show only models it actually exposes. Before
 prompt writing for each new model and relevant task/stage, run that same gate.
-It preserves the existing `model-prompt-instructions.md` compatibility file,
-but stores opt-in reusable guides in the workspace catalogue.
+It discovers an existing `model-prompt-instructions.md` compatibility file but
+must classify/register its exact scope before offering it; opt-in reusable
+guides live in the workspace catalogue.
 
 For each character, location, product and style reference, ask whether to use
 none, upload through chat, or generate. Generation requires a verified route and

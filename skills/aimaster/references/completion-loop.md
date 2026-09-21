@@ -5,6 +5,35 @@ for aimaster until it is collected, validated and visible in Creator Studio.
 Apply this loop to images, references, video, audio, variations, regeneration,
 post-processing and final assembly.
 
+## Before any external generation
+
+Read the current canonical state and resolve the exact target position. Its
+declared stage must equal `view_stage.current_stage`; the current prompt/result
+owner and revision must also match the prepared operation. A grant, a prepared
+prompt or a visible future position does not bypass this gate.
+
+If the target belongs to a future stage, do **not** call the provider. Complete
+the current stage's prompts and writing-guide choices, show the plan, and obtain
+the normal stage decision first. A generated reference prompt is prepared at
+`image_plan`, but its external image generation and result collection occur at
+`image_results`. Motion prompts may be prepared at `image_plan`; motion media is
+generated only at `motion`.
+
+If a provider result already exists because this rule was violated, preserve it
+without rerunning: copy it into workspace media, register the asset, and update
+the operation's existing private `binding.md`. If none exists, create
+`WS/projects/<id>/.generation/recovery-<fresh-id>/binding.md` with
+`action_id: none` and `status: pending_collection`. Record project, target,
+asset, external ID, prompt/model/bindings, source revision and required stage;
+write `unavailable` for facts that cannot be verified—never reconstruct or
+invent them. This is a durable **manual recovery record**, not a runtime
+queue or proof that the result is already in Studio. Do not auto-approve stages
+to force insertion. Resolve the current stage with the user; once the target
+stage is reached, read that record, revalidate target/prompt/references and
+append the same asset through the normal result command. Mark the record
+collected only after snapshot read-back. A claimed job stops `needs_chat` until
+collection can complete.
+
 User-supplied source material follows [asset intake](asset-intake.md), not this
 generated-output collection path. Do not turn an uploaded reference into a
 generation task.

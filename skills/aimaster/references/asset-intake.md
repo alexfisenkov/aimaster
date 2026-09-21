@@ -4,6 +4,12 @@ A file the user supplies is existing material. It is never permission or a
 request to generate the same material again. Apply this rule to images, video,
 voice, audio and documents in every project and content type.
 
+When no file is attached, do not assume upload. For an “add material to this
+scene” request, offer upload or generation. If the user already wrote which one
+they want, accept that choice without repeating it. A generated scene-local
+reference is planned at `image_plan` with its exact `scene_id`; its external
+generation waits for `image_results` under the completion-loop stage gate.
+
 ## Classify before writing
 
 Use the current question and user message to identify the intended target. If

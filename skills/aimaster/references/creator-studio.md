@@ -55,6 +55,9 @@ Attaching an image/video file to a reference makes that reference an uploaded
 source and removes its active generated-reference position on the next
 read-back. Reuse a matching placeholder instead of creating a duplicate; do
 not generate the supplied subject again without an explicit variant request.
+The per-scene add action must offer both upload and generation. A generated
+local reference keeps its scene link, receives its own prompt during
+`image_plan`, and is executed/collected only after `image_results` is current.
 
 Ask only material questions. Prefer the runtime's native choice tool when it is
 available; otherwise use numbered choices or concise free text in chat. Store
@@ -206,8 +209,9 @@ creator_studio.py result add-version WS P --target POSITION \
   --asset-id ID [--caption "…"] --expected-revision N
 ```
 
-The older `--scene/--kind` forms remain compatibility doors for linked legacy
-groups inside Studio state; prefer `--target`. Static image/reference/frame
+The older `--scene/--kind` forms remain stage-gated compatibility doors for
+linked legacy groups inside Studio state; prefer `--target`. They cannot write
+image/video results before `image_results`/`motion`. Static image/reference/frame
 prompts reject `@VOICE_NN`; motion, one-shot and voice-layer prompts may use
 enabled voice tags with attached files.
 

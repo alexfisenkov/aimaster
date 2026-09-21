@@ -157,7 +157,14 @@ def add_result_version(
         project = require_project(state)
         if kind == "video" and project.get("type") == "photo":
             raise AuthoringError("a photo project cannot have video results")
-        require_stage_not_approved(state, _RESULT_KIND_STAGE[kind], "result add-version")
+        result_stage = _RESULT_KIND_STAGE[kind]
+        current_stage = domain.derive_view_stage(state)["current_stage"]
+        if current_stage != result_stage:
+            raise AuthoringError(
+                f"{kind} results can be added only at {result_stage} "
+                f"(current stage: {current_stage})"
+            )
+        require_stage_not_approved(state, result_stage, "result add-version")
         scene = find_scene(state, scene_id)
         items = state.setdefault(list_key, [])
         if not isinstance(items, list):
