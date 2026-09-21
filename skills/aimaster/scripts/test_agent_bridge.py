@@ -100,6 +100,25 @@ class AgentBridgeTests(unittest.TestCase):
         self.assertEqual(result["status"], "outcome_unknown")
         self.assertEqual(state.completed[0][1], "outcome_unknown")
 
+    def test_completed_inbox_result_is_delivered_through_existing_outbox(self):
+        from studio.telegram_bot import TelegramBotState
+
+        with tempfile.TemporaryDirectory() as directory:
+            state = TelegramBotState(Path(directory) / "telegram.sqlite3")
+            state.begin(77, "fingerprint", 501, {"kind": "reply", "text": "Принято"})
+            state.complete(77, "Принято")
+            state.enqueue_inbox(
+                update_id=77,
+                chat_id=501,
+                workspace="/tmp/workspace",
+                project_id="film-1",
+                text="Проверь",
+            )
+            item = state.dequeue_inbox()
+            state.complete_inbox(item["id"], "done", "Ответ Codex")
+            replies = state.pending_replies(501)
+            self.assertEqual([reply.text for reply in replies], ["Ответ Codex"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -510,6 +510,11 @@ class TelegramBotState:
             if changed.rowcount != 1:
                 raise TelegramBotError("inbox item is not processing")
             row = connection.execute("SELECT * FROM inbox WHERE id=?", (item_id,)).fetchone()
+            connection.execute(
+                "UPDATE updates SET reply_text=?, delivered=0, status=?, updated_at=? "
+                "WHERE update_id=?",
+                (outcome_text.strip(), status, _timestamp(), row["update_id"]),
+            )
             return self._public_inbox(row)
 
 class TelegramBotController:
@@ -524,6 +529,7 @@ class TelegramBotController:
         ledger_factory=None,
         questions_factory=None,
         state=None,
+        pairing_code=None,
     ):
         if owner_id is not None and (
             isinstance(owner_id, bool) or not isinstance(owner_id, int) or owner_id <= 0
@@ -536,6 +542,7 @@ class TelegramBotController:
         if owner_id is not None and paired_owner is not None and owner_id != paired_owner:
             raise TelegramBotError("Telegram owner does not match local pairing")
         self.owner_id = owner_id if owner_id is not None else paired_owner
+        self.pairing_code = pairing_code
         self._store_factory = store_factory or (lambda: authoring.open_store(self.workspace))
         self._ledger_factory = ledger_factory or (lambda: open_ledger(self.workspace))
         self._questions_factory = questions_factory or (
@@ -610,8 +617,12 @@ class TelegramBotController:
                 or sender_id != chat_id
                 or chat_type != "private"
                 or not isinstance(text, str)
-                or text.strip().split("@", 1)[0].lower() != "/start"
+                or not text.strip().lower().startswith("/start")
             ):
+                self.state.record_ignored(update_id, fingerprint)
+                return []
+            parts = text.strip().split(maxsplit=1)
+            if self.pairing_code is not None and (len(parts) != 2 or parts[1] != self.pairing_code):
                 self.state.record_ignored(update_id, fingerprint)
                 return []
             self.owner_id = self.state.pair_owner(sender_id)

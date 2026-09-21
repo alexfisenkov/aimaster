@@ -33,7 +33,7 @@ MAX_BODY_BYTES = 64 * 1024
 _JSON_TYPE = "application/json; charset=utf-8"
 _SSE_TYPE = "text/event-stream; charset=utf-8"
 _CSP = (
-    "default-src 'none'; script-src 'self'; style-src 'self'; "
+    "default-src 'none'; script-src 'self' https://telegram.org; style-src 'self'; "
     "img-src 'self'; media-src 'self'; connect-src 'self'; "
     "frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 )

@@ -166,6 +166,7 @@ def main(
     owner_id=None,
     allow_pairing=False,
     after_iteration=None,
+    pairing_code=None,
 ):
     """Run polling with injected local secrets or legacy environment values.
 
@@ -193,7 +194,7 @@ def main(
             print("TELEGRAM_STUDIO_OWNER_ID must be an integer", file=sys.stderr)
             return 2
     try:
-        controller = TelegramBotController(args.workspace, owner_id)
+        controller = TelegramBotController(args.workspace, owner_id, pairing_code=pairing_code)
         api = api_factory(token)
         completed = 0
         while iterations is None or completed < iterations:

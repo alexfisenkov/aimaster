@@ -55,7 +55,10 @@ class MiniAppGateway:
 
     @staticmethod
     def _is_protected(path: str) -> bool:
-        return path.startswith("/api/") or path.startswith("/assets/")
+        # Authenticate everything except the exact document and known static
+        # files. This intentionally treats encoded separators as protected;
+        # Studio later decodes paths before routing them.
+        return path != "/" and not path.startswith("/static/")
 
     @staticmethod
     def _forbidden():

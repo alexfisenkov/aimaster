@@ -12,6 +12,7 @@ import argparse
 import getpass
 import os
 import re
+import secrets
 import shutil
 import select
 import stat
@@ -25,6 +26,7 @@ _SKILL_ROOT = Path(__file__).resolve().parent.parent
 if str(_SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(_SKILL_ROOT))
 
+from creator_studio_bot import TelegramApiError, TelegramBotApi  # noqa: E402
 from studio.telegram_bot import TelegramBotState, TelegramBotError  # noqa: E402
 from studio.workspace import PRIVATE_DIR_NAME, resolve_workspace_paths  # noqa: E402
 
@@ -202,6 +204,21 @@ class LocalSecretStore:
         return self.fallback.load()
 
 
+class PairingCodeStore(FileSecretStore):
+    """Mode-0600 one-time pairing code, separate from the bot token."""
+
+    def store_new(self) -> str:
+        code = secrets.token_urlsafe(18)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(code + "\n")
+        finally:
+            os.chmod(self.path, 0o600)
+        return code
+
+
 def _workspace_state(workspace):
     workspace_path, _, _, private_root = resolve_workspace_paths(workspace)
     return workspace_path, private_root, TelegramBotState(private_root / "telegram_bot.sqlite3")
@@ -223,12 +240,15 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
             LocalSecretStore(_default_fallback_path()).store(
                 token_prompt("BotFather token (hidden): ")
             )
-            print("Telegram token saved locally. Send /start to the bot to pair the owner.")
+            pairing = PairingCodeStore(_default_fallback_path().with_name("telegram-pairing-code")).store_new()
+            print(f"Telegram token saved locally. Send /start {pairing} to the bot to pair the owner.")
             return 0
         workspace, _, state = _workspace_state(args.workspace)
         secret_store = LocalSecretStore(_default_fallback_path())
         owner_id = state.paired_owner()
         token = secret_store.load()
+        pairing_path = _default_fallback_path().with_name("telegram-pairing-code")
+        pairing_code = pairing_path.read_text(encoding="utf-8").strip() if owner_id is None else None
         if runner is None:
             from creator_studio_bot import main as runner
         from studio.agent_bridge import process_inbox_once
@@ -267,6 +287,7 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
                 owner_id=owner_id,
                 allow_pairing=owner_id is None,
                 after_iteration=after_iteration,
+                pairing_code=pairing_code,
             )
         finally:
             if tunnel is not None:

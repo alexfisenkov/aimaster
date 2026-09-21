@@ -8,6 +8,7 @@ for questions, grants, collection and provider-specific work.
 from __future__ import annotations
 
 import subprocess
+import re
 from pathlib import Path
 
 
@@ -37,7 +38,6 @@ def build_codex_command(workspace: Path | str) -> list[str]:
         str(root),
         "-s",
         "workspace-write",
-        "--approve-for-me",
         "--ephemeral",
         "-",
     ]
@@ -86,7 +86,16 @@ def run_codex_item(item: dict, *, runner=subprocess.run, timeout=DEFAULT_TIMEOUT
     output = getattr(completed, "stdout", "")
     if not isinstance(output, str) or not output.strip():
         raise AgentBridgeError("agent bridge outcome_unknown: Codex returned no response")
-    return output.strip()[-MAX_OUTPUT_CHARS:]
+    return _sanitize_output(output.strip())[-MAX_OUTPUT_CHARS:]
+
+
+def _sanitize_output(text: str) -> str:
+    """Remove common credentials and private absolute paths before delivery."""
+
+    text = re.sub(r"\b\d{6,20}:[A-Za-z0-9_-]{20,}\b", "[telegram-token-redacted]", text)
+    text = re.sub(r"/Users/[^\s`\"']+", "[local-path-redacted]", text)
+    text = re.sub(r"(?i)(api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+", r"\1=[redacted]", text)
+    return text
 
 
 def process_inbox_once(state, *, runner=run_codex_item):

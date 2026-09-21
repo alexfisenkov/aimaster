@@ -63,6 +63,30 @@ class TelegramTransportStateTests(unittest.TestCase):
             self.assertEqual(controller.state.paired_owner(), 501)
             self.assertEqual(replies[0].text, "Telegram owner paired.")
 
+    def test_pairing_code_blocks_wrong_code(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            controller = TelegramBotController(workspace, None, pairing_code="only-once")
+            replies = controller.handle_update({
+                "update_id": 901,
+                "message": {
+                    "from": {"id": 501},
+                    "chat": {"id": 501, "type": "private"},
+                    "text": "/start wrong",
+                },
+            })
+            self.assertEqual(replies, [])
+            self.assertIsNone(controller.state.paired_owner())
+
+    def test_pairing_code_blocks_the_first_wrong_sender_or_code(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            controller = TelegramBotController(workspace, None, pairing_code="only-once")
+            wrong = controller.handle_update({
+                "update_id": 901,
+                "message": {"from": {"id": 501}, "chat": {"id": 501, "type": "private"}, "text": "/start wrong"},
+            })
+            self.assertEqual(wrong, [])
+            self.assertIsNone(controller.state.paired_owner())
+
     def test_dequeue_returns_one_durable_free_form_request(self):
         state = TelegramBotState(self.db_path)
 

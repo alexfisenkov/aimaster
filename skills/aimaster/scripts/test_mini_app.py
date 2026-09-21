@@ -74,6 +74,21 @@ class MiniAppGatewayTests(unittest.TestCase):
         self.assertEqual(authorized.status, 200)
         self.assertEqual(inner.calls[0][1], "/api/projects")
 
+    def test_encoded_api_separator_is_still_authenticated(self):
+        token = "123456:abcdefghijklmnopqrstuvwxyz"
+
+        class Inner:
+            origin = "http://127.0.0.1:8765"
+            authority = "127.0.0.1:8765"
+            csrf_token = "csrf"
+
+            def handle(self, method, path, headers, body):
+                return Response(200, {"Content-Type": "application/json"}, b"{}")
+
+        gateway = MiniAppGateway(Inner(), token, 501)
+        denied = gateway.handle("GET", "/api%2fprojects", [("Host", "public")], b"")
+        self.assertEqual(denied.status, 403)
+
 
 if __name__ == "__main__":
     unittest.main()
