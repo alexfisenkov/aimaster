@@ -61,6 +61,16 @@ class AgentBridgeTests(unittest.TestCase):
                 runner=fake_runner,
             )
 
+    def test_success_redacts_tokens_and_local_paths(self):
+        result = run_codex_item(
+            {"workspace": "/tmp/workspace", "project_id": "film-1", "text": "Проверь"},
+            runner=lambda command, **kwargs: type(
+                "Completed", (), {"returncode": 0, "stdout": "token 123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi /Users/Alex/secret.txt", "stderr": ""}
+            )(),
+        )
+        self.assertNotIn("123456:", result)
+        self.assertNotIn("/Users/Alex", result)
+
     def test_missing_project_or_workspace_is_refused(self):
         with self.assertRaises(AgentBridgeError):
             run_codex_item({"workspace": "/tmp/workspace", "text": "Проверь"}, runner=lambda *a, **k: None)
