@@ -192,11 +192,13 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
         token = secret_store.load()
         if runner is None:
             from creator_studio_bot import main as runner
+        from studio.agent_bridge import process_inbox_once
         return runner(
             ["--workspace", str(workspace)],
             token=token,
             owner_id=owner_id,
             allow_pairing=owner_id is None,
+            after_iteration=lambda controller: process_inbox_once(controller.state),
         )
     except (OSError, RuntimeError, TelegramBotError, ValueError) as error:
         # Credential-bearing exceptions are intentionally not interpolated.

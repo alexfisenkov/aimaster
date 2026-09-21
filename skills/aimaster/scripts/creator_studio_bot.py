@@ -117,7 +117,7 @@ def _deliver_pending(controller, api):
         controller.mark_delivered(reply.update_id)
 
 
-def run_poll_iteration(controller, api, *, timeout=30):
+def run_poll_iteration(controller, api, *, timeout=30, after_iteration=None):
     """Deliver the outbox, fetch one update batch and process it in order."""
 
     _deliver_pending(controller, api)
@@ -133,6 +133,8 @@ def run_poll_iteration(controller, api, *, timeout=30):
         for reply in replies:
             api.send_message(reply.chat_id, reply.text)
             controller.mark_delivered(reply.update_id)
+    if after_iteration is not None:
+        after_iteration(controller)
     return controller.next_offset()
 
 
@@ -151,6 +153,7 @@ def main(
     token=None,
     owner_id=None,
     allow_pairing=False,
+    after_iteration=None,
 ):
     """Run polling with injected local secrets or legacy environment values.
 
@@ -182,7 +185,7 @@ def main(
         api = api_factory(token)
         completed = 0
         while iterations is None or completed < iterations:
-            run_poll_iteration(controller, api)
+            run_poll_iteration(controller, api, after_iteration=after_iteration)
             completed += 1
     except (TelegramBotError, TelegramApiError, OSError, ValueError):
         print("Telegram Studio bot stopped because of a local or transport error", file=sys.stderr)
