@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from urllib import request
@@ -28,6 +29,28 @@ class TelegramApiError(RuntimeError):
 
 
 _TELEGRAM_TEXT_LIMIT = 4096
+
+_DEFAULT_API_ORIGIN = "https://api.telegram.org"
+API_ORIGIN_VARIABLE = "AIMASTER_TELEGRAM_API_ORIGIN"
+_LOOPBACK_ORIGIN = re.compile(r"^http://127\.0\.0\.1:(?:[1-9][0-9]{0,4})$")
+
+
+def resolve_api_origin(environ=None) -> str:
+    """Return the Bot API origin, allowing only a loopback test override.
+
+    The default stays ``https://api.telegram.org``.  A local end-to-end run
+    may point the transport at its own mock server, but only at IPv4
+    loopback: the origin carries the bot token in the path, so no override
+    may ever direct it at a host that is not this machine.
+    """
+
+    environment = os.environ if environ is None else environ
+    override = environment.get(API_ORIGIN_VARIABLE)
+    if override is None or override == "":
+        return _DEFAULT_API_ORIGIN
+    if not _LOOPBACK_ORIGIN.fullmatch(override):
+        raise TelegramApiError("Telegram API origin override must be an IPv4 loopback HTTP origin")
+    return override
 
 
 def _text_chunks(text: str, limit: int = _TELEGRAM_TEXT_LIMIT) -> list[str]:
@@ -50,13 +73,24 @@ def _text_chunks(text: str, limit: int = _TELEGRAM_TEXT_LIMIT) -> list[str]:
     return chunks
 
 
+class _NoRedirect(request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 class TelegramBotApi:
     """Small standard-library Bot API client with an injectable opener."""
 
-    def __init__(self, token: str, *, opener=request.urlopen):
+    def __init__(self, token: str, *, opener=request.urlopen, environ=None):
         if not isinstance(token, str) or not token:
             raise TelegramApiError("Telegram token is required")
-        self._base_url = f"https://api.telegram.org/bot{token}/"
+        origin = resolve_api_origin(environ)
+        self._base_url = f"{origin}/bot{token}/"
+        if origin != _DEFAULT_API_ORIGIN and opener is request.urlopen:
+            # A loopback override must stay on this machine: a local server
+            # answering 3xx could otherwise send the token-bearing URL to
+            # any host, because urlopen follows redirects by default.
+            opener = request.build_opener(_NoRedirect).open
         self._opener = opener
 
     def _call(self, method: str, payload: dict, *, timeout: int):

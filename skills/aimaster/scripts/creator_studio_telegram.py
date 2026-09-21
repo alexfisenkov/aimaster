@@ -356,6 +356,13 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
             if paired_owner is None or mini_app is not None:
                 return
             mini_app = serve_mini_app(studio.application, stored_value, paired_owner)
+            # The loopback Mini App address is the only handle the owner has
+            # when the public tunnel is unavailable; it carries no credential.
+            print(
+                f"Mini App (локально, для проверки шлюза; дашборд открывается из Telegram): "
+                f"{mini_app.base_url}/#mini-app",
+                flush=True,
+            )
             if tunnel_attempted:
                 return
             tunnel_attempted = True

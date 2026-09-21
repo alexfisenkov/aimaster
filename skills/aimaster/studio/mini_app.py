@@ -11,7 +11,6 @@ import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qsl, urlsplit
-from urllib.parse import parse_qsl
 
 from .http_app import Response
 
@@ -60,13 +59,28 @@ class MiniAppGateway:
         # Authenticate everything except the exact document and known static
         # files. This intentionally treats encoded separators as protected;
         # Studio later decodes paths before routing them.
+        #
+        # Repair, 2026-09-21: the caller passes the *parsed* path now. It
+        # used to pass the raw request target, so the document was only
+        # public at a bare "/": the dashboard's own `history.pushState`
+        # turns the address into `/?project=<id>`, and reloading the Telegram
+        # WebView on that address was answered with a raw 403 JSON body
+        # instead of the page -- no dashboard, no diagnostics, no way back.
         return path != "/" and not path.startswith("/static/")
 
     @staticmethod
     def _forbidden():
+        # Repair, 2026-09-21: this used to declare `Content-Length: 31` for a
+        # 30-byte body, and `_MiniAppHandler` adds the real length on top of
+        # whatever the response already carries -- so every 403 went out with
+        # two conflicting Content-Length headers. RFC 9112 §6.3 calls that
+        # invalid framing a recipient MUST reject, which through the
+        # cloudflared tunnel turns the Mini App's "not authorized" answer
+        # into a tunnel error instead of the JSON the dashboard can report.
+        # The length is left to the one layer that knows the body.
         return Response(
             403,
-            {"Content-Type": "application/json", "Content-Length": "31"},
+            {"Content-Type": "application/json"},
             b'{"error":{"code":"forbidden"}}',
         )
 
@@ -80,11 +94,17 @@ class MiniAppGateway:
             expires = int(values.get("e", "0"))
         except ValueError:
             return False
-        if expires < int(time.time()) or not secrets.compare_digest(
-            values.get("t", ""), self._asset_ticket(asset_id, expires)
-        ):
+        if expires < int(time.time()):
             return False
-        return True
+        try:
+            # compare_digest refuses non-ASCII str; a ticket like `t=%D0%B6`
+            # must simply be invalid, not an exception on an anonymous request.
+            return secrets.compare_digest(
+                values.get("t", "").encode("utf-8", "surrogatepass"),
+                self._asset_ticket(asset_id, expires).encode(),
+            )
+        except (TypeError, ValueError):
+            return False
 
     def _rewrite_asset_urls(self, response):
         if not response.headers.get("Content-Type", "").startswith("application/json"):
@@ -116,7 +136,7 @@ class MiniAppGateway:
         asset_path = parsed.path.startswith("/assets/")
         asset_id = parsed.path.removeprefix("/assets/") if asset_path else ""
         ticket_ok = asset_path and "/" not in asset_id and self._valid_asset_ticket(asset_id, parsed.query)
-        if self._is_protected(path) and not ticket_ok:
+        if self._is_protected(parsed.path) and not ticket_ok:
             authorization = normalized.get("authorization", "")
             if not authorization.startswith("tma "):
                 return self._forbidden()
@@ -166,10 +186,22 @@ class _MiniAppHandler(BaseHTTPRequestHandler):
             response = self.server.gateway.handle(
                 self.command, self.path, list(self.headers.items()), body
             )
-        except ValueError:
+        except Exception:
+            # Fail closed with a real HTTP answer. The request body may be
+            # unread (oversized or malformed Content-Length), so the
+            # keep-alive connection must not be reused: leftover bytes would
+            # be parsed as the next request on a socket the tunnel shares.
             response = MiniAppGateway._forbidden()
+            self.close_connection = True
         self.send_response(response.status)
+        # The body's real length is sent exactly once: a `Content-Length` the
+        # response already carries (`_rewrite_asset_urls` sets one, and the
+        # inner Studio may too) would otherwise be emitted a second time
+        # alongside this one -- duplicate, and historically conflicting,
+        # framing headers. See `MiniAppGateway._forbidden`.
         for name, value in response.headers.items():
+            if name.casefold() == "content-length":
+                continue
             self.send_header(name, value)
         self.send_header("Content-Length", str(len(response.body)))
         self.end_headers()
