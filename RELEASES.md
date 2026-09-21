@@ -39,6 +39,12 @@
 - Любой canonical `@IMG_NN`/`@VID_NN`/`@VOICE_NN`, которого нет в manifest как подтверждённого native token, блокирует запуск даже при пустом manifest.
 - Для claimed jobs validator сравнивает manifest с точным frozen context из `claim`, включая полный набор canonical reference/asset IDs и revision; пропущенный текущий референс блокирует запуск.
 
+## 2026.09.21.4
+
+- Для macOS добавлен Telegram transport поверх существующего workspace: скрытая локальная настройка токена, Keychain/fallback, owner pairing через первый `/start` и durable inbox.
+- Добавлен локальный Codex bridge: Telegram-сообщения обрабатываются на включённом Mac через `codex exec`; результат возвращается в transport без отдельного состояния проектов.
+- Добавлен HMAC-проверяемый Mini App gateway для того же дашборда и optional Cloudflare Quick Tunnel; Windows остаётся вне выпуска.
+
 ## 2026.09.21.2
 
 - Добавлен строгий реестр writing guides: modality/task/provider/model family/model/version и SHA файла. Автоматически предлагаются только точные действующие совпадения.

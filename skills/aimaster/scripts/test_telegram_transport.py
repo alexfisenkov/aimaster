@@ -18,7 +18,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from creator_studio_bot import main as bot_main  # noqa: E402
-from creator_studio_telegram import FileSecretStore, build_parser, validate_bot_token  # noqa: E402
+from creator_studio_telegram import FileSecretStore, build_parser, cloudflared_command, validate_bot_token  # noqa: E402
 from studio.telegram_bot import (  # noqa: E402
     TelegramBotController,
     TelegramBotError,
@@ -157,6 +157,17 @@ class TelegramProjectMenuTests(unittest.TestCase):
                 {"text": "Зета", "callback_data": "project:project-z"},
             ],
         )
+
+    def test_menu_button_requires_https(self):
+        from creator_studio_bot import TelegramApiError, TelegramBotApi
+
+        api = object.__new__(TelegramBotApi)
+        with self.assertRaisesRegex(TelegramApiError, "HTTPS"):
+            api.set_chat_menu_button("http://127.0.0.1:8765")
+
+    def test_cloudflared_command_is_loopback_only(self):
+        with self.assertRaisesRegex(ValueError, "loopback"):
+            cloudflared_command("https://example.com")
 
 
 class TelegramPairingTests(unittest.TestCase):

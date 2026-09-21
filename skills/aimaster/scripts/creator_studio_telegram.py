@@ -13,9 +13,11 @@ import getpass
 import os
 import re
 import shutil
+import select
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -30,6 +32,7 @@ from studio.workspace import PRIVATE_DIR_NAME, resolve_workspace_paths  # noqa: 
 _TOKEN_PATTERN = re.compile(r"^[0-9]{6,20}:[A-Za-z0-9_-]{20,}$")
 _KEYCHAIN_SERVICE = "ai-master-studio-telegram"
 _KEYCHAIN_ACCOUNT = "bot-token"
+_TUNNEL_URL = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
 
 def _default_fallback_path() -> Path:
@@ -44,6 +47,42 @@ def validate_bot_token(token: str) -> str:
     if not isinstance(token, str) or not _TOKEN_PATTERN.fullmatch(token):
         raise ValueError("invalid Telegram bot token")
     return token
+
+
+def cloudflared_command(local_url: str) -> list[str]:
+    if not isinstance(local_url, str) or not local_url.startswith("http://127.0.0.1:"):
+        raise ValueError("cloudflared target must be a loopback HTTP URL")
+    executable = shutil.which("cloudflared")
+    if not executable:
+        raise RuntimeError("cloudflared is not installed")
+    return [executable, "tunnel", "--url", local_url, "--no-autoupdate"]
+
+
+def start_cloudflared(local_url: str, *, popen=subprocess.Popen, timeout=12):
+    process = popen(
+        cloudflared_command(local_url),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    lines = []
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        ready, _, _ = select.select([process.stdout], [], [], 0.25)
+        if not ready:
+            if process.poll() is not None:
+                break
+            continue
+        line = process.stdout.readline()
+        if not line:
+            break
+        lines.append(line)
+        match = _TUNNEL_URL.search(line)
+        if match:
+            return process, match.group(0)
+    process.terminate()
+    raise RuntimeError("cloudflared did not provide an HTTPS URL")
 
 
 class FileSecretStore:
@@ -193,13 +232,48 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
         if runner is None:
             from creator_studio_bot import main as runner
         from studio.agent_bridge import process_inbox_once
-        return runner(
-            ["--workspace", str(workspace)],
-            token=token,
-            owner_id=owner_id,
-            allow_pairing=owner_id is None,
-            after_iteration=lambda controller: process_inbox_once(controller.state),
-        )
+        from studio.mini_app import serve_mini_app
+        from studio.server import serve
+
+        studio = serve(workspace)
+        mini_app = None
+        tunnel = None
+        tunnel_attempted = False
+
+        def after_iteration(controller):
+            nonlocal mini_app, tunnel, tunnel_attempted
+            process_inbox_once(controller.state)
+            paired_owner = controller.state.paired_owner()
+            if paired_owner is None or mini_app is not None:
+                return
+            mini_app = serve_mini_app(studio.application, token, paired_owner)
+            if tunnel_attempted:
+                return
+            tunnel_attempted = True
+            try:
+                tunnel, tunnel_url = start_cloudflared(mini_app.base_url)
+                TelegramBotApi(token).set_chat_menu_button(tunnel_url)
+            except (OSError, RuntimeError, TelegramApiError):
+                # The local Mini App remains available for diagnostics; no
+                # false public URL or menu is advertised when the tunnel fails.
+                if tunnel is not None:
+                    tunnel.terminate()
+                tunnel = None
+
+        try:
+            return runner(
+                ["--workspace", str(workspace)],
+                token=token,
+                owner_id=owner_id,
+                allow_pairing=owner_id is None,
+                after_iteration=after_iteration,
+            )
+        finally:
+            if tunnel is not None:
+                tunnel.terminate()
+            if mini_app is not None:
+                mini_app.close()
+            studio.close()
     except (OSError, RuntimeError, TelegramBotError, ValueError) as error:
         # Credential-bearing exceptions are intentionally not interpolated.
         print("Telegram transport setup or launch failed", file=sys.stderr)

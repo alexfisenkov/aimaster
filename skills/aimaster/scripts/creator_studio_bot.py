@@ -106,6 +106,18 @@ class TelegramBotApi:
                 raise TelegramApiError("Telegram delivery response is invalid")
         return result
 
+    def set_chat_menu_button(self, url: str):
+        if not isinstance(url, str) or not url.startswith("https://"):
+            raise TelegramApiError("Mini App URL must use HTTPS")
+        result = self._call(
+            "setChatMenuButton",
+            {"menu_button": {"type": "web_app", "text": "AI Мастерская", "web_app": {"url": url}}},
+            timeout=10,
+        )
+        if result is not True:
+            raise TelegramApiError("Telegram did not accept the Mini App menu")
+        return result
+
 
 def _deliver_pending(controller, api):
     for reply in controller.pending_replies():

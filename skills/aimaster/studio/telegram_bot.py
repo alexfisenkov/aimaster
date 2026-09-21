@@ -494,6 +494,24 @@ class TelegramBotState:
             ).fetchone()
             return self._public_inbox(claimed)
 
+    def complete_inbox(self, item_id, status, outcome_text):
+        if status not in {"done", "outcome_unknown"}:
+            raise TelegramBotError("unsupported inbox terminal status")
+        if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id <= 0:
+            raise TelegramBotError("inbox id must be a positive integer")
+        if not isinstance(outcome_text, str) or not outcome_text.strip():
+            raise TelegramBotError("inbox outcome must be non-empty text")
+        with self._transaction() as connection:
+            changed = connection.execute(
+                "UPDATE inbox SET status=?, outcome_text=?, completed_at=? "
+                "WHERE id=? AND status='processing'",
+                (status, outcome_text.strip(), _timestamp(), item_id),
+            )
+            if changed.rowcount != 1:
+                raise TelegramBotError("inbox item is not processing")
+            row = connection.execute("SELECT * FROM inbox WHERE id=?", (item_id,)).fetchone()
+            return self._public_inbox(row)
+
 class TelegramBotController:
     """Owner-only deterministic command and question controller."""
 
