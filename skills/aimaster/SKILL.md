@@ -120,6 +120,12 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
   instead an authorized creative specification within that task's scope. Record
   source and retrieval provenance, report unavailable sources, and never copy a
   personal corpus into the public skill.
+- Whenever the user supplies a file, follow [asset intake](references/asset-intake.md)
+  before proposing generation. Attach it to the matching existing placeholder
+  when possible. A supplied image/video reference becomes `source=upload` and
+  must disappear from generated-reference positions after read-back. Never
+  regenerate supplied material unless the user explicitly asks for a variant
+  or transformation.
 
 ## External actions and recovery
 

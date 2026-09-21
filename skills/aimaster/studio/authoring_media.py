@@ -239,6 +239,11 @@ def add_reference(
         else:
             require_image_mime(mime_type, "an image reference's asset")
             require_reference_asset_role(role, "an image reference's asset")
+        # A directly attached local asset is an existing/uploaded reference,
+        # never an outstanding generation request. Generated references attach
+        # their output through the versioned result position instead.
+        if source == "generate":
+            source = "upload"
 
     def mutator(state):
         _require_reference_writable(state, "reference add")

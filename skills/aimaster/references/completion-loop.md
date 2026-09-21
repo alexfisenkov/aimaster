@@ -5,6 +5,10 @@ for aimaster until it is collected, validated and visible in Creator Studio.
 Apply this loop to images, references, video, audio, variations, regeneration,
 post-processing and final assembly.
 
+User-supplied source material follows [asset intake](asset-intake.md), not this
+generated-output collection path. Do not turn an uploaded reference into a
+generation task.
+
 ## After every successful external output
 
 1. Collect the confirmed provider output using its supported result/read-back

@@ -50,6 +50,12 @@ Record path/URL, retrieval time and provenance only after a source was actually
 read; report unavailable sources and never copy a private corpus into this
 public bundle.
 
+For every attached file, first follow [user-supplied asset intake](asset-intake.md).
+Attaching an image/video file to a reference makes that reference an uploaded
+source and removes its active generated-reference position on the next
+read-back. Reuse a matching placeholder instead of creating a duplicate; do
+not generate the supplied subject again without an explicit variant request.
+
 Ask only material questions. Prefer the runtime's native choice tool when it is
 available; otherwise use numbered choices or concise free text in chat. Store
 the accepted answer through the question lifecycle. The dashboard never shows

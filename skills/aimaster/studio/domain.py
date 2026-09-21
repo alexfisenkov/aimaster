@@ -346,6 +346,7 @@ def attach_reference_asset(
     state: dict, reference_id: str, asset_id: str, *, attachment_kind: str
 ) -> dict:
     reference = find_reference(state, reference_id)
+    previous_source = reference.get("source")
     if attachment_kind == "voice":
         if reference.get("role") != "character":
             raise DomainValidationError("only a character reference can have a voice")
@@ -358,14 +359,25 @@ def attach_reference_asset(
         if reference.get("role") != "video":
             raise DomainValidationError("a video asset requires a video reference")
         reference["asset_id"] = asset_id
+        reference["source"] = "upload"
         field = "asset"
     elif attachment_kind == "image":
         if reference.get("role") == "video":
             raise DomainValidationError("a video reference requires a video asset")
         reference["asset_id"] = asset_id
+        reference["source"] = "upload"
         field = "asset"
     else:
         raise DomainValidationError("reference attachment kind is not supported")
+    if attachment_kind in {"image", "video"} and previous_source != "upload":
+        append_history(
+            state,
+            "you",
+            "reference-edited",
+            derive_view_stage(state)["current_stage"],
+            tag=reference_id,
+            field="source",
+        )
     append_history(
         state,
         "you",
