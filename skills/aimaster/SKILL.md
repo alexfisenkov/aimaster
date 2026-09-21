@@ -40,7 +40,7 @@ workspace известен или создан, при активации нав
   правки, вопросы и внешние действия принадлежат чату; остановить сервер —
   `Ctrl-C`.
 - **Telegram (по желанию, macOS):** `python3 scripts/creator_studio_telegram.py
-  setup` принимает токен скрыто и сохраняет его в Keychain; затем `run`
+  setup-ui` открывает локальное окно для токена и сохраняет его в Keychain; затем `run`
   запускает owner-only controller, локальный Codex bridge и Mini App gateway.
   Токен не вводится в чат и не записывается в команды, примеры, argv или логи.
   Windows в этом выпуске не поддерживается.

@@ -18,7 +18,13 @@ if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from creator_studio_bot import main as bot_main  # noqa: E402
-from creator_studio_telegram import FileSecretStore, build_parser, cloudflared_command, validate_bot_token  # noqa: E402
+from creator_studio_telegram import (  # noqa: E402
+    FileSecretStore,
+    build_parser,
+    cloudflared_command,
+    render_setup_html,
+    validate_bot_token,
+)
 from studio.telegram_bot import (  # noqa: E402
     TelegramBotController,
     TelegramBotError,
@@ -193,6 +199,13 @@ class TelegramProjectMenuTests(unittest.TestCase):
     def test_cloudflared_command_is_loopback_only(self):
         with self.assertRaisesRegex(ValueError, "loopback"):
             cloudflared_command("https://example.com")
+
+    def test_setup_ui_never_embeds_a_token_and_explains_next_step(self):
+        html = render_setup_html()
+        done = render_setup_html("Готово", pairing_code="local-code")
+        self.assertIn("type=\"password\"", html)
+        self.assertIn("local-code", done)
+        self.assertNotIn("123456:", html)
 
 
 class TelegramPairingTests(unittest.TestCase):

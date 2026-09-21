@@ -117,14 +117,14 @@ python3 scripts/creator_studio.py serve "$CREATOR_WORKSPACE" --port 0
 Для подключения запусти локальный мастер:
 
 ```zsh
-python3 scripts/creator_studio_telegram.py setup
+python3 scripts/creator_studio_telegram.py setup-ui
 ```
 
 Он принимает токен скрыто и сохраняет его в macOS Keychain. Если Keychain
 недоступен, используется файл с правами `0600` вне проекта. Токен не попадает в
 чат, URL, argv или логи.
 
-После этого запусти transport:
+После сохранения токена окно покажет pairing-код. Затем запусти transport:
 
 ```zsh
 python3 scripts/creator_studio_telegram.py run --workspace "$CREATOR_WORKSPACE"

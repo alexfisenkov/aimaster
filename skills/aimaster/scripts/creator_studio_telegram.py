@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import html
 import os
 import re
 import secrets
@@ -19,6 +20,9 @@ import stat
 import subprocess
 import sys
 import time
+import urllib.parse
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
@@ -49,6 +53,79 @@ def validate_bot_token(token: str) -> str:
     if not isinstance(token, str) or not _TOKEN_PATTERN.fullmatch(token):
         raise ValueError("invalid Telegram bot token")
     return token
+
+
+def render_setup_html(message="", pairing_code=None) -> str:
+    result = ""
+    if pairing_code:
+        result = (
+            f'<p class="ok">{html.escape(message or "Готово")}</p>'
+            f'<p>Отправьте боту: <code>/start {html.escape(pairing_code)}</code></p>'
+            "<p>После этого окно можно закрыть.</p>"
+        )
+    elif message:
+        result = f"<p>{html.escape(message)}</p>"
+    form = "" if pairing_code else (
+        '<form method="post" action="/setup">'
+        '<label>Токен BotFather<input name="token" type="password" required autocomplete="off"></label>'
+        '<button type="submit">Подключить Telegram</button></form>'
+    )
+    return """<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Мастерская — Telegram</title><style>
+body{font:16px -apple-system,BlinkMacSystemFont,sans-serif;max-width:520px;margin:12vh auto;padding:24px;color:#16191d;background:#f5f6f7}
+main{background:white;border:1px solid #dfe3e8;border-radius:18px;padding:28px;box-shadow:0 8px 30px #0000000d}h1{font-size:24px}
+label{display:grid;gap:8px}input{font:inherit;padding:12px;border:1px solid #bbc3cc;border-radius:10px}button{margin-top:18px;padding:12px 16px;border:0;border-radius:10px;background:#101418;color:white;font:inherit}.ok{color:#087443}
+</style><main><h1>AI Мастерская · Telegram</h1><p>Токен обрабатывается только на этом компьютере.</p>""" + result + form + "</main>"
+
+
+def run_setup_ui(*, token_store=None, pairing_store=None, open_browser=True):
+    token_store = token_store or LocalSecretStore(_default_fallback_path())
+    pairing_store = pairing_store or PairingCodeStore(
+        _default_fallback_path().with_name("telegram-pairing-code")
+    )
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = render_setup_html().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0 or length > 4096:
+                    raise ValueError
+                raw = self.rfile.read(length).decode("utf-8")
+                token = urllib.parse.parse_qs(raw).get("token", [""])[0]
+                token_store.store(token)
+                code = pairing_store.store_new()
+                body = render_setup_html("Telegram подключён локально.", pairing_code=code).encode("utf-8")
+                self.server.setup_complete = True
+            except Exception:
+                body = render_setup_html("Не удалось сохранить токен. Проверьте его и повторите.").encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.setup_complete = False
+    url = f"http://127.0.0.1:{server.server_address[1]}"
+    if open_browser:
+        webbrowser.open(url)
+    try:
+        while not server.setup_complete:
+            server.handle_request()
+    finally:
+        server.server_close()
+    return url
 
 
 def cloudflared_command(local_url: str) -> list[str]:
@@ -228,6 +305,7 @@ def build_parser():
     parser = argparse.ArgumentParser(description="Set up or run Studio Telegram transport")
     subcommands = parser.add_subparsers(dest="command", required=True)
     subcommands.add_parser("setup")
+    subcommands.add_parser("setup-ui")
     run = subcommands.add_parser("run")
     run.add_argument("--workspace", required=True, type=Path)
     return parser
@@ -242,6 +320,9 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
             )
             pairing = PairingCodeStore(_default_fallback_path().with_name("telegram-pairing-code")).store_new()
             print(f"Telegram token saved locally. Send /start {pairing} to the bot to pair the owner.")
+            return 0
+        if args.command == "setup-ui":
+            run_setup_ui()
             return 0
         workspace, _, state = _workspace_state(args.workspace)
         secret_store = LocalSecretStore(_default_fallback_path())
