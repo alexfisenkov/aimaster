@@ -951,7 +951,16 @@ class TelegramBotController:
             self.state.record_ignored(update_id, _fingerprint(update)); return []
         request = {"kind": "callback", "data": data, "query_id": query_id}
         existing = self.state.begin(update_id, _fingerprint(update), chat_id, request)
-        reply = self._execute(update_id, chat_id, existing["request"])
+        try:
+            reply = self._execute(update_id, chat_id, existing["request"])
+        except (TelegramBotError, StoreError, ValueError):
+            # Telegram can deliver a callback from an older message after the
+            # project list or navigation contract has changed.  Treat it as a
+            # terminal, user-visible refusal; never let one stale button stop
+            # the polling loop for every later update.
+            text = "Эта кнопка устарела или больше недоступна. Откройте /menu и попробуйте снова."
+            self.state.complete(update_id, text)
+            reply = [TelegramReply(chat_id, text, update_id)]
         return [TelegramReply(item.chat_id, item.text, item.update_id, item.reply_markup, query_id) for item in reply]
 
     def _execute_callback(self, update_id, chat_id, data):
@@ -962,16 +971,30 @@ class TelegramBotController:
             text = self._help_text(); self.state.complete(update_id, text)
             return [TelegramReply(chat_id, text, update_id, navigation_markup(self.store.list_projects(), mini_app_url=self.mini_app_url))]
         parts = data.split(":", 2)
-        if len(parts) != 3 or parts[0] != "project":
+        if len(parts) == 2 and parts[0] == "project" and parts[1]:
+            project_id = parts[1]
+            project = self.store.load(project_id)
+            title = project["project"].get("title") or project_id
+            text = f"Проект «{title}» выбран. Напишите задачу обычным сообщением."
+            self.state.complete_open(update_id, chat_id, self.workspace, project_id, text)
+            return [TelegramReply(
+                chat_id,
+                text,
+                update_id,
+                project_navigation_markup(project_id, mini_app_url=self.mini_app_url),
+            )]
+        if len(parts) != 3 or parts[0] != "project" or not parts[1] or not parts[2]:
             raise TelegramBotError("unknown navigation action")
         project_id, action = parts[1], parts[2]
+        labels = {"scenario": "Сценарий", "prompts": "Промпты", "results": "Результаты", "chat": "Чат"}
+        if action not in labels:
+            raise TelegramBotError("unknown navigation action")
         project = self.store.load(project_id)
         title = project["project"].get("title") or project_id
         if action == "chat":
             text = f"Проект «{title}» выбран. Напишите задачу обычным сообщением."
         else:
-            labels = {"scenario": "Сценарий", "prompts": "Промпты", "results": "Результаты"}
-            text = f"Проект «{title}» · {labels.get(action, action)}\nОткройте AI Мастерскую для просмотра этого раздела."
+            text = f"Проект «{title}» · {labels[action]}\nОткройте AI Мастерскую для просмотра этого раздела."
         self.state.complete(update_id, text)
         self.state.complete_open(update_id, chat_id, self.workspace, project_id, text)
         return [TelegramReply(chat_id, text, update_id, project_navigation_markup(project_id, mini_app_url=self.mini_app_url))]

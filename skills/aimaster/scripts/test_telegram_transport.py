@@ -194,6 +194,47 @@ class TelegramTransportSetupTests(unittest.TestCase):
 
 
 class TelegramProjectMenuTests(unittest.TestCase):
+    @staticmethod
+    def _controller(directory):
+        class FakeStore:
+            def list_projects(self):
+                return [
+                    {
+                        "id": "film-1",
+                        "title": "Первый ролик",
+                        "type": "video",
+                        "stage": "scenario",
+                        "status": "active",
+                    }
+                ]
+
+            def load(self, project_id):
+                if project_id != "film-1":
+                    raise TelegramBotError("unknown project")
+                return {"project": {"id": project_id, "title": "Первый ролик"}}
+
+        state = TelegramBotState(Path(directory) / "telegram.sqlite3")
+        return TelegramBotController(
+            directory,
+            501,
+            state=state,
+            store_factory=lambda: FakeStore(),
+            ledger_factory=lambda: None,
+            questions_factory=lambda: None,
+        )
+
+    @staticmethod
+    def _callback(update_id, data):
+        return {
+            "update_id": update_id,
+            "callback_query": {
+                "id": f"query-{update_id}",
+                "from": {"id": 501},
+                "message": {"chat": {"id": 501, "type": "private"}},
+                "data": data,
+            },
+        }
+
     def test_project_menu_payloads_are_callback_safe_and_deterministic(self):
         payloads = project_menu_payloads(
             [
@@ -227,6 +268,55 @@ class TelegramProjectMenuTests(unittest.TestCase):
         self.assertIn("project:film-1", {button.get("callback_data") for button in buttons})
         project_buttons = [button for row in project_navigation_markup("film-1")["inline_keyboard"] for button in row]
         self.assertIn("Сценарий", {button["text"] for button in project_buttons})
+
+    def test_project_menu_payload_round_trips_through_controller(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self._controller(directory)
+            payload = project_menu_payloads(controller.store.list_projects())[0]
+
+            replies = controller.handle_update(self._callback(100, payload["callback_data"]))
+
+            self.assertEqual(len(replies), 1)
+            self.assertIn("Первый ролик", replies[0].text)
+            self.assertEqual(controller.state.selection(501)["project_id"], "film-1")
+
+    def test_menu_callbacks_return_navigation_without_opening_a_project(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self._controller(directory)
+
+            projects_reply = controller.handle_update(self._callback(101, "menu:projects"))[0]
+            help_reply = controller.handle_update(self._callback(102, "menu:help"))[0]
+
+            self.assertIn("Проекты", projects_reply.text)
+            self.assertIn("Команды", help_reply.text)
+            self.assertIsNone(controller.state.selection(501))
+
+    def test_project_navigation_actions_are_supported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self._controller(directory)
+
+            for update_id, action in enumerate(("scenario", "prompts", "results", "chat"), start=110):
+                replies = controller.handle_update(
+                    self._callback(update_id, f"project:film-1:{action}")
+                )
+                self.assertEqual(len(replies), 1)
+                self.assertIn("Первый ролик", replies[0].text)
+
+            self.assertEqual(controller.state.selection(501)["project_id"], "film-1")
+
+    def test_malformed_or_legacy_callback_does_not_stop_polling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self._controller(directory)
+
+            malformed = controller.handle_update(self._callback(120, "project:film-1:unknown"))
+            legacy = controller.handle_update(self._callback(121, "project:film-1"))
+            valid = controller.handle_update(self._callback(122, "menu:help"))
+
+            self.assertEqual(len(malformed), 1)
+            self.assertEqual(len(legacy), 1)
+            self.assertIn("устарела", malformed[0].text.lower())
+            self.assertIn("Первый ролик", legacy[0].text)
+            self.assertIn("Команды", valid[0].text)
 
     def test_cloudflared_command_is_loopback_only(self):
         with self.assertRaisesRegex(ValueError, "loopback"):
