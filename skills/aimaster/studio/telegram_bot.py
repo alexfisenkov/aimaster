@@ -65,6 +65,33 @@ _INBOX_STATUSES = {"queued", "processing", "done", "outcome_unknown"}
 _MAX_CALLBACK_DATA_BYTES = 64
 
 
+def navigation_markup(projects, *, mini_app_url=None) -> dict:
+    buttons = [
+        [{"text": "Выбрать проект", "callback_data": "menu:projects"}],
+        [{"text": "Помощь", "callback_data": "menu:help"}],
+    ]
+    if mini_app_url:
+        buttons.insert(0, [{"text": "Открыть AI Мастерскую", "web_app": {"url": mini_app_url}}])
+    for project in projects:
+        payload = project_menu_payloads([project])[0]
+        buttons.append([payload])
+    return {"inline_keyboard": buttons}
+
+
+def project_navigation_markup(project_id: str, *, mini_app_url=None) -> dict:
+    buttons = []
+    if mini_app_url:
+        buttons.append([{"text": "Открыть AI Мастерскую", "web_app": {"url": mini_app_url}}])
+    buttons.extend([
+        [{"text": "Сценарий", "callback_data": f"project:{project_id}:scenario"},
+         {"text": "Промпты", "callback_data": f"project:{project_id}:prompts"}],
+        [{"text": "Результаты", "callback_data": f"project:{project_id}:results"},
+         {"text": "Продолжить работу", "callback_data": f"project:{project_id}:chat"}],
+        [{"text": "Сменить проект", "callback_data": "menu:projects"}],
+    ])
+    return {"inline_keyboard": buttons}
+
+
 class TelegramBotError(RuntimeError):
     """The local Telegram controller or its private journal refused input."""
 
@@ -74,6 +101,8 @@ class TelegramReply:
     chat_id: int
     text: str
     update_id: int
+    reply_markup: dict | None = None
+    callback_query_id: str | None = None
 
 
 def project_menu_payloads(projects) -> list[dict[str, str]]:
@@ -551,6 +580,7 @@ class TelegramBotController:
             raise TelegramBotError("pairing code is required before owner-only startup")
         self.owner_id = owner_id if owner_id is not None else paired_owner
         self.pairing_code = pairing_code
+        self.mini_app_url = None
         self._store_factory = store_factory or (lambda: authoring.open_store(self.workspace))
         self._ledger_factory = ledger_factory or (lambda: open_ledger(self.workspace))
         self._questions_factory = questions_factory or (
@@ -587,6 +617,12 @@ class TelegramBotController:
     def mark_delivered(self, update_id):
         self.state.mark_delivered(update_id)
 
+    def set_mini_app_url(self, url):
+        self.mini_app_url = url
+
+    def navigation_text(self):
+        return "AI Мастерская\nВыберите проект или откройте рабочий дашборд."
+
     @staticmethod
     def _envelope(update):
         if not isinstance(update, dict):
@@ -610,6 +646,9 @@ class TelegramBotController:
         return update_id, sender_id, chat_id, chat_type, text
 
     def handle_update(self, update) -> list[TelegramReply]:
+        callback = update.get("callback_query") if isinstance(update, dict) else None
+        if isinstance(callback, dict):
+            return self._handle_callback(update, callback)
         envelope = self._envelope(update)
         if envelope is None:
             return []
@@ -705,6 +744,8 @@ class TelegramBotController:
         command = command_token.split("@", 1)[0].lower()
         remainder = remainder.strip() if separator else ""
         if command.startswith("/"):
+            if command in {"/start", "/menu"}:
+                return {"kind": "navigation"}
             if command not in _COMMANDS:
                 return {"kind": "reply", "text": "Неизвестная команда. Используйте /help."}
             if command == "/help":
@@ -809,10 +850,15 @@ class TelegramBotController:
             text = request["text"]
             self.state.complete(update_id, text)
             return [TelegramReply(chat_id, text, update_id)]
+        if kind == "navigation":
+            text = self.navigation_text()
+            self.state.complete(update_id, text)
+            projects = self.store.list_projects()
+            return [TelegramReply(chat_id, text, update_id, navigation_markup(projects, mini_app_url=self.mini_app_url))]
         if kind == "projects":
             text = self._projects_text()
             self.state.complete(update_id, text)
-            return [TelegramReply(chat_id, text, update_id)]
+            return [TelegramReply(chat_id, text, update_id, navigation_markup(self.store.list_projects(), mini_app_url=self.mini_app_url))]
         if kind == "open":
             text = f"Открыт проект «{request['title']}»."
             self.state.complete_open(
@@ -826,7 +872,9 @@ class TelegramBotController:
             if question_text:
                 text = f"{text}\n\n{question_text}"
                 self.state.complete(update_id, text)
-            return [TelegramReply(chat_id, text, update_id)]
+            return [TelegramReply(chat_id, text, update_id, project_navigation_markup(request["project_id"], mini_app_url=self.mini_app_url))]
+        if kind == "callback":
+            return self._execute_callback(update_id, chat_id, request["data"])
         if kind == "decision":
             result = apply_chat_decision(
                 self.store,
@@ -889,6 +937,44 @@ class TelegramBotController:
             self.state.complete(update_id, text)
             return [TelegramReply(chat_id, text, update_id)]
         raise TelegramBotError("unsupported stored request kind")
+
+    def _handle_callback(self, update, callback):
+        update_id = update.get("update_id")
+        sender = callback.get("from", {})
+        message = callback.get("message", {})
+        sender_id = sender.get("id") if isinstance(sender, dict) else None
+        chat = message.get("chat", {}) if isinstance(message, dict) else {}
+        chat_id = chat.get("id") if isinstance(chat, dict) else None
+        data = callback.get("data")
+        query_id = callback.get("id")
+        if sender_id != self.owner_id or chat_id != self.owner_id or not isinstance(data, str):
+            self.state.record_ignored(update_id, _fingerprint(update)); return []
+        request = {"kind": "callback", "data": data, "query_id": query_id}
+        existing = self.state.begin(update_id, _fingerprint(update), chat_id, request)
+        reply = self._execute(update_id, chat_id, existing["request"])
+        return [TelegramReply(item.chat_id, item.text, item.update_id, item.reply_markup, query_id) for item in reply]
+
+    def _execute_callback(self, update_id, chat_id, data):
+        if data == "menu:projects":
+            text = self._projects_text(); self.state.complete(update_id, text)
+            return [TelegramReply(chat_id, text, update_id, navigation_markup(self.store.list_projects(), mini_app_url=self.mini_app_url))]
+        if data == "menu:help":
+            text = self._help_text(); self.state.complete(update_id, text)
+            return [TelegramReply(chat_id, text, update_id, navigation_markup(self.store.list_projects(), mini_app_url=self.mini_app_url))]
+        parts = data.split(":", 2)
+        if len(parts) != 3 or parts[0] != "project":
+            raise TelegramBotError("unknown navigation action")
+        project_id, action = parts[1], parts[2]
+        project = self.store.load(project_id)
+        title = project["project"].get("title") or project_id
+        if action == "chat":
+            text = f"Проект «{title}» выбран. Напишите задачу обычным сообщением."
+        else:
+            labels = {"scenario": "Сценарий", "prompts": "Промпты", "results": "Результаты"}
+            text = f"Проект «{title}» · {labels.get(action, action)}\nОткройте AI Мастерскую для просмотра этого раздела."
+        self.state.complete(update_id, text)
+        self.state.complete_open(update_id, chat_id, self.workspace, project_id, text)
+        return [TelegramReply(chat_id, text, update_id, project_navigation_markup(project_id, mini_app_url=self.mini_app_url))]
 
     def _projects_text(self):
         projects = self.store.list_projects()

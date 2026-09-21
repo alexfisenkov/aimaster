@@ -353,7 +353,15 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
             tunnel_attempted = True
             try:
                 tunnel, tunnel_url = start_cloudflared(mini_app.base_url)
-                TelegramBotApi(stored_value).set_chat_menu_button(tunnel_url)
+                api = TelegramBotApi(stored_value)
+                api.set_chat_menu_button(tunnel_url)
+                controller.set_mini_app_url(tunnel_url + "#mini-app")
+                from studio.telegram_bot import navigation_markup
+                api.send_message(
+                    paired_owner,
+                    controller.navigation_text(),
+                    navigation_markup(controller.store.list_projects(), mini_app_url=controller.mini_app_url),
+                )
             except (OSError, RuntimeError, TelegramApiError):
                 # The local Mini App remains available for diagnostics; no
                 # false public URL or menu is advertised when the tunnel fails.

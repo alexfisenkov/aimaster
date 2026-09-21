@@ -87,24 +87,31 @@ class TelegramBotApi:
     def get_updates(self, offset: int, timeout: int):
         result = self._call(
             "getUpdates",
-            {"offset": offset, "timeout": timeout, "allowed_updates": ["message"]},
+            {"offset": offset, "timeout": timeout, "allowed_updates": ["message", "callback_query"]},
             timeout=timeout,
         )
         if not isinstance(result, list):
             raise TelegramApiError("Telegram updates response is invalid")
         return result
 
-    def send_message(self, chat_id: int, text: str):
+    def send_message(self, chat_id: int, text: str, reply_markup=None):
         result = None
-        for chunk in _text_chunks(text):
+        chunks = _text_chunks(text)
+        for chunk in chunks:
+            payload = {"chat_id": chat_id, "text": chunk}
+            if reply_markup is not None and chunk == chunks[-1]:
+                payload["reply_markup"] = reply_markup
             result = self._call(
                 "sendMessage",
-                {"chat_id": chat_id, "text": chunk},
+                payload,
                 timeout=10,
             )
             if not isinstance(result, dict):
                 raise TelegramApiError("Telegram delivery response is invalid")
         return result
+
+    def answer_callback_query(self, query_id: str):
+        self._call("answerCallbackQuery", {"callback_query_id": query_id}, timeout=10)
 
     def set_chat_menu_button(self, url: str):
         if not isinstance(url, str) or not url.startswith("https://"):
@@ -122,7 +129,7 @@ class TelegramBotApi:
 
 def _deliver_pending(controller, api):
     for reply in controller.pending_replies():
-        api.send_message(reply.chat_id, reply.text)
+        api.send_message(reply.chat_id, reply.text, reply.reply_markup)
         # A crash after send_message but before this durable mark can produce a
         # duplicate outbound message on restart. Incoming project mutations are
         # idempotent; Telegram delivery itself is deliberately not called
@@ -144,7 +151,9 @@ def run_poll_iteration(controller, api, *, timeout=30, after_iteration=None):
     for update in sorted(valid, key=lambda item: item["update_id"]):
         replies = controller.handle_update(update)
         for reply in replies:
-            api.send_message(reply.chat_id, reply.text)
+            if reply.callback_query_id:
+                api.answer_callback_query(reply.callback_query_id)
+            api.send_message(reply.chat_id, reply.text, reply.reply_markup)
             controller.mark_delivered(reply.update_id)
     if after_iteration is not None:
         after_iteration(controller)

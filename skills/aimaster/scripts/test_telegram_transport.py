@@ -29,6 +29,8 @@ from studio.telegram_bot import (  # noqa: E402
     TelegramBotController,
     TelegramBotError,
     TelegramBotState,
+    navigation_markup,
+    project_navigation_markup,
     project_menu_payloads,
 )
 
@@ -195,6 +197,17 @@ class TelegramProjectMenuTests(unittest.TestCase):
         api = object.__new__(TelegramBotApi)
         with self.assertRaisesRegex(TelegramApiError, "HTTPS"):
             api.set_chat_menu_button("http://127.0.0.1:8765")
+
+    def test_navigation_markup_explains_project_actions(self):
+        markup = navigation_markup(
+            [{"id": "film-1", "title": "Первый ролик"}],
+            mini_app_url="https://example.trycloudflare.com#mini-app",
+        )
+        buttons = [button for row in markup["inline_keyboard"] for button in row]
+        self.assertTrue(any(button.get("web_app") for button in buttons))
+        self.assertIn("project:film-1", {button.get("callback_data") for button in buttons})
+        project_buttons = [button for row in project_navigation_markup("film-1")["inline_keyboard"] for button in row]
+        self.assertIn("Сценарий", {button["text"] for button in project_buttons})
 
     def test_cloudflared_command_is_loopback_only(self):
         with self.assertRaisesRegex(ValueError, "loopback"):
