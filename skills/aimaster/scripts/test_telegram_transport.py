@@ -47,14 +47,14 @@ class TelegramTransportStateTests(unittest.TestCase):
 
     def test_first_private_start_pairs_owner_before_any_project_access(self):
         with tempfile.TemporaryDirectory() as workspace:
-            controller = TelegramBotController(workspace, owner_id=None)
+            controller = TelegramBotController(workspace, owner_id=None, pairing_code="pair")
             replies = controller.handle_update(
                 {
                     "update_id": 90,
                     "message": {
                         "from": {"id": 501},
                         "chat": {"id": 501, "type": "private"},
-                        "text": "/start",
+                        "text": "/start pair",
                     },
                 }
             )
@@ -201,7 +201,7 @@ class TelegramPairingTests(unittest.TestCase):
             from studio.telegram_bot import TelegramBotController
 
             controller = TelegramBotController(
-                Path(directory), None, state=state,
+                Path(directory), None, pairing_code="pair", state=state,
                 store_factory=lambda: None,
                 ledger_factory=lambda: None,
                 questions_factory=lambda: None,
@@ -211,7 +211,7 @@ class TelegramPairingTests(unittest.TestCase):
                 "message": {
                     "from": {"id": 501},
                     "chat": {"id": 501, "type": "private"},
-                    "text": "/start",
+                    "text": "/start pair",
                 },
             })
 
@@ -225,7 +225,7 @@ class TelegramPairingTests(unittest.TestCase):
             from studio.telegram_bot import TelegramBotController
 
             controller = TelegramBotController(
-                Path(directory), None, state=state,
+                Path(directory), None, pairing_code="pair", state=state,
                 store_factory=lambda: None,
                 ledger_factory=lambda: None,
                 questions_factory=lambda: None,

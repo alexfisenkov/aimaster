@@ -254,6 +254,8 @@ class TelegramBotState:
             "DELETE FROM updates WHERE update_id IN ("
             "SELECT update_id FROM updates WHERE status='ignored' OR "
             "(status IN ('done','outcome_unknown') AND delivered=1) "
+            "AND NOT EXISTS (SELECT 1 FROM inbox WHERE inbox.update_id=updates.update_id "
+            "AND inbox.status IN ('queued','processing')) "
             "ORDER BY update_id DESC LIMIT -1 OFFSET ?)",
             (_TERMINAL_UPDATE_WINDOW,),
         )
@@ -515,6 +517,10 @@ class TelegramBotState:
                 "WHERE update_id=?",
                 (outcome_text.strip(), status, _timestamp(), row["update_id"]),
             )
+            if connection.execute(
+                "SELECT 1 FROM updates WHERE update_id=?", (row["update_id"],)
+            ).fetchone() is None:
+                raise TelegramBotError("Telegram outbox update was not found")
             return self._public_inbox(row)
 
 class TelegramBotController:
@@ -541,6 +547,8 @@ class TelegramBotController:
         paired_owner = self.state.paired_owner()
         if owner_id is not None and paired_owner is not None and owner_id != paired_owner:
             raise TelegramBotError("Telegram owner does not match local pairing")
+        if owner_id is None and not isinstance(pairing_code, str):
+            raise TelegramBotError("pairing code is required before owner-only startup")
         self.owner_id = owner_id if owner_id is not None else paired_owner
         self.pairing_code = pairing_code
         self._store_factory = store_factory or (lambda: authoring.open_store(self.workspace))

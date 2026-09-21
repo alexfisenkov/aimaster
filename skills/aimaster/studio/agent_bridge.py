@@ -93,7 +93,9 @@ def _sanitize_output(text: str) -> str:
     """Remove common credentials and private absolute paths before delivery."""
 
     text = re.sub(r"\b\d{6,20}:[A-Za-z0-9_-]{20,}\b", "[telegram-token-redacted]", text)
-    text = re.sub(r"/Users/[^\s`\"']+", "[local-path-redacted]", text)
+    text = re.sub(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b", "[api-key-redacted]", text)
+    text = re.sub(r"(?i)authorization\s*:\s*bearer\s+[^\s]+", "Authorization: Bearer [redacted]", text)
+    text = re.sub(r"/(?:Users|private|var/folders|tmp)/[^\s`\"']+", "[local-path-redacted]", text)
     text = re.sub(r"(?i)(api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+", r"\1=[redacted]", text)
     return text
 

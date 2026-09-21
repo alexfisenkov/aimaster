@@ -89,6 +89,31 @@ class MiniAppGatewayTests(unittest.TestCase):
         denied = gateway.handle("GET", "/api%2fprojects", [("Host", "public")], b"")
         self.assertEqual(denied.status, 403)
 
+    def test_snapshot_asset_urls_receive_short_lived_signed_tickets(self):
+        token = "123456:abcdefghijklmnopqrstuvwxyz"
+
+        class Inner:
+            origin = "http://127.0.0.1:8765"
+            authority = "127.0.0.1:8765"
+            csrf_token = "csrf"
+
+            def handle(self, method, path, headers, body):
+                return Response(
+                    200,
+                    {"Content-Type": "application/json"},
+                    b'{"asset_url":"/assets/asset-1"}',
+                )
+
+        gateway = MiniAppGateway(Inner(), token, 501)
+        response = gateway.handle(
+            "GET",
+            "/api/projects/demo/snapshot",
+            [("Authorization", "tma " + init_data(token, 501, int(time.time())))],
+            b"",
+        )
+        self.assertIn(b"?e=", response.body)
+        self.assertIn(b"&t=", response.body)
+
 
 if __name__ == "__main__":
     unittest.main()

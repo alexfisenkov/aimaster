@@ -10,6 +10,7 @@ import threading
 import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qsl, urlsplit
 from urllib.parse import parse_qsl
 
 from .http_app import Response
@@ -52,6 +53,7 @@ class MiniAppGateway:
         self.inner = inner
         self.bot_token = bot_token
         self.owner_id = owner_id
+        self.ticket_key = hmac.new(b"AI-Master-asset", bot_token.encode(), hashlib.sha256).digest()
 
     @staticmethod
     def _is_protected(path: str) -> bool:
@@ -68,9 +70,53 @@ class MiniAppGateway:
             b'{"error":{"code":"forbidden"}}',
         )
 
+    def _asset_ticket(self, asset_id: str, expires: int) -> str:
+        message = f"{asset_id}:{expires}".encode()
+        return hmac.new(self.ticket_key, message, hashlib.sha256).hexdigest()
+
+    def _valid_asset_ticket(self, asset_id: str, query: str) -> bool:
+        values = dict(parse_qsl(query, keep_blank_values=True))
+        try:
+            expires = int(values.get("e", "0"))
+        except ValueError:
+            return False
+        if expires < int(time.time()) or not secrets.compare_digest(
+            values.get("t", ""), self._asset_ticket(asset_id, expires)
+        ):
+            return False
+        return True
+
+    def _rewrite_asset_urls(self, response):
+        if not response.headers.get("Content-Type", "").startswith("application/json"):
+            return response
+        try:
+            value = json.loads(response.body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return response
+        expires = int(time.time()) + 300
+
+        def rewrite(item):
+            if isinstance(item, dict):
+                return {key: rewrite(value) for key, value in item.items()}
+            if isinstance(item, list):
+                return [rewrite(value) for value in item]
+            if isinstance(item, str) and item.startswith("/assets/") and "?" not in item:
+                asset_id = item.removeprefix("/assets/")
+                return f"{item}?e={expires}&t={self._asset_ticket(asset_id, expires)}"
+            return item
+
+        body = json.dumps(rewrite(value), ensure_ascii=False, separators=(",", ":")).encode()
+        headers = dict(response.headers)
+        headers["Content-Length"] = str(len(body))
+        return Response(response.status, headers, body)
+
     def handle(self, method, path, headers, body):
         normalized = {key.casefold(): value for key, value in headers}
-        if self._is_protected(path):
+        parsed = urlsplit(path)
+        asset_path = parsed.path.startswith("/assets/")
+        asset_id = parsed.path.removeprefix("/assets/") if asset_path else ""
+        ticket_ok = asset_path and "/" not in asset_id and self._valid_asset_ticket(asset_id, parsed.query)
+        if self._is_protected(path) and not ticket_ok:
             authorization = normalized.get("authorization", "")
             if not authorization.startswith("tma "):
                 return self._forbidden()
@@ -90,7 +136,10 @@ class MiniAppGateway:
             )
         if "range" in normalized:
             forwarded.append(("Range", normalized["range"]))
-        return self.inner.handle(method, path, forwarded, body)
+        response = self.inner.handle(method, parsed.path, forwarded, body)
+        if method.upper() == "GET" and parsed.path.startswith("/api/"):
+            response = self._rewrite_asset_urls(response)
+        return response
 
 
 @dataclass(slots=True)
