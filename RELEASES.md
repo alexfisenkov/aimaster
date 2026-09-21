@@ -44,6 +44,7 @@
 - Для macOS добавлен Telegram transport поверх существующего workspace: скрытая локальная настройка токена, Keychain/fallback, owner pairing через первый `/start` и durable inbox.
 - Добавлен локальный Codex bridge: Telegram-сообщения обрабатываются на включённом Mac через `codex exec`; результат возвращается в transport без отдельного состояния проектов.
 - Добавлен HMAC-проверяемый Mini App gateway для того же дашборда и optional Cloudflare Quick Tunnel; Windows остаётся вне выпуска.
+- Первый выпуск transport намеренно ограничен текстовыми сообщениями и командами; voice/photo/video/document intake и callback-меню остаются отдельным следующим этапом.
 
 ## 2026.09.21.2
 
