@@ -1,54 +1,43 @@
-# Передача AI Мастерской в Claude Code
+# Точка передачи AI Мастерской
 
-Дата передачи: 2026-09-21
+Обновлено: 2026-09-21, выпуск `2026.09.21.8`.
 
-## Точка остановки
+## Где мы
 
-- Репозиторий: `https://github.com/alexfisenkov/aimaster`
-- Локальный checkout: `/Users/AlexFisenkov/Documents/aimaster-public`
-- Ветка: `main`
-- HEAD: `0df65d27253d561eadc4acef9a139d00d6487bf4`
-- Рабочее дерево чистое.
-- Локальная `main` опережает `origin/main` на один коммит: callback-фикс ещё не опубликован.
-- Последний опубликованный выпуск: `2026.09.21.7`.
-- Установленный у пользователя клон в `/Users/AlexFisenkov/.local/share/aimaster` был обновлён до `.7`; callback-фикс туда ещё не устанавливался.
+- Репозиторий: `https://github.com/alexfisenkov/aimaster`, локальный checkout
+  `/Users/AlexFisenkov/Documents/aimaster-public`, ветка `main`.
+- Последний выпуск — `2026.09.21.8` (тег и страница выпуска на том же коммите).
+  Что в него вошло и что проверено — `RELEASES.md`.
+- Все три пункта «Незавершённого» из передачи Codex от 2026-09-21 закрыты:
+  локальный E2E транспорта (`scripts/test_telegram_e2e.py`), проверки
+  Mini App (`scripts/test_mini_app.py` + браузерный проход), выпуск.
 
-## Что уже сделано
+## Что осталось владельцу
 
-- macOS Telegram transport, owner pairing, локальный Codex bridge и Mini App gateway.
-- Keychain timeout: зависший вызов macOS Keychain прекращается через 5 секунд, затем используется защищённый fallback-файл `0600`.
-- Telegram navigation menu, выбор проектов, разделы сценария/промптов/результатов/чата.
-- Callback-фикс в `0df65d2`: `project:<id>` теперь выбирает проект; старые и неизвестные callback не останавливают polling loop.
-- Добавлены regression-тесты для callback round-trip, меню, project actions и malformed/legacy callbacks.
+1. Ручная проверка в настоящем Telegram: бот отвечает на `/start`, кнопка
+   проекта выбирает проект, кнопка «AI Мастерская» открывает Mini App
+   с дашбордом, а не с «Не удалось загрузить проект». Юнит-тесты и локальный
+   E2E этого не доказывают.
+2. Ручная проверка дашборда на компьютере на своём проекте после обновления
+   установленной копии.
 
-## Проверено
+## Известное и не сделанное
 
-- `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_*.py'` — 56 тестов, OK.
-- До callback-фикса опубликованный `.7` прошёл `compileall`, `node --check`, `git diff --check` и `quick_validate.py`.
-- Реальная Telegram UI-проверка выполнялась в `/Applications/Telegram.app`: бот отвечал, проекты и кнопка AI Мастерская отображались. Нажатие Mini App после последней локальной правки не подтверждено в Telegram WebView.
+- Telegram Web (браузерная версия) открывает Mini App в iframe; дашборд
+  отдаёт `X-Frame-Options: DENY` и `frame-ancestors 'none'`, поэтому там
+  Mini App не откроется. Решение по политике безопасности всего дашборда,
+  не мелкая правка.
+- При ответе 403 экран Mini App пишет «Проверьте соединение», хотя дело
+  не в связи. Кнопка «Повторить» есть; текст не уточнялся.
+- Windows по-прежнему вне выпуска.
 
-## Незавершённое
+## Ограничения для любого агента
 
-1. Завершить local E2E без платных генераций:
-   - transport стартует;
-   - callback `project:<id>` выбирает проект;
-   - malformed callback не роняет polling;
-   - следующий update после ошибки обрабатывается;
-   - Mini App gateway остаётся живым.
-2. Проверить Mini App bootstrap/auth:
-   - valid `Telegram.WebApp.initData` пропускает `/api/projects`;
-   - отсутствующий или невалидный `initData` даёт полноэкранную диагностику, не белый экран;
-   - 403, network failure и недоступный Telegram SDK дают видимый retry/error state;
-   - неавторизованный `/api` возвращает 403.
-3. Если проверки зелёные, подготовить следующий выпуск (`2026.09.21.8` или следующий согласованный суффикс): обновить оба `VERSION`, `README.md`, `RELEASES.md`, затем отдельно согласовать push/tag/release.
-4. Обновить установленный клон только после публикации и затем полностью перезапустить Codex/transport.
-
-## Ограничения
-
-- Не трогать Telegram-токены, Keychain, пользовательские проекты, медиа и реальные платные генерации.
+- Не трогать Telegram-токены, Keychain, пользовательские проекты, медиа
+  и реальные платные генерации.
 - Не считать unit-тесты доказательством работы Telegram WebView.
-- Не пушить и не создавать GitHub release до прохождения local E2E и Mini App checks.
-- Windows пока вне этого выпуска.
+- Не переписывать историю: без `reset`, `checkout`, `stash`.
+- Перед выпуском — набор проверок из «Правила для владельца» в `RELEASES.md`.
 
 ## Стартовая проверка
 
@@ -57,6 +46,5 @@ cd /Users/AlexFisenkov/Documents/aimaster-public
 git status --short --branch
 git log -3 --oneline --decorate
 python3 -m unittest discover -s skills/aimaster/scripts -p 'test_*.py'
+node --experimental-vm-modules --no-warnings skills/aimaster/scripts/check_static_modules.mjs
 ```
-
-Сначала прочитай `AGENTS.md`, этот файл и `RELEASES.md`. Не переписывай историю и не делай `reset`, `checkout` или `stash`.
