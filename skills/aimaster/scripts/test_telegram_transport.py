@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import stat
 import sys
 import tempfile
@@ -20,6 +21,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 from creator_studio_bot import main as bot_main  # noqa: E402
 from creator_studio_telegram import (  # noqa: E402
     FileSecretStore,
+    KeychainSecretStore,
     build_parser,
     cloudflared_command,
     render_setup_html,
@@ -160,6 +162,23 @@ class TelegramTransportSetupTests(unittest.TestCase):
                 store.load(), token
             )
             self.assertEqual(stat.S_IMODE(token_path.stat().st_mode), 0o600)
+
+    def test_keychain_timeout_becomes_recoverable_runtime_error(self):
+        import creator_studio_telegram as transport
+
+        token = "123456789:" + "B" * 36
+        original_run = transport.subprocess.run
+
+        def hanging_keychain(*args, **kwargs):
+            raise subprocess.TimeoutExpired(kwargs.get("args") or args[0], 5)
+
+        transport.subprocess.run = hanging_keychain
+        try:
+            store = KeychainSecretStore(command="/usr/bin/security")
+            with self.assertRaisesRegex(RuntimeError, "Keychain.*timed out"):
+                store.store(token)
+        finally:
+            transport.subprocess.run = original_run
 
     def test_polling_entrypoint_accepts_secret_without_environment_variable(self):
         with tempfile.TemporaryDirectory() as directory:

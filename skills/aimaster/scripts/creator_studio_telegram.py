@@ -212,42 +212,50 @@ class KeychainSecretStore:
 
     def store(self, value: str):
         value = validate_bot_token(value)
-        result = subprocess.run(
-            [
-                self.command,
-                "add-generic-password",
-                "-U",
-                "-a",
-                _KEYCHAIN_ACCOUNT,
-                "-s",
-                _KEYCHAIN_SERVICE,
-                "-w",
-            ],
-            input=f"{value}\n",
-            text=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    self.command,
+                    "add-generic-password",
+                    "-U",
+                    "-a",
+                    _KEYCHAIN_ACCOUNT,
+                    "-s",
+                    _KEYCHAIN_SERVICE,
+                    "-w",
+                ],
+                input=f"{value}\n",
+                text=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("macOS Keychain timed out while storing the Telegram token") from None
         if result.returncode != 0:
             raise RuntimeError("macOS Keychain could not store the Telegram token")
 
     def load(self) -> str:
-        result = subprocess.run(
-            [
-                self.command,
-                "find-generic-password",
-                "-a",
-                _KEYCHAIN_ACCOUNT,
-                "-s",
-                _KEYCHAIN_SERVICE,
-                "-w",
-            ],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    self.command,
+                    "find-generic-password",
+                    "-a",
+                    _KEYCHAIN_ACCOUNT,
+                    "-s",
+                    _KEYCHAIN_SERVICE,
+                    "-w",
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("macOS Keychain timed out while loading the Telegram token") from None
         if result.returncode != 0:
             raise RuntimeError("Telegram token is not configured in macOS Keychain")
         return validate_bot_token(result.stdout.rstrip("\n"))
