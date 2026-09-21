@@ -17,5 +17,6 @@ __pycache__/
 *.sqlite*
 studio-workspace/
 workspaces/
+.worktrees/
 media/
 node_modules/
