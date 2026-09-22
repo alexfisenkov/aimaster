@@ -14,7 +14,7 @@ import { pruneDrafts } from "../card-drafts.js";
 import { variantCounts } from "./counts.js";
 import { moreVariants } from "./chat-prompts.js";
 import { assembleFinal } from "./screen-prompts.js";
-import { clock, el, restoreCardFocus, cardFocusNote } from "./dom.js";
+import { cardFocusNote, clock, dropCardFocusNote, el, restoreCardFocus } from "./dom.js";
 import { decideDraftKeys, isSubmitting, renderDecideRow } from "./decide.js";
 import {
   canvasCaption,
@@ -314,7 +314,29 @@ function paint() {
   card.append(bar, body);
   root.append(card);
   root.setAttribute("aria-label", title);
-  if (!restoreCardFocus(root, focusNote)) close.focus();
+  returnFocusAfterPaint(focusNote, close);
+}
+
+/**
+ * Куда встать фокусу после перерисовки. Порядок важен: та же кнопка →
+ * соседняя кнопка того же ряда → ✕. Средняя ступень — про принятое
+ * решение: «Оставить этот кадр» превращается в неактивного «Выбран», и
+ * без неё фокус улетал в угол окна, к крестику.
+ */
+function returnFocusAfterPaint(note, close) {
+  if (restoreCardFocus(root, note)) return;
+  if (note) {
+    const neighbour = [...root.querySelectorAll(".v2-viewer-buttons > button")]
+      .find((button) => !button.disabled && button.offsetParent !== null);
+    if (neighbour) {
+      neighbour.focus();
+      if (document.activeElement === neighbour) {
+        dropCardFocusNote();
+        return;
+      }
+    }
+  }
+  close.focus();
 }
 
 /**

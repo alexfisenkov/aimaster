@@ -142,16 +142,6 @@ export function renderDecideRow(context) {
   row.dataset.hook = "v2-viewer-actions";
   const status = buildStatusLine();
   status.dataset.hook = "v2-viewer-status";
-  // Текст исхода живёт в состоянии просмотрщика, а не в узле: узел
-  // отвалится на первой же перерисовке (фоновый опрос идёт каждые 8 с).
-  status.textContent = typeof context.statusText === "string" ? context.statusText : "";
-  if (typeof context.onStatus === "function") {
-    new MutationObserver(() => context.onStatus(status.textContent)).observe(status, {
-      childList: true,
-      characterData: true,
-      subtree: true,
-    });
-  }
   const buttons = document.createElement("div");
   buttons.className = "v2-viewer-buttons";
   const actions = directActionsFor({ allowedActions, currentStage, collection, version });
@@ -225,6 +215,20 @@ export function renderDecideRow(context) {
       targetId: `v2-viewer:${resultTargetId(version) || "none"}`,
       items,
     }));
+  }
+
+  // Текст исхода ставится последним: `buildCommentForm` при сборке
+  // затирает строку исхода своим черновиком (у него она общая с кнопками),
+  // и восстановленный текст пропал бы под ним. Живёт он в состоянии
+  // просмотрщика, а не в узле, — узел отвалится на первой же перерисовке,
+  // а фоновый опрос приходит каждые 8 секунд.
+  status.textContent = typeof context.statusText === "string" ? context.statusText : "";
+  if (typeof context.onStatus === "function") {
+    new MutationObserver(() => context.onStatus(status.textContent)).observe(status, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
   }
 
   row.append(buttons, status);

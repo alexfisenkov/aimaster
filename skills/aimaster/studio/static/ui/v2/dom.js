@@ -51,6 +51,12 @@ export function cardFocusNote() {
   return pendingCardFocus;
 }
 
+/** Виден ли контрол на самом деле: свёрнутое «···» прячет свои пункты, и
+ * фокус на них не встаёт — значит и предлагать их нельзя. */
+function focusable(node) {
+  return Boolean(node) && !node.disabled && node.offsetParent !== null;
+}
+
 /**
  * Вернуть фокус тому же контролу внутри `zone`: сначала точное совпадение
  * пары `data-target-id`/`data-action`, потом любой живой контрол того же
@@ -65,14 +71,19 @@ export function restoreCardFocus(zone, note) {
   const exact = note.action
     ? zone.querySelector(`[data-hook="card-control"][data-target-id="${id}"][data-action="${CSS.escape(note.action)}"]`)
     : null;
-  const target = exact && !exact.disabled
+  const target = focusable(exact)
     ? exact
-    : [...zone.querySelectorAll(`[data-hook="card-control"][data-target-id="${id}"]`)].find((node) => !node.disabled);
+    : [...zone.querySelectorAll(`[data-hook="card-control"][data-target-id="${id}"]`)].find(focusable);
   if (!target) return false;
   target.focus();
   if (document.activeElement !== target) return false;
   pendingCardFocus = null;
   return true;
+}
+
+/** Вычеркнуть листок, когда его уже некуда применить. */
+export function dropCardFocusNote() {
+  pendingCardFocus = null;
 }
 
 /**
