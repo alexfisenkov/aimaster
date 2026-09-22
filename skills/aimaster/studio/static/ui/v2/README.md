@@ -37,8 +37,9 @@
 - `screen-prompts.js` — тексты для чата, нужные только экранам:
   `changeGenMode`, `editScenario`, `reopenScenario`, `assembleFinal`.
 - `chat-prompts.js` — `addReference(kind, project, revision, {sceneId})`,
-  `moreVariants({project, revision, sceneId, referenceId, slot, promptVersion,
-  selectedVariant})`, `uploadFrame({project, revision, sceneId, slot})`,
+  `moreVariants({project, revision, sceneId, referenceId, slot, layer,
+  promptVersion, selectedVariant})`,
+  `uploadFrame({project, revision, sceneId, slot, layer, referenceId})`,
   `editPrompt({project, revision, sceneId, referenceId, promptVersion, what})`,
   `toggleSceneReference({project, revision, sceneId, reference, include})`,
   плюс `projectRef`/`sceneRef`. Каждая возвращает `{title, prompt, attachmentHint?}`.
@@ -68,23 +69,50 @@
   общий `approve` с именем стадии; сервер различает их по `target_id`
   (`decision_stages.MILESTONE_TARGETS` вычитает `scenario`). На пройденном
   экране кнопки нет вовсе.
+- `viewer.js` — `attachViewerV2(getSnapshot)`, `repaintViewer()`, `closeViewer()`:
+  тёмный оверлей на весь экран, вкладки, ловушка фокуса, `Esc`/✕, `←`/`→`,
+  свайп и блокировка прокрутки страницы.
+- `viewer-canvas.js` — чистые `filmstrip(counts)`, `slotOptions(project, scene)`,
+  `canvasCaption({index, total, mark, promptLabel})`, `ownFileStrip(assetUrl,
+  caption)`, `promptOfVariant(version, promptVersions)`; с DOM —
+  `renderCanvas`, `renderSlotSwitch`.
+- `viewer-prompt.js` — чистые `promptPlace(project, target, {tab, slot})`,
+  `promptVersions(project, place)`, `splitTags(text)`, `promptMeta(version,
+  index)`; с DOM — `renderPromptPanel`. Теги промпта собираются из
+  `textContent`: разметку из текста страница не исполняет.
+- `viewer-zones.js` — `renderViewerZones(project, revision, scene)`: те же
+  зоны из `scene-zones.js`, тёмный вид задаёт `styles/v2/viewer.css`.
+- `decide.js` — чистые `resultTargetId(version)`, `directActionsFor({allowedActions,
+  currentStage, collection, version})`, `directActionRequest(actionType, version,
+  revision, {comment})` и ряд «две кнопки и «···»» `renderDecideRow(context)`.
+  Шесть прямых действий идут через `ui/actions.js`; `vary`/`regenerate` не
+  показываются никогда. Решение предлагается только на стадии, которой
+  принадлежит коллекция результата (`studio/decision_cards.STAGE_COLLECTIONS`).
 - `shell.js` — `renderShellV2(root, state)`, `setViewedScreen`, `currentScreen`.
-- `boot.js` — `bootV2()`: стор, контроллер и fetch те же, что у v1.
+- `boot.js` — `bootV2()`: стор, контроллер и fetch те же, что у v1, плюс
+  `ensureStylesheet(href)` — `index.html` принадлежит оболочке, поэтому
+  `styles/v2/viewer.css` подключается отсюда тегом `<link>`.
 
 ## События
 
 - `studio:screen-viewed` · `{screen, trigger}` — путь просит показать экран;
   слушает `boot.js`.
 - `studio:open-viewer` · `{version: 2, target: {kind: "scene"|"reference"|"layer"|
-  "assembly", id}, tab: "frames"|"video"|"history", slot, trigger}` — просьба
-  открыть просмотрщик. Сейчас её **никто не обрабатывает**: слушатель v1
-  (`ui/viewer.js`) пропускает всё, у чего `detail.kind` не `image|video|audio`,
-  а v2-событие такого поля не имеет — клик просто ничего не открывает.
+  "assembly", id}, tab: "frames"|"video"|"audio"|"history", slot, trigger}` —
+  просьба открыть просмотрщик; слушает `viewer.js` (только `version: 2`).
+  Слушатель v1 (`ui/viewer.js`) пропускает всё, у чего `detail.kind` не
+  `image|video|audio`, а у v2-события такого поля нет — оба висят рядом и
+  не спорят за одно событие. Набор вкладок зависит от `target.kind`:
+  сцена — «Кадры · Видео · История», референс — «Картинка · История»,
+  слой звука — «Звук · История», сборка — «Ролик · История».
 
 ## Что делать волне 2
 
-1. Написать `viewer.js` и подписать его в `bootV2()` на `studio:open-viewer`
-   с проверкой `detail.version === 2`; слушатель v1 не трогать.
+1. ~~Написать `viewer.js` и подписать его в `bootV2()` на `studio:open-viewer`~~
+   — сделано: просмотрщик есть, слушатель v1 не тронут. Не проверены живьём
+   две ветки, которых нет в проекте владельца: переключатель слотов «первый /
+   последний кадр» (у всех шести сцен кадров нет вовсе) и вкладка «Звук»
+   (слоёв звука в проекте ещё нет). Обе покрыты тестами, но не глазами.
 2. ~~Заменить временные рендереры v1 в `SCREEN_RENDERERS` (`shell.js`)~~ —
    сделано: все пять экранов свои, `step-*.js` из v2 больше не вызываются.
    Сами файлы v1 не удалены: они живут в `static/app-v1.js` до приёмки.
