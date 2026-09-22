@@ -1,0 +1,402 @@
+/*
+ * Тёмный просмотрщик v2 — вариант C одобренного макета
+ * (.superpowers/brainstorm/*/content/scene-viewer-dark.html).
+ * Подключается из `ui/v2/boot.js` тегом <link>: inline-стилей на странице
+ * нет нигде, их запрещает CSP.
+ *
+ * Телефон с 360px: правая колонка уходит под холст, боковые поля не
+ * меньше 16px, горизонтальной прокрутки нет.
+ *
+ * Тёмные значения заданы здесь, а не в tokens-v2.css: доска светлая,
+ * и общая палитра не должна темнеть из-за одного оверлея.
+ */
+
+.v2-viewer {
+  --vw-bg: #141414;
+  --vw-panel: #1e1e1e;
+  --vw-line: #2a2a2a;
+  --vw-line-strong: #3a3a3a;
+  --vw-text: #e8e8e8;
+  --vw-muted: #9a9a9a;
+
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.78);
+  color: var(--vw-text);
+  overflow: auto;
+}
+
+body.v2-viewer-open {
+  overflow: hidden;
+}
+
+.v2-viewer-card {
+  width: min(1040px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  background: var(--vw-bg);
+  border: 1px solid var(--vw-line-strong);
+  border-radius: 12px;
+}
+
+/* --- Шапка ----------------------------------------------------------- */
+
+.v2-viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--vw-line);
+}
+
+.v2-viewer-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: #fff;
+  min-width: 0;
+}
+
+.v2-viewer-time { color: var(--vw-muted); font-weight: 400; }
+
+.v2-viewer-tabs { display: flex; gap: 4px; margin-left: auto; }
+
+.v2-viewer-tab {
+  border: 0;
+  background: none;
+  color: var(--vw-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 4px 8px;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.v2-viewer-tab[aria-selected="true"] { color: #fff; border-bottom-color: #fff; }
+.v2-viewer-tab:focus-visible,
+.v2-viewer-close:focus-visible,
+.v2-viewer .v2-viewer-arrow:focus-visible,
+.v2-viewer button:focus-visible { outline: 2px solid #9ecbff; outline-offset: 2px; }
+
+.v2-viewer-close {
+  border: 0;
+  background: none;
+  color: var(--vw-muted);
+  font: inherit;
+  font-size: 1rem;
+  min-width: 36px;
+  min-height: 36px;
+  cursor: pointer;
+}
+
+/* --- Две колонки ----------------------------------------------------- */
+
+.v2-viewer-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+}
+
+.v2-viewer-left {
+  padding: 14px 16px 16px;
+  border-right: 1px solid var(--vw-line);
+  min-width: 0;
+}
+
+.v2-viewer-right {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .v2-viewer { padding: 0; }
+  .v2-viewer-card { border-radius: 0; border: 0; min-height: 100%; }
+  .v2-viewer-body { grid-template-columns: minmax(0, 1fr); }
+  .v2-viewer-left { border-right: 0; border-bottom: 1px solid var(--vw-line); }
+}
+
+/* --- Слоты, холст, плёнка -------------------------------------------- */
+
+.v2-viewer-slots { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+
+.v2-viewer-slot {
+  border: 1px solid var(--vw-line-strong);
+  border-radius: 14px;
+  background: none;
+  color: var(--vw-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 6px 12px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.v2-viewer-slot[aria-selected="true"] { background: #fff; color: #111; border-color: #fff; }
+
+.v2-viewer-canvas {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 220px;
+  padding: 8px;
+  border-radius: 10px;
+  background: #0d0d0d;
+}
+
+.v2-viewer-media {
+  max-width: 100%;
+  max-height: 58vh;
+  min-width: 0;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+audio.v2-viewer-media { width: 100%; max-height: none; }
+
+.v2-viewer-arrow {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  color: #111;
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.v2-viewer-arrow[disabled] { opacity: 0.3; cursor: default; }
+
+.v2-viewer-caption {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  color: var(--vw-muted);
+  text-align: center;
+}
+
+.v2-viewer-film {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.v2-viewer-tile {
+  position: relative;
+  flex: none;
+  width: 74px;
+  height: 50px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: #2b3338;
+  color: #fff;
+  font: inherit;
+  font-size: 0.5625rem;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.v2-viewer-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.v2-viewer-tile[data-dim="true"] { opacity: 0.35; filter: grayscale(1); }
+.v2-viewer-tile[aria-current="true"] { outline: 2px solid #fff; outline-offset: -2px; }
+
+.v2-viewer-tile-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1px 3px;
+  background: rgba(0, 0, 0, 0.66);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-viewer-tile-add {
+  background: #1a1a1a;
+  border: 1px dashed #555;
+  color: var(--vw-muted);
+  font-size: 0.6875rem;
+}
+
+/* --- Кнопки ---------------------------------------------------------- */
+
+.v2-viewer-actions { margin-top: 14px; }
+
+.v2-viewer-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.v2-viewer .card-action-button,
+.v2-viewer .v2-chat-button,
+.v2-viewer .more-menu-trigger,
+.v2-viewer .more-menu-item,
+.v2-viewer .card-comment-actions button {
+  border: 1px solid var(--vw-line-strong);
+  border-radius: 9px;
+  background: #222;
+  color: var(--vw-text);
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 9px 14px;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.v2-viewer .v2-viewer-primary,
+.v2-viewer .v2-viewer-secondary { flex: 1 1 160px; text-align: center; }
+
+.v2-viewer .v2-viewer-primary {
+  background: #fff;
+  color: #111;
+  border-color: #fff;
+  font-weight: 600;
+}
+
+.v2-viewer .v2-viewer-primary[disabled] { background: #3a3a3a; color: var(--vw-muted); border-color: #3a3a3a; }
+.v2-viewer .more-menu-trigger { margin-left: auto; }
+.v2-viewer .more-menu-popup { background: var(--vw-panel); border: 1px solid var(--vw-line-strong); }
+.v2-viewer .more-menu-item { width: 100%; text-align: left; border: 0; border-radius: 0; }
+
+.v2-viewer .card-action-status { color: var(--vw-muted); font-size: 0.75rem; margin: 8px 0 0; }
+.v2-viewer .card-comment-textarea {
+  width: 100%;
+  background: #111;
+  color: var(--vw-text);
+  border: 1px solid var(--vw-line-strong);
+  border-radius: 6px;
+}
+
+/* --- Промпт ---------------------------------------------------------- */
+
+.v2-viewer-subtitle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--vw-muted);
+  font-weight: 600;
+}
+
+.v2-viewer-ver { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: #ccc; text-transform: none; letter-spacing: 0; }
+
+.v2-viewer-ver-step {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: #2a2a2a;
+  color: var(--vw-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.v2-viewer-ver-step[disabled] { opacity: 0.35; cursor: default; }
+
+.v2-viewer-prompt-text {
+  margin: 0;
+  padding: 9px 10px;
+  background: var(--vw-panel);
+  border: 1px solid #333;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: #ddd;
+  overflow-wrap: anywhere;
+}
+
+.v2-viewer-tag {
+  background: #2e4a3a;
+  color: #a5e0b4;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.v2-viewer-prompt-meta { margin: 5px 0 0; font-size: 0.6875rem; color: #777; }
+
+.v2-viewer .v2-viewer-link {
+  border: 0;
+  background: none;
+  color: #9ecbff;
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 6px 0;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.v2-viewer-empty,
+.v2-viewer-empty-line { color: var(--vw-muted); font-size: 0.8125rem; margin: 0; }
+
+/* --- Зоны референсов (разметка из scene-zones.js) --------------------- */
+
+.v2-viewer-zones { display: flex; flex-direction: column; gap: 12px; }
+.v2-viewer .v2-zone { display: flex; flex-direction: column; gap: 6px; }
+
+.v2-viewer .v2-zone-title {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--vw-muted);
+}
+
+.v2-viewer .v2-zone-items { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.v2-viewer .v2-zone-none { color: #6e6e6e; font-size: 0.75rem; }
+
+.v2-viewer .v2-avatar,
+.v2-viewer .v2-slot {
+  background: var(--vw-panel);
+  border: 1px solid var(--vw-line-strong);
+  border-radius: 7px;
+  color: var(--vw-text);
+  font: inherit;
+  font-size: 0.6875rem;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.v2-viewer .v2-avatar[data-included="false"] { opacity: 0.35; }
+.v2-viewer .v2-avatar-name,
+.v2-viewer .v2-slot-caption { color: var(--vw-muted); }
+
+.v2-viewer .v2-plus {
+  width: 34px;
+  height: 34px;
+  border: 1px dashed #555;
+  border-radius: 7px;
+  background: none;
+  color: var(--vw-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* --- История --------------------------------------------------------- */
+
+.v2-viewer-history { padding: 14px 16px 18px; min-width: 0; }
+.v2-viewer-history h3,
+.v2-viewer-history h4 { color: #fff; font-size: 0.8125rem; }
+.v2-viewer-history ul { margin: 6px 0 12px; padding-left: 18px; font-size: 0.8125rem; color: var(--vw-text); }
+.v2-viewer-history .decision-history-stage { color: var(--vw-muted); }
+.v2-viewer-history .decision-history-comment { color: #bbb; margin: 2px 0 0; }
+.v2-viewer-history-list li { margin-bottom: 4px; }

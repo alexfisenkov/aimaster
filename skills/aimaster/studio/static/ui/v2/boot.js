@@ -11,6 +11,21 @@ import { createAppController } from "../app-controller.js";
 import { attachViewerOpenListener } from "../viewer.js";
 import { attachAgentPromptListener } from "../chat-prompt-dialog.js";
 import { renderShellV2, setViewedScreen } from "./shell.js";
+import { attachViewerV2, repaintViewer } from "./viewer.js";
+
+/**
+ * Подключить таблицу стилей, если её ещё нет. `index.html` принадлежит
+ * оболочке целиком, поэтому свои стили волна 2 добавляет отсюда — тегом
+ * `<link>`, а не inline-правилами: CSP страницы их запрещает.
+ * @param {string} href абсолютный путь вида `/static/styles/v2/viewer.css`
+ */
+export function ensureStylesheet(href) {
+  if (document.querySelector(`link[rel="stylesheet"][href="${href}"]`)) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = href;
+  document.head.append(link);
+}
 
 class StudioFetchError extends Error {
   constructor(code) {
@@ -43,12 +58,12 @@ async function fetchJson(path) {
 
 export function bootV2() {
   // Просмотрщик v1 слушает `studio:open-viewer` со строгим списком
-  // `kind: image|video|audio` — событие v2 (`{version: 2, target, tab}`)
-  // он молча пропускает. Это и нужно: пока просмотрщика v2 нет (волна 2),
-  // старые экраны продолжают открывать свой лайтбокс, а клики v2 просто
-  // ничего не открывают вместо того, чтобы открыть не то.
+  // `kind: image|video|audio` и событие v2 (`{version: 2, target, tab}`)
+  // молча пропускает; просмотрщик v2 наоборот берёт только `version: 2`.
+  // Поэтому оба слушателя висят рядом и не спорят за одно событие.
   attachViewerOpenListener();
   attachAgentPromptListener();
+  ensureStylesheet("/static/styles/v2/viewer.css");
 
   const shellRoot = document.querySelector(".app-shell");
   const railRoot = document.querySelector('[data-hook="project-rail"]');
@@ -58,7 +73,13 @@ export function bootV2() {
     store,
     fetchSnapshot: (id) => fetchJson(`/api/projects/${encodeURIComponent(id)}/snapshot`),
     fetchProjects: () => fetchJson("/api/projects"),
-    paintShell: (state) => renderShellV2(shellRoot, state),
+    // Открытый просмотрщик перерисовывается тем же обновлением snapshot,
+    // что и доска: после прямого решения он остаётся на месте и
+    // показывает уже новое состояние, а не закрывается.
+    paintShell: (state) => {
+      renderShellV2(shellRoot, state);
+      repaintViewer();
+    },
     paintRail: (state) => renderProjectRail(railRoot, state),
     setActiveProject,
     reportFailure: (error) => store.setError({ code: error?.code || "unexpected_error" }),
@@ -66,6 +87,7 @@ export function bootV2() {
     preferredProjectId: pageUrl.searchParams.get("project"),
   });
 
+  attachViewerV2(() => store.getState()?.snapshot || null);
   renderShellV2(shellRoot, store.getState());
   document.body.dataset.ui = "v2";
 

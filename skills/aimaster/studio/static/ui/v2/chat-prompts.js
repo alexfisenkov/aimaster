@@ -20,6 +20,14 @@ const SLOT_WORDS = Object.freeze({
   image: "изображение",
 });
 
+/** Слои звука (`studio/domain_positions.AUDIO_LAYERS`) — для просмотрщика. */
+const LAYER_WORDS = Object.freeze({
+  voice: "голос",
+  music: "музыку",
+  fx: "эффекты",
+  atmos: "атмосферу",
+});
+
 /** «проект «Название» (project_id «id», snapshot revision 62)» */
 export function projectRef(project, revision) {
   const parts = [`project_id «${project?.id ?? "—"}»`];
@@ -78,10 +86,14 @@ export function addReference(kind, project, revision, { sceneId } = {}) {
 /**
  * «＋ Ещё вариант» в просмотрщике.
  * @param {{project: object, revision?: number, sceneId?: string, referenceId?: string,
- *          slot?: string, promptVersion?: object, selectedVariant?: object}} context
+ *          slot?: string, layer?: string, promptVersion?: object, selectedVariant?: object}} context
  */
-export function moreVariants({ project, revision, sceneId, referenceId, slot, promptVersion, selectedVariant } = {}) {
-  const what = referenceId ? `референс «${referenceId}»` : SLOT_WORDS[slot] || "результат";
+export function moreVariants({ project, revision, sceneId, referenceId, slot, layer, promptVersion, selectedVariant } = {}) {
+  const what = referenceId
+    ? `референс «${referenceId}»`
+    : layer
+      ? LAYER_WORDS[layer] || `слой звука «${layer}»`
+      : SLOT_WORDS[slot] || "результат";
   const chosen = selectedVariant
     ? `Сейчас выбран вариант result_id «${selectedVariant.result_id}», version_id «${selectedVariant.version_id}».`
     : "Выбранного варианта пока нет.";
@@ -95,10 +107,15 @@ export function moreVariants({ project, revision, sceneId, referenceId, slot, pr
 
 /**
  * «Загрузить свой файл» вместо генерации.
- * @param {{project: object, revision?: number, sceneId?: string, slot?: string}} context
+ * @param {{project: object, revision?: number, sceneId?: string, slot?: string,
+ *          layer?: string, referenceId?: string}} context
  */
-export function uploadFrame({ project, revision, sceneId, slot } = {}) {
-  const what = SLOT_WORDS[slot] || "кадр";
+export function uploadFrame({ project, revision, sceneId, slot, layer, referenceId } = {}) {
+  const what = referenceId
+    ? `референс «${referenceId}»`
+    : layer
+      ? LAYER_WORDS[layer] || `слой звука «${layer}»`
+      : SLOT_WORDS[slot] || "кадр";
   return {
     title: `Загрузить ${what}`,
     prompt: `${opening(project, sceneId, revision)} Я прикреплю готовый файл на ${what}. `

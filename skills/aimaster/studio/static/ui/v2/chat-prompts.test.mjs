@@ -156,3 +156,20 @@ test("пустой ввод не роняет и не подсовывает und
     assert.doesNotMatch(item.prompt, /undefined|null/);
   }
 });
+
+test("слой звука и референс названы по-человечески, а не слотом кадра", () => {
+  const voice = moreVariants({ project: PROJECT, revision: REVISION, layer: "voice" });
+  assert.match(voice.title, /^Ещё вариант: голос$/);
+  assert.match(voice.prompt, /Нужен ещё один вариант: голос\./);
+
+  const unknownLayer = moreVariants({ project: PROJECT, layer: "shimmer" });
+  assert.match(unknownLayer.prompt, /слой звука «shimmer»/);
+
+  const reference = moreVariants({ project: PROJECT, referenceId: "IMG_04", slot: "first" });
+  assert.match(reference.prompt, /референс «IMG_04»/, "референс сильнее слота");
+
+  const upload = uploadFrame({ project: PROJECT, revision: REVISION, layer: "music" });
+  assert.match(upload.title, /^Загрузить музыку$/);
+  assert.match(uploadFrame({ project: PROJECT, referenceId: "IMG_03" }).prompt, /референс «IMG_03»/);
+  assert.match(uploadFrame({ project: PROJECT, slot: "last" }).prompt, /последний кадр/);
+});
