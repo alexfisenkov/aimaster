@@ -16,11 +16,16 @@ import re
 import secrets
 import shutil
 import select
+import socket
+import ssl
 import stat
 import subprocess
 import sys
+import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -39,6 +44,22 @@ _TOKEN_PATTERN = re.compile(r"^[0-9]{6,20}:[A-Za-z0-9_-]{20,}$")
 _KEYCHAIN_SERVICE = "ai-master-studio-telegram"
 _KEYCHAIN_ACCOUNT = "bot-token"
 _TUNNEL_URL = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
+# A quick tunnel is published before its hostname resolves everywhere, so the
+# URL is probed until it answers instead of being advertised immediately.  The
+# first probe waits on purpose: a query sent before the name has spread gets
+# an NXDOMAIN that the local resolver then caches for minutes.
+_TUNNEL_PROBE_DELAY = 5.0
+_TUNNEL_PROBE_ATTEMPTS = 12
+_TUNNEL_PROBE_INTERVAL = 2.5
+# cloudflared can die at any moment (network change, its own watchdog).  The
+# restart is retried on a widening delay so a machine without the executable,
+# or without network, does not spawn an attempt on every polling iteration.
+_TUNNEL_BACKOFF_SECONDS = (5.0, 15.0, 45.0, 120.0, 300.0)
+# Owners who already run a named Cloudflare tunnel (or any other permanent
+# HTTPS front) point it at a fixed loopback port and pass the public address
+# here.  Neither value is a secret, so both are plain environment variables.
+MINI_APP_URL_VARIABLE = "AIMASTER_MINI_APP_PUBLIC_URL"
+MINI_APP_PORT_VARIABLE = "AIMASTER_MINI_APP_PORT"
 
 
 def _default_fallback_path() -> Path:
@@ -128,18 +149,57 @@ def run_setup_ui(*, token_store=None, pairing_store=None, open_browser=True):
     return url
 
 
-def cloudflared_command(local_url: str) -> list[str]:
+def _default_cloudflared_config_path() -> Path:
+    return _default_fallback_path().with_name("cloudflared-empty-config.yml")
+
+
+def empty_cloudflared_config(path=None) -> Path:
+    """Create the empty config file the quick tunnel must be started with.
+
+    ``cloudflared tunnel --url`` reads ``~/.cloudflared/config.yml`` when no
+    config is given.  An owner who already runs a named tunnel has ingress
+    rules there, and their catch-all (``service: http_status:404``) answers
+    every request to the quick tunnel's own hostname: the edge returns an
+    empty 404 and nothing ever reaches this Mini App gateway.  An empty file
+    of our own keeps those rules out without touching the owner's config.
+    """
+
+    target = Path(path) if path is not None else _default_cloudflared_config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(
+        target,
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+        0o600,
+    )
+    os.close(descriptor)
+    return target
+
+
+def cloudflared_command(local_url: str, *, config_path=None) -> list[str]:
     if not isinstance(local_url, str) or not local_url.startswith("http://127.0.0.1:"):
         raise ValueError("cloudflared target must be a loopback HTTP URL")
     executable = shutil.which("cloudflared")
     if not executable:
         raise RuntimeError("cloudflared is not installed")
-    return [executable, "tunnel", "--url", local_url, "--no-autoupdate"]
+    # QUIC (the cloudflared default) travels over UDP and is dropped or rate
+    # limited on many home networks, where the tunnel then dies minutes after
+    # it started.  HTTP/2 uses the same TCP path the dashboard already needs.
+    return [
+        executable,
+        "tunnel",
+        "--config",
+        str(empty_cloudflared_config(config_path)),
+        "--url",
+        local_url,
+        "--no-autoupdate",
+        "--protocol",
+        "http2",
+    ]
 
 
-def start_cloudflared(local_url: str, *, popen=subprocess.Popen, timeout=12):
+def start_cloudflared(local_url: str, *, popen=subprocess.Popen, timeout=12, config_path=None):
     process = popen(
-        cloudflared_command(local_url),
+        cloudflared_command(local_url, config_path=config_path),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -159,9 +219,290 @@ def start_cloudflared(local_url: str, *, popen=subprocess.Popen, timeout=12):
         lines.append(line)
         match = _TUNNEL_URL.search(line)
         if match:
+            # The caller must keep reading this pipe: cloudflared logs for as
+            # long as it runs and blocks on a full pipe buffer if nobody does.
             return process, match.group(0)
     process.terminate()
     raise RuntimeError("cloudflared did not provide an HTTPS URL")
+
+
+def resolve_public_mini_app_url(environ=None):
+    """Return the owner's permanent Mini App address, or ``None``.
+
+    Telegram opens this address itself, so it must be a plain HTTPS origin:
+    a query or fragment would be lost behind the ``#mini-app`` the menu
+    appends, and credentials in the URL would travel to Telegram.
+    """
+
+    environment = os.environ if environ is None else environ
+    value = (environment.get(MINI_APP_URL_VARIABLE) or "").strip()
+    if not value:
+        return None
+    parts = urllib.parse.urlsplit(value)
+    if parts.scheme != "https" or not parts.hostname:
+        raise ValueError(f"{MINI_APP_URL_VARIABLE} must be an https:// address")
+    if parts.query or parts.fragment:
+        raise ValueError(f"{MINI_APP_URL_VARIABLE} must carry no query and no fragment")
+    if parts.username or parts.password:
+        raise ValueError(f"{MINI_APP_URL_VARIABLE} must carry no user name or password")
+    return value.rstrip("/")
+
+
+def resolve_mini_app_port(environ=None) -> int:
+    """Return the fixed loopback port for the gateway, or 0 for any free one."""
+
+    environment = os.environ if environ is None else environ
+    value = (environment.get(MINI_APP_PORT_VARIABLE) or "").strip()
+    if not value:
+        return 0
+    try:
+        port = int(value)
+    except ValueError:
+        raise ValueError(f"{MINI_APP_PORT_VARIABLE} must be a number") from None
+    if not 1024 <= port <= 65535:
+        raise ValueError(f"{MINI_APP_PORT_VARIABLE} must be between 1024 and 65535")
+    return port
+
+
+TUNNEL_READY = "ready"
+TUNNEL_UNRESOLVED = "unresolved"
+TUNNEL_UNREACHABLE = "unreachable"
+TUNNEL_UNCONFIRMED = "unconfirmed"
+# This machine's Python cannot verify TLS at all (python.org builds ship
+# without root certificates until `Install Certificates.command` is run).
+# Nothing about the tunnel can be learned from that, so it is published at once.
+TUNNEL_UNVERIFIABLE = "unverifiable"
+# How many freshly started tunnels may fail their check before one is
+# published anyway.  Restarting forever would leave the owner with no button
+# at all, which is the very failure this supervision exists to end.
+_TUNNEL_UNCONFIRMED_LIMIT = 3
+
+
+def tunnel_warning(verification) -> str:
+    """The line the owner sees when a published URL was not confirmed."""
+
+    if verification == TUNNEL_UNRESOLVED:
+        return (
+            "Имя туннеля ещё не разошлось по DNS; кнопка появится, "
+            "проверьте через минуту."
+        )
+    if verification == TUNNEL_UNVERIFIABLE:
+        return (
+            "Python на этом компьютере не может проверить TLS-сертификаты "
+            "(нет корневых сертификатов), поэтому туннель не проверен отсюда. "
+            "Публикую адрес как есть; проверьте кнопку в Telegram. Для Python "
+            "с python.org запустите «Install Certificates.command»."
+        )
+    return (
+        "Туннель поднят, но проверить его с этого компьютера не удалось. "
+        "Публикую адрес как есть; если кнопка не открывается, проверьте сеть."
+    )
+
+
+def probe_tunnel_url(url: str, *, timeout=8) -> str:
+    """Ask the public tunnel URL for its root and classify the answer.
+
+    ``ready`` means the Mini App answered through the tunnel.  ``unresolved``
+    means the name is not in DNS yet — which is not proof of a dead tunnel:
+    a fresh quick tunnel needs seconds to spread, and a resolver that
+    answered NXDOMAIN once keeps repeating it from cache for minutes while
+    Telegram's own resolver already sees the name.  Anything else
+    (Cloudflare's 4xx/5xx tunnel pages, refused connections) is
+    ``unreachable``: the name exists but nothing serves the dashboard.
+    """
+
+    outgoing = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(outgoing, timeout=timeout) as response:
+            response.read(1024)
+            status = getattr(response, "status", 200)
+        return TUNNEL_READY if 200 <= status < 400 else TUNNEL_UNREACHABLE
+    except urllib.error.HTTPError as error:
+        error.close()
+        return TUNNEL_UNREACHABLE
+    except urllib.error.URLError as error:
+        reason = getattr(error, "reason", None)
+        if isinstance(reason, socket.gaierror):
+            return TUNNEL_UNRESOLVED
+        if isinstance(reason, ssl.SSLCertVerificationError):
+            return TUNNEL_UNVERIFIABLE
+        return TUNNEL_UNREACHABLE
+    except ssl.SSLCertVerificationError:
+        return TUNNEL_UNVERIFIABLE
+    except socket.gaierror:
+        return TUNNEL_UNRESOLVED
+    except Exception:
+        # A probe failure is an ordinary "not ready yet", never a transport
+        # error: the polling loop must survive it.
+        return TUNNEL_UNREACHABLE
+
+
+class TunnelSupervisor:
+    """Keep one Cloudflare Quick Tunnel alive in front of the Mini App.
+
+    The transport used to start cloudflared once and forget it.  When the
+    child died the bot kept offering buttons pointing at a hostname that no
+    longer resolved.  This object is asked on every polling iteration whether
+    a verified public URL exists: it restarts the dead child, re-probes the
+    new name and reports ``None`` for as long as there is nothing to
+    advertise.
+    """
+
+    def __init__(
+        self,
+        local_url,
+        *,
+        starter=start_cloudflared,
+        probe=probe_tunnel_url,
+        clock=time.monotonic,
+        sleep=time.sleep,
+        probe_delay=_TUNNEL_PROBE_DELAY,
+        probe_attempts=_TUNNEL_PROBE_ATTEMPTS,
+        probe_interval=_TUNNEL_PROBE_INTERVAL,
+        backoff=_TUNNEL_BACKOFF_SECONDS,
+        unconfirmed_limit=_TUNNEL_UNCONFIRMED_LIMIT,
+    ):
+        self.local_url = local_url
+        self.process = None
+        self.url = None
+        # ``ready`` when the dashboard answered through the tunnel; the other
+        # values say why the published URL could not be confirmed here.
+        self.verification = None
+        self._starter = starter
+        self._probe = probe
+        self._clock = clock
+        self._sleep = sleep
+        self._probe_delay = probe_delay
+        self._probe_attempts = probe_attempts
+        self._probe_interval = probe_interval
+        self._backoff = tuple(backoff)
+        self._unconfirmed_limit = unconfirmed_limit
+        self._reader = None
+        self._failures = 0
+        self._unconfirmed = 0
+        self._next_attempt = None
+
+    @property
+    def verified(self):
+        """True only when the dashboard really answered through the tunnel."""
+
+        return self.verification == TUNNEL_READY
+
+    def ensure(self):
+        """Return a verified public URL, restarting the tunnel if it died."""
+
+        if self.process is not None and self.process.poll() is not None:
+            self._discard()
+        if self.process is not None:
+            return self.url
+        if self._next_attempt is not None and self._clock() < self._next_attempt:
+            return None
+        if self._start() is None:
+            self._failures += 1
+            index = min(self._failures, len(self._backoff)) - 1
+            self._next_attempt = self._clock() + self._backoff[index]
+            return None
+        self._failures = 0
+        self._next_attempt = None
+        return self.url
+
+    def stop(self):
+        """Terminate the tunnel and join its reader on transport shutdown."""
+
+        self._discard()
+
+    def _start(self):
+        self.verification = None
+        try:
+            process, url = self._starter(self.local_url)
+        except (OSError, RuntimeError, ValueError):
+            return None
+        self.process = process
+        self.url = url
+        self._reader = threading.Thread(target=self._drain, args=(process,), daemon=True)
+        self._reader.start()
+        if not self._verify(url):
+            self._discard()
+            return None
+        return url
+
+    def _verify(self, url):
+        """Wait for the new name to answer; report whether it may be used.
+
+        The first probe is deliberately late: asking before the name has
+        spread earns an NXDOMAIN that the local resolver caches for minutes,
+        which would make a healthy tunnel look dead.  When every attempt
+        failed only on name resolution, the tunnel is still handed over --
+        Telegram resolves the name with its own resolver, and refusing would
+        leave the owner with no button at all.  For the same reason a tunnel
+        that keeps failing its check is published after a few restarts: an
+        unconfirmed button beats no button.
+        """
+
+        self._sleep(self._probe_delay)
+        verdicts = []
+        for attempt in range(self._probe_attempts):
+            if self.process is None or self.process.poll() is not None:
+                return False
+            verdict = self._probe(url)
+            if verdict == TUNNEL_READY:
+                self.verification = TUNNEL_READY
+                self._unconfirmed = 0
+                return True
+            if verdict == TUNNEL_UNVERIFIABLE:
+                # Repeating the probe cannot change a missing certificate
+                # store, and restarting the tunnel would punish a healthy one.
+                self.verification = TUNNEL_UNVERIFIABLE
+                return True
+            verdicts.append(verdict)
+            if attempt + 1 < self._probe_attempts:
+                self._sleep(self._probe_interval)
+        if verdicts and all(item == TUNNEL_UNRESOLVED for item in verdicts):
+            self.verification = TUNNEL_UNRESOLVED
+            return True
+        self._unconfirmed += 1
+        if self._unconfirmed >= self._unconfirmed_limit and self._alive():
+            self.verification = TUNNEL_UNCONFIRMED
+            return True
+        return False
+
+    def _alive(self):
+        return self.process is not None and self.process.poll() is None
+
+    @staticmethod
+    def _drain(process):
+        """Consume cloudflared's log so a full pipe never blocks the child."""
+
+        stream = process.stdout
+        if stream is None:
+            return
+        try:
+            for _ in stream:
+                pass
+        except (OSError, ValueError):
+            return
+
+    def _discard(self):
+        process, self.process = self.process, None
+        reader, self._reader = self._reader, None
+        self.url = None
+        self.verification = None
+        if process is not None and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=5)
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                try:
+                    process.kill()
+                except (OSError, ValueError):
+                    pass
+        if reader is not None:
+            reader.join(timeout=5)
+        if process is not None and process.stdout is not None:
+            try:
+                process.stdout.close()
+            except (OSError, ValueError):
+                pass
 
 
 class FileSecretStore:
@@ -338,6 +679,14 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
         stored_value = secret_store.load()
         pairing_path = _default_fallback_path().with_name("telegram-pairing-code")
         pairing_code = pairing_path.read_text(encoding="utf-8").strip() if owner_id is None else None
+        try:
+            permanent_url = resolve_public_mini_app_url()
+            mini_app_port = resolve_mini_app_port()
+        except ValueError as error:
+            # These settings name variables, never credentials, so the
+            # reason can be shown in full.
+            print(f"Mini App settings are invalid: {error}", file=sys.stderr)
+            return 2
         if runner is None:
             from creator_studio_bot import main as runner
         from studio.agent_bridge import process_inbox_once
@@ -347,42 +696,91 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
         studio = serve(workspace)
         mini_app = None
         tunnel = None
-        tunnel_attempted = False
+        published = None
+
+        def publish(controller, paired_owner, public_url):
+            api = TelegramBotApi(stored_value)
+            api.set_chat_menu_button(public_url)
+            controller.set_mini_app_url(public_url + "#mini-app")
+            from studio.telegram_bot import navigation_markup
+            api.send_message(
+                paired_owner,
+                controller.navigation_text(),
+                navigation_markup(controller.store.list_projects(), mini_app_url=controller.mini_app_url),
+            )
 
         def after_iteration(controller):
-            nonlocal mini_app, tunnel, tunnel_attempted
+            nonlocal mini_app, tunnel, published
             process_inbox_once(controller.state)
             paired_owner = controller.state.paired_owner()
-            if paired_owner is None or mini_app is not None:
+            if paired_owner is None:
                 return
-            mini_app = serve_mini_app(studio.application, stored_value, paired_owner)
-            # The loopback Mini App address is the only handle the owner has
-            # when the public tunnel is unavailable; it carries no credential.
-            print(
-                f"Mini App (локально, для проверки шлюза; дашборд открывается из Telegram): "
-                f"{mini_app.base_url}/#mini-app",
-                flush=True,
-            )
-            if tunnel_attempted:
-                return
-            tunnel_attempted = True
-            try:
-                tunnel, tunnel_url = start_cloudflared(mini_app.base_url)
-                api = TelegramBotApi(stored_value)
-                api.set_chat_menu_button(tunnel_url)
-                controller.set_mini_app_url(tunnel_url + "#mini-app")
-                from studio.telegram_bot import navigation_markup
-                api.send_message(
-                    paired_owner,
-                    controller.navigation_text(),
-                    navigation_markup(controller.store.list_projects(), mini_app_url=controller.mini_app_url),
+            if mini_app is None:
+                mini_app = serve_mini_app(
+                    studio.application, stored_value, paired_owner, port=mini_app_port
                 )
+                # The loopback Mini App address is the only handle the owner
+                # has when the public tunnel is unavailable; it carries no
+                # credential.
+                print(
+                    f"Mini App (локально, для проверки шлюза; дашборд открывается из Telegram): "
+                    f"{mini_app.base_url}/#mini-app",
+                    flush=True,
+                )
+            if permanent_url is not None:
+                # The owner runs a permanent front (a named tunnel on his own
+                # domain).  Nothing here starts or supervises it, so the
+                # address is published once and never withdrawn.
+                if published is None:
+                    if probe_tunnel_url(permanent_url) != TUNNEL_READY:
+                        print(
+                            f"Постоянный адрес Mini App не ответил с этого компьютера: "
+                            f"{permanent_url}. Публикую как есть — проверьте свой туннель "
+                            f"и что он ведёт на {mini_app.base_url}.",
+                            flush=True,
+                        )
+                    try:
+                        publish(controller, paired_owner, permanent_url)
+                        published = permanent_url
+                    except (OSError, RuntimeError, TelegramApiError):
+                        controller.set_mini_app_url(None)
+                        published = None
+                return
+            if tunnel is None:
+                tunnel = TunnelSupervisor(mini_app.base_url)
+            try:
+                public_url = tunnel.ensure()
+            except (OSError, RuntimeError, ValueError):
+                # Supervision is best effort: the bot keeps answering over
+                # long polling even when no tunnel can be raised at all.
+                public_url = None
+            if public_url is None:
+                # Nothing public is reachable: withdraw the URL so the bot
+                # stops drawing a Mini App button onto a dead hostname.
+                if published is not None:
+                    published = None
+                    controller.set_mini_app_url(None)
+                    try:
+                        TelegramBotApi(stored_value).reset_chat_menu_button()
+                    except (OSError, RuntimeError, TelegramApiError):
+                        # The inline buttons are already withdrawn; a menu
+                        # left over is not worth stopping the transport for.
+                        pass
+                return
+            if public_url == published:
+                return
+            try:
+                publish(controller, paired_owner, public_url)
+                published = public_url
+                if not tunnel.verified:
+                    # The button is already in Telegram; the owner only needs
+                    # to know why it may not open right away.
+                    print(tunnel_warning(tunnel.verification), flush=True)
             except (OSError, RuntimeError, TelegramApiError):
-                # The local Mini App remains available for diagnostics; no
-                # false public URL or menu is advertised when the tunnel fails.
-                if tunnel is not None:
-                    tunnel.terminate()
-                tunnel = None
+                # Publishing is retried on the next iteration; polling must
+                # not stop and no half-published URL may stay advertised.
+                controller.set_mini_app_url(None)
+                published = None
 
         try:
             return runner(
@@ -395,7 +793,7 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
             )
         finally:
             if tunnel is not None:
-                tunnel.terminate()
+                tunnel.stop()
             if mini_app is not None:
                 mini_app.close()
             studio.close()

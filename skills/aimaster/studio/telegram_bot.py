@@ -7,6 +7,7 @@ and returns plain reply values for the entrypoint to deliver.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import sqlite3
@@ -23,25 +24,28 @@ from .decision_support import DecisionError
 from .domain import DomainValidationError, derive_view_stage
 from .domain_positions import current_member, position_specs
 from .ledger import ActionRequest, IdempotencyConflict, InvalidAction, LedgerError
+from .projection import ProjectionError, build_snapshot
 from .questions import LateAnswerConflict, QuestionError, secure_sqlite_path
 from .runner import open_ledger
 from .store import RevisionConflict, StoreError
+from .telegram_sections import (
+    PROJECT_TYPES as _PROJECT_TYPES,
+    SECTION_LABELS as _SECTION_LABELS,
+    STAGES as _STAGES,
+    STATUSES as _STATUSES,
+    render_section,
+    render_selection,
+)
 from .workspace import resolve_workspace_paths
 
 
 TELEGRAM_DB_NAME = "telegram_bot.sqlite3"
 _TERMINAL_UPDATE_WINDOW = 256
 
-_PROJECT_TYPES = {"photo": "Фото", "video": "Видео", "mixed": "Фото и видео"}
-_STAGES = {
-    "scenario": "Сценарий",
-    "image_plan": "Кадры и промпты",
-    "image_results": "Изображения",
-    "motion": "Видео",
-    "audio": "Звук",
-    "assembly": "Сборка",
-}
-_STATUSES = {"active": "В работе", "review": "На проверке", "done": "Готово"}
+# `_PROJECT_TYPES`/`_STAGES`/`_STATUSES` live in `telegram_sections` and are
+# imported above: the project index line here and every section card there
+# must name the same step by the same Russian word, so there is one
+# dictionary, not a copy per module.
 _CARD_ACTIONS = {"approve", "reject", "hide", "unhide", "retire", "restore"}
 _RESULT_ACTIONS = {"hide", "unhide", "retire", "restore", "vary", "regenerate"}
 _PAID_ACTIONS = {"vary", "regenerate"}
@@ -972,32 +976,81 @@ class TelegramBotController:
             return [TelegramReply(chat_id, text, update_id, navigation_markup(self.store.list_projects(), mini_app_url=self.mini_app_url))]
         parts = data.split(":", 2)
         if len(parts) == 2 and parts[0] == "project" and parts[1]:
-            project_id = parts[1]
-            project = self.store.load(project_id)
-            title = project["project"].get("title") or project_id
-            text = f"Проект «{title}» выбран. Напишите задачу обычным сообщением."
-            self.state.complete_open(update_id, chat_id, self.workspace, project_id, text)
-            return [TelegramReply(
-                chat_id,
-                text,
-                update_id,
-                project_navigation_markup(project_id, mini_app_url=self.mini_app_url),
-            )]
+            return self._select_project(update_id, chat_id, parts[1])
         if len(parts) != 3 or parts[0] != "project" or not parts[1] or not parts[2]:
             raise TelegramBotError("unknown navigation action")
         project_id, action = parts[1], parts[2]
-        labels = {"scenario": "Сценарий", "prompts": "Промпты", "results": "Результаты", "chat": "Чат"}
-        if action not in labels:
+        if action not in _SECTION_LABELS:
             raise TelegramBotError("unknown navigation action")
+        if action == "chat":
+            return self._select_project(update_id, chat_id, project_id)
         project = self.store.load(project_id)
         title = project["project"].get("title") or project_id
-        if action == "chat":
-            text = f"Проект «{title}» выбран. Напишите задачу обычным сообщением."
-        else:
-            text = f"Проект «{title}» · {labels[action]}\nОткройте AI Мастерскую для просмотра этого раздела."
-        self.state.complete(update_id, text)
+        text = self._section_text(project_id, title, action)
+        # `complete_open` both records the reply and selects the project, so
+        # reading a section leaves the owner able to write the next task as a
+        # plain message -- exactly as pressing the project button does.
         self.state.complete_open(update_id, chat_id, self.workspace, project_id, text)
         return [TelegramReply(chat_id, text, update_id, project_navigation_markup(project_id, mini_app_url=self.mini_app_url))]
+
+    def _select_project(self, update_id, chat_id, project_id):
+        project = self.store.load(project_id)
+        title = project["project"].get("title") or project_id
+        opening = f"Проект «{title}» выбран. Напишите задачу обычным сообщением."
+        snapshot = self._public_snapshot(project_id)
+        # A project whose state cannot be projected must still be selectable:
+        # the owner's next plain message is how the local agent gets told to
+        # repair it. The short card is the extra, not the gate.
+        text = opening if snapshot is None else render_selection(snapshot, opening)
+        self.state.complete_open(update_id, chat_id, self.workspace, project_id, text)
+        return [TelegramReply(
+            chat_id,
+            text,
+            update_id,
+            project_navigation_markup(project_id, mini_app_url=self.mini_app_url),
+        )]
+
+    def _section_text(self, project_id, title, action):
+        snapshot = self._public_snapshot(project_id)
+        if snapshot is None:
+            return (
+                f"Проект «{title}» · {_SECTION_LABELS[action]}\n"
+                "Раздел сейчас не читается: проект не проходит проверку. "
+                "Откройте AI Мастерскую или напишите задачу обычным сообщением."
+            )
+        return render_section(snapshot, action, mini_app_url=self.mini_app_url)
+
+    def _public_snapshot(self, project_id):
+        """Build the exact document `GET /api/projects/<id>/snapshot` serves.
+
+        The same `projection.build_snapshot` call the dashboard's HTTP app
+        makes (`http_app.StudioApp._snapshot`), with the same allowlist, so
+        no private field of canonical state can reach a Telegram message.
+        Returns `None` when the project cannot be projected at all; the
+        caller decides what to say about that.
+        """
+
+        state = copy.deepcopy(self.store.load(project_id))
+        # A controller may be built without a question or ledger surface (a
+        # unit test injects `None` to prove a path never opens them). Reading
+        # a section is then still possible from project state alone: what is
+        # lost is the pending question and the "в работе" marks, never a
+        # private field -- `build_snapshot` decides that, not this method.
+        questions = self.questions
+        ledger = self.ledger
+        state["questions"] = [] if questions is None else questions.pending(project_id)
+        state["actions"] = (
+            [] if ledger is None else ledger.latest_actions_by_target(project_id)
+        )
+        try:
+            return build_snapshot(
+                self.store.list_projects(),
+                state,
+                asset_url=lambda asset_id: f"/assets/{asset_id}",
+                pending_actions=None if ledger is None else ledger.pending_actions(project_id),
+            )
+        except (ProjectionError, DomainValidationError):
+            return None
 
     def _projects_text(self):
         projects = self.store.list_projects()

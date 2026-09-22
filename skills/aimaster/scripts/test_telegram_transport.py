@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Contract tests for the offline portion of the Studio Telegram transport."""
+"""Contract tests for the offline portion of the Studio Telegram transport.
+
+The cloudflared command, its supervision and the Mini App URL it publishes
+are covered by ``test_telegram_tunnel.py`` and are deliberately not repeated
+here.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +28,6 @@ from creator_studio_telegram import (  # noqa: E402
     FileSecretStore,
     KeychainSecretStore,
     build_parser,
-    cloudflared_command,
     render_setup_html,
     validate_bot_token,
 )
@@ -317,10 +321,6 @@ class TelegramProjectMenuTests(unittest.TestCase):
             self.assertIn("устарела", malformed[0].text.lower())
             self.assertIn("Первый ролик", legacy[0].text)
             self.assertIn("Команды", valid[0].text)
-
-    def test_cloudflared_command_is_loopback_only(self):
-        with self.assertRaisesRegex(ValueError, "loopback"):
-            cloudflared_command("https://example.com")
 
     def test_setup_ui_never_embeds_a_token_and_explains_next_step(self):
         html = render_setup_html()

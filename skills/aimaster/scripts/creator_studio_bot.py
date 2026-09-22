@@ -131,9 +131,9 @@ class TelegramBotApi:
     def send_message(self, chat_id: int, text: str, reply_markup=None):
         result = None
         chunks = _text_chunks(text)
-        for chunk in chunks:
+        for index, chunk in enumerate(chunks):
             payload = {"chat_id": chat_id, "text": chunk}
-            if reply_markup is not None and chunk == chunks[-1]:
+            if reply_markup is not None and index == len(chunks) - 1:
                 payload["reply_markup"] = reply_markup
             result = self._call(
                 "sendMessage",
@@ -158,6 +158,23 @@ class TelegramBotApi:
         )
         if result is not True:
             raise TelegramApiError("Telegram did not accept the Mini App menu")
+        return result
+
+    def reset_chat_menu_button(self):
+        """Return the chat menu to its default when no public URL is live.
+
+        A menu button keeps pointing at the last URL it was given, so a
+        tunnel that died would otherwise leave the owner one tap away from
+        an empty screen until a new tunnel is published.
+        """
+
+        result = self._call(
+            "setChatMenuButton",
+            {"menu_button": {"type": "default"}},
+            timeout=10,
+        )
+        if result is not True:
+            raise TelegramApiError("Telegram did not reset the Mini App menu")
         return result
 
 
