@@ -24,8 +24,13 @@ function positionFor(project, { sceneId, slot, referenceId, layer }) {
   return positions.find((item) => item.scene_id === sceneId && item.kind === kind) || null;
 }
 
-function collectionFor(project, { slot, layer, sceneId }) {
+function collectionFor(project, { slot, layer, sceneId, referenceId }) {
   if (layer) return project?.audio_results;
+  // Референс — всегда картинка, и сцены у него нет вовсе. Без этой ветки
+  // он проваливался в `!sceneId` и искал свои версии среди video_results:
+  // выбранный вариант при этом находился (его даёт `selectedResultVersion`
+  // по своей коллекции), а плёнка оставалась пустой.
+  if (referenceId) return project?.image_results;
   if (slot === "video" || !sceneId || sceneId === "oneshot") return project?.video_results;
   return project?.image_results;
 }

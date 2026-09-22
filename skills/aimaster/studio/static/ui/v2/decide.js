@@ -74,8 +74,11 @@ export function directActionRequest(actionType, version, revision, { comment } =
   return { actionType, targetId: resultTargetId(version), payload, expectedRevision: revision };
 }
 
-function mainButton({ actions, version, revision, projectId, label, row, status }) {
+function mainButton({ actions, version, revision, projectId, label, row, status, mark }) {
   if (!actions.includes("approve")) return null;
+  // Решение уже принято — кнопке нечего делать. Подпись повторяет
+  // пометку той же версии на плёнке, чтобы «выбран» на плитке и
+  // «Выбран» на кнопке не расходились.
   const chosen = version?.decision === "approved";
   const button = buildSimpleButton({
     actionType: "approve",
@@ -84,7 +87,7 @@ function mainButton({ actions, version, revision, projectId, label, row, status 
     projectId,
     row,
     status,
-    label: chosen ? "Выбран" : label,
+    label: chosen ? (mark === "принят" ? "Принят" : "Выбран") : label,
     successText: "Решение отправлено.",
   });
   button.classList.add("v2-viewer-primary");
@@ -113,7 +116,9 @@ export function renderDecideRow(context) {
   buttons.className = "v2-viewer-buttons";
   const actions = directActionsFor({ allowedActions, currentStage, collection, version });
 
-  const main = mainButton({ actions, version, revision, projectId, label: keepLabel, row: buttons, status });
+  const main = mainButton({
+    actions, version, revision, projectId, label: keepLabel, row: buttons, status, mark: context.mark,
+  });
   if (main) buttons.append(main);
 
   const chat = {

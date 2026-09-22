@@ -1,6 +1,7 @@
 /*
  * Тёмный просмотрщик v2 — вариант C одобренного макета
- * (.superpowers/brainstorm/*/content/scene-viewer-dark.html).
+ * scene-viewer-dark.html из .superpowers/brainstorm (звёздочку со слешем
+ * в этом файле не писать: она закрывает комментарий и съедает правила).
  * Подключается из `ui/v2/boot.js` тегом <link>: inline-стилей на странице
  * нет нигде, их запрещает CSP.
  *
@@ -50,21 +51,26 @@ body.v2-viewer-open {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
   padding: 10px 16px;
   border-bottom: 1px solid var(--vw-line);
 }
 
+/* Заголовок ужимается первым: вкладки и ✕ на строку не переносятся
+   даже на 360px, иначе крестик уезжает под название. */
 .v2-viewer-title {
   margin: 0;
   font-size: 0.9375rem;
   color: #fff;
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .v2-viewer-time { color: var(--vw-muted); font-weight: 400; }
 
-.v2-viewer-tabs { display: flex; gap: 4px; margin-left: auto; }
+.v2-viewer-tabs { display: flex; gap: 4px; flex: none; }
 
 .v2-viewer-tab {
   border: 0;
@@ -85,6 +91,7 @@ body.v2-viewer-open {
 .v2-viewer button:focus-visible { outline: 2px solid #9ecbff; outline-offset: 2px; }
 
 .v2-viewer-close {
+  flex: none;
   border: 0;
   background: none;
   color: var(--vw-muted);
@@ -352,7 +359,14 @@ audio.v2-viewer-media { width: 100%; max-height: none; }
 /* --- Зоны референсов (разметка из scene-zones.js) --------------------- */
 
 .v2-viewer-zones { display: flex; flex-direction: column; gap: 12px; }
-.v2-viewer .v2-zone { display: flex; flex-direction: column; gap: 6px; }
+
+.v2-viewer .v2-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+}
 
 .v2-viewer .v2-zone-title {
   font-size: 0.6875rem;

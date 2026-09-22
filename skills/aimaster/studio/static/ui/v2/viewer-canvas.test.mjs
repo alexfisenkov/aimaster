@@ -123,3 +123,10 @@ test("связь варианта с версией промпта читает�
   assert.equal(promptOfVariant(strip.items[2].version, versions)?.version_id, PROMPT_V2);
   assert.equal(promptOfVariant(strip.items[0].version, versions), null);
 });
+
+test("плёнка референса берётся из image_results, а не из клипов", () => {
+  const strip = filmstrip(variantCounts(PROJECT, { referenceId: "IMG_04" }));
+  assert.equal(strip.total, 1, "у референса есть свой вариант, и он должен попасть на плёнку");
+  assert.equal(strip.items[0].version.result_id, "result:ref:IMG_04");
+  assert.equal(strip.items[0].mark, "выбран");
+});

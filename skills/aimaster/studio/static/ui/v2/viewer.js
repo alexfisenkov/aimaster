@@ -183,6 +183,7 @@ function leftColumn(snapshot, project) {
     currentStage: snapshot?.view_stage?.current_stage,
     collection: COLLECTION[tab],
     version: shown?.version || null,
+    mark: shown?.mark,
     keepLabel: keepLabel(target, tab),
     promptVersion: prompts.versions[view.promptShown - 1] || null,
     editWhat: target.kind === "reference" ? `референса «${target.id}»` : undefined,
