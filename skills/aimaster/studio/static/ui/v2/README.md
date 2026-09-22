@@ -1,8 +1,8 @@
 # Оболочка дашборда v2 — волна 1
 
 Контракт: `docs/superpowers/specs/2026-09-22-dashboard-redesign-design.md`.
-Здесь сделаны ядро и экран «Кадры»; просмотрщик и экраны Сценарий / Видео /
-Звук / Сборка — волна 2. Ничего из v1 не удалено.
+Волна 1 — ядро и экран «Кадры». Волна 2 — просмотрщик и остальные четыре
+экрана: Сценарий, Видео, Звук, Сборка. Ничего из v1 не удалено.
 
 ## Вход
 
@@ -28,6 +28,14 @@
   `screensFor(type)`, `screenForStage(stage)`, `stagesForScreen(screen)`,
   `pathState(project)`, `primaryAction(project)` → `{label, stage, enabled, remaining[]}`.
 - `unresolved.js` — `unresolvedItems(project, stage)` → строки «осталось решить».
+- `scenario-model.js` — `scriptVersions(project)` → `{versions, activeIndex}`,
+  `storyboardRows(project)`, `activeBlockText(scene)`.
+- `video-model.js` — `clipStatus(project, scene)` и `continuationLine(project,
+  scene)` → `{text, warn}`: откуда берётся движение сцены.
+- `audio-model.js` — `AUDIO_LAYERS` (голос, музыка, эффекты, атмосфера —
+  человеческий порядок, не серверный) и `audioTiles(project)`.
+- `screen-prompts.js` — тексты для чата, нужные только экранам:
+  `changeGenMode`, `editScenario`, `reopenScenario`, `assembleFinal`.
 - `chat-prompts.js` — `addReference(kind, project, revision, {sceneId})`,
   `moreVariants({project, revision, sceneId, referenceId, slot, promptVersion,
   selectedVariant})`, `uploadFrame({project, revision, sceneId, slot})`,
@@ -42,12 +50,24 @@
 - `reference-shelf.js` — `SHELF_GROUPS`, `shelfGroups(project)`, `renderShelf(project, revision)`.
 - `scene-zones.js` — `inFrameZone`/`localZone`/`videoReferenceZone`/`framesZone`
   `(project, revision, scene)`.
-- `scene-row.js` — `renderSceneRow(project, revision, scene, position)`,
-  `scenePromptLine(project, scene, kind)`, `scenesInOrder(project)`.
+- `scene-zones-video.js` — `clipZone`/`continuationZone` `(project, scene)`:
+  правые зоны той же строки сцены на экране «Видео».
+- `scene-row.js` — `renderSceneRow(project, revision, scene, position, {mode})`,
+  `scenePromptLine(project, scene, kind, label)`, `scenesInOrder(project)`.
+  `mode` — `"frames"` (четыре зоны) или `"video"` (три).
+- `video-thumb.js` — `videoThumb(assetUrl, label)`: миниатюра клипа
+  `<video preload="metadata">`; `<img>` на mp4 отдаёт битую плитку.
+- `more-menu.js` — `moreMenu(items)`: «···» из `<details>`, всё редкое с экрана.
 - `screen-frames.js` — `renderFramesScreen(root, {state, readOnly, screen})`.
+- `screen-scenario.js` · `screen-video.js` · `screen-audio.js` ·
+  `screen-assembly.js` — `render*Screen(root, {state, screen})`, внизу каждого
+  `renderFooter(snapshot, {screen})`.
 - `footer.js` — `renderFooter(snapshot, {screen})`: одна главная кнопка
-  (direct `approve` стадии через `card-forms.buildSimpleButton`) и строка
-  «Осталось решить». На пройденном экране кнопки нет вовсе.
+  (direct через `card-forms.buildSimpleButton`) и строка «Осталось решить».
+  У сценария свой тип действия `approve-scenario`, у остальных пяти стадий —
+  общий `approve` с именем стадии; сервер различает их по `target_id`
+  (`decision_stages.MILESTONE_TARGETS` вычитает `scenario`). На пройденном
+  экране кнопки нет вовсе.
 - `shell.js` — `renderShellV2(root, state)`, `setViewedScreen`, `currentScreen`.
 - `boot.js` — `bootV2()`: стор, контроллер и fetch те же, что у v1.
 
@@ -65,12 +85,22 @@
 
 1. Написать `viewer.js` и подписать его в `bootV2()` на `studio:open-viewer`
    с проверкой `detail.version === 2`; слушатель v1 не трогать.
-2. Заменить временные рендереры v1 в `SCREEN_RENDERERS` (`shell.js`) на свои
-   `screen-scenario.js`, `screen-video.js`, `screen-audio.js`, `screen-assembly.js`
-   с сигнатурой `(root, {state, readOnly, screen})` и вызовом
-   `renderFooter(snapshot, {screen})` внизу.
+2. ~~Заменить временные рендереры v1 в `SCREEN_RENDERERS` (`shell.js`)~~ —
+   сделано: все пять экранов свои, `step-*.js` из v2 больше не вызываются.
+   Сами файлы v1 не удалены: они живут в `static/app-v1.js` до приёмки.
 3. Брать готовые тексты для чата из `chat-prompts.js`, а счёт вариантов —
    из `counts.js`; заново не считать.
+
+## Что осталось известным долгом
+
+- Строка промпта у сцены на «Кадрах» показывает промпт движения
+  (`scenePromptLine(..., "motion")`), а промпты кадров у сцены свои и лежат
+  по ссылкам `first_frame_prompt_version_id` / `last_frame_prompt_version_id`
+  (их читает `viewer-prompt.js`). На проектах без запланированных кадров
+  разницы не видно, на проекте с кадрами строка соврёт.
+- У сборки нет группы вариантов: `assembly` — один объект `{status,
+  asset_id, summary}`, поэтому плитка финала показывает состояние, а не
+  «вариант N из M». Скачивания тоже пока нет — оно отдельной работой.
 
 ## Тесты
 
