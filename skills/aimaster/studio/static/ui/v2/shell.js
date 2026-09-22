@@ -1,29 +1,30 @@
 // Оболочка v2 (спецификация §3): шапка, путь, область экрана.
-// Роутер экранов: «Кадры» уже свои (`screen-frames.js`), остальные
-// четыре временно рисуют рендереры v1 — их заменит волна 2. Какой экран
-// открыт, хранится здесь же: это местная вещь просмотра, сервер о ней
-// ничего не знает.
+// Роутер экранов: все пять экранов теперь свои. Рендереры v1
+// (`step-*.js`) отсюда больше не вызываются, но и не удалены — они живут
+// в старой оболочке `static/app-v1.js` до приёмки владельцем. Какой
+// экран открыт, хранится здесь же: это местная вещь просмотра, сервер о
+// ней ничего не знает.
 
-import { renderScenarioStep } from "../step-scenario.js";
-import { renderVideoStep } from "../step-video.js";
-import { renderAudioStep } from "../step-audio.js";
-import { renderAssemblyStep } from "../step-assembly.js";
 import { requestAgentPrompt } from "../chat-prompt-dialog.js";
 import { projectRef } from "./chat-prompts.js";
 import { el } from "./dom.js";
 import { renderPath } from "./path-nav.js";
+import { renderAssemblyScreen } from "./screen-assembly.js";
+import { renderAudioScreen } from "./screen-audio.js";
 import { renderFramesScreen } from "./screen-frames.js";
+import { renderScenarioScreen } from "./screen-scenario.js";
+import { renderVideoScreen } from "./screen-video.js";
 import { SCREEN_LABELS, screenForStage, screensFor } from "./screen-map.js";
 
 const TYPE_WORDS = Object.freeze({ video: "видео", photo: "фото", mixed: "видео и фото" });
 const MODE_WORDS = Object.freeze({ per_scene: "кадр за кадром", one_shot: "одним заходом" });
 
 const SCREEN_RENDERERS = Object.freeze({
-  scenario: renderScenarioStep,
+  scenario: renderScenarioScreen,
   frames: renderFramesScreen,
-  video: renderVideoStep,
-  audio: renderAudioStep,
-  assembly: renderAssemblyStep,
+  video: renderVideoScreen,
+  audio: renderAudioScreen,
+  assembly: renderAssemblyScreen,
 });
 
 let viewedScreen = null;

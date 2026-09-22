@@ -9,8 +9,20 @@ import { agentControl, exactTarget } from "../agent-control.js";
 import { primaryAction, screenForStage } from "./screen-map.js";
 import { el } from "./dom.js";
 
-/** Стадии, которые сервер разрешает одобрять кнопкой (`MILESTONE_TARGETS`). */
-const DIRECT_STAGES = Object.freeze(["image_plan", "image_results", "motion", "audio", "assembly"]);
+/**
+ * Чем одобряется каждая стадия. Пять стадий-вех сервер принимает общим
+ * `approve` с именем стадии в `target_id` (`MILESTONE_TARGETS`), а у
+ * сценария свой тип действия `approve-scenario` — вехой он не считается
+ * (`decision_stages.MILESTONE_TARGETS` вычитает `scenario`).
+ */
+const DIRECT_STAGES = Object.freeze({
+  scenario: "approve-scenario",
+  image_plan: "approve",
+  image_results: "approve",
+  motion: "approve",
+  audio: "approve",
+  assembly: "approve",
+});
 
 /**
  * @param {object} snapshot весь snapshot (нужны `revision` и `view_stage`)
@@ -41,10 +53,11 @@ export function renderFooter(snapshot, { screen } = {}) {
   const status = buildStatusLine();
   const row = el("div", "v2-footer-buttons");
 
-  const canDecideHere = onCurrentStage && allowed.includes("approve") && DIRECT_STAGES.includes(action.stage);
+  const actionType = DIRECT_STAGES[action.stage];
+  const canDecideHere = onCurrentStage && Boolean(actionType) && allowed.includes(actionType);
   if (canDecideHere) {
     const button = buildSimpleButton({
-      actionType: "approve",
+      actionType,
       targetId: action.stage,
       expectedRevision: snapshot.revision,
       projectId: project?.id,
