@@ -12,9 +12,12 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import socket
+import ssl
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -193,12 +196,30 @@ class CloudflaredCommandTests(unittest.TestCase):
 
 
 class ChildProcessCase(unittest.TestCase):
-    """Every stand-in child releases its pipe, started or not."""
+    """Stand-in children release their pipes; supervision runs on a thread."""
 
     def child(self, url, noise_lines=0):
         process = FakeCloudflared(url, noise_lines=noise_lines)
         self.addCleanup(process.close)
         return process
+
+    def until(self, predicate, description, timeout=5.0):
+        """Wait for the supervising thread to reach a state, or fail loudly."""
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            value = predicate()
+            if value:
+                return value
+            time.sleep(0.005)
+        self.fail(f"timed out waiting for {description}")
+
+    def supervised(self, processes, **kwargs):
+        instance = supervisor(processes, **kwargs)
+        self.addCleanup(instance.stop)
+        # The polling loop's first call is what puts the supervisor to work.
+        instance.ensure()
+        return instance
 
 
 class TunnelOutputDrainTests(ChildProcessCase):
@@ -222,7 +243,8 @@ class TunnelOutputDrainTests(ChildProcessCase):
                 probe=lambda url: transport.TUNNEL_READY,
                 sleep=lambda seconds: None,
             )
-            self.assertEqual(instance.ensure(), FIRST_URL)
+            self.addCleanup(instance.stop)
+            self.until(instance.ensure, "the published URL")
             # Without a reader this waits forever: 20000 long lines are far
             # more than a pipe buffer holds.
             self.assertTrue(child.noise_written.wait(timeout=10))
@@ -233,57 +255,45 @@ class TunnelOutputDrainTests(ChildProcessCase):
 class TunnelSupervisionTests(ChildProcessCase):
     def test_live_tunnel_is_reported_without_restarting_it(self):
         first = self.child(FIRST_URL)
-        instance = supervisor([first, self.child(SECOND_URL)])
+        instance = self.supervised([first, self.child(SECOND_URL)])
 
-        self.assertEqual(instance.ensure(), FIRST_URL)
+        self.until(lambda: instance.ensure() == FIRST_URL, "the first URL")
         self.assertEqual(instance.ensure(), FIRST_URL)
         self.assertIs(instance.process, first)
-        instance.stop()
 
     def test_dead_tunnel_is_restarted_and_yields_a_new_url(self):
         first = self.child(FIRST_URL)
         second = self.child(SECOND_URL)
-        instance = supervisor([first, second])
+        instance = self.supervised([first, second], poll_interval=0.01)
 
-        self.assertEqual(instance.ensure(), FIRST_URL)
+        self.until(lambda: instance.ensure() == FIRST_URL, "the first URL")
         first.die()
-        self.assertEqual(instance.ensure(), SECOND_URL)
+        self.until(lambda: instance.ensure() == SECOND_URL, "the replacement URL")
         self.assertIs(instance.process, second)
-        self.assertEqual(instance.url, SECOND_URL)
-        instance.stop()
+
+    def test_a_lost_tunnel_is_withdrawn_before_any_replacement(self):
+        first = self.child(FIRST_URL)
+        instance = self.supervised(
+            [first],  # the starter refuses to hand out a second tunnel
+            poll_interval=0.01,
+        )
+
+        self.until(lambda: instance.ensure() == FIRST_URL, "the first URL")
+        first.die()
+        self.until(lambda: instance.ensure() is None, "the withdrawn URL")
 
     def test_unreachable_name_is_never_advertised_and_the_child_is_stopped(self):
         child = self.child(FIRST_URL)
-        instance = supervisor(
+        instance = self.supervised(
             [child],
             probe=lambda url: transport.TUNNEL_UNREACHABLE,
-            probe_attempts=3,
-            unconfirmed_limit=3,
+            probe_attempts=2,
+            unconfirmed_limit=99,
         )
 
+        self.until(lambda: child.terminated, "the unusable tunnel being stopped")
         self.assertIsNone(instance.ensure())
-        self.assertIsNone(instance.url)
-        self.assertTrue(child.terminated)
-        # The deliberate pre-probe delay plus one pause between attempts.
-        self.assertEqual(instance.recorded_sleeps, [transport._TUNNEL_PROBE_DELAY, 2.5, 2.5])
-
-    def test_the_first_probe_waits_for_the_name_to_spread(self):
-        """An early query earns an NXDOMAIN the resolver then caches."""
-
-        child = self.child(FIRST_URL)
-        events = []
-        instance = transport.TunnelSupervisor(
-            LOCAL_URL,
-            starter=fake_starter([child]),
-            probe=lambda url: events.append("probe") or transport.TUNNEL_READY,
-            sleep=lambda seconds: events.append(("sleep", seconds)),
-            probe_delay=5.0,
-        )
-
-        self.assertEqual(instance.ensure(), FIRST_URL)
-        self.assertEqual(events[0], ("sleep", 5.0))
-        self.assertEqual(events[1], "probe")
-        instance.stop()
+        self.assertEqual(instance.recorded_sleeps[:1], [transport._TUNNEL_PROBE_DELAY])
 
     def test_probe_is_retried_while_the_name_is_still_propagating(self):
         child = self.child(FIRST_URL)
@@ -292,73 +302,63 @@ class TunnelSupervisionTests(ChildProcessCase):
             transport.TUNNEL_UNREACHABLE,
             transport.TUNNEL_READY,
         ]
-        instance = supervisor([child], probe=lambda url: verdicts.pop(0), probe_attempts=6)
+        instance = self.supervised(
+            [child], probe=lambda url: verdicts.pop(0), probe_attempts=6
+        )
 
-        self.assertEqual(instance.ensure(), FIRST_URL)
+        self.until(lambda: instance.ensure() == FIRST_URL, "the confirmed URL")
         self.assertTrue(instance.verified)
-        self.assertEqual(instance.recorded_sleeps, [transport._TUNNEL_PROBE_DELAY, 2.5, 2.5])
-        instance.stop()
-
-    def test_python_without_root_certificates_publishes_after_one_probe(self):
-        """python.org builds cannot verify TLS; that says nothing about the tunnel."""
-
-        child = self.child(FIRST_URL)
-        probes = []
-
-        def probe(url):
-            probes.append(url)
-            return transport.TUNNEL_UNVERIFIABLE
-
-        instance = supervisor([child], probe=probe, probe_attempts=6)
-
-        self.assertEqual(instance.ensure(), FIRST_URL)
-        self.assertEqual(instance.verification, transport.TUNNEL_UNVERIFIABLE)
-        self.assertEqual(len(probes), 1)
-        self.assertFalse(child.terminated)
-        self.assertIn("сертификат", transport.tunnel_warning(instance.verification))
-        instance.stop()
+        self.assertEqual(
+            instance.recorded_sleeps, [transport._TUNNEL_PROBE_DELAY, 2.5, 2.5]
+        )
 
     def test_name_this_computer_cannot_resolve_is_still_handed_to_telegram(self):
-        """A resolver that filters *.trycloudflare.com must not blind the bot."""
+        """A resolver that cached an NXDOMAIN must not blind the bot."""
 
         child = self.child(FIRST_URL)
-        instance = supervisor(
+        instance = self.supervised(
             [child],
             probe=lambda url: transport.TUNNEL_UNRESOLVED,
             probe_attempts=3,
         )
 
-        self.assertEqual(instance.ensure(), FIRST_URL)
+        self.until(lambda: instance.ensure() == FIRST_URL, "the unconfirmed URL")
+        self.assertEqual(instance.verification, transport.TUNNEL_UNRESOLVED)
         self.assertFalse(instance.verified)
         self.assertFalse(child.terminated)
-        instance.stop()
+
+    def test_a_python_without_certificates_publishes_at_once(self):
+        child = self.child(FIRST_URL)
+        probes = []
+        instance = self.supervised(
+            [child],
+            probe=lambda url: probes.append(url) or transport.TUNNEL_UNVERIFIABLE,
+            probe_attempts=9,
+        )
+
+        self.until(lambda: instance.ensure() == FIRST_URL, "the unverifiable URL")
+        self.assertEqual(instance.verification, transport.TUNNEL_UNVERIFIABLE)
+        # Repeating a probe cannot conjure a certificate store.
+        self.assertEqual(len(probes), 1)
 
     def test_a_name_that_never_confirms_is_published_after_a_few_restarts(self):
         """Restarting forever would leave the owner with no button at all."""
 
         children = [self.child(FIRST_URL), self.child(SECOND_URL), self.child(FIRST_URL)]
-        now = [1000.0]
-        instance = transport.TunnelSupervisor(
-            LOCAL_URL,
-            starter=fake_starter(children),
+        instance = self.supervised(
+            children,
             probe=lambda url: transport.TUNNEL_UNREACHABLE,
-            clock=lambda: now[0],
-            sleep=lambda seconds: None,
-            probe_attempts=2,
+            probe_attempts=1,
             unconfirmed_limit=3,
         )
 
-        self.assertIsNone(instance.ensure())
-        now[0] += 600.0
-        self.assertIsNone(instance.ensure())
-        now[0] += 600.0
-
-        self.assertEqual(instance.ensure(), FIRST_URL)
+        self.until(lambda: instance.ensure() == FIRST_URL, "the unconfirmed URL")
         self.assertEqual(instance.verification, transport.TUNNEL_UNCONFIRMED)
-        self.assertFalse(instance.verified)
-        self.assertIn("проверить его с этого компьютера не удалось",
-                      transport.tunnel_warning(instance.verification))
-        instance.stop()
+        self.assertIs(instance.process, children[2])
+        self.assertIn(
+            "проверить его с этого компьютера не удалось",
+            transport.tunnel_warning(instance.verification),
+        )
 
     def test_death_during_verification_is_not_advertised(self):
         child = self.child(FIRST_URL)
@@ -367,110 +367,234 @@ class TunnelSupervisionTests(ChildProcessCase):
             child.die()
             return transport.TUNNEL_UNRESOLVED
 
-        instance = supervisor([child], probe=probe, probe_attempts=4)
+        instance = self.supervised([child], probe=probe, probe_attempts=4)
 
+        self.until(lambda: child.poll() is not None, "the tunnel dying mid-check")
+        time.sleep(0.05)
         self.assertIsNone(instance.ensure())
-        self.assertIsNone(instance.url)
 
     def test_absent_cloudflared_is_retried_no_faster_than_the_backoff(self):
         attempts = []
-        now = [1000.0]
+        holder = {}
 
         def starter(local_url):
-            attempts.append(now[0])
+            attempts.append(len(attempts))
             raise RuntimeError("cloudflared is not installed")
+
+        recorded = []
+
+        def sleep(seconds):
+            recorded.append(seconds)
+            if len(recorded) >= 3:
+                holder["instance"]._stopping.set()
 
         instance = transport.TunnelSupervisor(
             LOCAL_URL,
             starter=starter,
             probe=lambda url: transport.TUNNEL_READY,
-            clock=lambda: now[0],
-            sleep=lambda seconds: None,
-            backoff=(5.0, 15.0),
+            sleep=sleep,
+            backoff=(5.0, 15.0, 45.0),
         )
+        holder["instance"] = instance
+        self.addCleanup(instance.stop)
 
-        self.assertIsNone(instance.ensure())
-        for step in (0.0, 1.0, 3.9):
-            now[0] += step
-            self.assertIsNone(instance.ensure())
-        self.assertEqual(len(attempts), 1)
+        instance.ensure()
+        self.until(lambda: len(recorded) >= 3, "three backoff pauses")
 
-        now[0] = 1005.0
-        self.assertIsNone(instance.ensure())
-        self.assertEqual(len(attempts), 2)
-
-        now[0] = 1019.0
-        self.assertIsNone(instance.ensure())
-        self.assertEqual(len(attempts), 2)
-
-        now[0] = 1020.0
-        self.assertIsNone(instance.ensure())
+        self.assertEqual(recorded, [5.0, 15.0, 45.0])
         self.assertEqual(len(attempts), 3)
 
     def test_stop_terminates_the_child_and_joins_the_reader(self):
         child = self.child(FIRST_URL, noise_lines=200)
-        instance = supervisor([child])
-        self.assertEqual(instance.ensure(), FIRST_URL)
+        instance = self.supervised([child])
+        self.until(lambda: instance.ensure() == FIRST_URL, "the published URL")
 
         reader = instance._reader
+        worker = instance._worker
         instance.stop()
 
         self.assertTrue(child.terminated)
         self.assertIsNone(instance.process)
-        self.assertIsNone(instance.url)
+        self.assertIsNone(instance.ensure())
         self.assertFalse(reader.is_alive())
+        self.assertFalse(worker.is_alive())
 
 
-class TunnelProbeClassificationTests(unittest.TestCase):
-    def test_unknown_name_is_reported_as_unresolved_not_as_a_dead_tunnel(self):
-        import socket
-        import urllib.error
+class TunnelNeverBlocksPollingTests(ChildProcessCase):
+    """The polling loop must not wait for cloudflared or for the network."""
 
-        with mock.patch.object(
-            transport.urllib.request,
-            "urlopen",
-            side_effect=urllib.error.URLError(socket.gaierror(8, "nodename nor servname")),
-        ):
-            self.assertEqual(
-                transport.probe_tunnel_url(FIRST_URL), transport.TUNNEL_UNRESOLVED
-            )
+    def test_ensure_returns_at_once_while_the_check_is_still_running(self):
+        child = self.child(FIRST_URL)
+        release = threading.Event()
+        holder = {}
 
-    def test_certificate_verification_failure_is_reported_as_unverifiable(self):
-        import ssl
-        import urllib.error
+        def slow_probe(url):
+            while not release.wait(0.01):
+                if holder["instance"]._stopping.is_set():
+                    return transport.TUNNEL_UNREACHABLE
+            return transport.TUNNEL_READY
 
-        failure = ssl.SSLCertVerificationError(1, "certificate verify failed")
-        with mock.patch.object(
-            transport.urllib.request, "urlopen", side_effect=urllib.error.URLError(failure)
-        ):
-            self.assertEqual(
-                transport.probe_tunnel_url(FIRST_URL), transport.TUNNEL_UNVERIFIABLE
-            )
+        instance = self.supervised([child], probe=slow_probe, probe_attempts=3)
+        holder["instance"] = instance
 
-    def test_cloudflare_error_page_is_reported_as_unreachable(self):
-        import urllib.error
+        for _ in range(5):
+            started = time.monotonic()
+            self.assertIsNone(instance.ensure())
+            # A blocking check used to hold the bot silent for a minute.
+            self.assertLess(time.monotonic() - started, 0.2)
+        self.assertTrue(instance._worker.is_alive())
 
-        error = urllib.error.HTTPError(FIRST_URL, 530, "origin down", {}, None)
-        with mock.patch.object(transport.urllib.request, "urlopen", side_effect=error):
-            self.assertEqual(
-                transport.probe_tunnel_url(FIRST_URL), transport.TUNNEL_UNREACHABLE
-            )
+        release.set()
+        self.until(lambda: instance.ensure() == FIRST_URL, "the URL after confirmation")
 
-    def test_answering_dashboard_is_reported_as_ready(self):
-        class Response:
-            status = 200
+    def test_stop_does_not_hang_on_a_check_in_flight(self):
+        child = self.child(FIRST_URL)
+        holder = {}
 
-            def read(self, size=None):
-                return b"<!doctype html>"
+        def slow_probe(url):
+            while not holder["instance"]._stopping.wait(0.01):
+                pass
+            return transport.TUNNEL_UNREACHABLE
 
-            def __enter__(self):
-                return self
+        instance = supervisor([child], probe=slow_probe, probe_attempts=3)
+        holder["instance"] = instance
+        instance.ensure()
+        self.until(lambda: instance.url is not None, "the tunnel being started")
 
-            def __exit__(self, *args):
-                return False
+        started = time.monotonic()
+        instance.stop()
 
-        with mock.patch.object(transport.urllib.request, "urlopen", return_value=Response()):
-            self.assertEqual(transport.probe_tunnel_url(FIRST_URL), transport.TUNNEL_READY)
+        self.assertLess(time.monotonic() - started, 5.0)
+        self.assertTrue(child.terminated)
+
+
+class FakeEdgeSocket:
+    """A stand-in TLS socket that replays one prepared HTTP answer."""
+
+    def __init__(self, answer, *, on_wrap=None):
+        self.answer = answer
+        self.on_wrap = on_wrap
+        self.sent = b""
+        self.server_hostname = None
+        self.connected_to = None
+
+    # -- the raw socket side
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    # -- the ssl context side
+    def wrap_socket(self, sock, *, server_hostname):
+        self.server_hostname = server_hostname
+        if self.on_wrap is not None:
+            self.on_wrap(server_hostname)
+        return self
+
+    def settimeout(self, timeout):
+        return None
+
+    def sendall(self, payload):
+        self.sent += payload
+
+    def recv(self, size):
+        chunk, self.answer = self.answer[:size], self.answer[size:]
+        return chunk
+
+
+class TunnelProbeTests(unittest.TestCase):
+    """The probe must never ask DNS for the tunnel's own name."""
+
+    def probe(self, answer=b"HTTP/1.1 200 OK\r\n\r\nhi", *, url=FIRST_URL, resolver=None,
+              on_wrap=None, addresses=None):
+        self.edge = FakeEdgeSocket(answer, on_wrap=on_wrap)
+        self.looked_up = []
+
+        def default_resolver(host, port, **kwargs):
+            self.looked_up.append((host, port))
+            return addresses or [(2, 1, 6, "", ("104.16.230.132", port))]
+
+        def connector(address, timeout=None):
+            self.edge.connected_to = address
+            return self.edge
+
+        return transport.probe_tunnel_url(
+            url,
+            resolver=resolver or default_resolver,
+            connector=connector,
+            context_factory=lambda: self.edge,
+        )
+
+    def test_only_the_stable_cloudflare_name_is_resolved(self):
+        verdict = self.probe()
+
+        self.assertEqual(verdict, transport.TUNNEL_READY)
+        # The tunnel's own name must not be looked up: an early NXDOMAIN
+        # would be cached by the resolver for minutes.
+        self.assertEqual(self.looked_up, [("trycloudflare.com", 443)])
+        self.assertEqual(self.edge.connected_to, ("104.16.230.132", 443))
+
+    def test_the_tunnel_name_travels_as_sni_and_host_header(self):
+        self.probe()
+
+        self.assertEqual(self.edge.server_hostname, "first-name-here.trycloudflare.com")
+        self.assertIn(b"Host: first-name-here.trycloudflare.com\r\n", self.edge.sent)
+        self.assertTrue(self.edge.sent.startswith(b"GET / HTTP/1.1\r\n"))
+        self.assertIn(b"Connection: close\r\n", self.edge.sent)
+
+    def test_a_permanent_address_is_resolved_by_its_own_name(self):
+        self.probe(url="https://studio.example.com")
+
+        self.assertEqual(self.looked_up, [("studio.example.com", 443)])
+        self.assertEqual(self.edge.server_hostname, "studio.example.com")
+
+    def test_answering_dashboard_is_ready_and_redirects_count_too(self):
+        self.assertEqual(self.probe(b"HTTP/1.1 200 OK\r\n\r\n"), transport.TUNNEL_READY)
+        self.assertEqual(self.probe(b"HTTP/1.1 302 Found\r\n\r\n"), transport.TUNNEL_READY)
+
+    def test_an_edge_without_a_route_yet_is_unreachable_and_worth_a_retry(self):
+        for answer in (b"HTTP/1.1 404 Not Found\r\n\r\n", b"HTTP/1.1 530 \r\n\r\n"):
+            with self.subTest(answer=answer):
+                self.assertEqual(self.probe(answer), transport.TUNNEL_UNREACHABLE)
+
+    def test_a_closed_or_silent_edge_is_unreachable(self):
+        self.assertEqual(self.probe(b""), transport.TUNNEL_UNREACHABLE)
+        self.assertEqual(self.probe(b"not http at all\r\n"), transport.TUNNEL_UNREACHABLE)
+
+    def test_a_refused_connection_is_unreachable(self):
+        def refuse(address, timeout=None):
+            raise ConnectionRefusedError(61, "Connection refused")
+
+        verdict = transport.probe_tunnel_url(
+            FIRST_URL,
+            resolver=lambda host, port, **kwargs: [(2, 1, 6, "", ("104.16.230.132", port))],
+            connector=refuse,
+            context_factory=lambda: FakeEdgeSocket(b""),
+        )
+        self.assertEqual(verdict, transport.TUNNEL_UNREACHABLE)
+
+    def test_a_missing_certificate_store_is_unverifiable(self):
+        def fail(hostname):
+            raise ssl.SSLCertVerificationError(1, "certificate verify failed")
+
+        self.assertEqual(self.probe(on_wrap=fail), transport.TUNNEL_UNVERIFIABLE)
+
+    def test_only_the_stable_name_failing_dns_is_unresolved(self):
+        def refuse(host, port, **kwargs):
+            raise socket.gaierror(8, "nodename nor servname provided")
+
+        self.assertEqual(self.probe(resolver=refuse), transport.TUNNEL_UNRESOLVED)
+
+    def test_a_malformed_address_is_refused_before_any_socket(self):
+        self.assertEqual(
+            transport.probe_tunnel_url(
+                "https://host\r\nX-Evil: 1/",
+                resolver=lambda *args, **kwargs: self.fail("must not resolve"),
+                connector=lambda *args, **kwargs: self.fail("must not connect"),
+            ),
+            transport.TUNNEL_UNREACHABLE,
+        )
 
 
 class FakeStore:

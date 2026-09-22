@@ -12,8 +12,13 @@ import argparse
 import json
 import os
 import re
+import shutil
+import ssl
+import subprocess
 import sys
+import time
 from pathlib import Path
+from urllib import error as urllib_error
 from urllib import request
 
 
@@ -25,7 +30,17 @@ from studio.telegram_bot import TelegramBotController, TelegramBotError  # noqa:
 
 
 class TelegramApiError(RuntimeError):
-    """A sanitized Bot API transport or response error."""
+    """A sanitized Bot API transport or response error.
+
+    ``retryable`` says whether the same request may succeed later (network
+    blips, 5xx, 429).  A 4xx answer is Telegram rejecting this exact
+    request, so repeating it can only fail the same way.
+    """
+
+    def __init__(self, message, *, status=None, retryable=True):
+        super().__init__(message)
+        self.status = status
+        self.retryable = retryable
 
 
 _TELEGRAM_TEXT_LIMIT = 4096
@@ -73,9 +88,78 @@ def _text_chunks(text: str, limit: int = _TELEGRAM_TEXT_LIMIT) -> list[str]:
     return chunks
 
 
+def _telegram_description(error) -> str:
+    """': <description>' from a Bot API error body, or '' when unreadable."""
+
+    try:
+        decoded = json.loads(error.read(4096).decode("utf-8", "replace"))
+    except Exception:
+        return ""
+    description = decoded.get("description") if isinstance(decoded, dict) else None
+    if not isinstance(description, str) or not description:
+        return ""
+    return ": " + description[:200]
+
+
 class _NoRedirect(request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
+
+
+def _macos_system_roots() -> str:
+    """Export the macOS system root certificates as PEM text ("" if not macOS)."""
+
+    if sys.platform != "darwin" or not shutil.which("security"):
+        return ""
+    keychain = "/System/Library/Keychains/SystemRootCertificates.keychain"
+    try:
+        completed = subprocess.run(
+            ["security", "find-certificate", "-a", "-p", keychain],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return completed.stdout if completed.returncode == 0 else ""
+
+
+def build_ssl_context(*, certifi_path=None, system_roots=_macos_system_roots) -> ssl.SSLContext:
+    """A verifying TLS context that works on a Python without root certificates.
+
+    python.org builds ship with an empty OpenSSL trust store until the user
+    runs «Install Certificates.command», so every HTTPS call fails with
+    CERTIFICATE_VERIFY_FAILED while curl (macOS trust) works.  When the
+    default store is empty, load certifi's bundle if it is installed,
+    otherwise the macOS system roots.  Verification is never disabled.
+    """
+
+    context = ssl.create_default_context()
+    if context.cert_store_stats().get("x509_ca", 0) > 0:
+        return context
+    if certifi_path is None:
+        try:
+            import certifi
+            certifi_path = certifi.where()
+        except ImportError:
+            certifi_path = ""
+    if certifi_path:
+        try:
+            context.load_verify_locations(cafile=certifi_path)
+            return context
+        except (OSError, ssl.SSLError):
+            pass
+    roots = system_roots()
+    if roots:
+        try:
+            context.load_verify_locations(cadata=roots)
+        except ssl.SSLError:
+            pass
+    return context
+
+
+def default_opener():
+    """urlopen equivalent that verifies TLS with `build_ssl_context`."""
+
+    return request.build_opener(request.HTTPSHandler(context=build_ssl_context())).open
 
 
 class TelegramBotApi:
@@ -86,11 +170,14 @@ class TelegramBotApi:
             raise TelegramApiError("Telegram token is required")
         origin = resolve_api_origin(environ)
         self._base_url = f"{origin}/bot{token}/"
-        if origin != _DEFAULT_API_ORIGIN and opener is request.urlopen:
-            # A loopback override must stay on this machine: a local server
-            # answering 3xx could otherwise send the token-bearing URL to
-            # any host, because urlopen follows redirects by default.
-            opener = request.build_opener(_NoRedirect).open
+        if opener is request.urlopen:
+            if origin != _DEFAULT_API_ORIGIN:
+                # A loopback override must stay on this machine: a local
+                # server answering 3xx could otherwise send the token-bearing
+                # URL to any host, because urlopen follows redirects by default.
+                opener = request.build_opener(_NoRedirect).open
+            else:
+                opener = default_opener()
         self._opener = opener
 
     def _call(self, method: str, payload: dict, *, timeout: int):
@@ -104,10 +191,24 @@ class TelegramBotApi:
         try:
             with self._opener(outgoing, timeout=max(timeout + 5, 5)) as response:
                 raw = response.read(2 * 1024 * 1024 + 1)
+        except urllib_error.HTTPError as error:
+            # Telegram's `description` names the problem ("message is too
+            # long", "chat not found") and never carries the token; the
+            # exception's own text would carry the credential-bearing URL.
+            status = error.code
+            description = _telegram_description(error)
+            error.close()
+            raise TelegramApiError(
+                f"Telegram rejected {method}: HTTP {status}{description}",
+                status=status,
+                retryable=status == 429 or status >= 500,
+            ) from None
         except Exception as error:
             # urllib exceptions commonly include their full URL, and the Bot
             # API URL contains the credential. Never interpolate `error`.
-            raise TelegramApiError("Telegram request failed") from None
+            reason = getattr(error, "reason", None)
+            kind = type(reason).__name__ if reason is not None else type(error).__name__
+            raise TelegramApiError(f"Telegram request failed ({method}: {kind})") from None
         if len(raw) > 2 * 1024 * 1024:
             raise TelegramApiError("Telegram response is too large")
         try:
@@ -178,14 +279,38 @@ class TelegramBotApi:
         return result
 
 
+_REJECTED_REPLY_TEXT = "Не удалось отправить ответ: Telegram отклонил сообщение ({status}). Откройте раздел в AI Мастерской."
+
+
+def _send_reply(controller, api, reply):
+    """Send one reply; a reply Telegram rejects is replaced, not retried forever.
+
+    A durable reply that Telegram answers with 4xx would otherwise be resent
+    on every restart and stop the transport each time.  Transient failures
+    (network, 5xx, 429) propagate so the caller can retry the iteration.
+    """
+
+    try:
+        api.send_message(reply.chat_id, reply.text, reply.reply_markup)
+    except TelegramApiError as error:
+        if error.retryable:
+            raise
+        print(f"{error}. Ответ заменён уведомлением.", file=sys.stderr, flush=True)
+        api.send_message(
+            reply.chat_id,
+            _REJECTED_REPLY_TEXT.format(status=error.status),
+            reply.reply_markup,
+        )
+    # A crash after send_message but before this durable mark can produce a
+    # duplicate outbound message on restart. Incoming project mutations are
+    # idempotent; Telegram delivery itself is deliberately not called
+    # exactly-once.
+    controller.mark_delivered(reply.update_id)
+
+
 def _deliver_pending(controller, api):
     for reply in controller.pending_replies():
-        api.send_message(reply.chat_id, reply.text, reply.reply_markup)
-        # A crash after send_message but before this durable mark can produce a
-        # duplicate outbound message on restart. Incoming project mutations are
-        # idempotent; Telegram delivery itself is deliberately not called
-        # exactly-once.
-        controller.mark_delivered(reply.update_id)
+        _send_reply(controller, api, reply)
 
 
 def run_poll_iteration(controller, api, *, timeout=30, after_iteration=None):
@@ -204,8 +329,7 @@ def run_poll_iteration(controller, api, *, timeout=30, after_iteration=None):
         for reply in replies:
             if reply.callback_query_id:
                 api.answer_callback_query(reply.callback_query_id)
-            api.send_message(reply.chat_id, reply.text, reply.reply_markup)
-            controller.mark_delivered(reply.update_id)
+            _send_reply(controller, api, reply)
     if after_iteration is not None:
         after_iteration(controller)
     return controller.next_offset()
@@ -228,6 +352,7 @@ def main(
     allow_pairing=False,
     after_iteration=None,
     pairing_code=None,
+    sleep=time.sleep,
 ):
     """Run polling with injected local secrets or legacy environment values.
 
@@ -258,11 +383,27 @@ def main(
         controller = TelegramBotController(args.workspace, owner_id, pairing_code=pairing_code)
         api = api_factory(credential)
         completed = 0
+        failures = 0
         while iterations is None or completed < iterations:
-            run_poll_iteration(controller, api, after_iteration=after_iteration)
+            try:
+                run_poll_iteration(controller, api, after_iteration=after_iteration)
+            except TelegramApiError as error:
+                # A network blip or a Telegram-side error must not stop the
+                # transport: the owner would find a dead bot after the first
+                # dropped packet.  Wait a little longer each time and go on.
+                failures += 1
+                delay = min(30.0, float(2 ** min(failures, 5)))
+                print(f"{error}. Повтор через {delay:.0f} с.", file=sys.stderr, flush=True)
+                sleep(delay)
+                completed += 1
+                continue
+            failures = 0
             completed += 1
-    except (TelegramBotError, TelegramApiError, OSError, ValueError):
-        print("Telegram Studio bot stopped because of a local or transport error", file=sys.stderr)
+    except (TelegramBotError, OSError, ValueError) as error:
+        print(
+            f"Telegram Studio bot stopped because of a local error ({type(error).__name__})",
+            file=sys.stderr,
+        )
         return 3
     except KeyboardInterrupt:
         return 0

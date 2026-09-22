@@ -616,7 +616,20 @@ class TelegramBotController:
         return self.state.next_offset()
 
     def pending_replies(self):
-        return self.state.pending_replies(self.owner_id)
+        # The durable outbox keeps only the text; a reply delivered after a
+        # restart would otherwise arrive without any buttons to continue.
+        replies = self.state.pending_replies(self.owner_id)
+        if not replies:
+            return replies
+        selection = self.state.selection(self.owner_id)
+        if selection is not None and selection.get("project_id"):
+            markup = project_navigation_markup(selection["project_id"], mini_app_url=self.mini_app_url)
+        else:
+            markup = navigation_markup(self.store.list_projects(), mini_app_url=self.mini_app_url)
+        return [
+            TelegramReply(item.chat_id, item.text, item.update_id, markup, item.callback_query_id)
+            for item in replies
+        ]
 
     def mark_delivered(self, update_id):
         self.state.mark_delivered(update_id)

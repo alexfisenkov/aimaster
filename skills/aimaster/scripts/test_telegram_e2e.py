@@ -19,6 +19,8 @@ import json
 import os
 import subprocess
 import sys
+import contextlib
+import io
 import tempfile
 import threading
 import time
@@ -38,6 +40,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 from creator_studio_bot import (  # noqa: E402
     API_ORIGIN_VARIABLE,
     TelegramApiError,
+    build_ssl_context,
     resolve_api_origin,
 )
 from studio.telegram_bot import TelegramBotState  # noqa: E402
@@ -195,6 +198,138 @@ def callback_update(update_id, data):
             "data": data,
         },
     }
+
+
+class TlsTrustTests(unittest.TestCase):
+    """A python.org Python has an empty trust store; the client must still verify."""
+
+    def _empty_store(self):
+        import ssl
+        from unittest import mock
+
+        return mock.patch.object(
+            ssl.SSLContext, "cert_store_stats", return_value={"x509_ca": 0, "x509": 0, "crl": 0}
+        )
+
+    def test_certifi_bundle_is_loaded_when_the_default_store_is_empty(self):
+        import ssl
+        from unittest import mock
+
+        with self._empty_store(), mock.patch.object(
+            ssl.SSLContext, "load_verify_locations"
+        ) as load:
+            context = build_ssl_context(certifi_path="/bundle/cacert.pem", system_roots=lambda: "")
+        load.assert_called_once_with(cafile="/bundle/cacert.pem")
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+
+    def test_system_roots_are_the_fallback_without_certifi(self):
+        import ssl
+        from unittest import mock
+
+        with self._empty_store(), mock.patch.object(
+            ssl.SSLContext, "load_verify_locations"
+        ) as load:
+            build_ssl_context(certifi_path="", system_roots=lambda: "-----BEGIN CERTIFICATE-----\n")
+        load.assert_called_once_with(cadata="-----BEGIN CERTIFICATE-----\n")
+
+    def test_verification_is_never_disabled(self):
+        import ssl
+
+        context = build_ssl_context(certifi_path="", system_roots=lambda: "")
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+
+
+class TransportResilienceTests(unittest.TestCase):
+    """One failed Bot API call must not stop the transport or loop forever."""
+
+    def _controller(self, replies):
+        class Reply:
+            def __init__(self):
+                self.chat_id, self.text, self.reply_markup = 501, "section", {"k": 1}
+                self.update_id, self.callback_query_id = 7, None
+
+        class Controller:
+            def __init__(self):
+                self.delivered = []
+                self._pending = [Reply() for _ in range(replies)]
+
+            def pending_replies(self):
+                return list(self._pending)
+
+            def mark_delivered(self, update_id):
+                self.delivered.append(update_id)
+                self._pending = []
+
+            def next_offset(self):
+                return 0
+
+            def handle_update(self, update):
+                return []
+
+        return Controller()
+
+    def test_rejected_reply_is_replaced_and_marked_delivered(self):
+        from creator_studio_bot import _deliver_pending
+
+        sent = []
+
+        class Api:
+            def send_message(self, chat_id, text, reply_markup=None):
+                sent.append(text)
+                if text == "section":
+                    raise TelegramApiError("Telegram rejected sendMessage: HTTP 400: too long", status=400, retryable=False)
+
+        controller = self._controller(1)
+        with contextlib.redirect_stderr(io.StringIO()):
+            _deliver_pending(controller, Api())
+        self.assertEqual(controller.delivered, [7])
+        self.assertIn("отклонил сообщение (400)", sent[-1])
+
+    def test_transient_failure_propagates_and_main_keeps_polling(self):
+        from creator_studio_bot import main as bot_main
+
+        calls = []
+
+        class Api:
+            def __init__(self, token):
+                pass
+
+            def get_updates(self, offset, timeout):
+                calls.append("getUpdates")
+                if len(calls) == 1:
+                    raise TelegramApiError("Telegram request failed (getUpdates: TimeoutError)")
+                return []
+
+        slept = []
+        with tempfile.TemporaryDirectory() as workspace, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = bot_main(
+                ["--workspace", workspace], api_factory=Api, iterations=3,
+                credential="123456:" + "a" * 32, owner_id=501, sleep=slept.append,
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, ["getUpdates"] * 3)
+        self.assertEqual(slept, [2.0])
+        self.assertIn("TimeoutError", err.getvalue())
+        self.assertNotIn("aaaa", err.getvalue())
+
+    def test_http_error_carries_status_and_description_but_no_token(self):
+        import urllib.error
+        from creator_studio_bot import TelegramBotApi
+
+        body = io.BytesIO(b'{"ok":false,"description":"Bad Request: message is too long"}')
+        error = urllib.error.HTTPError("https://api.telegram.org/botSECRET/sendMessage", 400, "Bad Request", {}, body)
+
+        def opener(request_, timeout):
+            raise error
+
+        api = TelegramBotApi("123456:" + "a" * 32, opener=opener)
+        with self.assertRaises(TelegramApiError) as caught:
+            api.send_message(501, "x")
+        self.assertEqual(caught.exception.status, 400)
+        self.assertFalse(caught.exception.retryable)
+        self.assertIn("message is too long", str(caught.exception))
+        self.assertNotIn("SECRET", str(caught.exception))
 
 
 class ApiOriginOverrideTests(unittest.TestCase):

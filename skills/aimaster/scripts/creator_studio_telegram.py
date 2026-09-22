@@ -35,7 +35,7 @@ _SKILL_ROOT = Path(__file__).resolve().parent.parent
 if str(_SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(_SKILL_ROOT))
 
-from creator_studio_bot import TelegramApiError, TelegramBotApi  # noqa: E402
+from creator_studio_bot import TelegramApiError, TelegramBotApi, build_ssl_context  # noqa: E402
 from studio.telegram_bot import TelegramBotState, TelegramBotError  # noqa: E402
 from studio.workspace import PRIVATE_DIR_NAME, resolve_workspace_paths  # noqa: E402
 
@@ -48,8 +48,11 @@ _TUNNEL_URL = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 # URL is probed until it answers instead of being advertised immediately.  The
 # first probe waits on purpose: a query sent before the name has spread gets
 # an NXDOMAIN that the local resolver then caches for minutes.
+# Measured on the owner's network: the edge answered 404 for 53 s after the
+# URL appeared, so the budget is ~65 s.  It costs nothing now that the check
+# runs off the polling thread.
 _TUNNEL_PROBE_DELAY = 5.0
-_TUNNEL_PROBE_ATTEMPTS = 12
+_TUNNEL_PROBE_ATTEMPTS = 24
 _TUNNEL_PROBE_INTERVAL = 2.5
 # cloudflared can die at any moment (network change, its own watchdog).  The
 # restart is retried on a widening delay so a machine without the executable,
@@ -299,53 +302,95 @@ def tunnel_warning(verification) -> str:
     )
 
 
-def probe_tunnel_url(url: str, *, timeout=8) -> str:
-    """Ask the public tunnel URL for its root and classify the answer.
+_TUNNEL_EDGE_HOST = "trycloudflare.com"
+_HOSTNAME_PATTERN = re.compile(r"^[A-Za-z0-9.-]+$")
 
-    ``ready`` means the Mini App answered through the tunnel.  ``unresolved``
-    means the name is not in DNS yet — which is not proof of a dead tunnel:
-    a fresh quick tunnel needs seconds to spread, and a resolver that
-    answered NXDOMAIN once keeps repeating it from cache for minutes while
-    Telegram's own resolver already sees the name.  Anything else
-    (Cloudflare's 4xx/5xx tunnel pages, refused connections) is
-    ``unreachable``: the name exists but nothing serves the dashboard.
+
+def probe_tunnel_url(
+    url: str,
+    *,
+    timeout=8,
+    edge_host=_TUNNEL_EDGE_HOST,
+    resolver=socket.getaddrinfo,
+    connector=socket.create_connection,
+    context_factory=build_ssl_context,
+) -> str:
+    """Ask the tunnel for its root without resolving the tunnel's own name.
+
+    A quick tunnel's hostname appears in DNS seconds after the URL is
+    printed.  Asking earlier earns an NXDOMAIN that the local resolver then
+    repeats from cache for minutes -- poisoning not only this probe but also
+    the Telegram client on the same Mac.  So the probe never looks the name
+    up: it resolves the always-present ``trycloudflare.com``, opens TLS to
+    that edge with the tunnel's name as SNI and asks for ``/`` with a
+    matching ``Host`` header, exactly as ``curl --resolve`` would.  A
+    permanent address on someone's own domain has stable DNS and is
+    resolved normally.
+
+    ``ready`` is any 2xx/3xx.  A 404 (the edge has the tunnel's name but no
+    route to it yet) and 5xx are ``unreachable`` and worth another attempt.
     """
 
-    outgoing = urllib.request.Request(url, method="GET")
+    parts = urllib.parse.urlsplit(url)
     try:
-        with urllib.request.urlopen(outgoing, timeout=timeout) as response:
-            response.read(1024)
-            status = getattr(response, "status", 200)
-        return TUNNEL_READY if 200 <= status < 400 else TUNNEL_UNREACHABLE
-    except urllib.error.HTTPError as error:
-        error.close()
+        hostname = parts.hostname
+        port = parts.port or 443
+    except ValueError:
+        # A malformed address must never reach a socket or a request header.
         return TUNNEL_UNREACHABLE
-    except urllib.error.URLError as error:
-        reason = getattr(error, "reason", None)
-        if isinstance(reason, socket.gaierror):
-            return TUNNEL_UNRESOLVED
-        if isinstance(reason, ssl.SSLCertVerificationError):
-            return TUNNEL_UNVERIFIABLE
+    if not hostname or not _HOSTNAME_PATTERN.fullmatch(hostname):
         return TUNNEL_UNREACHABLE
-    except ssl.SSLCertVerificationError:
-        return TUNNEL_UNVERIFIABLE
+    target = edge_host if hostname.endswith("." + edge_host) else hostname
+    try:
+        candidates = resolver(target, port, type=socket.SOCK_STREAM)
     except socket.gaierror:
         return TUNNEL_UNRESOLVED
-    except Exception:
-        # A probe failure is an ordinary "not ready yet", never a transport
-        # error: the polling loop must survive it.
+    except OSError:
         return TUNNEL_UNREACHABLE
+    address = next((item[4] for item in candidates), None)
+    if address is None:
+        return TUNNEL_UNRESOLVED
+    payload = (
+        f"GET / HTTP/1.1\r\nHost: {hostname}\r\n"
+        "User-Agent: aimaster-tunnel-probe\r\nAccept: */*\r\n"
+        "Connection: close\r\n\r\n"
+    ).encode("ascii")
+    try:
+        context = context_factory()
+        with connector(tuple(address[:2]), timeout=timeout) as raw:
+            with context.wrap_socket(raw, server_hostname=hostname) as secure:
+                secure.settimeout(timeout)
+                secure.sendall(payload)
+                head = b""
+                while b"\r\n" not in head and len(head) < 512:
+                    chunk = secure.recv(256)
+                    if not chunk:
+                        break
+                    head += chunk
+    except ssl.SSLCertVerificationError:
+        return TUNNEL_UNVERIFIABLE
+    except (OSError, ssl.SSLError, ValueError):
+        return TUNNEL_UNREACHABLE
+    fields = head.split(b"\r\n", 1)[0].split()
+    if len(fields) < 2 or not fields[0].upper().startswith(b"HTTP/"):
+        return TUNNEL_UNREACHABLE
+    try:
+        status = int(fields[1])
+    except ValueError:
+        return TUNNEL_UNREACHABLE
+    return TUNNEL_READY if 200 <= status < 400 else TUNNEL_UNREACHABLE
 
 
 class TunnelSupervisor:
     """Keep one Cloudflare Quick Tunnel alive in front of the Mini App.
 
-    The transport used to start cloudflared once and forget it.  When the
-    child died the bot kept offering buttons pointing at a hostname that no
-    longer resolved.  This object is asked on every polling iteration whether
-    a verified public URL exists: it restarts the dead child, re-probes the
-    new name and reports ``None`` for as long as there is nothing to
-    advertise.
+    The transport used to start cloudflared once and forget it, so a child
+    that died left the bot advertising a hostname nothing served.  All of the
+    slow work -- starting cloudflared, waiting for the name to spread,
+    probing it, backing off, watching the child -- happens on this object's
+    own thread.  ``ensure`` only reads the decided state, because it is
+    called from the polling loop: a second spent here is a second the owner's
+    commands go unanswered.
     """
 
     def __init__(
@@ -354,33 +399,36 @@ class TunnelSupervisor:
         *,
         starter=start_cloudflared,
         probe=probe_tunnel_url,
-        clock=time.monotonic,
-        sleep=time.sleep,
+        sleep=None,
         probe_delay=_TUNNEL_PROBE_DELAY,
         probe_attempts=_TUNNEL_PROBE_ATTEMPTS,
         probe_interval=_TUNNEL_PROBE_INTERVAL,
         backoff=_TUNNEL_BACKOFF_SECONDS,
         unconfirmed_limit=_TUNNEL_UNCONFIRMED_LIMIT,
+        poll_interval=1.0,
     ):
         self.local_url = local_url
         self.process = None
         self.url = None
         # ``ready`` when the dashboard answered through the tunnel; the other
         # values say why the published URL could not be confirmed here.
+        # ``None`` means "still deciding" and nothing may be published yet.
         self.verification = None
         self._starter = starter
         self._probe = probe
-        self._clock = clock
         self._sleep = sleep
         self._probe_delay = probe_delay
         self._probe_attempts = probe_attempts
         self._probe_interval = probe_interval
         self._backoff = tuple(backoff)
         self._unconfirmed_limit = unconfirmed_limit
+        self._poll_interval = poll_interval
+        self._lock = threading.RLock()
+        self._stopping = threading.Event()
+        self._worker = None
         self._reader = None
         self._failures = 0
         self._unconfirmed = 0
-        self._next_attempt = None
 
     @property
     def verified(self):
@@ -389,85 +437,124 @@ class TunnelSupervisor:
         return self.verification == TUNNEL_READY
 
     def ensure(self):
-        """Return a verified public URL, restarting the tunnel if it died."""
+        """Return the decided public URL.  Never sleeps, never waits on I/O."""
 
-        if self.process is not None and self.process.poll() is not None:
-            self._discard()
-        if self.process is not None:
-            return self.url
-        if self._next_attempt is not None and self._clock() < self._next_attempt:
-            return None
-        if self._start() is None:
-            self._failures += 1
-            index = min(self._failures, len(self._backoff)) - 1
-            self._next_attempt = self._clock() + self._backoff[index]
-            return None
-        self._failures = 0
-        self._next_attempt = None
-        return self.url
+        self._start_worker()
+        with self._lock:
+            return self.url if self.verification is not None else None
 
     def stop(self):
-        """Terminate the tunnel and join its reader on transport shutdown."""
+        """Stop supervising, terminate the tunnel and join both threads."""
 
+        self._stopping.set()
+        worker = self._worker
         self._discard()
+        if worker is not None:
+            worker.join(timeout=10)
+        self._worker = None
+
+    # -- the supervising thread ---------------------------------------------
+
+    def _start_worker(self):
+        if self._stopping.is_set():
+            return
+        if self._worker is None or not self._worker.is_alive():
+            self._worker = threading.Thread(
+                target=self._supervise, name="aimaster-tunnel", daemon=True
+            )
+            self._worker.start()
+
+    def _supervise(self):
+        while not self._stopping.is_set():
+            if self._start() is None:
+                self._failures += 1
+                index = min(self._failures, len(self._backoff)) - 1
+                if self._pause(self._backoff[index]):
+                    return
+                continue
+            self._failures = 0
+            self._watch()
+
+    def _watch(self):
+        """Hold the tunnel until it dies or the transport stops."""
+
+        while not self._stopping.is_set():
+            if not self._alive():
+                self._discard()
+                return
+            if self._stopping.wait(self._poll_interval):
+                return
+
+    def _pause(self, seconds):
+        """Wait, but wake at once when the transport is stopping."""
+
+        if self._sleep is not None:
+            self._sleep(seconds)
+            return self._stopping.is_set()
+        return self._stopping.wait(seconds)
 
     def _start(self):
-        self.verification = None
+        with self._lock:
+            self.verification = None
         try:
             process, url = self._starter(self.local_url)
         except (OSError, RuntimeError, ValueError):
             return None
-        self.process = process
-        self.url = url
-        self._reader = threading.Thread(target=self._drain, args=(process,), daemon=True)
-        self._reader.start()
-        if not self._verify(url):
+        reader = threading.Thread(target=self._drain, args=(process,), daemon=True)
+        reader.start()
+        with self._lock:
+            self.process = process
+            self.url = url
+            self._reader = reader
+        verification = self._verify(url)
+        if verification is None:
             self._discard()
             return None
+        with self._lock:
+            if self.url != url:
+                # The tunnel was discarded while the probe was running.
+                return None
+            self.verification = verification
         return url
 
     def _verify(self, url):
-        """Wait for the new name to answer; report whether it may be used.
+        """Decide how the new name may be used, or ``None`` to start over.
 
-        The first probe is deliberately late: asking before the name has
-        spread earns an NXDOMAIN that the local resolver caches for minutes,
-        which would make a healthy tunnel look dead.  When every attempt
-        failed only on name resolution, the tunnel is still handed over --
-        Telegram resolves the name with its own resolver, and refusing would
-        leave the owner with no button at all.  For the same reason a tunnel
-        that keeps failing its check is published after a few restarts: an
-        unconfirmed button beats no button.
+        The first probe is deliberately late, because a quick tunnel needs
+        seconds to reach the edge.  A name that answers nothing is retried
+        and then restarted -- but only a few times: after that the URL is
+        published unconfirmed, since an unconfirmed button beats no button.
         """
 
-        self._sleep(self._probe_delay)
+        if self._pause(self._probe_delay):
+            return None
         verdicts = []
         for attempt in range(self._probe_attempts):
-            if self.process is None or self.process.poll() is not None:
-                return False
+            if self._stopping.is_set() or not self._alive():
+                return None
             verdict = self._probe(url)
             if verdict == TUNNEL_READY:
-                self.verification = TUNNEL_READY
                 self._unconfirmed = 0
-                return True
+                return TUNNEL_READY
             if verdict == TUNNEL_UNVERIFIABLE:
                 # Repeating the probe cannot change a missing certificate
-                # store, and restarting the tunnel would punish a healthy one.
-                self.verification = TUNNEL_UNVERIFIABLE
-                return True
+                # store, and restarting would punish a healthy tunnel.
+                return TUNNEL_UNVERIFIABLE
             verdicts.append(verdict)
             if attempt + 1 < self._probe_attempts:
-                self._sleep(self._probe_interval)
+                if self._pause(self._probe_interval):
+                    return None
         if verdicts and all(item == TUNNEL_UNRESOLVED for item in verdicts):
-            self.verification = TUNNEL_UNRESOLVED
-            return True
+            return TUNNEL_UNRESOLVED
         self._unconfirmed += 1
         if self._unconfirmed >= self._unconfirmed_limit and self._alive():
-            self.verification = TUNNEL_UNCONFIRMED
-            return True
-        return False
+            return TUNNEL_UNCONFIRMED
+        return None
 
     def _alive(self):
-        return self.process is not None and self.process.poll() is None
+        with self._lock:
+            process = self.process
+        return process is not None and process.poll() is None
 
     @staticmethod
     def _drain(process):
@@ -483,10 +570,13 @@ class TunnelSupervisor:
             return
 
     def _discard(self):
-        process, self.process = self.process, None
-        reader, self._reader = self._reader, None
-        self.url = None
-        self.verification = None
+        # The handles are taken under the lock and waited on outside it, so
+        # a slow terminate can never delay the polling loop's ``ensure``.
+        with self._lock:
+            process, self.process = self.process, None
+            reader, self._reader = self._reader, None
+            self.url = None
+            self.verification = None
         if process is not None and process.poll() is None:
             try:
                 process.terminate()
