@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { canvasCaption, filmstrip, ownFileStrip, promptOfVariant, slotOptions } from "./viewer-canvas.js";
+import { canvasCaption, filmstrip, promptOfVariant, slotOptions, soloStrip } from "./viewer-canvas.js";
 import { variantCounts } from "./counts.js";
 import { directActionsFor } from "./decide.js";
 import { PROJECT, VIEW_STAGE, projectWith } from "./snapshot.fixture.mjs";
@@ -136,24 +136,41 @@ test("загруженный референс показывает свой фа
   const upload = PROJECT.references.find((item) => item.reference_id === "IMG_01");
   assert.equal(upload.source, "upload");
   assert.equal(filmstrip(variantCounts(PROJECT, { referenceId: "IMG_01" })).total, 0);
-  const strip = ownFileStrip(upload.asset_url, upload.label);
+  const strip = soloStrip(upload.asset_url, upload.label);
   assert.equal(strip.total, 1);
-  assert.equal(strip.items[0].mark, "ваш файл");
+  assert.equal(strip.solo, true);
+  assert.equal(strip.items[0].mark, "Ваш файл");
   assert.equal(strip.items[0].version.asset_url, upload.asset_url);
   assert.equal(strip.items[0].version.version_id, undefined, "версии у своего файла нет");
-  assert.equal(ownFileStrip(null), null);
+  assert.equal(soloStrip(null), null);
 });
 
-test("по плитке «ваш файл» решать нечего", () => {
-  const upload = PROJECT.references.find((item) => item.reference_id === "IMG_01");
-  const strip = ownFileStrip(upload.asset_url, upload.label);
-  assert.deepEqual(
-    directActionsFor({
-      allowedActions: VIEW_STAGE.allowed_actions,
-      currentStage: "image_results",
-      collection: "image_results",
-      version: strip.items[0].version,
-    }),
-    [],
+test("собранный ролик — такая же плёнка из одного файла", () => {
+  const strip = soloStrip("/assets/asset-final", "Финальный ролик", "final");
+  assert.equal(strip.total, 1);
+  assert.equal(strip.solo, true);
+  assert.equal(strip.items[0].mark, "Финальный ролик");
+  assert.equal(
+    canvasCaption({ index: 1, total: 1, mark: strip.items[0].mark, solo: true }),
+    "Финальный ролик",
+    "единственный файл не нумеруется как вариант из ряда",
   );
+  assert.equal(soloStrip(undefined, "Финальный ролик", "final"), null, "несобранный ролик показывать нечем");
+});
+
+test("по плитке без версии решать нечего", () => {
+  for (const state of ["own", "final"]) {
+    const strip = soloStrip("/assets/asset-x", "файл", state);
+    for (const [currentStage, collection] of [["image_results", "image_results"], ["assembly", "video_results"]]) {
+      assert.deepEqual(
+        directActionsFor({
+          allowedActions: VIEW_STAGE.allowed_actions,
+          currentStage,
+          collection,
+          version: strip.items[0].version,
+        }),
+        [],
+      );
+    }
+  }
 });

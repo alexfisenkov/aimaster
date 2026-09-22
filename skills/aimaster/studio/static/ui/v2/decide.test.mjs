@@ -9,10 +9,14 @@ import assert from "node:assert/strict";
 
 import {
   RESULT_STAGE_BY_COLLECTION,
+  SUBMITTING_TEXT,
+  decideDraftKeys,
   directActionRequest,
   directActionsFor,
+  isSubmitting,
   resultTargetId,
 } from "./decide.js";
+import { footerMode } from "./footer.js";
 import { PROJECT, VIEW_STAGE } from "./snapshot.fixture.mjs";
 
 const ALLOWED = VIEW_STAGE.allowed_actions;
@@ -79,4 +83,44 @@ test("payload шести прямых действий", () => {
     expectedRevision: 62,
   });
   assert.deepEqual(directActionRequest("reject", VIDEO, 62).payload, { comment: "" });
+});
+
+
+test("пока запрос в полёте, просмотрщик считается занятым", () => {
+  assert.equal(isSubmitting(SUBMITTING_TEXT), true);
+  assert.equal(isSubmitting("Решение отправлено."), false);
+  assert.equal(isSubmitting("Исход не подтверждён. Обновите страницу."), false);
+  assert.equal(isSubmitting(""), false);
+  assert.equal(isSubmitting(undefined), false);
+});
+
+test("ключи черновиков ряда решений — свои для каждого варианта", () => {
+  assert.deepEqual(decideDraftKeys("dashboard-dialogue", VIDEO), [
+    "dashboard-dialogue::v2-viewer::result:scene:cafe-open:video-v1",
+    "dashboard-dialogue::more-menu::v2-viewer:result:scene:cafe-open:video-v1",
+  ]);
+  assert.deepEqual(decideDraftKeys("dashboard-dialogue", { asset_url: "/assets/x" }), [], "у файла без версии черновиков нет");
+  assert.deepEqual(decideDraftKeys("", VIDEO), []);
+});
+
+test("подвал: одобренная сборка не показывает кнопку вовсе", () => {
+  const onAssembly = (gateStatus) => ({
+    revision: 70,
+    active_project: { ...PROJECT, stage: "assembly" },
+    view_stage: { current_stage: "assembly", gate_status: gateStatus, allowed_actions: ["approve", "reject"] },
+  });
+  assert.equal(footerMode(onAssembly("draft"), { screen: "assembly", stage: "assembly" }), "decide");
+  assert.equal(footerMode(onAssembly("approved"), { screen: "assembly", stage: "assembly" }), "done");
+});
+
+test("подвал: пройденный шаг и шаг без прямого действия", () => {
+  const snapshot = {
+    revision: 64,
+    active_project: PROJECT,
+    view_stage: { current_stage: "motion", gate_status: "draft", allowed_actions: VIEW_STAGE.allowed_actions },
+  };
+  assert.equal(footerMode(snapshot, { screen: "frames", stage: "motion" }), "past");
+  assert.equal(footerMode(snapshot, { screen: "video", stage: "motion" }), "decide");
+  const blocked = { ...snapshot, view_stage: { ...snapshot.view_stage, allowed_actions: ["continue-in-chat"] } };
+  assert.equal(footerMode(blocked, { screen: "video", stage: "motion" }), "chat");
 });

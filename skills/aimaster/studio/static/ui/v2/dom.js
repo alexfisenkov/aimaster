@@ -4,6 +4,77 @@
 
 import { requestAgentPrompt } from "../chat-prompt-dialog.js";
 
+// --- Фокус после перерисовки -------------------------------------------
+//
+// Любая зона v2 рисуется заново целиком, а `submitAction` (`ui/actions.js`)
+// гасит нажатую кнопку синхронно, ещё до первого `await`, — браузер тут же
+// уводит фокус на `<body>`. Поэтому `ui/card-forms.js` шлёт
+// `studio:card-focus-pending` **до** отправки, а мы этот листок забираем
+// после перерисовки. Ровно тот же приём, что у v1 (`ui/shell.js`,
+// `takePendingCardFocus`), только своя копия: та не экспортирована, а
+// `createPendingFocusRegistry` из `shell-runtime.js` умеет отдавать листок
+// лишь вычёркивая его — здесь же его сперва показывают обеим зонам.
+
+let pendingCardFocus = null;
+let focusRelayAttached = false;
+
+function ensureFocusRelay() {
+  if (focusRelayAttached) return;
+  focusRelayAttached = true;
+  document.addEventListener("studio:card-focus-pending", (event) => {
+    const { targetId, action } = event?.detail || {};
+    if (typeof targetId === "string" && targetId && typeof action === "string" && action) {
+      pendingCardFocus = { targetId, action };
+    }
+  });
+}
+
+/**
+ * Какой контрол держал фокус перед перерисовкой: живой, если он ещё в
+ * фокусе, иначе — листок от `noteCardFocusPending`.
+ *
+ * Листок здесь **не** вычёркивается: зон две — область экрана
+ * (`renderShellV2`) и оверлей просмотрщика, они перерисовываются по
+ * очереди одним и тем же обновлением, и та, что спросила первой, забрала
+ * бы чужой листок себе. Вычёркивает его `restoreCardFocus`, и только
+ * когда фокус действительно поставлен.
+ *
+ * @returns {{targetId: string, action: string}|null}
+ */
+export function cardFocusNote() {
+  ensureFocusRelay();
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active.dataset.hook === "card-control") {
+    const { targetId, action } = active.dataset;
+    if (targetId && action) return { targetId, action };
+  }
+  return pendingCardFocus;
+}
+
+/**
+ * Вернуть фокус тому же контролу внутри `zone`: сначала точное совпадение
+ * пары `data-target-id`/`data-action`, потом любой живой контрол того же
+ * элемента (решение убирает часть кнопок — «Скрыть» после решения может
+ * исчезнуть, а плитка остаться).
+ *
+ * @returns {boolean} удалось ли поставить фокус
+ */
+export function restoreCardFocus(zone, note) {
+  if (!zone || !note?.targetId) return false;
+  const id = CSS.escape(note.targetId);
+  const exact = note.action
+    ? zone.querySelector(`[data-hook="card-control"][data-target-id="${id}"][data-action="${CSS.escape(note.action)}"]`)
+    : null;
+  const target = exact && !exact.disabled
+    ? exact
+    : [...zone.querySelectorAll(`[data-hook="card-control"][data-target-id="${id}"]`)].find((node) => !node.disabled);
+  if (!target) return false;
+  target.focus();
+  if (document.activeElement !== target) return false;
+  pendingCardFocus = null;
+  return true;
+}
+
 /**
  * @param {string} tag имя тега
  * @param {string} [className]

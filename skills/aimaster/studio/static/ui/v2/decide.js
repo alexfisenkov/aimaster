@@ -37,6 +37,21 @@ export const MENU_LABELS = Object.freeze({
 
 const MENU_ORDER = Object.freeze(["reject", "hide", "unhide", "retire", "restore"]);
 
+/** Что `ui/card-forms.js` пишет в строку исхода, пока запрос в полёте. */
+export const SUBMITTING_TEXT = "Отправляется…";
+
+/**
+ * Идёт ли прямо сейчас запрос — по тексту строки исхода. Пока идёт,
+ * просмотрщик не перерисовывается: иначе ряд кнопок пересоберётся уже
+ * включённым и второй клик уйдёт с тем же `expected_revision`, а текст
+ * исхода отвалится вместе со старым узлом.
+ *
+ * @param {string} statusText текущее содержимое строки исхода
+ */
+export function isSubmitting(statusText) {
+  return statusText === SUBMITTING_TEXT;
+}
+
 /** Чем адресуется вариант в `POST /api/actions` — как в v1
  * (`ui/card-decorate.js`): своя версия, а группа только при её отсутствии. */
 export function resultTargetId(version) {
@@ -97,14 +112,26 @@ function mainButton({ actions, version, revision, projectId, label, row, status,
   return button;
 }
 
+/** Ключи черновиков, которые заводит один ряд решений по этому варианту. */
+export function decideDraftKeys(projectId, version) {
+  const id = resultTargetId(version);
+  if (!projectId || !id) return [];
+  return [draftKey(projectId, "v2-viewer", id), draftKey(projectId, "more-menu", `v2-viewer:${id}`)];
+}
+
 /**
  * Ряд под холстом: «Оставить этот …», «＋ Ещё вариант» и «···».
  *
  * @param {{project: object, revision: number, allowedActions: string[],
  *          currentStage: string, collection: string, version: object|null,
- *          keepLabel: string, chatContext: object, sceneId?: string,
- *          slot?: string, referenceId?: string, promptVersion?: object,
- *          editWhat?: string}} context
+ *          keepLabel?: string, mark?: string, sceneId?: string, slot?: string,
+ *          layer?: string, referenceId?: string, promptVersion?: object,
+ *          editWhat?: string, secondary?: {label: string, request: object},
+ *          chatMenu?: boolean, statusText?: string,
+ *          onStatus?: (text: string) => void}} context
+ *   `secondary` заменяет «＋ Ещё вариант» (сборке нужен «Пересобрать»),
+ *   `chatMenu: false` убирает из «···» пункты про файл и промпт,
+ *   `statusText`/`onStatus` — текст исхода, переживающий перерисовку.
  * @returns {HTMLElement} `<div class="v2-viewer-actions">`
  */
 export function renderDecideRow(context) {
@@ -114,6 +141,17 @@ export function renderDecideRow(context) {
   row.className = "v2-viewer-actions";
   row.dataset.hook = "v2-viewer-actions";
   const status = buildStatusLine();
+  status.dataset.hook = "v2-viewer-status";
+  // Текст исхода живёт в состоянии просмотрщика, а не в узле: узел
+  // отвалится на первой же перерисовке (фоновый опрос идёт каждые 8 с).
+  status.textContent = typeof context.statusText === "string" ? context.statusText : "";
+  if (typeof context.onStatus === "function") {
+    new MutationObserver(() => context.onStatus(status.textContent)).observe(status, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+  }
   const buttons = document.createElement("div");
   buttons.className = "v2-viewer-buttons";
   const actions = directActionsFor({ allowedActions, currentStage, collection, version });
@@ -131,11 +169,13 @@ export function renderDecideRow(context) {
     slot: context.slot,
     layer: context.layer,
   };
-  buttons.append(chatButton(
-    "＋ Ещё вариант",
-    moreVariants({ ...chat, promptVersion: context.promptVersion, selectedVariant: version }),
-    "v2-viewer-secondary",
-  ));
+  buttons.append(context.secondary
+    ? chatButton(context.secondary.label, context.secondary.request, "v2-viewer-secondary")
+    : chatButton(
+      "＋ Ещё вариант",
+      moreVariants({ ...chat, promptVersion: context.promptVersion, selectedVariant: version }),
+      "v2-viewer-secondary",
+    ));
 
   const items = [];
   for (const actionType of MENU_ORDER) {
@@ -148,7 +188,7 @@ export function renderDecideRow(context) {
         targetId: resultTargetId(version),
         expectedRevision: revision,
         projectId,
-        key: draftKey(projectId, "v2-viewer", resultTargetId(version) || "none"),
+        key: draftKey(projectId, "v2-viewer", resultTargetId(version)),
         row: buttons,
         status,
         toggleLabel: MENU_LABELS.reject,
@@ -164,23 +204,28 @@ export function renderDecideRow(context) {
       }));
     items.push({ id: actionType, content: wrap });
   }
-  items.push({
-    id: "upload",
-    content: chatButton("Загрузить свой файл → чат", uploadFrame(chat), "more-menu-item"),
-  });
-  items.push({
-    id: "edit-prompt",
-    content: chatButton(
-      "Изменить промпт → чат",
-      editPrompt({ ...chat, promptVersion: context.promptVersion, what: context.editWhat }),
-      "more-menu-item",
-    ),
-  });
-  buttons.append(buildMoreMenu({
-    projectId: projectId || "project",
-    targetId: `v2-viewer:${resultTargetId(version) || "none"}`,
-    items,
-  }));
+  if (context.chatMenu !== false) {
+    items.push({
+      id: "upload",
+      content: chatButton("Загрузить свой файл → чат", uploadFrame(chat), "more-menu-item"),
+    });
+    items.push({
+      id: "edit-prompt",
+      content: chatButton(
+        "Изменить промпт → чат",
+        editPrompt({ ...chat, promptVersion: context.promptVersion, what: context.editWhat }),
+        "more-menu-item",
+      ),
+    });
+  }
+  // Пустое «···» не рисуем вовсе: `buildMoreMenu` на пустом списке кидает.
+  if (items.length) {
+    buttons.append(buildMoreMenu({
+      projectId: projectId || "project",
+      targetId: `v2-viewer:${resultTargetId(version) || "none"}`,
+      items,
+    }));
+  }
 
   row.append(buttons, status);
   return row;

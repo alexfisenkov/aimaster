@@ -24,6 +24,39 @@ const DIRECT_STAGES = Object.freeze({
   assembly: "approve",
 });
 
+/** Готовые тексты подвала, когда решать здесь нечего. */
+export const FOOTER_NOTICES = Object.freeze({
+  past: "Этот шаг уже пройден — здесь он открыт только на просмотр.",
+  done: "Ролик принят — проект завершён.",
+});
+
+/**
+ * Что подвал вообще делает на этом экране. Чистая функция — её и
+ * проверяют тесты; сам `renderFooter` только рисует.
+ *
+ * `done` — про `assembly`: это единственная стадия, с которой
+ * `derive_view_stage` уже никуда не уходит. После «Принять ролик» она
+ * остаётся текущей и по-прежнему числится в `allowed_actions`, хотя
+ * второе одобрение сервер отвергнет (`decision_stages.plan_milestone`).
+ * Та же отсечка, что у v1 в `stage-approval.approveStageVisible`; без
+ * неё подвал рисовал неактивную кнопку и «Осталось решить: шаг уже
+ * одобрен» на законченном проекте.
+ *
+ * @param {object} snapshot весь snapshot
+ * @param {{screen?: string, stage?: string}} context экран и стадия шага
+ * @returns {"past"|"done"|"decide"|"chat"}
+ */
+export function footerMode(snapshot, { screen, stage } = {}) {
+  const project = snapshot?.active_project;
+  if (screen && screen !== screenForStage(project?.stage)) return "past";
+  const viewStage = snapshot?.view_stage || {};
+  if (viewStage.gate_status === "approved") return "done";
+  const allowed = Array.isArray(viewStage.allowed_actions) ? viewStage.allowed_actions : [];
+  const actionType = DIRECT_STAGES[stage];
+  const direct = viewStage.current_stage === stage && Boolean(actionType) && allowed.includes(actionType);
+  return direct ? "decide" : "chat";
+}
+
 /**
  * @param {object} snapshot весь snapshot (нужны `revision` и `view_stage`)
  * @param {{screen?: string}} [options] какой экран открыт: на пройденном
@@ -33,15 +66,13 @@ const DIRECT_STAGES = Object.freeze({
 export function renderFooter(snapshot, { screen } = {}) {
   const project = snapshot?.active_project;
   const action = primaryAction(project);
-  if (screen && screen !== screenForStage(project?.stage)) {
-    const past = el("footer", "v2-footer");
-    past.dataset.hook = "v2-footer";
-    past.append(el("p", "v2-footer-summary", "Этот шаг уже пройден — здесь он открыт только на просмотр."));
-    return past;
+  const mode = footerMode(snapshot, { screen, stage: action.stage });
+  if (mode === "past" || mode === "done") {
+    const notice = el("footer", "v2-footer");
+    notice.dataset.hook = "v2-footer";
+    notice.append(el("p", "v2-footer-summary", FOOTER_NOTICES[mode]));
+    return notice;
   }
-  const viewStage = snapshot?.view_stage || {};
-  const allowed = Array.isArray(viewStage.allowed_actions) ? viewStage.allowed_actions : [];
-  const onCurrentStage = viewStage.current_stage === action.stage;
 
   const footer = el("footer", "v2-footer");
   footer.dataset.hook = "v2-footer";
@@ -54,8 +85,7 @@ export function renderFooter(snapshot, { screen } = {}) {
   const row = el("div", "v2-footer-buttons");
 
   const actionType = DIRECT_STAGES[action.stage];
-  const canDecideHere = onCurrentStage && Boolean(actionType) && allowed.includes(actionType);
-  if (canDecideHere) {
+  if (mode === "decide") {
     const button = buildSimpleButton({
       actionType,
       targetId: action.stage,

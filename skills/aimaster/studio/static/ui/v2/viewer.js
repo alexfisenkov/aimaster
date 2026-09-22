@@ -10,18 +10,20 @@
 import { renderDecisionHistory } from "../decision-history.js";
 import { formatHistoryEntries } from "../history-panel.js";
 import { requestAgentPrompt } from "../chat-prompt-dialog.js";
+import { pruneDrafts } from "../card-drafts.js";
 import { variantCounts } from "./counts.js";
 import { moreVariants } from "./chat-prompts.js";
-import { clock, el } from "./dom.js";
-import { renderDecideRow } from "./decide.js";
+import { assembleFinal } from "./screen-prompts.js";
+import { clock, el, restoreCardFocus, cardFocusNote } from "./dom.js";
+import { decideDraftKeys, isSubmitting, renderDecideRow } from "./decide.js";
 import {
   canvasCaption,
   filmstrip,
-  ownFileStrip,
   promptOfVariant,
   renderCanvas,
   renderSlotSwitch,
   slotOptions,
+  soloStrip,
 } from "./viewer-canvas.js";
 import { promptPlace, promptVersions, renderPromptPanel } from "./viewer-prompt.js";
 import { renderViewerZones } from "./viewer-zones.js";
@@ -65,14 +67,35 @@ function headline(project, target) {
 function countsTarget(target, tab, slot) {
   if (target.kind === "reference") return { referenceId: target.id };
   if (target.kind === "layer") return { layer: target.id };
-  if (target.kind === "assembly") return { sceneId: "oneshot" };
   if (tab === "video") return { sceneId: target.id, slot: "video" };
   return { sceneId: target.id, slot };
 }
 
+/**
+ * Единственный файл вместо ряда вариантов — там, где версий результата в
+ * snapshot нет вовсе: собранный ролик (`project.assembly`) и референс,
+ * загруженный файлом (`source: "upload"`).
+ */
+function soloFor(project, target, counts) {
+  if (target.kind === "assembly") {
+    return soloStrip(project?.assembly?.asset_url, "Финальный ролик", "final");
+  }
+  if (target.kind === "reference" && !counts.total) {
+    const reference = (project?.references || []).find((item) => item?.reference_id === target.id);
+    return soloStrip(reference?.asset_url, reference?.label, "own");
+  }
+  return null;
+}
+
+/**
+ * Подпись главной кнопки — и `null` там, где прямого решения не бывает.
+ * У сборки собственной коллекции результатов на сервере нет
+ * (`decision_cards.STAGE_COLLECTIONS`), поэтому финал принимается только
+ * кнопкой подвала «Принять ролик», а не отсюда.
+ */
 function keepLabel(target, tab) {
+  if (target.kind === "assembly") return null;
   if (target.kind === "reference") return "Оставить эту картинку";
-  if (target.kind === "assembly") return "Оставить этот ролик";
   if (tab === "audio") return "Оставить этот звук";
   return tab === "video" ? "Оставить этот клип" : "Оставить этот кадр";
 }
@@ -98,35 +121,33 @@ function historyPane(snapshot, target) {
   return pane;
 }
 
-/** Куда вернуть фокус после перерисовки: тот же контрол по своим хукам. */
-function focusMark() {
-  const active = document.activeElement;
-  if (!active?.dataset?.action || !root?.contains(active)) return null;
-  return { action: active.dataset.action, targetId: active.dataset.targetId || "" };
-}
-
-function restoreFocus(mark) {
-  if (!mark || !root) return;
-  const selector = `[data-action="${CSS.escape(mark.action)}"][data-target-id="${CSS.escape(mark.targetId)}"]`;
-  root.querySelector(selector)?.focus();
+/** Пока решение в полёте, просмотрщик не двигается: см. `isSubmitting`. */
+function busy() {
+  return isSubmitting(view?.statusText);
 }
 
 function showVariant(index) {
+  if (busy()) return;
   const total = view?.strip?.total || 0;
   view.shown = Math.min(Math.max(index, 1), Math.max(total, 1));
+  view.statusText = "";
   paint();
 }
 
 function pickSlot(slot) {
+  if (busy()) return;
   view.slot = slot;
   view.shown = 0;
+  view.statusText = "";
   paint();
 }
 
 function pickTab(tab) {
+  if (busy()) return;
   view.tab = tab;
   view.shown = 0;
   view.promptShown = 0;
+  view.statusText = "";
   paint();
 }
 
@@ -142,16 +163,10 @@ function leftColumn(snapshot, project) {
       column.append(el("p", "v2-viewer-empty-line", "Кадров у этой сцены нет — она оживает по референсам."));
     }
   }
-  const counts = variantCounts(project, countsTarget(target, tab, view.slot));
-  // Референс, загруженный файлом, результата в snapshot не имеет — его
-  // картинка лежит прямо на записи референса. Показываем её, а не пустоту.
-  const own = target.kind === "reference" && !counts.total
-    ? ownFileStrip(
-      (project.references || []).find((item) => item?.reference_id === target.id)?.asset_url,
-      headline(project, target).title,
-    )
-    : null;
-  const strip = own || filmstrip(counts);
+  const counts = target.kind === "assembly"
+    ? { versions: [], total: 0, selected: null }
+    : variantCounts(project, countsTarget(target, tab, view.slot));
+  const strip = soloFor(project, target, counts) || filmstrip(counts);
   view.strip = strip;
   if (!view.shown) view.shown = strip.selectedIndex || (strip.total ? 1 : 1);
   view.shown = Math.min(Math.max(view.shown, 1), Math.max(strip.total, 1));
@@ -186,11 +201,18 @@ function leftColumn(snapshot, project) {
       index: view.shown,
       total: strip.total,
       mark: shown?.mark,
+      solo: strip.solo === true,
       promptLabel: byPromptIndex ? `v${byPromptIndex}` : "",
     }),
     onShow: showVariant,
-    onMore: askMore,
+    // У собранного ролика вариантов не бывает: пересборка — это кнопка
+    // рядом, а не ещё одна плитка в плёнке.
+    onMore: target.kind === "assembly" ? null : askMore,
   }));
+  const final = target.kind === "assembly";
+  // Черновик отказа принадлежит варианту, а не показу: пока вариант есть
+  // в плёнке, его текст переживает и перелистывание, и перерисовку.
+  view.draftKeys = strip.items.flatMap((item) => decideDraftKeys(project.id, item.version));
   column.append(renderDecideRow({
     ...chat,
     project,
@@ -201,6 +223,15 @@ function leftColumn(snapshot, project) {
     version: shown?.version || null,
     mark: shown?.mark,
     keepLabel: keepLabel(target, tab),
+    statusText: view.statusText,
+    onStatus: (text) => { view.statusText = text; },
+    chatMenu: !final,
+    secondary: final
+      ? {
+        label: strip.total ? "Пересобрать → чат" : "Собрать → чат",
+        request: assembleFinal(project, snapshot.revision, { ready: strip.total > 0 }),
+      }
+      : null,
     promptVersion: prompts.versions[view.promptShown - 1] || null,
     editWhat: target.kind === "reference" ? `референса «${target.id}»` : undefined,
   }));
@@ -209,6 +240,16 @@ function leftColumn(snapshot, project) {
 
 function rightColumn(snapshot, project, prompts, chat) {
   const column = el("aside", "v2-viewer-right");
+  // У сборки промпта своего нет: её собирает агент из готовых клипов.
+  // Вместо пустой листалки показываем, из чего она собрана.
+  if (view.target.kind === "assembly" && !prompts.total) {
+    const about = el("section", "v2-viewer-prompt");
+    about.append(el("h3", "v2-viewer-subtitle", "Что собрано"));
+    about.append(el("p", "v2-viewer-prompt-text",
+      project?.assembly?.summary || "Описания сборки агент не оставил."));
+    column.append(about);
+    return column;
+  }
   column.append(renderPromptPanel({
     project,
     revision: snapshot.revision,
@@ -217,7 +258,7 @@ function rightColumn(snapshot, project, prompts, chat) {
     title: view.tab === "video" ? "Промпт движения" : view.tab === "audio" ? "Промпт звука" : "Промпт кадра",
     chat,
     editWhat: view.target.kind === "reference" ? `референса «${view.target.id}»` : undefined,
-    onShow: (index) => { view.promptShown = index; paint(); },
+    onShow: (index) => { if (!busy()) { view.promptShown = index; paint(); } },
   }));
   const zones = view.target.kind === "scene"
     ? renderViewerZones(project, snapshot.revision, sceneOf(project, view.target.id))
@@ -230,7 +271,10 @@ function paint() {
   if (!root || !view) return;
   const snapshot = getSnapshot();
   const project = snapshot?.active_project;
-  const mark = focusMark();
+  // Фокус берётся до сноса разметки: нажатая кнопка к этому моменту уже
+  // погашена `submitAction` и фокус улетел на `<body>` — тогда сработает
+  // листок `studio:card-focus-pending` (`dom.js`).
+  const focusNote = cardFocusNote();
   root.textContent = "";
   const card = el("div", "v2-viewer-card");
   if (!project) {
@@ -262,14 +306,28 @@ function paint() {
   if (view.tab === "history") {
     body.append(historyPane(snapshot, view.target));
   } else {
+    view.draftKeys = [];
     const { column, prompts, chat } = leftColumn(snapshot, project);
     body.append(column, rightColumn(snapshot, project, prompts, chat));
+    dropStaleDrafts(project.id, view.draftKeys);
   }
   card.append(bar, body);
   root.append(card);
   root.setAttribute("aria-label", title);
-  restoreFocus(mark);
-  if (!root.contains(document.activeElement)) close.focus();
+  if (!restoreCardFocus(root, focusNote)) close.focus();
+}
+
+/**
+ * Черновики отказа и состояние «···» живут в общем хранилище v1
+ * (`ui/card-drafts.js`) и без уборки копятся до перезагрузки страницы.
+ * Убираются так же, как в v1 (`ui/card-decorate.js`): по своему префиксу
+ * и только те ключи, которых в текущей разметке уже нет.
+ */
+function dropStaleDrafts(projectId, keys) {
+  if (!projectId) return;
+  const known = new Set(keys);
+  pruneDrafts(`${projectId}::v2-viewer::`, known);
+  pruneDrafts(`${projectId}::more-menu::`, known);
 }
 
 function focusable() {
@@ -280,6 +338,11 @@ function focusable() {
 
 function onKeyDown(event) {
   if (event.key === "Escape") {
+    // Слушатель висит на `document` в capture — то есть раньше «···» и
+    // формы комментария внутри него. Если нажали внутри меню, `Esc`
+    // принадлежит меню: оно закроет себя само (`ui/more-menu.js`), и
+    // просмотрщик остаётся открытым вместе с набранным текстом.
+    if (event.target instanceof Element && event.target.closest('[data-hook="more-menu"]')) return;
     event.preventDefault();
     closeViewer();
     return;
@@ -344,6 +407,8 @@ function openViewer(detail) {
     slot: typeof detail.slot === "string" && detail.slot !== "video" ? detail.slot : "first",
     shown: 0,
     promptShown: 0,
+    statusText: "",
+    draftKeys: [],
     returnFocus: detail.trigger instanceof HTMLElement ? detail.trigger : null,
   };
   root = el("div", "v2-viewer");
@@ -359,9 +424,14 @@ function openViewer(detail) {
   paint();
 }
 
-/** Перерисовать открытый просмотрщик по свежему snapshot. */
+/**
+ * Перерисовать открытый просмотрщик по свежему snapshot. Пока решение в
+ * полёте, перерисовки нет: `submitAction` гасит кнопки ряда на время
+ * запроса, а новый ряд поднялся бы включённым — и фоновый опрос (8 с)
+ * посреди запроса давал бы второй клик с тем же `expected_revision`.
+ */
 export function repaintViewer() {
-  if (root && view) paint();
+  if (root && view && !busy()) paint();
 }
 
 /**

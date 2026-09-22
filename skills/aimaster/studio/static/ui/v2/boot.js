@@ -76,9 +76,14 @@ export function bootV2() {
     // Открытый просмотрщик перерисовывается тем же обновлением snapshot,
     // что и доска: после прямого решения он остаётся на месте и
     // показывает уже новое состояние, а не закрывается.
+    //
+    // Порядок важен: просмотрщик первый. Пока он открыт, доска под ним
+    // закрыта модальным окном и нажать там нечего, значит листок
+    // `studio:card-focus-pending` принадлежит ему — а спросивший первым
+    // забрал бы его себе. Закрытый просмотрщик не спрашивает вовсе.
     paintShell: (state) => {
-      renderShellV2(shellRoot, state);
       repaintViewer();
+      renderShellV2(shellRoot, state);
     },
     paintRail: (state) => renderProjectRail(railRoot, state),
     setActiveProject,

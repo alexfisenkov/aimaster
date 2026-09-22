@@ -11,7 +11,8 @@ import { el } from "./dom.js";
 
 /** Пометки плёнки — четыре из спецификации плюс «принят» и «убран». */
 export const VARIANT_MARKS = Object.freeze({
-  own: "ваш файл",
+  own: "Ваш файл",
+  final: "Финальный ролик",
   selected: "выбран",
   approved: "принят",
   new: "новый",
@@ -54,23 +55,28 @@ export function filmstrip({ versions = [], selected = null } = {}) {
 }
 
 /**
- * Плёнка для «своего файла»: у загруженного референса результата в
- * snapshot нет вовсе (`source: "upload"` — файл лежит прямо на записи
- * референса), а показывать всё равно есть что. Версии у такой плитки
- * нет, поэтому решения по ней не предлагаются — `decide.js` отказывает
- * всему, что нечем адресовать.
+ * Плёнка из одного файла, у которого версии результата нет вовсе:
+ * загруженный референс (`source: "upload"` — файл лежит прямо на записи
+ * референса) и собранный ролик (`project.assembly`). Решения по такой
+ * плитке не предлагаются: `decide.js` отказывает всему, что нечем
+ * адресовать.
  *
- * @param {string|null} assetUrl `reference.asset_url`
- * @param {string} [caption]
- * @returns {{items: object[], selectedIndex: number, total: number}|null}
+ * @param {string|null} assetUrl `/assets/…`
+ * @param {string} [caption] подпись файла
+ * @param {"own"|"final"} [state] что это за файл
+ * @returns {{items: object[], selectedIndex: number, total: number,
+ *            solo: true}|null} `solo` говорит подписи под холстом, что
+ *   нумеровать нечего: это не вариант из ряда, а единственный файл.
  */
-export function ownFileStrip(assetUrl, caption) {
+export function soloStrip(assetUrl, caption, state = "own") {
   if (typeof assetUrl !== "string" || !assetUrl) return null;
-  const version = { asset_url: assetUrl, caption: caption || "Ваш файл" };
+  const mark = VARIANT_MARKS[state] || VARIANT_MARKS.own;
+  const version = { asset_url: assetUrl, caption: caption || mark };
   return {
-    items: [{ version, state: "own", mark: VARIANT_MARKS.own, index: 1, dim: false }],
+    items: [{ version, state, mark, index: 1, dim: false }],
     selectedIndex: 1,
     total: 1,
+    solo: true,
   };
 }
 
@@ -102,11 +108,14 @@ export function slotOptions(project, scene) {
  * Хвост «по промпту» появляется только тогда, когда связь результата с
  * версией промпта действительно есть в snapshot (спецификация §5).
  *
- * @param {{index: number, total: number, mark?: string, promptLabel?: string}} shown
+ * @param {{index: number, total: number, mark?: string, promptLabel?: string,
+ *          solo?: boolean}} shown `solo` — единственный файл без ряда
+ *   вариантов: нумеровать нечего, остаётся одна пометка.
  * @returns {string}
  */
-export function canvasCaption({ index, total, mark, promptLabel } = {}) {
+export function canvasCaption({ index, total, mark, promptLabel, solo } = {}) {
   if (!Number.isFinite(index) || !Number.isFinite(total) || total < 1) return "Вариантов пока нет";
+  if (solo) return mark || "Файл";
   const parts = [`Вариант ${index} из ${total}`];
   if (mark) parts.push(mark);
   if (promptLabel) parts.push(`по промпту ${promptLabel}`);
@@ -159,8 +168,9 @@ function arrow(label, title, onClick, disabled) {
  * Холст с листалкой и плёнкой.
  *
  * @param {{strip: object, shownIndex: number, mediaKind: string, caption: string,
- *          onShow: (index: number) => void, onMore: () => void}} context
- *   `shownIndex` — номер показанного варианта с 1.
+ *          onShow: (index: number) => void, onMore?: (trigger: HTMLElement) => void}} context
+ *   `shownIndex` — номер показанного варианта с 1; без `onMore` плитки
+ *   «＋ Ещё» нет вовсе (у собранного ролика вариантов не бывает).
  * @returns {HTMLElement}
  */
 export function renderCanvas({ strip, shownIndex, mediaKind, caption, onShow, onMore }) {
@@ -191,14 +201,19 @@ export function renderCanvas({ strip, shownIndex, mediaKind, caption, onShow, on
       preview.loading = "lazy";
       tile.append(preview);
     }
-    tile.append(el("span", "v2-viewer-tile-mark", `${item.index}${item.mark ? ` · ${item.mark}` : ""}`));
+    // Единственный файл не нумеруется: «1 · Финальный ролик» — лишнее.
+    tile.append(el("span", "v2-viewer-tile-mark", strip.solo
+      ? item.mark
+      : `${item.index}${item.mark ? ` · ${item.mark}` : ""}`));
     tile.addEventListener("click", () => onShow(item.index));
     film.append(tile);
   }
-  const add = el("button", "v2-viewer-tile v2-viewer-tile-add", "＋ Ещё");
-  add.type = "button";
-  add.addEventListener("click", () => onMore(add));
-  film.append(add);
+  if (typeof onMore === "function") {
+    const add = el("button", "v2-viewer-tile v2-viewer-tile-add", "＋ Ещё");
+    add.type = "button";
+    add.addEventListener("click", () => onMore(add));
+    film.append(add);
+  }
   wrap.append(film);
   return wrap;
 }

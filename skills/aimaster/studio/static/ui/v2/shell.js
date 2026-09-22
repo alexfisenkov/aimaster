@@ -7,7 +7,7 @@
 
 import { requestAgentPrompt } from "../chat-prompt-dialog.js";
 import { projectRef } from "./chat-prompts.js";
-import { el } from "./dom.js";
+import { el, restoreCardFocus, cardFocusNote } from "./dom.js";
 import { renderPath } from "./path-nav.js";
 import { renderAssemblyScreen } from "./screen-assembly.js";
 import { renderAudioScreen } from "./screen-audio.js";
@@ -76,6 +76,11 @@ export function renderShellV2(root, state) {
     topbarContent.textContent = "";
     if (project) topbarContent.append(topbar(project, snapshot.revision));
   }
+  // Главная кнопка подвала гасится синхронно, ещё до отправки, и фокус
+  // улетает на `<body>`. Листок от `noteCardFocusPending` забирается до
+  // сноса разметки и возвращает фокус той же кнопке после перерисовки —
+  // тот же приём, что у v1 (`ui/shell.js`, `repaintZonePreservingFocus`).
+  const focusNote = cardFocusNote();
   main.textContent = "";
   if (state?.error) {
     main.append(el("p", "v2-error", "Не удалось загрузить проект. Обновите страницу."));
@@ -96,4 +101,5 @@ export function renderShellV2(root, state) {
   const render = SCREEN_RENDERERS[screen];
   if (render) render(area, { state, readOnly: false, screen });
   else area.append(el("p", "v2-loading", "Этот экран ещё не готов."));
+  restoreCardFocus(main, focusNote);
 }
