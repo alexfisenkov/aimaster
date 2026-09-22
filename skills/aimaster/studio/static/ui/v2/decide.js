@@ -52,7 +52,9 @@ export function resultTargetId(version) {
  * @returns {string[]} подмножество шести допустимых, в фиксированном порядке
  */
 export function directActionsFor({ allowedActions, currentStage, collection, version } = {}) {
-  if (!version) return [];
+  // Нечем адресовать — решать нечего: так отсеивается и плитка «ваш
+  // файл» загруженного референса, у которой версии результата нет вовсе.
+  if (!resultTargetId(version)) return [];
   if (RESULT_STAGE_BY_COLLECTION[collection] !== currentStage) return [];
   return resolveCardActions(allowedActions, "result", version).filter(
     (action) => action === "approve" || MENU_ORDER.includes(action),

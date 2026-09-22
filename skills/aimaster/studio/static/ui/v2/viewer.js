@@ -14,7 +14,15 @@ import { variantCounts } from "./counts.js";
 import { moreVariants } from "./chat-prompts.js";
 import { clock, el } from "./dom.js";
 import { renderDecideRow } from "./decide.js";
-import { canvasCaption, filmstrip, promptOfVariant, renderCanvas, renderSlotSwitch, slotOptions } from "./viewer-canvas.js";
+import {
+  canvasCaption,
+  filmstrip,
+  ownFileStrip,
+  promptOfVariant,
+  renderCanvas,
+  renderSlotSwitch,
+  slotOptions,
+} from "./viewer-canvas.js";
 import { promptPlace, promptVersions, renderPromptPanel } from "./viewer-prompt.js";
 import { renderViewerZones } from "./viewer-zones.js";
 
@@ -135,7 +143,15 @@ function leftColumn(snapshot, project) {
     }
   }
   const counts = variantCounts(project, countsTarget(target, tab, view.slot));
-  const strip = filmstrip(counts);
+  // Референс, загруженный файлом, результата в snapshot не имеет — его
+  // картинка лежит прямо на записи референса. Показываем её, а не пустоту.
+  const own = target.kind === "reference" && !counts.total
+    ? ownFileStrip(
+      (project.references || []).find((item) => item?.reference_id === target.id)?.asset_url,
+      headline(project, target).title,
+    )
+    : null;
+  const strip = own || filmstrip(counts);
   view.strip = strip;
   if (!view.shown) view.shown = strip.selectedIndex || (strip.total ? 1 : 1);
   view.shown = Math.min(Math.max(view.shown, 1), Math.max(strip.total, 1));

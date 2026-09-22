@@ -7,9 +7,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { canvasCaption, filmstrip, promptOfVariant, slotOptions } from "./viewer-canvas.js";
+import { canvasCaption, filmstrip, ownFileStrip, promptOfVariant, slotOptions } from "./viewer-canvas.js";
 import { variantCounts } from "./counts.js";
-import { PROJECT, projectWith } from "./snapshot.fixture.mjs";
+import { directActionsFor } from "./decide.js";
+import { PROJECT, VIEW_STAGE, projectWith } from "./snapshot.fixture.mjs";
 
 const GROUP = "result:frame:cafe-open:first";
 const PROMPT_V2 = "prompt:frame:cafe-open:first-v2";
@@ -129,4 +130,30 @@ test("плёнка референса берётся из image_results, а не
   assert.equal(strip.total, 1, "у референса есть свой вариант, и он должен попасть на плёнку");
   assert.equal(strip.items[0].version.result_id, "result:ref:IMG_04");
   assert.equal(strip.items[0].mark, "выбран");
+});
+
+test("загруженный референс показывает свой файл, а не пустоту", () => {
+  const upload = PROJECT.references.find((item) => item.reference_id === "IMG_01");
+  assert.equal(upload.source, "upload");
+  assert.equal(filmstrip(variantCounts(PROJECT, { referenceId: "IMG_01" })).total, 0);
+  const strip = ownFileStrip(upload.asset_url, upload.label);
+  assert.equal(strip.total, 1);
+  assert.equal(strip.items[0].mark, "ваш файл");
+  assert.equal(strip.items[0].version.asset_url, upload.asset_url);
+  assert.equal(strip.items[0].version.version_id, undefined, "версии у своего файла нет");
+  assert.equal(ownFileStrip(null), null);
+});
+
+test("по плитке «ваш файл» решать нечего", () => {
+  const upload = PROJECT.references.find((item) => item.reference_id === "IMG_01");
+  const strip = ownFileStrip(upload.asset_url, upload.label);
+  assert.deepEqual(
+    directActionsFor({
+      allowedActions: VIEW_STAGE.allowed_actions,
+      currentStage: "image_results",
+      collection: "image_results",
+      version: strip.items[0].version,
+    }),
+    [],
+  );
 });

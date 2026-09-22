@@ -11,6 +11,7 @@ import { el } from "./dom.js";
 
 /** Пометки плёнки — четыре из спецификации плюс «принят» и «убран». */
 export const VARIANT_MARKS = Object.freeze({
+  own: "ваш файл",
   selected: "выбран",
   approved: "принят",
   new: "новый",
@@ -50,6 +51,27 @@ export function filmstrip({ versions = [], selected = null } = {}) {
   });
   const found = items.findIndex((item) => item.state === "selected");
   return { items, selectedIndex: found + 1, total: items.length };
+}
+
+/**
+ * Плёнка для «своего файла»: у загруженного референса результата в
+ * snapshot нет вовсе (`source: "upload"` — файл лежит прямо на записи
+ * референса), а показывать всё равно есть что. Версии у такой плитки
+ * нет, поэтому решения по ней не предлагаются — `decide.js` отказывает
+ * всему, что нечем адресовать.
+ *
+ * @param {string|null} assetUrl `reference.asset_url`
+ * @param {string} [caption]
+ * @returns {{items: object[], selectedIndex: number, total: number}|null}
+ */
+export function ownFileStrip(assetUrl, caption) {
+  if (typeof assetUrl !== "string" || !assetUrl) return null;
+  const version = { asset_url: assetUrl, caption: caption || "Ваш файл" };
+  return {
+    items: [{ version, state: "own", mark: VARIANT_MARKS.own, index: 1, dim: false }],
+    selectedIndex: 1,
+    total: 1,
+  };
 }
 
 /**
