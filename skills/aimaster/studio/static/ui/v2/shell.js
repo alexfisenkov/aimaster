@@ -62,6 +62,30 @@ function topbar(project, revision) {
 }
 
 /**
+ * Экран выбора проекта: список слева уже нарисован (`ui/rail.js`), здесь
+ * — объяснение и кнопка, открывающая панель на узком экране.
+ */
+function renderPicker(state) {
+  const empty = state?.status === "empty";
+  const box = el("section", "v2-screen v2-screen-picker");
+  box.dataset.hook = "v2-picker";
+  box.append(el("h2", "v2-section-title", empty ? "Проектов пока нет" : "Выберите проект"));
+  box.append(el("p", "v2-section-hint", empty
+    ? "Заведите проект в чате — он появится здесь сам."
+    : `Проектов в мастерской: ${state?.projects?.length ?? 0}. Откройте любой из списка слева.`));
+  if (!empty) {
+    const show = el("button", "v2-chat-button", "Показать список проектов");
+    show.type = "button";
+    show.dataset.hook = "v2-open-rail";
+    show.addEventListener("click", () => document.dispatchEvent(
+      new CustomEvent("studio:rail-open", { bubbles: true }),
+    ));
+    box.append(show);
+  }
+  return box;
+}
+
+/**
  * @param {HTMLElement} root корень `.app-shell`
  * @param {object} state состояние стора (`ui/state.js`)
  */
@@ -87,6 +111,15 @@ export function renderShellV2(root, state) {
     return;
   }
   if (!project) {
+    // «choose»/«empty» — не загрузка, а вопрос к человеку: `/` без
+    // `?project=` (`app-controller.loadProjectIndex`). До этой ветки v2
+    // показывал здесь «Загружаем проект…» навсегда.
+    const picking = state?.status === "choose" || state?.status === "empty";
+    if (picking) {
+      main.removeAttribute("aria-busy");
+      main.append(renderPicker(state));
+      return;
+    }
     main.setAttribute("aria-busy", "true");
     main.append(el("p", "v2-loading", "Загружаем проект…"));
     return;

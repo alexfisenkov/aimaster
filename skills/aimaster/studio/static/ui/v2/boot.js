@@ -11,7 +11,32 @@ import { createAppController } from "../app-controller.js";
 import { attachViewerOpenListener } from "../viewer.js";
 import { attachAgentPromptListener } from "../chat-prompt-dialog.js";
 import { renderShellV2, setViewedScreen } from "./shell.js";
+import { createRailDrawer } from "./rail-drawer.js";
 import { attachViewerV2, repaintViewer } from "./viewer.js";
+
+const LAST_PROJECT_KEY = "aimaster.v2.lastProject";
+
+/**
+ * Какой проект человек открывал в прошлый раз. Хранилище может быть
+ * недоступно (приватное окно, запрет сторонних данных, Mini App) —
+ * тогда просто нет памяти, а не сломанная страница.
+ */
+function rememberedProject() {
+  try {
+    const value = window.localStorage.getItem(LAST_PROJECT_KEY);
+    return typeof value === "string" && value ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberProject(projectId) {
+  try {
+    window.localStorage.setItem(LAST_PROJECT_KEY, projectId);
+  } catch {
+    // Память — удобство, а не условие работы.
+  }
+}
 
 /**
  * Подключить таблицу стилей, если её ещё нет. `index.html` принадлежит
@@ -69,6 +94,7 @@ export function bootV2() {
   const railRoot = document.querySelector('[data-hook="project-rail"]');
   const store = createStore();
   const pageUrl = new URL(window.location.href);
+  let lastOpenedId = null;
   const controller = createAppController({
     store,
     fetchSnapshot: (id) => fetchJson(`/api/projects/${encodeURIComponent(id)}/snapshot`),
@@ -82,6 +108,13 @@ export function bootV2() {
     // `studio:card-focus-pending` принадлежит ему — а спросивший первым
     // забрал бы его себе. Закрытый просмотрщик не спрашивает вовсе.
     paintShell: (state) => {
+      const openedId = state?.snapshot?.active_project?.id;
+      // Открытый по `?project=` тоже попадает в память: в следующий раз
+      // голый адрес откроет его, а не спросит заново.
+      if (openedId && openedId !== lastOpenedId) {
+        lastOpenedId = openedId;
+        rememberProject(openedId);
+      }
       repaintViewer();
       renderShellV2(shellRoot, state);
     },
@@ -92,9 +125,31 @@ export function bootV2() {
     preferredProjectId: pageUrl.searchParams.get("project"),
   });
 
+  const rail = createRailDrawer();
+
+  /** Открыть проект и записать его в адрес и в память браузера. */
+  function openProjectAt(projectId) {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("project", projectId);
+    window.history.pushState({ projectId }, "", nextUrl);
+    rememberProject(projectId);
+    setViewedScreen(null);
+    controller.openProject(projectId);
+  }
+
   attachViewerV2(() => store.getState()?.snapshot || null);
   renderShellV2(shellRoot, store.getState());
   document.body.dataset.ui = "v2";
+
+  document.addEventListener("studio:rail-open", () => rail.open());
+  document.addEventListener("studio:filter-changed", (event) => store.setFilter(event?.detail?.filter));
+  document.addEventListener("studio:query-changed", (event) => store.setQuery(event?.detail?.query));
+  window.addEventListener("popstate", () => {
+    const projectId = new URL(window.location.href).searchParams.get("project");
+    setViewedScreen(null);
+    if (projectId) controller.openProject(projectId);
+    else controller.showProjectPicker();
+  });
 
   document.addEventListener("studio:screen-viewed", (event) => {
     setViewedScreen(event?.detail?.screen);
@@ -106,11 +161,13 @@ export function bootV2() {
   document.addEventListener("studio:project-selected", (event) => {
     const projectId = event?.detail?.projectId;
     if (typeof projectId !== "string" || !projectId) return;
-    const nextUrl = new URL(window.location.href);
-    nextUrl.searchParams.set("project", projectId);
-    window.history.pushState({ projectId }, "", nextUrl);
-    setViewedScreen(null);
-    controller.openProject(projectId);
+    openProjectAt(projectId);
+    // Выбор проекта закрывает панель на любой ширине; фокус уходит в
+    // содержимое, иначе он остался бы на кнопке, которая только что
+    // стала `inert`.
+    const wasOpen = rail.isOpen();
+    rail.close();
+    if (wasOpen) document.querySelector("#main")?.focus();
   });
   document.addEventListener("studio:retry-snapshot", () => {
     const { selectedProjectId } = store.getState();
@@ -121,5 +178,18 @@ export function bootV2() {
   window.addEventListener("focus", controller.refreshOnReturn);
   setInterval(controller.pollLiveness, controller.liveness.periodMs);
 
-  controller.loadProjectIndex();
+  // Без `?project=` контроллер останавливается на «choose» (или сразу
+  // открывает единственный проект). Тогда пробуем прошлый выбор — но
+  // только если он ещё есть в списке: несуществующий `preferredProjectId`
+  // контроллер считает ошибкой и показал бы экран отказа вместо выбора.
+  controller.loadProjectIndex().then(() => {
+    const { status, projects } = store.getState();
+    if (status !== "choose" && status !== "empty") return;
+    const last = rememberedProject();
+    if (last && (projects || []).some((project) => project?.id === last)) {
+      openProjectAt(last);
+      return;
+    }
+    if (status === "choose") rail.open();
+  });
 }
