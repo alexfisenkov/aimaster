@@ -242,7 +242,13 @@ def add_reference(
 ) -> dict:
     """Add one canonical reference and allocate its tag in this mutation."""
 
-    if kind not in {"character", "product", "location", "style", "video"}:
+    # `other` ("Прочее", спецификация перестройки дашборда §5) -- вид для
+    # того, что не описывается четырьмя основными: владелец загружает
+    # что угодно без категории. Ведёт себя ровно как `product`: не
+    # попадает автоматически во все сцены (это делает только `style`,
+    # см. `targets` ниже) и не может иметь голоса (`edit_reference`
+    # разрешает `voice_enabled` только роли `character`).
+    if kind not in {"character", "product", "location", "style", "other", "video"}:
         raise DomainValidationError("reference kind is not supported")
     if kind == "video" and state.get("project", {}).get("type") == "photo":
         raise DomainValidationError("video references require video/mixed project")
@@ -492,6 +498,7 @@ def default_reference_prompt(kind: str, style_tag: str | None = None) -> str:
         "product": "предметная съёмка, нейтральный фон, несколько ракурсов, точная форма и материал",
         "location": "общий план без людей, характерный свет и глубина",
         "style": "палитра, характер света и оптика, эталон картинки",
+        "other": "нейтральный фон, ровный свет, предмет целиком и без обрезки",
     }
     if kind not in defaults:
         raise DomainValidationError("reference kind is not supported")
@@ -651,7 +658,7 @@ def prompt_basis(state: dict, spec: dict) -> dict:
             raise DomainValidationError("prompt reference owner is missing or duplicated")
         reference = matches[0]
         label, kind = reference.get("label", ""), reference.get("role")
-        if not isinstance(label, str) or kind not in {"character", "product", "object", "location", "style"}:
+        if not isinstance(label, str) or kind not in {"character", "product", "object", "location", "style", "other"}:
             raise DomainValidationError("prompt reference owner is invalid")
         return {"label": label, "kind": "product" if kind == "object" else kind}
     if owner_kind == "oneshot":

@@ -182,6 +182,7 @@ _REFERENCE_KIND_BY_ROLE = {
     "product": "product",
     "location": "location",
     "style": "style",
+    "other": "other",
     "video": "video",
 }
 _REFERENCE_SOURCES = {"upload", "generate"}
