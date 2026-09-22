@@ -9,7 +9,7 @@ const KIND_WORDS = Object.freeze({
   location: "локацию",
   product: "реквизит",
   style: "стиль",
-  other: "что-то своё, без категории",
+  other: "что-то без категории",
   video: "видеореференс",
 });
 
