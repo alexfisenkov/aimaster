@@ -40,6 +40,19 @@ const PRIMARY_LABELS = Object.freeze({
   assembly: "Принять ролик",
 });
 
+/**
+ * Делал ли кто-нибудь звук. Четыре аудио-позиции заводятся у каждого
+ * видеопроекта сразу, но обязательной позиция становится, только когда у
+ * слоя появился результат (`domain_positions._position_required`). Так что
+ * это не второй счёт, а чтение уже принятого сервером решения: пустой звук
+ * этап не держит, и кнопка честно говорит «пропустить».
+ *
+ * @param {object} project `snapshot.active_project`
+ */
+export function audioTouched(project) {
+  return (project?.positions || []).some((item) => item?.kind === "audio" && item.required === true);
+}
+
 const READINESS_REASONS = Object.freeze({
   blocked: "сначала ответьте агенту в чате",
   already_approved: "шаг уже одобрен",
@@ -100,7 +113,11 @@ export function pathState(project) {
 export function primaryAction(project) {
   const stage = typeof project?.stage === "string" ? project.stage : null;
   const photoFinish = project?.type === "photo" && stage === "image_results";
-  const label = photoFinish ? "Одобрить кадры → Сборка" : PRIMARY_LABELS[stage] || "Одобрить шаг";
+  const label = photoFinish
+    ? "Одобрить кадры → Сборка"
+    : stage === "audio" && !audioTouched(project)
+      ? "Пропустить звук → Сборка"
+      : PRIMARY_LABELS[stage] || "Одобрить шаг";
   const readiness = project?.stage_readiness || null;
   const remaining = unresolvedItems(project, stage);
   if (readiness && readiness.can_approve !== true && remaining.length === 0) {

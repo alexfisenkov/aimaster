@@ -52,7 +52,8 @@ export function renderAudioScreen(root, { state, screen = "audio" } = {}) {
   for (const tile of tiles) grid.append(layerTile(tile));
   surface.append(grid);
   if (tiles.every((tile) => tile.total === 0)) {
-    surface.append(el("p", "v2-section-hint", "Звука пока нет — попросите агента сделать слои."));
+    surface.append(el("p", "v2-section-hint",
+      "Звука пока нет. Если он не нужен — шаг можно пропустить кнопкой внизу; иначе попросите агента сделать слои."));
   }
   surface.append(renderFooter(snapshot, { screen }));
   root.append(surface);

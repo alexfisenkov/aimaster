@@ -30,7 +30,11 @@ export function audioTiles(project) {
       total: counts.total,
       index: counts.index,
       selected: counts.selected,
-      status: counts.total === 0 && !counts.selected ? "слой пока пустой" : variantStatus(counts),
+      // Пустой слой ничего не держит: аудио-позиция становится
+      // обязательной, только когда у неё появился результат
+      // (`domain_positions._position_required`). Так и подписываем —
+      // человек должен видеть, что звук можно просто пропустить.
+      status: counts.total === 0 && !counts.selected ? "не нужен — можно пропустить" : variantStatus(counts),
       hasPrompt: typeof owner?.links?.audio_prompt_version_id === "string"
         && Boolean(owner.links.audio_prompt_version_id),
     };

@@ -66,11 +66,16 @@ function promptOwnerName(project, position) {
 
 /**
  * Промпты, помеченные проекцией как устаревшие (`stale`), — но только те,
- * что относятся к позиции действующего плана. Легаси-промпт у загруженного
- * референса тоже помечен `stale`, а решать в нём нечего: позиции у него нет.
+ * что относятся к обязательной позиции действующего плана. Легаси-промпт у
+ * загруженного референса тоже помечен `stale`, а решать в нём нечего:
+ * позиции у него нет. И пустой слой звука решать нечего тем более: его
+ * позиция не обязательна (`required: false`), этап через неё проходит, —
+ * оставшийся с прошлого захода промпт не должен держать кнопку.
  */
 function stalePrompts(project, collections) {
-  const positions = (project?.positions || []).filter((item) => item && item.prompt_group_id);
+  const positions = (project?.positions || []).filter(
+    (item) => item && item.prompt_group_id && item.required !== false,
+  );
   const out = [];
   for (const collection of collections) {
     for (const prompt of project?.[collection] || []) {

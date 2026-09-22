@@ -10,6 +10,8 @@ import { audioTiles, AUDIO_LAYERS } from "./audio-model.js";
 import { scriptVersions, storyboardRows, activeBlockText } from "./scenario-model.js";
 import { clipStatus, continuationLine } from "./video-model.js";
 import { framePromptKind, scenePromptLine } from "./scene-row.js";
+import { audioTouched, primaryAction } from "./screen-map.js";
+import { unresolvedItems } from "./unresolved.js";
 import { PROJECT, projectWith } from "./snapshot.fixture.mjs";
 
 const sceneBy = (project, id) => project.scenes.find((scene) => scene.scene_id === id);
@@ -183,7 +185,7 @@ test("четыре слоя звука идут по-человечески: г�
   assert.deepEqual(AUDIO_LAYERS.map((item) => item.layer), ["voice", "music", "fx", "atmos"]);
   const tiles = audioTiles(PROJECT);
   assert.deepEqual(tiles.map((item) => item.name), ["Голос", "Музыка", "Эффекты", "Атмосфера"]);
-  assert.deepEqual(tiles.map((item) => item.status), Array(4).fill("слой пока пустой"));
+  assert.deepEqual(tiles.map((item) => item.status), Array(4).fill("не нужен — можно пропустить"));
   assert.deepEqual(tiles.map((item) => item.hasPrompt), Array(4).fill(false));
 });
 
@@ -211,4 +213,76 @@ test("у слоя с вариантами виден выбор и число в
   assert.equal(music.index, 2);
   assert.equal(music.status, "выбран 2 из 2");
   assert.equal(music.hasPrompt, true);
+});
+
+
+// --- Звук можно пропустить -------------------------------------------
+//
+// Сервер перестал считать пустой слой обязательным
+// (`domain_positions._position_required`), и дашборд обязан это показать:
+// подпись кнопки, пустые плитки и «Осталось решить».
+
+/** Проект на звуке. `positions` — как их отдаёт сервер после правки. */
+function atAudio({ voice = "empty" } = {}) {
+  const positions = ["voice", "music", "fx", "atmos"].map((layer) => ({
+    position_id: `pos:audio:${layer}`,
+    kind: "audio",
+    layer,
+    stage: "audio",
+    prompt_group_id: `prompt:audio:${layer}`,
+    result_group_id: `result:audio:${layer}`,
+    required: layer === "voice" && voice !== "empty",
+    status: layer === "voice" ? (voice === "accepted" ? "accepted" : voice === "ready" ? "ready" : "none") : "none",
+  }));
+  const project = projectWith({
+    stage: "audio",
+    positions,
+    audio_layers: [{ layer: "voice", links: {} }],
+    audio_prompts: [],
+    audio_results: [],
+    stage_readiness: { stage: "audio", can_approve: voice !== "ready", reason: voice === "ready" ? "unaccepted_positions" : null },
+  });
+  return project;
+}
+
+test("пустой звук: кнопка предлагает пропустить шаг и работает", () => {
+  const project = atAudio();
+  assert.equal(audioTouched(project), false);
+  const action = primaryAction(project);
+  assert.equal(action.label, "Пропустить звук → Сборка");
+  assert.deepEqual(action.remaining, []);
+  assert.equal(action.enabled, true);
+});
+
+test("слой с вариантом без решения держит шаг, и подпись обычная", () => {
+  const project = atAudio({ voice: "ready" });
+  assert.equal(audioTouched(project), true);
+  const action = primaryAction(project);
+  assert.equal(action.label, "Одобрить звук → Сборка");
+  assert.deepEqual(action.remaining, ["не приняты обязательные результаты"]);
+  assert.equal(action.enabled, false);
+});
+
+test("принятый слой рядом с тремя пустыми пропускает дальше", () => {
+  const project = atAudio({ voice: "accepted" });
+  assert.equal(audioTouched(project), true);
+  const action = primaryAction(project);
+  assert.equal(action.label, "Одобрить звук → Сборка");
+  assert.equal(action.enabled, true);
+});
+
+test("устаревший промпт пустого слоя ничего не держит", () => {
+  const project = atAudio();
+  project.audio_prompts = [{
+    prompt_id: "prompt:audio:music", version_id: "prompt:audio:music-v1",
+    parent_version_id: null, text: "джаз", stale: true,
+  }];
+  assert.deepEqual(unresolvedItems(project, "audio"), [], "у необязательной позиции решать нечего");
+
+  const working = atAudio({ voice: "ready" });
+  working.audio_prompts = [{
+    prompt_id: "prompt:audio:voice", version_id: "prompt:audio:voice-v1",
+    parent_version_id: null, text: "тёплый тембр", stale: true,
+  }];
+  assert.deepEqual(unresolvedItems(working, "audio"), ["промпт слоя «Голос» устарел"]);
 });
