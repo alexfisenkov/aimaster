@@ -167,13 +167,16 @@ function arrow(label, title, onClick, disabled) {
 /**
  * Холст с листалкой и плёнкой.
  *
+ * Плитки «＋ Ещё» в плёнке нет: она открывала тот же диалог с тем же
+ * текстом, что кнопка «＋ Ещё вариант» под холстом, — владелец попросил
+ * оставить одну (правило спецификации §1: ничего лишнего).
+ *
  * @param {{strip: object, shownIndex: number, mediaKind: string, caption: string,
- *          onShow: (index: number) => void, onMore?: (trigger: HTMLElement) => void}} context
- *   `shownIndex` — номер показанного варианта с 1; без `onMore` плитки
- *   «＋ Ещё» нет вовсе (у собранного ролика вариантов не бывает).
+ *          onShow: (index: number) => void}} context
+ *   `shownIndex` — номер показанного варианта с 1.
  * @returns {HTMLElement}
  */
-export function renderCanvas({ strip, shownIndex, mediaKind, caption, onShow, onMore }) {
+export function renderCanvas({ strip, shownIndex, mediaKind, caption, onShow }) {
   const wrap = el("div", "v2-viewer-canvas-wrap");
   const canvas = el("div", "v2-viewer-canvas");
   canvas.dataset.hook = "v2-viewer-canvas";
@@ -207,12 +210,6 @@ export function renderCanvas({ strip, shownIndex, mediaKind, caption, onShow, on
       : `${item.index}${item.mark ? ` · ${item.mark}` : ""}`));
     tile.addEventListener("click", () => onShow(item.index));
     film.append(tile);
-  }
-  if (typeof onMore === "function") {
-    const add = el("button", "v2-viewer-tile v2-viewer-tile-add", "＋ Ещё");
-    add.type = "button";
-    add.addEventListener("click", () => onMore(add));
-    film.append(add);
   }
   wrap.append(film);
   return wrap;

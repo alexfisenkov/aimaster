@@ -9,10 +9,8 @@
 
 import { renderDecisionHistory } from "../decision-history.js";
 import { formatHistoryEntries } from "../history-panel.js";
-import { requestAgentPrompt } from "../chat-prompt-dialog.js";
 import { pruneDrafts } from "../card-drafts.js";
 import { variantCounts } from "./counts.js";
-import { moreVariants } from "./chat-prompts.js";
 import { assembleFinal } from "./screen-prompts.js";
 import { cardFocusNote, clock, dropCardFocusNote, el, restoreCardFocus } from "./dom.js";
 import { decideDraftKeys, isSubmitting, renderDecideRow } from "./decide.js";
@@ -185,14 +183,6 @@ function leftColumn(snapshot, project) {
     layer: target.kind === "layer" ? target.id : undefined,
     slot: tab === "video" ? "video" : view.slot,
   };
-  const askMore = (trigger) => requestAgentPrompt(moreVariants({
-    ...chat,
-    project,
-    revision: snapshot.revision,
-    promptVersion: prompts.versions[view.promptShown - 1] || null,
-    selectedVariant: shown?.version || null,
-  }), trigger);
-
   column.append(renderCanvas({
     strip,
     shownIndex: view.shown,
@@ -205,9 +195,6 @@ function leftColumn(snapshot, project) {
       promptLabel: byPromptIndex ? `v${byPromptIndex}` : "",
     }),
     onShow: showVariant,
-    // У собранного ролика вариантов не бывает: пересборка — это кнопка
-    // рядом, а не ещё одна плитка в плёнке.
-    onMore: target.kind === "assembly" ? null : askMore,
   }));
   const final = target.kind === "assembly";
   // Черновик отказа принадлежит варианту, а не показу: пока вариант есть
@@ -365,6 +352,17 @@ function onKeyDown(event) {
     // принадлежит меню: оно закроет себя само (`ui/more-menu.js`), и
     // просмотрщик остаётся открытым вместе с набранным текстом.
     if (event.target instanceof Element && event.target.closest('[data-hook="more-menu"]')) return;
+    // Лист «···» закрывается и тогда, когда фокус ушёл из него: нижний
+    // лист занимает пол-экрана, и `Esc` при нём означает «убрать лист», а
+    // не «закрыть весь просмотрщик».
+    const openMenu = root?.querySelector('[data-hook="more-menu"][data-open="true"]');
+    if (openMenu) {
+      event.preventDefault();
+      const trigger = openMenu.querySelector('[data-more-hook="trigger"]');
+      trigger?.click();
+      trigger?.focus();
+      return;
+    }
     event.preventDefault();
     closeViewer();
     return;

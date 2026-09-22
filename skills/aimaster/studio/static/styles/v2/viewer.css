@@ -233,13 +233,6 @@ audio.v2-viewer-media { width: 100%; max-height: none; }
   text-overflow: ellipsis;
 }
 
-.v2-viewer-tile-add {
-  background: #1a1a1a;
-  border: 1px dashed #555;
-  color: var(--vw-muted);
-  font-size: 0.6875rem;
-}
-
 /* --- Кнопки ---------------------------------------------------------- */
 
 .v2-viewer-actions { margin-top: 14px; }
@@ -278,9 +271,62 @@ audio.v2-viewer-media { width: 100%; max-height: none; }
 }
 
 .v2-viewer .v2-viewer-primary[disabled] { background: #3a3a3a; color: var(--vw-muted); border-color: #3a3a3a; }
-.v2-viewer .more-menu-trigger { margin-left: auto; }
-.v2-viewer .more-menu-popup { background: var(--vw-panel); border: 1px solid var(--vw-line-strong); }
 .v2-viewer .more-menu-item { width: 100%; text-align: left; border: 0; border-radius: 0; }
+
+/* «···» — нижний лист, а не выпадашка.
+   Разметку меню строит v1 (`ui/more-menu.js`), и там список раскрывается
+   `position: absolute` вниз от кнопки. Кнопка стоит у нижнего края окна,
+   поэтому список уезжал за экран целиком и выглядел мёртвым. Здесь он
+   прижат к низу окна и всегда виден полностью. */
+
+/* Прижимается вправо именно `.more-menu` — она и есть элемент строки;
+   на кнопке внутри неё `margin-left: auto` не работает после переноса. */
+.v2-viewer .more-menu { position: static; margin-left: auto; }
+
+/* Затемнение под листом. `pointer-events: none` обязателен: иначе клик по
+   затемнению считался бы кликом внутри меню, и общий обработчик
+   `ui/more-menu.js` не закрыл бы его. */
+.v2-viewer .more-menu[data-open="true"]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.v2-viewer .more-menu-popup {
+  position: fixed;
+  z-index: 71;
+  inset: auto 0 0 0;
+  width: auto;
+  max-width: none;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 10px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  border: 0;
+  border-top: 1px solid var(--vw-line-strong);
+  border-radius: 14px 14px 0 0;
+  background: var(--vw-panel);
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.55);
+}
+
+/* На широком экране места хватает — обычный поповер, но вверх от кнопки. */
+@media (min-width: 861px) {
+  .v2-viewer .more-menu { position: relative; }
+  .v2-viewer .more-menu[data-open="true"]::before { content: none; }
+  .v2-viewer .more-menu-popup {
+    position: absolute;
+    inset: auto 0 calc(100% + 6px) auto;
+    width: 280px;
+    max-width: min(280px, 80vw);
+    max-height: 60vh;
+    padding: 6px;
+    border: 1px solid var(--vw-line-strong);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  }
+}
 
 .v2-viewer .card-action-status { color: var(--vw-muted); font-size: 0.75rem; margin: 8px 0 0; }
 .v2-viewer .card-comment-textarea {
