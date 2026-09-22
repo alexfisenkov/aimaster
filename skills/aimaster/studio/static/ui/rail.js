@@ -52,12 +52,9 @@ function buildSkeleton(root) {
 
   const brand = document.createElement("div");
   brand.className = "rail-brand";
-  const mark = document.createElement("span");
-  mark.className = "rail-brand-mark";
-  mark.setAttribute("aria-hidden", "true");
   const name = document.createElement("span");
   name.textContent = "AI Мастерская";
-  brand.append(mark, name);
+  brand.append(name);
 
   const searchWrap = document.createElement("div");
   searchWrap.className = "rail-search";
