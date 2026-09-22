@@ -100,7 +100,8 @@ body[data-ui="v2"] .main-content {
   overflow: hidden;
 }
 
-.v2-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.v2-thumb img, .v2-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.v2-thumb video { pointer-events: none; background: var(--v2-placeholder); }
 .v2-thumb-broken { background: var(--color-danger-bg); }
 
 .v2-chat-button {
@@ -473,7 +474,9 @@ body[data-ui="v2"] .main-content {
   min-height: var(--touch-target-min);
 }
 
-.v2-primary[disabled] { background: var(--v2-primary-off); color: var(--color-text-on-accent); cursor: not-allowed; }
+/* Недоступная главная кнопка всё равно должна читаться: белым по
+   светло-серому её не видно (контраст около 1.9:1). */
+.v2-primary[disabled] { background: var(--v2-primary-off); color: var(--color-text-secondary); cursor: not-allowed; }
 
 /* --- Телефон --------------------------------------------------------- */
 

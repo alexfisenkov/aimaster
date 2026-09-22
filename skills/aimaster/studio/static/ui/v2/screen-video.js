@@ -2,10 +2,11 @@
 // «Кадрах», но справа три зоны про клип. При «одним заходом» сцена одна
 // на весь ролик, поэтому вместо списка — одна плитка финального клипа.
 
-import { el, openViewer, thumb } from "./dom.js";
+import { el, openViewer } from "./dom.js";
 import { renderFooter } from "./footer.js";
 import { renderSceneRow, scenesInOrder } from "./scene-row.js";
 import { clipStatus } from "./video-model.js";
+import { videoThumb } from "./video-thumb.js";
 
 /** Плитка одного клипа на весь ролик — режим «одним заходом». */
 function oneShotClip(project) {
@@ -17,7 +18,7 @@ function oneShotClip(project) {
   button.type = "button";
   button.dataset.hook = "v2-oneclip-slot";
   button.setAttribute("aria-label", `Клип всего ролика: ${status.text}`);
-  button.append(thumb(status.selected?.asset_url || null, "Клип всего ролика"));
+  button.append(videoThumb(status.selected?.asset_url || null, "Клип всего ролика"));
   button.addEventListener("click", () => openViewer(
     { kind: "scene", id: "oneshot" }, { tab: "video", slot: "video", trigger: button },
   ));

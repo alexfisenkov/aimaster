@@ -3,6 +3,7 @@
 // Сервер отвечает одним кодом причины; здесь мы называем человеку
 // конкретные места, где ещё нет выбора. Чистые функции, без DOM.
 
+import { AUDIO_LAYERS } from "./audio-model.js";
 import { selectedResultVersion } from "./variants.js";
 
 const PROMPT_COLLECTIONS = Object.freeze(["image_prompts", "motion_prompts", "audio_prompts"]);
@@ -53,6 +54,10 @@ function promptOwnerName(project, position) {
   if (position.kind === "reference") {
     const reference = (project.references || []).find((item) => item?.reference_id === position.tag);
     return `референса «${reference?.label || position.tag}»`;
+  }
+  if (position.kind === "audio") {
+    const meta = AUDIO_LAYERS.find((item) => item.layer === position.layer);
+    return `слоя «${meta?.name || position.layer}»`;
   }
   const scenes = scenesInOrder(project);
   const index = scenes.findIndex((scene) => scene?.scene_id === position.scene_id);
