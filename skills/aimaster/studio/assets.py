@@ -14,7 +14,7 @@ from .questions import secure_sqlite_path
 from .workspace import ASSETS_DB_NAME, PRIVATE_DIR_NAME
 
 
-REFERENCE_ROLES = frozenset({"character", "object", "product", "style", "location"})
+REFERENCE_ROLES = frozenset({"character", "object", "product", "style", "location", "other"})
 # Ticket 12 repair, поправка оркестратора 3 (R15/R22) and condition 6: an
 # asset that backs a scene's image/video *result* is not a reference to a
 # character, an object, a location, ... -- it needs its own role, distinct

@@ -1,0 +1,42 @@
+/*
+ * Токены светлой доски v2 — надстройка над styles/tokens.css, а не
+ * вторая система: цвета, отступы и радиусы берутся оттуда, здесь только
+ * то, чего в v1 нет, и то, что одобренные макеты задают иначе
+ * (scene-row-v4.html и board-a-detailed.html в .superpowers/brainstorm).
+ *
+ * Шрифтов из сети нет: у страницы в CSP нет font-src.
+ */
+
+:root {
+  /* Доска: плоская светлая поверхность с тонкими разделителями. */
+  --v2-board-bg: var(--color-surface);
+  --v2-board-sunken: var(--color-surface-sunken);
+  --v2-line: var(--color-border);
+  --v2-line-soft: #eeeff1;
+
+  /* Полоса пути. */
+  --v2-path-idle: #e0e2e5;
+  --v2-path-done: var(--color-accent);
+  --v2-path-current: #111315;
+
+  /* Плитки и слоты. */
+  --v2-tile-width: 104px;
+  --v2-tile-picture: 70px;
+  --v2-avatar: 44px;
+  --v2-avatar-small: 30px;
+  --v2-slot-width: 62px;
+  --v2-slot-height: 42px;
+  --v2-placeholder: repeating-linear-gradient(
+    45deg, #ececee, #ececee 6px, #f7f7f8 6px, #f7f7f8 12px
+  );
+
+  /* Главная кнопка. */
+  --v2-primary-bg: #111315;
+  --v2-primary-fg: #ffffff;
+  --v2-primary-off: #c9ccd0;
+
+  /* Размеры текста доски — на шаг мельче v1, как в макетах. */
+  --v2-font-row: 0.8125rem;
+  --v2-font-meta: 0.6875rem;
+  --v2-gutter: 16px;
+}

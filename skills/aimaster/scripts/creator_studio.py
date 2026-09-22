@@ -959,7 +959,7 @@ def _add_reference_subcommands(subparsers) -> None:
     reference_add_cmd = reference_sub.add_parser("add", help="create a tagged project reference")
     reference_add_cmd.add_argument("workspace", type=Path)
     reference_add_cmd.add_argument("project")
-    reference_add_cmd.add_argument("--kind", required=True, choices=("character", "product", "location", "style", "video"))
+    reference_add_cmd.add_argument("--kind", required=True, choices=("character", "product", "location", "style", "other", "video"))
     reference_add_cmd.add_argument("--name", default=None)
     reference_add_cmd.add_argument("--asset-id", default=None, dest="asset_id")
     reference_add_cmd.add_argument("--source", choices=("upload", "generate"), default="upload")

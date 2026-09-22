@@ -1,0 +1,288 @@
+// node --test skills/aimaster/studio/static/ui/v2/screens.test.mjs
+//
+// Модели экранов Сценарий / Видео / Звук на живой фикстуре: что именно
+// человек увидит по этим данным. Только чистые функции — DOM здесь нет.
+
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { audioTiles, AUDIO_LAYERS } from "./audio-model.js";
+import { scriptVersions, storyboardRows, activeBlockText } from "./scenario-model.js";
+import { clipStatus, continuationLine } from "./video-model.js";
+import { framePromptKind, scenePromptLine } from "./scene-row.js";
+import { audioTouched, primaryAction } from "./screen-map.js";
+import { unresolvedItems } from "./unresolved.js";
+import { PROJECT, projectWith } from "./snapshot.fixture.mjs";
+
+const sceneBy = (project, id) => project.scenes.find((scene) => scene.scene_id === id);
+
+test("версии сценария идут по цепочке, активная — третья", () => {
+  const { versions, activeIndex } = scriptVersions(PROJECT);
+  assert.deepEqual(versions.map((item) => item.version_id), ["script-v1", "script-v2", "script-v3"]);
+  assert.equal(activeIndex, 2);
+});
+
+test("без сценария листать нечего", () => {
+  const { versions, activeIndex } = scriptVersions(projectWith({ script: {} }));
+  assert.deepEqual(versions, []);
+  assert.equal(activeIndex, 0);
+});
+
+test("раскадровка — номер, название, время и текст активной версии блока", () => {
+  const rows = storyboardRows(PROJECT);
+  assert.equal(rows.length, 6);
+  assert.equal(rows[0].position, 1);
+  assert.equal(rows[0].title, "Столик и идея");
+  assert.equal(rows[0].startMs, 0);
+  assert.equal(rows[0].endMs, 5000);
+  assert.equal(rows[0].text, activeBlockText(sceneBy(PROJECT, "cafe-open")));
+  assert.match(rows[0].text, /британском кафе/);
+});
+
+test("у сцены с выбранным клипом — «клип выбран», у пустой — «клипов пока нет»", () => {
+  assert.equal(clipStatus(PROJECT, sceneBy(PROJECT, "cafe-open")).text, "клип выбран");
+  const empty = clipStatus(PROJECT, sceneBy(PROJECT, "free-reveal"));
+  assert.equal(empty.total, 0);
+  assert.equal(empty.text, "клипов пока нет");
+});
+
+test("варианты есть, а выбора нет — «выберите из N»", () => {
+  const project = structuredClone(PROJECT);
+  const scene = sceneBy(project, "cafe-open");
+  delete scene.links.video_result_id;
+  project.video_results.push({
+    result_id: "result:scene:cafe-open:video",
+    version_id: "result:scene:cafe-open:video-v2",
+    parent_version_id: "result:scene:cafe-open:video-v1",
+    scene_id: "cafe-open",
+    status: "ready",
+  });
+  const status = clipStatus(project, scene);
+  assert.equal(status.total, 2);
+  assert.equal(status.text, "выберите из 2");
+});
+
+test("выбран не первый из нескольких — номер виден", () => {
+  const project = structuredClone(PROJECT);
+  const scene = sceneBy(project, "cafe-open");
+  project.video_results.push({
+    result_id: "result:scene:cafe-open:video",
+    version_id: "result:scene:cafe-open:video-v2",
+    parent_version_id: "result:scene:cafe-open:video-v1",
+    scene_id: "cafe-open",
+    status: "ready",
+  });
+  scene.links.video_result_id = "result:scene:cafe-open:video-v2";
+  assert.equal(clipStatus(project, scene).text, "клип выбран · 2 из 2");
+});
+
+test("видеореференс usage=continue читается как продолжение предыдущей сцены", () => {
+  assert.deepEqual(
+    continuationLine(PROJECT, sceneBy(PROJECT, "skeptic-online")),
+    { text: "Продолжение: с конца сцены 1", warn: false },
+  );
+  assert.deepEqual(
+    continuationLine(PROJECT, sceneBy(PROJECT, "money-question")),
+    { text: "Продолжение: с конца сцены 3", warn: false },
+  );
+});
+
+test("без продолжения подпись берётся из video_mode", () => {
+  assert.equal(continuationLine(PROJECT, sceneBy(PROJECT, "cafe-open")).text,
+    "Отдельный клип по референсам и промпту");
+  const project = structuredClone(PROJECT);
+  const scene = sceneBy(project, "cafe-open");
+  scene.video_mode = "firstlast";
+  assert.equal(continuationLine(project, scene).text, "От первого кадра к последнему");
+  scene.video_mode = "first";
+  assert.equal(continuationLine(project, scene).text, "Оживляем первый кадр");
+  scene.video_mode = undefined;
+  assert.equal(continuationLine(project, scene).text, "Способ оживления пока не выбран");
+});
+
+test("правленая сцена просит перепроверить связь", () => {
+  const project = structuredClone(PROJECT);
+  const scene = sceneBy(project, "skeptic-online");
+  scene.linkage_status = "review_linkage";
+  assert.equal(continuationLine(project, scene).warn, true);
+});
+
+/** Копия проекта, где у первой сцены запланирован кадр со своим промптом. */
+function withFramePrompt({ slot = "first", stale = false } = {}) {
+  const project = structuredClone(PROJECT);
+  const scene = sceneBy(project, "cafe-open");
+  scene[slot === "first" ? "need_first" : "need_last"] = true;
+  scene.links[`${slot}_frame_prompt_version_id`] = `prompt:scene:cafe-open:${slot}-v2`;
+  project.image_prompts.push(
+    {
+      prompt_id: `prompt:scene:cafe-open:${slot}`,
+      version_id: `prompt:scene:cafe-open:${slot}-v1`,
+      parent_version_id: null,
+      text: "кадр из кафе",
+      status: "approved",
+    },
+    {
+      prompt_id: `prompt:scene:cafe-open:${slot}`,
+      version_id: `prompt:scene:cafe-open:${slot}-v2`,
+      parent_version_id: `prompt:scene:cafe-open:${slot}-v1`,
+      text: "кадр из кафе, теплее",
+      status: "approved",
+      stale,
+    },
+  );
+  return { project, scene };
+}
+
+test("на «Кадрах» у сцены без запланированных кадров промпта не показываем", () => {
+  const scene = sceneBy(PROJECT, "cafe-open");
+  assert.equal(framePromptKind(PROJECT, scene), null);
+  assert.equal(scenePromptLine(PROJECT, scene, framePromptKind(PROJECT, scene)), null);
+});
+
+test("запланирован первый кадр — показываем его промпт, а не промпт движения", () => {
+  const { project, scene } = withFramePrompt({ slot: "first" });
+  assert.equal(framePromptKind(project, scene), "first");
+  const line = scenePromptLine(project, scene, framePromptKind(project, scene));
+  assert.equal(line.text, "промпт первого кадра v2 · готов");
+  assert.equal(line.kind, "first");
+  assert.equal(line.versionId, "prompt:scene:cafe-open:first-v2");
+});
+
+test("запланирован только последний кадр — берём его", () => {
+  const { project, scene } = withFramePrompt({ slot: "last", stale: true });
+  assert.equal(framePromptKind(project, scene), "last");
+  assert.equal(
+    scenePromptLine(project, scene, framePromptKind(project, scene)).text,
+    "промпт последнего кадра v2 · устарел",
+  );
+});
+
+test("у фотопроекта это промпт изображения сцены", () => {
+  const project = projectWith({ type: "photo" });
+  const scene = sceneBy(project, "cafe-open");
+  assert.equal(framePromptKind(project, scene), "image");
+  scene.links.image_prompt_version_id = "prompt:scene:cafe-open:image-v1";
+  project.image_prompts.push({
+    prompt_id: "prompt:scene:cafe-open:image",
+    version_id: "prompt:scene:cafe-open:image-v1",
+    parent_version_id: null,
+    text: "кадр",
+    status: "pending",
+  });
+  assert.equal(
+    scenePromptLine(project, scene, framePromptKind(project, scene)).text,
+    "промпт изображения v1 · ждёт решения",
+  );
+});
+
+test("на «Видео» строка остаётся промптом движения", () => {
+  const line = scenePromptLine(PROJECT, sceneBy(PROJECT, "cafe-open"), "motion");
+  assert.equal(line.text, "промпт движения v2 · ждёт решения");
+  assert.equal(line.kind, "motion");
+});
+
+test("четыре слоя звука идут по-человечески: голос, музыка, эффекты, атмосфера", () => {
+  assert.deepEqual(AUDIO_LAYERS.map((item) => item.layer), ["voice", "music", "fx", "atmos"]);
+  const tiles = audioTiles(PROJECT);
+  assert.deepEqual(tiles.map((item) => item.name), ["Голос", "Музыка", "Эффекты", "Атмосфера"]);
+  assert.deepEqual(tiles.map((item) => item.status), Array(4).fill("не нужен — можно пропустить"));
+  assert.deepEqual(tiles.map((item) => item.hasPrompt), Array(4).fill(false));
+});
+
+test("у слоя с вариантами виден выбор и число вариантов", () => {
+  const project = projectWith({
+    audio_layers: [{ layer: "music", links: { audio_prompt_version_id: "p1", audio_result_id: "audio:music-v2" } }],
+    audio_prompts: [{ prompt_id: "prompt:audio:music", version_id: "p1", parent_version_id: null, text: "джаз" }],
+    audio_results: [
+      { result_id: "result:audio:music", version_id: "audio:music-v1", parent_version_id: null, status: "ready" },
+      { result_id: "result:audio:music", version_id: "audio:music-v2", parent_version_id: "audio:music-v1", status: "ready" },
+    ],
+  });
+  project.positions.push({
+    position_id: "pos:audio:music",
+    kind: "audio",
+    layer: "music",
+    stage: "audio",
+    status: "ready",
+    prompt_group_id: "prompt:audio:music",
+    result_group_id: "result:audio:music",
+    required: true,
+  });
+  const music = audioTiles(project).find((item) => item.layer === "music");
+  assert.equal(music.total, 2);
+  assert.equal(music.index, 2);
+  assert.equal(music.status, "выбран 2 из 2");
+  assert.equal(music.hasPrompt, true);
+});
+
+
+// --- Звук можно пропустить -------------------------------------------
+//
+// Сервер перестал считать пустой слой обязательным
+// (`domain_positions._position_required`), и дашборд обязан это показать:
+// подпись кнопки, пустые плитки и «Осталось решить».
+
+/** Проект на звуке. `positions` — как их отдаёт сервер после правки. */
+function atAudio({ voice = "empty" } = {}) {
+  const positions = ["voice", "music", "fx", "atmos"].map((layer) => ({
+    position_id: `pos:audio:${layer}`,
+    kind: "audio",
+    layer,
+    stage: "audio",
+    prompt_group_id: `prompt:audio:${layer}`,
+    result_group_id: `result:audio:${layer}`,
+    required: layer === "voice" && voice !== "empty",
+    status: layer === "voice" ? (voice === "accepted" ? "accepted" : voice === "ready" ? "ready" : "none") : "none",
+  }));
+  const project = projectWith({
+    stage: "audio",
+    positions,
+    audio_layers: [{ layer: "voice", links: {} }],
+    audio_prompts: [],
+    audio_results: [],
+    stage_readiness: { stage: "audio", can_approve: voice !== "ready", reason: voice === "ready" ? "unaccepted_positions" : null },
+  });
+  return project;
+}
+
+test("пустой звук: кнопка предлагает пропустить шаг и работает", () => {
+  const project = atAudio();
+  assert.equal(audioTouched(project), false);
+  const action = primaryAction(project);
+  assert.equal(action.label, "Пропустить звук → Сборка");
+  assert.deepEqual(action.remaining, []);
+  assert.equal(action.enabled, true);
+});
+
+test("слой с вариантом без решения держит шаг, и подпись обычная", () => {
+  const project = atAudio({ voice: "ready" });
+  assert.equal(audioTouched(project), true);
+  const action = primaryAction(project);
+  assert.equal(action.label, "Одобрить звук → Сборка");
+  assert.deepEqual(action.remaining, ["не приняты обязательные результаты"]);
+  assert.equal(action.enabled, false);
+});
+
+test("принятый слой рядом с тремя пустыми пропускает дальше", () => {
+  const project = atAudio({ voice: "accepted" });
+  assert.equal(audioTouched(project), true);
+  const action = primaryAction(project);
+  assert.equal(action.label, "Одобрить звук → Сборка");
+  assert.equal(action.enabled, true);
+});
+
+test("устаревший промпт пустого слоя ничего не держит", () => {
+  const project = atAudio();
+  project.audio_prompts = [{
+    prompt_id: "prompt:audio:music", version_id: "prompt:audio:music-v1",
+    parent_version_id: null, text: "джаз", stale: true,
+  }];
+  assert.deepEqual(unresolvedItems(project, "audio"), [], "у необязательной позиции решать нечего");
+
+  const working = atAudio({ voice: "ready" });
+  working.audio_prompts = [{
+    prompt_id: "prompt:audio:voice", version_id: "prompt:audio:voice-v1",
+    parent_version_id: null, text: "тёплый тембр", stale: true,
+  }];
+  assert.deepEqual(unresolvedItems(working, "audio"), ["промпт слоя «Голос» устарел"]);
+});

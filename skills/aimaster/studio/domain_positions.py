@@ -203,13 +203,36 @@ def scene_group_id(state, scene, kind, side, collection, link_key, explicit=None
     return group_id
 
 
+def _position_required(state, spec):
+    """Audio layers exist for every project; only worked-on ones are required.
+
+    The four audio positions are created unconditionally (`position_specs`),
+    so before this an untouched soundtrack left all four at `status: "none"`
+    and `stage_readiness` refused to let `audio` be approved at all -- a
+    project that needs no sound could never reach `assembly`. Every other
+    kind stays required: a scene's clip or a generated reference is part of
+    the plan whether or not anything has been produced for it yet.
+
+    "Worked on" is any record in the layer's own result group, not the
+    owner's current link: a variant that exists but has not been chosen yet
+    is exactly the case that must still block approval.
+    """
+
+    if spec["kind"] != "audio":
+        return True
+    group = spec["result_group_id"]
+    return any(item.get("result_id") == group
+               for item in state.get(spec["result_collection"], []) if isinstance(item, dict))
+
+
 def derive_positions(state):
     from .decision_cards import STAGE_COLLECTIONS
     positions = []
     for spec in position_specs(state):
         position = {key: spec[key] for key in ("position_id", "kind", "scene_id", "tag", "layer",
             "prompt_group_id", "result_group_id") if key in spec}
-        position.update(stage=STAGE_COLLECTIONS[spec["result_collection"]][0], required=True, status="none")
+        position.update(stage=STAGE_COLLECTIONS[spec["result_collection"]][0],
+                        required=_position_required(state, spec), status="none")
         result = current_member(state, spec, "result")
         targets = {spec["position_id"], spec["result_group_id"]}
         if result:

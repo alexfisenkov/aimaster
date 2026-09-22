@@ -21,6 +21,7 @@ _REFERENCE_KINDS = {
     "product": "продукт",
     "location": "локация",
     "style": "стиль",
+    "other": "прочее",
     "video": "видеореференс",
 }
 # The four owner links a scene may carry, in the order the dashboard's own

@@ -20,3 +20,4 @@ workspaces/
 .worktrees/
 media/
 node_modules/
+.superpowers/

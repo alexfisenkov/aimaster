@@ -51,13 +51,6 @@
   flex: 0 0 auto;
 }
 
-.topbar-brand-mark {
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, #e9ebed, #9aa1a8);
-  flex: 0 0 auto;
-}
 
 .topbar-menu-toggle {
   display: inline-flex;
@@ -217,13 +210,6 @@
   letter-spacing: -0.01em;
 }
 
-.rail-brand-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, #e9ebed, #9aa1a8);
-  flex: 0 0 auto;
-}
 
 .rail-search {
   padding: 0 16px 12px;
