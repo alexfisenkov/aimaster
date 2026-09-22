@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { audioTiles, AUDIO_LAYERS } from "./audio-model.js";
 import { scriptVersions, storyboardRows, activeBlockText } from "./scenario-model.js";
 import { clipStatus, continuationLine } from "./video-model.js";
+import { framePromptKind, scenePromptLine } from "./scene-row.js";
 import { PROJECT, projectWith } from "./snapshot.fixture.mjs";
 
 const sceneBy = (project, id) => project.scenes.find((scene) => scene.scene_id === id);
@@ -102,6 +103,80 @@ test("правленая сцена просит перепроверить св
   const scene = sceneBy(project, "skeptic-online");
   scene.linkage_status = "review_linkage";
   assert.equal(continuationLine(project, scene).warn, true);
+});
+
+/** Копия проекта, где у первой сцены запланирован кадр со своим промптом. */
+function withFramePrompt({ slot = "first", stale = false } = {}) {
+  const project = structuredClone(PROJECT);
+  const scene = sceneBy(project, "cafe-open");
+  scene[slot === "first" ? "need_first" : "need_last"] = true;
+  scene.links[`${slot}_frame_prompt_version_id`] = `prompt:scene:cafe-open:${slot}-v2`;
+  project.image_prompts.push(
+    {
+      prompt_id: `prompt:scene:cafe-open:${slot}`,
+      version_id: `prompt:scene:cafe-open:${slot}-v1`,
+      parent_version_id: null,
+      text: "кадр из кафе",
+      status: "approved",
+    },
+    {
+      prompt_id: `prompt:scene:cafe-open:${slot}`,
+      version_id: `prompt:scene:cafe-open:${slot}-v2`,
+      parent_version_id: `prompt:scene:cafe-open:${slot}-v1`,
+      text: "кадр из кафе, теплее",
+      status: "approved",
+      stale,
+    },
+  );
+  return { project, scene };
+}
+
+test("на «Кадрах» у сцены без запланированных кадров промпта не показываем", () => {
+  const scene = sceneBy(PROJECT, "cafe-open");
+  assert.equal(framePromptKind(PROJECT, scene), null);
+  assert.equal(scenePromptLine(PROJECT, scene, framePromptKind(PROJECT, scene)), null);
+});
+
+test("запланирован первый кадр — показываем его промпт, а не промпт движения", () => {
+  const { project, scene } = withFramePrompt({ slot: "first" });
+  assert.equal(framePromptKind(project, scene), "first");
+  const line = scenePromptLine(project, scene, framePromptKind(project, scene));
+  assert.equal(line.text, "промпт первого кадра v2 · готов");
+  assert.equal(line.kind, "first");
+  assert.equal(line.versionId, "prompt:scene:cafe-open:first-v2");
+});
+
+test("запланирован только последний кадр — берём его", () => {
+  const { project, scene } = withFramePrompt({ slot: "last", stale: true });
+  assert.equal(framePromptKind(project, scene), "last");
+  assert.equal(
+    scenePromptLine(project, scene, framePromptKind(project, scene)).text,
+    "промпт последнего кадра v2 · устарел",
+  );
+});
+
+test("у фотопроекта это промпт изображения сцены", () => {
+  const project = projectWith({ type: "photo" });
+  const scene = sceneBy(project, "cafe-open");
+  assert.equal(framePromptKind(project, scene), "image");
+  scene.links.image_prompt_version_id = "prompt:scene:cafe-open:image-v1";
+  project.image_prompts.push({
+    prompt_id: "prompt:scene:cafe-open:image",
+    version_id: "prompt:scene:cafe-open:image-v1",
+    parent_version_id: null,
+    text: "кадр",
+    status: "pending",
+  });
+  assert.equal(
+    scenePromptLine(project, scene, framePromptKind(project, scene)).text,
+    "промпт изображения v1 · ждёт решения",
+  );
+});
+
+test("на «Видео» строка остаётся промптом движения", () => {
+  const line = scenePromptLine(PROJECT, sceneBy(PROJECT, "cafe-open"), "motion");
+  assert.equal(line.text, "промпт движения v2 · ждёт решения");
+  assert.equal(line.kind, "motion");
 });
 
 test("четыре слоя звука идут по-человечески: голос, музыка, эффекты, атмосфера", () => {

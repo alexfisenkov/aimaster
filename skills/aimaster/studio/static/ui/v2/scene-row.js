@@ -16,16 +16,51 @@ const PROMPT_STATUS = Object.freeze({
 });
 
 /**
- * «промпт v2 · готов» для строки сцены: номер версии в своей цепочке и
- * её статус. `null`, если промпта у сцены ещё нет.
+ * Где лежит действующая версия промпта каждого места. Ключи те же, что
+ * читает просмотрщик (`viewer-prompt.js`) и пишет домен
+ * (`domain_positions`): у кадров сцены свои промпты, у движения свой.
+ */
+const PROMPT_LINKS = Object.freeze({
+  first: "first_frame_prompt_version_id",
+  last: "last_frame_prompt_version_id",
+  image: "image_prompt_version_id",
+  motion: "motion_prompt_version_id",
+});
+
+const PROMPT_WORDS = Object.freeze({
+  first: "промпт первого кадра",
+  last: "промпт последнего кадра",
+  image: "промпт изображения",
+  motion: "промпт движения",
+});
+
+/**
+ * Промпт какого места показывать в строке сцены на экране «Кадры».
+ * У фотопроекта это изображение сцены, у видео — запланированный кадр
+ * (`need_first`/`need_last`). Кадров не запланировано — показывать
+ * нечего: промпт движения здесь не при чём, он живёт на «Видео».
+ *
  * @param {object} project `snapshot.active_project`
  * @param {object} scene запись сцены
- * @param {"motion"|"image"} [kind] какой промпт показывать
- * @param {string} [label] как назвать промпт человеку
+ * @returns {"first"|"last"|"image"|null}
  */
-export function scenePromptLine(project, scene, kind = "motion", label = "промпт") {
-  const linkKey = kind === "motion" ? "motion_prompt_version_id" : "image_prompt_version_id";
-  const versionId = scene?.links?.[linkKey];
+export function framePromptKind(project, scene) {
+  if (project?.type === "photo") return "image";
+  if (scene?.need_first === true) return "first";
+  if (scene?.need_last === true) return "last";
+  return null;
+}
+
+/**
+ * «промпт движения v2 · готов» для строки сцены: номер версии в своей
+ * цепочке и её статус. `null`, если промпта этого места у сцены нет.
+ * @param {object} project `snapshot.active_project`
+ * @param {object} scene запись сцены
+ * @param {"motion"|"first"|"last"|"image"|null} [kind] промпт какого места
+ */
+export function scenePromptLine(project, scene, kind = "motion") {
+  const linkKey = PROMPT_LINKS[kind];
+  const versionId = linkKey ? scene?.links?.[linkKey] : null;
   if (typeof versionId !== "string" || !versionId) return null;
   const collection = kind === "motion" ? project?.motion_prompts : project?.image_prompts;
   const current = (collection || []).find((item) => item?.version_id === versionId);
@@ -33,7 +68,12 @@ export function scenePromptLine(project, scene, kind = "motion", label = "про
   const versions = promptGroups(collection).get(current.prompt_id) || [current];
   const number = versions.findIndex((item) => item.version_id === versionId) + 1;
   const status = current.stale === true ? "устарел" : PROMPT_STATUS[current.status] || "в работе";
-  return { text: `${label} v${number || 1} · ${status}`, versionId, stale: current.stale === true };
+  return {
+    text: `${PROMPT_WORDS[kind]} v${number || 1} · ${status}`,
+    versionId,
+    kind,
+    stale: current.stale === true,
+  };
 }
 
 /**
@@ -58,14 +98,18 @@ export function renderSceneRow(project, revision, scene, position, { mode = "fra
   title.append(el("span", "v2-scene-time", ` · ${time}`));
   head.append(title, el("p", "v2-scene-text", activeBlockText(scene)));
 
-  const prompt = scenePromptLine(project, scene, "motion", video ? "промпт движения" : "промпт");
+  const prompt = scenePromptLine(project, scene, video ? "motion" : framePromptKind(project, scene));
   if (prompt) {
     const line = el("button", "v2-scene-prompt", prompt.text);
     line.type = "button";
     line.dataset.hook = "v2-scene-prompt";
+    line.dataset.promptKind = prompt.kind;
     line.addEventListener("click", (event) => {
       event.stopPropagation();
-      openViewer({ kind: "scene", id: scene.scene_id }, { tab, trigger: line });
+      openViewer(
+        { kind: "scene", id: scene.scene_id },
+        { tab, slot: video ? "video" : prompt.kind, trigger: line },
+      );
     });
     head.append(line);
   }
