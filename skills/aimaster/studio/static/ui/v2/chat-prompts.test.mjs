@@ -81,6 +81,12 @@ test("видеореференс — только из файла, со спро
   assert.match(video.attachmentHint, /Прикрепите видео/);
 });
 
+test("референс «только этой сцены» называет сцену", () => {
+  const local = addReference("other", PROJECT, REVISION, { sceneId: "cafe-open" });
+  assert.match(local.prompt, /сцена 1 «Столик и идея»/);
+  assert.match(local.prompt, /референсы только этой сцены/);
+});
+
 test("неизвестный вид не превращается в пустое место", () => {
   assert.match(addReference("нет-такого", PROJECT).title, /Добавить референс/);
 });

@@ -1,0 +1,330 @@
+/*
+ * Светлая доска v2: шапка, путь, полка референсов, строки сцен, низ.
+ * Телефон с 360px — без горизонтальной прокрутки: сетки сворачиваются в
+ * одну колонку, полка листается по горизонтали сама, а боковые поля не
+ * меньше 16px. Inline-стилей нет нигде: CSP страницы их запрещает.
+ */
+
+body[data-ui="v2"] .main-content {
+  background: var(--v2-board-bg);
+  padding: 0 0 var(--space-7);
+}
+
+/* --- Шапка ---------------------------------------------------------- */
+
+.v2-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.v2-topbar-title { font-size: var(--font-size-md); }
+.v2-topbar-meta { color: var(--color-text-muted); font-weight: 400; font-size: var(--font-size-sm); }
+
+/* --- Путь ------------------------------------------------------------ */
+
+.v2-path { padding: var(--space-4) var(--v2-gutter) 0; }
+
+.v2-path-strip {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.v2-path-step { flex: 1 1 0; min-width: 0; }
+
+.v2-path-button {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+  cursor: pointer;
+}
+
+.v2-path-button::before {
+  content: "";
+  display: block;
+  height: 4px;
+  margin-bottom: var(--space-2);
+  border-radius: 2px;
+  background: var(--v2-path-idle);
+}
+
+.v2-path-step[data-state="done"] .v2-path-button { color: var(--color-accent-strong); }
+.v2-path-step[data-state="done"] .v2-path-button::before { background: var(--v2-path-done); }
+.v2-path-step[data-state="current"] .v2-path-button { color: var(--color-text); font-weight: 700; }
+.v2-path-step[data-state="current"] .v2-path-button::before { background: var(--v2-path-current); }
+.v2-path-button[aria-disabled="true"] { cursor: default; }
+
+/* Открытый на просмотр шаг: видно, куда смотришь, даже если текущий
+   шаг проекта другой. */
+.v2-path-step[data-open="true"] .v2-path-button { color: var(--color-text); }
+.v2-path-step[data-open="true"] .v2-path-button::before {
+  outline: 2px solid var(--v2-path-current);
+  outline-offset: 2px;
+}
+.v2-path-hint { display: block; font-weight: 400; font-size: var(--v2-font-meta); color: var(--color-text-subtle); }
+
+.v2-path-explain {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--v2-board-sunken);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* --- Общее для экранов ----------------------------------------------- */
+
+.v2-screen { padding: 0 var(--v2-gutter); }
+.v2-section-title { margin: var(--space-5) 0 var(--space-1); font-size: var(--font-size-base); }
+.v2-section-hint { margin: 0 0 var(--space-3); font-size: var(--font-size-sm); color: var(--color-text-muted); }
+.v2-loading, .v2-error { padding: var(--space-5) var(--v2-gutter); color: var(--color-text-secondary); }
+
+.v2-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--v2-placeholder);
+  overflow: hidden;
+}
+
+.v2-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.v2-thumb-broken { background: var(--color-danger-bg); }
+
+.v2-chat-button {
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  padding: var(--space-2) var(--space-3);
+  min-height: var(--touch-target-min);
+  cursor: pointer;
+}
+
+/* --- Полка референсов ------------------------------------------------ */
+
+.v2-shelf-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--space-3);
+}
+
+.v2-shelf-group { border: 1px solid var(--v2-line); border-radius: var(--radius-md); padding: var(--space-3); }
+.v2-shelf-group h3 { margin: 0 0 2px; font-size: var(--v2-font-row); }
+.v2-shelf-group-hint { margin: 0 0 var(--space-2); font-size: var(--v2-font-meta); color: var(--color-text-subtle); }
+.v2-shelf-items { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+
+.v2-tile {
+  flex: none;
+  width: var(--v2-tile-width);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--radius-sm);
+  background: var(--v2-board-sunken);
+  padding: 0;
+  overflow: hidden;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.v2-tile-picture { position: relative; display: block; height: var(--v2-tile-picture); }
+.v2-tile-badge, .v2-tile-voice {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  border: 1px solid var(--v2-line);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  font-size: var(--v2-font-meta);
+  padding: 0 5px;
+}
+.v2-tile-voice { right: auto; left: 4px; }
+.v2-tile-caption { display: block; padding: 5px 7px; font-size: var(--v2-font-meta); }
+.v2-tile-caption b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--v2-font-row); }
+.v2-tile-caption span { color: var(--color-text-muted); }
+
+.v2-tile-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 110px;
+  border-style: dashed;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md);
+}
+
+/* --- Строка сцены ---------------------------------------------------- */
+
+.v2-scene {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 330px);
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--v2-line-soft);
+}
+
+.v2-scene-open {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 0;
+  min-height: var(--touch-target-min);
+}
+
+.v2-scene-title { display: block; font-size: var(--v2-font-row); }
+.v2-scene-time { color: var(--color-text-muted); font-weight: 400; }
+.v2-scene-text { margin: 3px 0 0; font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+
+.v2-scene-prompt {
+  margin-top: var(--space-2);
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--v2-font-meta);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.v2-scene-zones { display: grid; gap: var(--space-2); }
+.v2-zone { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: var(--space-2); align-items: center; }
+.v2-zone-title { font-size: var(--v2-font-meta); color: var(--color-text-muted); }
+.v2-zone-items { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.v2-zone-none { font-size: var(--v2-font-meta); color: var(--color-text-subtle); }
+
+.v2-avatar {
+  position: relative;
+  width: var(--v2-avatar-small);
+  height: var(--v2-avatar-small);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--radius-sm);
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.v2-avatar[data-included="false"] { opacity: 0.3; }
+.v2-avatar-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.v2-slot {
+  position: relative;
+  width: var(--v2-slot-width);
+  height: var(--v2-slot-height);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--radius-sm);
+  padding: 0;
+  background: var(--v2-board-sunken);
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.v2-slot-label {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  border-radius: var(--radius-sm);
+  background: rgba(17, 19, 21, 0.78);
+  color: #fff;
+  font-size: 9px;
+  padding: 0 4px;
+}
+
+.v2-slot-caption {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  border: 1px solid var(--v2-line);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  font-size: 9px;
+  padding: 0 4px;
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-plus {
+  width: var(--v2-avatar-small);
+  height: var(--v2-avatar-small);
+  min-height: var(--v2-avatar-small);
+  border: 1px dashed var(--color-border-soft);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  padding: 0;
+  cursor: pointer;
+}
+
+/* --- Общий промпт и низ экрана --------------------------------------- */
+
+.v2-oneshot { border: 1px solid var(--v2-line); border-radius: var(--radius-md); padding: var(--space-3); }
+.v2-oneshot-meta { margin: 0 0 var(--space-2); font-size: var(--v2-font-meta); color: var(--color-text-muted); }
+.v2-oneshot-text { margin: 0 0 var(--space-3); font-size: var(--font-size-sm); white-space: pre-wrap; }
+
+.v2-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--v2-gutter);
+  border-top: 1px solid var(--v2-line);
+  background: var(--v2-board-sunken);
+}
+
+.v2-footer-summary { margin: 0; font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+.v2-footer-buttons { display: flex; gap: var(--space-2); }
+
+.v2-primary {
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--v2-primary-bg);
+  color: var(--v2-primary-fg);
+  font-weight: 600;
+  padding: var(--space-3) var(--space-4);
+  min-height: var(--touch-target-min);
+}
+
+.v2-primary[disabled] { background: var(--v2-primary-off); color: var(--color-text-on-accent); cursor: not-allowed; }
+
+/* --- Телефон --------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .v2-scene { grid-template-columns: 24px minmax(0, 1fr); }
+  .v2-scene-zones { grid-column: 1 / -1; }
+  .v2-zone { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .v2-shelf-groups { grid-template-columns: minmax(0, 1fr); }
+  .v2-shelf-items { flex-wrap: nowrap; overflow-x: auto; padding-bottom: var(--space-1); }
+  .v2-path-button { font-size: var(--v2-font-meta); }
+  .v2-footer { justify-content: stretch; }
+  .v2-footer-buttons, .v2-primary { width: 100%; }
+}

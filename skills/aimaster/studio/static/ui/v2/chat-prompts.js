@@ -52,14 +52,16 @@ function promptRef(promptVersion) {
  * @param {string} kind character|location|product|style|other|video
  * @param {object} project `snapshot.active_project`
  * @param {number} [revision]
+ * @param {{sceneId?: string}} [options] для референса «только этой сцены»
  */
-export function addReference(kind, project, revision) {
+export function addReference(kind, project, revision, { sceneId } = {}) {
   const known = Object.prototype.hasOwnProperty.call(KIND_WORDS, kind);
   const word = known ? KIND_WORDS[kind] : "референс";
   const video = kind === "video";
+  const scoped = sceneId ? " только этой сцены" : video ? " сцены" : " проекта";
   return {
     title: `Добавить ${word}`,
-    prompt: `${opening(project, null, revision)} Я хочу добавить ${word} в референсы${video ? " сцены" : " проекта"}. `
+    prompt: `${opening(project, sceneId, revision)} Я хочу добавить ${word} в референсы${scoped}. `
       + `Спроси, прикреплю ли я готовый файл или нужно сгенерировать. Если файл уже приложен, считай это выбором upload: `
       + `проверь вложение, найди подходящий существующий placeholder и обнови его, не создавая дубликат; повторно генерировать приложенное не предлагай. `
       + `${video
