@@ -54,8 +54,11 @@
 - `scene-zones-video.js` — `clipZone`/`continuationZone` `(project, scene)`:
   правые зоны той же строки сцены на экране «Видео».
 - `scene-row.js` — `renderSceneRow(project, revision, scene, position, {mode})`,
-  `scenePromptLine(project, scene, kind, label)`, `scenesInOrder(project)`.
-  `mode` — `"frames"` (четыре зоны) или `"video"` (три).
+  `scenePromptLine(project, scene, kind)`, `framePromptKind(project, scene)`,
+  `scenesInOrder(project)`. `mode` — `"frames"` (четыре зоны) или `"video"`
+  (три). Промпт в строке берётся по месту, а не по экрану: на «Видео» —
+  `motion`, на «Кадрах» — запланированный кадр (`first`/`last`) или
+  изображение фотопроекта; кадров не запланировано — строки нет вовсе.
 - `video-thumb.js` — `videoThumb(assetUrl, label)`: миниатюра клипа
   `<video preload="metadata">`; `<img>` на mp4 отдаёт битую плитку.
 - `more-menu.js` — `moreMenu(items)`: «···» из `<details>`, всё редкое с экрана.
@@ -121,11 +124,6 @@
 
 ## Что осталось известным долгом
 
-- Строка промпта у сцены на «Кадрах» показывает промпт движения
-  (`scenePromptLine(..., "motion")`), а промпты кадров у сцены свои и лежат
-  по ссылкам `first_frame_prompt_version_id` / `last_frame_prompt_version_id`
-  (их читает `viewer-prompt.js`). На проектах без запланированных кадров
-  разницы не видно, на проекте с кадрами строка соврёт.
 - У сборки нет группы вариантов: `assembly` — один объект `{status,
   asset_id, summary}`, поэтому плитка финала показывает состояние, а не
   «вариант N из M». Скачивания тоже пока нет — оно отдельной работой.
