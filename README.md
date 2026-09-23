@@ -5,9 +5,10 @@
 картинки и собрать материалы для ролика. Всё по проекту хранится в отдельной
 папке, а при желании ход работы можно смотреть в браузере.
 
-Версия `2026.09.23` — предварительный публичный выпуск. Установка из GitHub ещё
-не проверялась на чистых машинах, поэтому первый запуск нужно пройти на своём
-компьютере. Новые выпуски и примечания к ним находятся на странице
+Версия `2026.09.23` — предварительный публичный выпуск. Работает на macOS,
+Linux и Windows (нативно, без WSL). Установка на пустой машине проверяется
+автоматически в CI на всех трёх системах; на своём компьютере первый запуск
+всё равно стоит пройти вместе с агентом. Новые выпуски и примечания к ним находятся на странице
 [Releases](https://github.com/alexfisenkov/aimaster/releases).
 
 Личные проекты, исходники, картинки и свои инструкции храните в постоянной папке
@@ -24,28 +25,20 @@
 пароль, системное подтверждение, перезагрузка или вход в аккаунт.
 
 ```text
-Установи публичный навык aimaster из https://github.com/alexfisenkov/aimaster.
+Установи навык aimaster из https://github.com/alexfisenkov/aimaster.
 Сначала прочитай https://github.com/alexfisenkov/aimaster/blob/main/INSTALL_WITH_AGENT.md
-и выполни только описанные там безопасные шаги. Определи мой целевой runtime
-(Codex или Claude Code); спроси меня только если это неоднозначно. Проверь
-наличие Git и Python 3.11+ и установи только недостающие бесплатные зависимости
-через официальный пакетный менеджер моей ОС. Если отсутствует сам необходимый
-менеджер пакетов, подготовь его установку из официального источника и выполни
-её в рамках разрешений среды; для WSL сначала согласуй изменение системы.
-Не переустанавливай уже найденное,
-не отключай защиты, не угадывай пароль sudo и не печатай секреты. Если нужен
-админский пароль, перезагрузка или вход в аккаунт, попроси меня выполнить только
-этот шаг и продолжи после моего ответа.
-
-Клонируй репозиторий в постоянный $HOME/.local/share/aimaster (или явно
-согласованный мной путь), а в каталог навыков целевого runtime установи только
-папку skills/aimaster через безопасную символическую ссылку; не клонируй
-репозиторий внутрь папки навыка и не перезаписывай существующие targets.
-Проверь origin уже существующего клона перед повторным использованием.
+и выполни процедуру для моей ОС: проверь Python 3.11+ и Git, недостающее поставь
+через официальный менеджер пакетов (winget, Homebrew или apt), скачай
+репозиторий в постоянную папку и запусти установщик install.py с --install-deps.
+Не спрашивай меня про версии и способы установки — бери то, что указано в
+инструкции, а команду Python для дальнейшей работы — из поля python_cmd
+в выводе установщика. Не перезаписывай существующие папки, не отключай защиты,
+не угадывай пароли и не печатай секреты. Если нужен пароль администратора,
+перезагрузка или вход в аккаунт, попроси меня выполнить только этот шаг.
 
 Не покупай ничего, не настраивай Telegram/MCP, не запускай генерацию и не
 запрашивай логин AI-клиента автоматически. После установки остановись, сообщи
-путь и дай мне первый пример запроса. Не запускай creative/media jobs.
+пути и дай мне первый пример запроса. Не запускай creative/media jobs.
 ```
 
 После установки напишите `$aimaster` в Codex или `/aimaster` в Claude Code.
@@ -153,108 +146,84 @@ Gemini CLI и Cursor без сети и показывает только име
 Там показано, как выбрать папку для проектов, создать первый ролик, открыть
 страницу проекта в браузере и при желании подключить Telegram.
 
-Для macOS Telegram теперь может быть текстовым транспортом того же workspace:
+Telegram может быть текстовым транспортом того же workspace:
 локальный controller принимает сообщения, Codex bridge обрабатывает их на
 включённом компьютере, а Mini App показывает тот же дашборд. Голосовые и медиа-
-вложения находятся в следующем этапе; inline-навигация уже доступна. Windows пока не
-входит в этот выпуск.
+вложения находятся в следующем этапе; inline-навигация уже доступна. Живой
+запуск Telegram проверен только на macOS; на Windows и Linux он пока не
+проверялся.
 
 Подключение можно начать без терминала: агент запускает локальное окно `setup-ui`,
 куда пользователь вставляет токен BotFather.
 
 ### Вариант 2. Установить вручную в терминале
 
-Нужны Git и Python 3.11+; Node, npm и `pip` не нужны. Команды ниже подходят для
-macOS и Linux.
-Если шаг завершился ошибкой, остановитесь и устраните её до следующего шага.
+Нужны Python 3.11+ и Git (без Git можно скачать архив). Node, npm и `pip` не
+нужны. Всё остальное делает установщик `install.py`: подключает навык к
+Claude Code (`~/.claude/skills/aimaster`) и к Codex и другим агентам
+(`~/.agents/skills/aimaster`), проверяет необязательные программы и делает
+самопроверку. Он ничего не перезаписывает: если на месте навыка уже лежит
+чужая папка, установщик остановится и скажет об этом.
 
-macOS (если Homebrew уже есть — ставьте только отсутствующее):
+macOS (нужен [Homebrew](https://brew.sh/)):
 
 ```zsh
-if ! command -v git >/dev/null 2>&1; then brew install git; fi
-if ! command -v python3 >/dev/null 2>&1 || ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,11) else 1)'; then brew install python; fi
-python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,11) else "Python 3.11+ required")'
+python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,11) else 1)' || brew install python@3.12
+command -v git >/dev/null || brew install git
+git clone https://github.com/alexfisenkov/aimaster.git "$HOME/.local/share/aimaster"
+python3 "$HOME/.local/share/aimaster/skills/aimaster/scripts/install.py" --install-deps
 ```
 
-Если Homebrew нет, установите его по [официальной странице Homebrew](https://brew.sh/)
-и [официальной инструкции установки](https://docs.brew.sh/Installation),
-прочитав команды перед выполнением. Не используйте непроверенный `curl | sh`.
-После установки Homebrew выполните команды, которые он покажет в разделе
-«Next steps», и повторите проверку Python. Системный Python удалять не нужно.
+Если после установки Python команда `python3` всё ещё старая, запустите
+последнюю строку через `python3.12`.
 
 Ubuntu/Debian:
 
 ```sh
 command -v git >/dev/null || { sudo apt update && sudo apt install -y git; }
-command -v python3 >/dev/null || { sudo apt update && sudo apt install -y python3; }
-python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,11) else "Python 3.11+ required; stop and upgrade Python through official OS documentation")'
+python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,11) else "Нужен Python 3.11+")'
+git clone https://github.com/alexfisenkov/aimaster.git "$HOME/.local/share/aimaster"
+python3 "$HOME/.local/share/aimaster/skills/aimaster/scripts/install.py"
 ```
 
-Проверка версии Python:
+На Linux установщик ничего не ставит сам, а печатает команды `apt` для
+недостающих программ. Если ОС предлагает Python младше 3.11, обновите его по
+официальной документации вашей ОС.
 
-```sh
-python3 -c 'import sys; print(sys.version); raise SystemExit(0 if sys.version_info >= (3,11) else 1)'
+Windows (PowerShell, без WSL и без прав администратора):
+
+```powershell
+py -3 --version
 ```
 
-Если Linux предлагает Python младше 3.11, остановитесь и выполните официальный
-путь обновления вашей ОС; поддерживаемой установку не называйте.
+Если команды `py` нет или версия ниже 3.11, поставьте Python и откройте
+PowerShell заново:
 
-На Windows используйте [официальный WSL](https://learn.microsoft.com/en-us/windows/wsl/install):
-`wsl --install` выполняется в PowerShell администратора; возможны перезапуск
-и создание Linux-пользователя. Затем продолжайте внутри WSL с Linux-агентом.
-Вариант для Windows без WSL пока не предусмотрен. Установка через WSL ещё не
-проверена; агент и навык должны работать внутри одной Linux-среды.
-
-Сначала скачайте файлы, затем подключите навык к Codex, Claude Code или обоим.
-Команды не заменяют уже существующую установку:
-
-```sh
-(
-set -eu
-AIMASTER_REPO_URL='https://github.com/alexfisenkov/aimaster.git'
-AIMASTER_REPO_DIR="${HOME}/.local/share/aimaster"
-mkdir -p "$(dirname "$AIMASTER_REPO_DIR")"
-if [ -e "$AIMASTER_REPO_DIR" ] || [ -L "$AIMASTER_REPO_DIR" ]; then
-  test -d "$AIMASTER_REPO_DIR/.git"
-  test "$(git -C "$AIMASTER_REPO_DIR" remote get-url origin)" = "$AIMASTER_REPO_URL"
-else
-  git clone "$AIMASTER_REPO_URL" "$AIMASTER_REPO_DIR"
-fi
-test -f "$AIMASTER_REPO_DIR/skills/aimaster/SKILL.md"
-)
+```powershell
+winget install -e --id Python.Python.3.12
 ```
 
-```sh
-# Codex
-(
-set -eu
-AIMASTER_REPO_DIR="${HOME}/.local/share/aimaster"
-AIMASTER_TARGET="${HOME}/.agents/skills/aimaster"
-test "$(git -C "$AIMASTER_REPO_DIR" remote get-url origin)" = 'https://github.com/alexfisenkov/aimaster.git'
-test -f "$AIMASTER_REPO_DIR/skills/aimaster/SKILL.md"
-mkdir -p "$(dirname "$AIMASTER_TARGET")"
-if [ -e "$AIMASTER_TARGET" ] || [ -L "$AIMASTER_TARGET" ]; then
-  echo "Уже существует: $AIMASTER_TARGET. Ничего не заменено." >&2; exit 1
-fi
-ln -s "$AIMASTER_REPO_DIR/skills/aimaster" "$AIMASTER_TARGET"
-)
+Затем:
+
+```powershell
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) { winget install -e --id Git.Git }
+Set-Location $env:LOCALAPPDATA
+git clone https://github.com/alexfisenkov/aimaster.git aimaster
+py -3 aimaster\skills\aimaster\scripts\install.py --install-deps
 ```
 
-```sh
-# Claude Code
-(
-set -eu
-AIMASTER_REPO_DIR="${HOME}/.local/share/aimaster"
-AIMASTER_TARGET="${HOME}/.claude/skills/aimaster"
-test "$(git -C "$AIMASTER_REPO_DIR" remote get-url origin)" = 'https://github.com/alexfisenkov/aimaster.git'
-test -f "$AIMASTER_REPO_DIR/skills/aimaster/SKILL.md"
-mkdir -p "$(dirname "$AIMASTER_TARGET")"
-if [ -e "$AIMASTER_TARGET" ] || [ -L "$AIMASTER_TARGET" ]; then
-  echo "Уже существует: $AIMASTER_TARGET. Ничего не заменено." >&2; exit 1
-fi
-ln -s "$AIMASTER_REPO_DIR/skills/aimaster" "$AIMASTER_TARGET"
-)
-```
+Если Git только что поставлен, перед `git clone` откройте PowerShell заново.
+Без Git можно скачать архив — команды есть в
+[инструкции для агента](INSTALL_WITH_AGENT.md#windows-powershell-без-wsl).
+На Windows навык подключается через directory junction; если это невозможно,
+ставится копия, и её обновляют командой `install.py --update`.
+
+В конце установщик печатает, куда подключён навык, каких программ не хватает
+(ffmpeg нужен для звука и сборки, cloudflared — для Mini App в Telegram) и
+какой командой запускать Python на этой машине.
+
+WSL остаётся необязательной альтернативой: внутри него всё ставится как в
+разделе Ubuntu/Debian.
 
 Официальные документы о навыках: [OpenAI/Codex](https://learn.chatgpt.com/docs/build-skills)
 и [Claude Code](https://code.claude.com/docs/en/skills). Другие агенты могут
@@ -269,29 +238,22 @@ ln -s "$AIMASTER_REPO_DIR/skills/aimaster" "$AIMASTER_TARGET"
 в том же чате. Если обновлений нет, сообщений о проверке не будет.
 
 Перед обновлением убедитесь, что личные проекты и свои инструкции лежат вне
-папки установки. Следующий блок проверяет адрес репозитория и останавливается,
-если внутри клона есть ваши изменения. Он ничего не сбрасывает и не прячет.
+папки установки. Установщик проверяет адрес репозитория, ветку `main` и
+отсутствие ваших изменений в клоне, затем выполняет `git pull --ff-only` и
+показывает номер выпуска. Он ничего не сбрасывает и не прячет.
+
+macOS и Linux:
 
 ```sh
-(
-set -eu
-AIMASTER_REPO_URL='https://github.com/alexfisenkov/aimaster.git'
-AIMASTER_REPO_DIR="${HOME}/.local/share/aimaster"
-test -d "$AIMASTER_REPO_DIR/.git"
-test "$(git -C "$AIMASTER_REPO_DIR" remote get-url origin)" = "$AIMASTER_REPO_URL"
-test "$(git -C "$AIMASTER_REPO_DIR" symbolic-ref --short HEAD)" = main
-if test -n "$(git -C "$AIMASTER_REPO_DIR" status --porcelain)"; then
-  echo "Обновление остановлено: в папке aimaster есть локальные изменения." >&2
-  exit 1
-fi
-git -C "$AIMASTER_REPO_DIR" pull --ff-only
-git -C "$AIMASTER_REPO_DIR" fetch --tags
-git -C "$AIMASTER_REPO_DIR" describe --tags --exact-match HEAD
-)
+python3 "$HOME/.local/share/aimaster/skills/aimaster/scripts/install.py" --update
 ```
 
-Последняя строка показывает номер выпуска. Команда обновляет официальную
-версию из основной ветки проекта.
+Windows:
+
+```powershell
+py -3 "$env:LOCALAPPDATA\aimaster\skills\aimaster\scripts\install.py" --update
+```
+
 Если вы меняли инструкции прямо в установленном клоне, обновление остановится,
 но не удалит изменения. Перенесите своё в отдельную папку осознанно и только
 потом повторите обновление.
@@ -299,15 +261,16 @@ git -C "$AIMASTER_REPO_DIR" describe --tags --exact-match HEAD
 Обновление также можно поручить агенту:
 
 ```text
-Обнови установленный aimaster по инструкции из раздела «Обновление» в
-https://github.com/alexfisenkov/aimaster/blob/main/README.md. Сначала проверь
-точный origin и чистоту клона. При любых локальных изменениях остановись:
-ничего не сбрасывай, не прячь и не удаляй. После git pull --ff-only получи
-метки и покажи версию командой git describe --tags --exact-match HEAD.
+Обнови установленный aimaster по разделу «Обновление» в
+https://github.com/alexfisenkov/aimaster/blob/main/INSTALL_WITH_AGENT.md:
+запусти install.py --update --json из установленного клона. При любых
+локальных изменениях остановись: ничего не сбрасывай, не прячь и не удаляй.
+Покажи метку выпуска из поля update.tag.
 ```
 
-Чтобы удалить навык, удалите только созданную при установке ссылку, предварительно
-проверив, что она ведёт в этот клон. Папку с проектами удалять не нужно.
+Чтобы удалить навык, удалите только созданные при установке ссылки
+(`~/.claude/skills/aimaster`, `~/.agents/skills/aimaster`), предварительно
+проверив, что они ведут в этот клон. Папку с проектами удалять не нужно.
 
 ## Авторские условия
 
