@@ -24,7 +24,7 @@ from pathlib import Path
 
 from .assets import AssetError
 from .authoring_support import open_assets, open_store
-from .library import (KIND_FOLDERS, LibraryError, add_file, get_entry, library_file,
+from .library import (KIND_FOLDERS, LibraryError, add_file, find_by_sha, get_entry, library_file,
                       library_root, locked_index, sha256_of)
 from .library_match import name_part
 
@@ -33,12 +33,28 @@ _ROLE_TO_KIND = {"character": "character", "location": "location", "product": "p
 _TAG_LIKE = ("IMG_", "VID_", "VOICE_")
 
 
-def _candidate_name(reference) -> str | None:
+_NAME_KINDS = frozenset({"character", "voice"})
+
+
+def _full_label(reference) -> str | None:
     label = reference.get("label")
-    if not isinstance(label, str) or not label.strip():
+    if not isinstance(label, str) or not label.strip() or label.strip().startswith(_TAG_LIKE):
         return None
-    name = name_part(label)
-    return None if not name or name.startswith(_TAG_LIKE) else name
+    return label.strip()
+
+
+def _candidate_name(kind, full) -> str:
+    """A person is named by the part before « — »; anything else keeps its
+    whole caption («AI Мастерская — dark boho riding look» is a look, not
+    the brand)."""
+
+    return name_part(full) if kind in _NAME_KINDS else full
+
+
+def _label_and_aliases(slot) -> tuple[str, list[str]]:
+    names = [name for name, _ in slot["names"].most_common()] or [slot["path"].stem]
+    aliases = [*names[1:], *slot["fulls"]]
+    return names[0], [a for a in dict.fromkeys(aliases) if a != names[0]]
 
 
 def _usable(result) -> bool:
@@ -107,31 +123,43 @@ def _collect(workspace):
                     break
                 digest = sha256_of(path)
                 slot = found.setdefault(digest, {"kind": job_kind, "path": path, "names": Counter(),
-                                                 "source": where, "owner_digest": owner_digest})
+                                                 "fulls": [], "source": where,
+                                                 "owner_digest": owner_digest})
                 owner_digest = digest
-                name = _candidate_name(reference)
-                if name:
-                    slot["names"][name] += 1
+                full = _full_label(reference)
+                if full:
+                    slot["names"][_candidate_name(slot["kind"], full)] += 1
+                    slot["fulls"].append(full)
     return found, skipped
 
 
 def import_from_projects(workspace) -> dict:
     library = library_root(workspace, create=True)
     found, skipped = _collect(workspace)
-    created, reused = [], []
+    created, reused, relabeled = [], [], []
     character_ids = {}
     with locked_index(library) as index:
         for digest, slot in sorted(found.items(), key=lambda item: item[1]["kind"] == "voice"):
-            names = [name for name, _ in slot["names"].most_common()] or [slot["path"].stem]
+            label, aliases = _label_and_aliases(slot)
             voice_of = character_ids.get(slot["owner_digest"]) if slot["kind"] == "voice" else None
-            entry, is_new, _ = add_file(index, library, kind=slot["kind"], label=names[0],
-                                        aliases=names[1:], source_file=slot["path"],
+            before = find_by_sha(index, digest)
+            before = None if before is None else (before["label"], list(before["aliases"]))
+            entry, is_new, _ = add_file(index, library, kind=slot["kind"], label=label,
+                                        aliases=aliases, source_file=slot["path"],
                                         voice_of=voice_of, source=slot["source"])
             (created if is_new else reused).append(entry["library_id"])
+            if not is_new and "source" in entry and entry["kind"] == slot["kind"]:
+                # Derived by an earlier import: bring its caption up to the
+                # current naming rule. Entries from `library add` (no
+                # `source`) are the user's own wording and stay untouched.
+                entry["label"], entry["aliases"] = label, aliases
+                if before != (label, aliases):
+                    relabeled.append(entry["library_id"])
             if entry["kind"] == "character":
                 character_ids[digest] = entry["library_id"]
         total = len(index["entries"])
-    return {"created": created, "already_in_library": reused, "skipped": skipped, "entries": total}
+    return {"created": created, "already_in_library": reused, "relabeled": relabeled,
+            "skipped": skipped, "entries": total}
 
 
 def _asset_role(kind: str, media: str) -> str:

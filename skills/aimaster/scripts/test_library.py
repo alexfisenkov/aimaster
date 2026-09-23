@@ -219,7 +219,8 @@ class LibraryImportMatchTests(Base):
         self.assertIn("Локальный", [e["label"] for e in cli("library", "list", self.ws)["entries"]])
         entries = {entry["label"]: entry
                    for entry in cli("library", "list", self.ws, "--kind", "character")["entries"]}
-        self.assertEqual(entries["Александр"]["aliases"], ["Alex"])
+        self.assertEqual(entries["Александр"]["aliases"],
+                         ["Alex", "Александр — основной персонаж", "Alex — rider", "Александр — референс"])
         self.assertEqual(entries["Артём"]["kind"], "character")
         voices = cli("library", "list", self.ws, "--kind", "voice")["entries"]
         self.assertEqual(voices[0]["voice_of"], entries["Артём"]["library_id"])
@@ -310,13 +311,53 @@ class GeneratedReferenceImportTests(Base):
         for label in ("Стена", "Скрытое", "Пустое"):
             self.assertEqual(reasons[self.refs[label]], "no_selected_result", label)
         entries = {e["label"]: e for e in cli("library", "list", self.ws)["entries"]}
-        self.assertEqual(entries["Кафе"]["kind"], "location")
-        self.assertEqual(entries["Ручка"]["kind"], "product")
+        self.assertEqual(entries["Кафе — паб"]["kind"], "location")
+        self.assertEqual(entries["Ручка — сувенир"]["kind"], "product")
         cafe_v2 = (self.ws / "media" / "cafe-v2.png").read_bytes()
         pen_v1 = (self.ws / "media" / "pen-v1.png").read_bytes()
-        self.assertEqual(entries["Кафе"]["files"][0]["sha256"], hashlib.sha256(cafe_v2).hexdigest())
-        self.assertEqual(entries["Ручка"]["files"][0]["sha256"], hashlib.sha256(pen_v1).hexdigest())
+        self.assertEqual(entries["Кафе — паб"]["files"][0]["sha256"], hashlib.sha256(cafe_v2).hexdigest())
+        self.assertEqual(entries["Ручка — сувенир"]["files"][0]["sha256"], hashlib.sha256(pen_v1).hexdigest())
         self.assertEqual(cli("library", "import", self.ws, "--from-projects")["created"], [])
+
+
+class ImportLabelRuleTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.project_at_references("p")
+        self.media_reference("p", "look.png", png_bytes(90), kind="style",
+                             label="AI Мастерская — dark boho riding look")
+        self.media_reference("p", "hero.png", png_bytes(91), label="Артём — второй персонаж")
+
+    def labels(self):
+        return {e["kind"]: (e["label"], e["aliases"]) for e in cli("library", "list", self.ws)["entries"]}
+
+    def test_only_people_are_shortened_and_full_caption_is_an_alias(self):
+        cli("library", "import", self.ws, "--from-projects")
+        labels = self.labels()
+        self.assertEqual(labels["style"], ("AI Мастерская — dark boho riding look", []))
+        self.assertEqual(labels["character"], ("Артём", ["Артём — второй персонаж"]))
+
+    def test_reimport_relabels_derived_entries_but_not_manual_ones(self):
+        cli("library", "import", self.ws, "--from-projects")
+        index_path = self.ws / "library" / "index.json"
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        for entry in index["entries"]:
+            if entry["kind"] == "style":
+                entry["label"], entry["aliases"] = "AI Мастерская", []
+        index_path.write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
+        manual = cli("library", "add", self.ws, "--kind", "location", "--label", "Моё место — как есть",
+                     "--file", self.file("place.png", png_bytes(92)))
+        (self.ws / "media" / "place.png").write_bytes(png_bytes(92))
+        asset = cli("asset", "register", self.ws, "--path", "media/place.png", "--role", "location")
+        cli("reference", "add", self.ws, "p", "--kind", "location", "--name", "Другое имя",
+            "--asset-id", asset["asset_id"], "--expected-revision", self.rev("p"))
+        result = cli("library", "import", self.ws, "--from-projects")
+        style_id = next(e["library_id"] for e in index["entries"] if e["kind"] == "style")
+        self.assertEqual(result["relabeled"], [style_id])
+        labels = self.labels()
+        self.assertEqual(labels["style"][0], "AI Мастерская — dark boho riding look")
+        self.assertEqual(labels["location"][0], "Моё место — как есть")
+        self.assertIn(manual["library_id"], result["already_in_library"])
 
 
 if __name__ == "__main__":
