@@ -1,0 +1,127 @@
+"""Library ⇄ projects: `library import --from-projects` and `--from-library`.
+
+Spec 2026-09-23 §3. Import walks every project's references that carry a
+registered file, skipping scene-local ones (`local`, or bound to one
+`scene_id`), and adds each file once (sha256). Labels are shortened to
+their name part («Артём — второй персонаж» → «Артём»); the most frequent
+name becomes the entry label, the others its aliases. A character's
+attached voice file becomes its own `kind=voice` entry with `voice_of`.
+
+`materialize` is the other direction: a library file is copied into
+`<workspace>/media/library/` (the asset index only serves files below
+`media/`) and registered with the asset role its kind needs.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import tempfile
+from collections import Counter
+from pathlib import Path
+
+from .assets import AssetError
+from .authoring_support import open_assets, open_store
+from .library import (KIND_FOLDERS, LibraryError, add_file, get_entry, library_file,
+                      library_root, locked_index, sha256_of)
+from .library_match import name_part
+
+_ROLE_TO_KIND = {"character": "character", "location": "location", "product": "product",
+                 "style": "style", "object": "other", "other": "other", "video": "other"}
+_TAG_LIKE = ("IMG_", "VID_", "VOICE_")
+
+
+def _candidate_name(reference) -> str | None:
+    label = reference.get("label")
+    if not isinstance(label, str) or not label.strip():
+        return None
+    name = name_part(label)
+    return None if not name or name.startswith(_TAG_LIKE) else name
+
+
+def _collect(workspace):
+    store, assets = open_store(workspace), open_assets(workspace)
+    found, skipped = {}, []
+    for summary in store.list_projects():
+        project_id = summary["id"]
+        for reference in store.load(project_id).get("references", []) or []:
+            ref_id = reference.get("reference_id")
+            where = {"project_id": project_id, "reference_id": ref_id}
+            if reference.get("local", "scene_id" in reference):
+                skipped.append({**where, "reason": "local"})
+                continue
+            kind = _ROLE_TO_KIND.get(reference.get("role"))
+            if kind is None or "asset_id" not in reference:
+                skipped.append({**where, "reason": "no_file"})
+                continue
+            jobs = [(kind, reference["asset_id"])]
+            voice = reference.get("voice") or {}
+            if kind == "character" and isinstance(voice, dict) and voice.get("asset_id"):
+                jobs.append(("voice", voice["asset_id"]))
+            owner_digest = None
+            for job_kind, asset_id in jobs:
+                try:
+                    path, _ = assets.resolve(asset_id)
+                except (AssetError, ValueError):
+                    skipped.append({**where, "reason": "asset_missing"})
+                    break
+                digest = sha256_of(path)
+                slot = found.setdefault(digest, {"kind": job_kind, "path": path, "names": Counter(),
+                                                 "source": where, "owner_digest": owner_digest})
+                owner_digest = digest
+                name = _candidate_name(reference)
+                if name:
+                    slot["names"][name] += 1
+    return found, skipped
+
+
+def import_from_projects(workspace) -> dict:
+    library = library_root(workspace, create=True)
+    found, skipped = _collect(workspace)
+    created, reused = [], []
+    character_ids = {}
+    with locked_index(library) as index:
+        for digest, slot in sorted(found.items(), key=lambda item: item[1]["kind"] == "voice"):
+            names = [name for name, _ in slot["names"].most_common()] or [slot["path"].stem]
+            voice_of = character_ids.get(slot["owner_digest"]) if slot["kind"] == "voice" else None
+            entry, is_new, _ = add_file(index, library, kind=slot["kind"], label=names[0],
+                                        aliases=names[1:], source_file=slot["path"],
+                                        voice_of=voice_of, source=slot["source"])
+            (created if is_new else reused).append(entry["library_id"])
+            if entry["kind"] == "character":
+                character_ids[digest] = entry["library_id"]
+        total = len(index["entries"])
+    return {"created": created, "already_in_library": reused, "skipped": skipped, "entries": total}
+
+
+def _asset_role(kind: str, media: str) -> str:
+    if media == "video":
+        return "video_reference"
+    if media == "audio":
+        return "voice"
+    return kind if kind in {"character", "location", "product", "style", "other"} else "other"
+
+
+def materialize(workspace, library_id) -> dict:
+    """Copy a library file into `media/library/` and register it as an asset."""
+
+    library, entry = get_entry(workspace, library_id)
+    item = entry["files"][0]
+    source = library_file(library, item["path"])
+    if sha256_of(source) != item["sha256"]:
+        raise LibraryError("library file changed since it was added")
+    media_dir = Path(workspace).resolve(strict=True) / "media" / "library" / KIND_FOLDERS[entry["kind"]]
+    media_dir.mkdir(parents=True, exist_ok=True)
+    target = media_dir / f"{item['sha256'][:12]}-{source.name}"
+    if not target.exists():
+        descriptor, temporary = tempfile.mkstemp(dir=media_dir, prefix=".copy.", suffix=".tmp")
+        os.close(descriptor)
+        try:
+            shutil.copyfile(source, temporary)
+            os.replace(temporary, target)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+    role = _asset_role(entry["kind"], item["media"])
+    relative = target.relative_to(Path(workspace).resolve(strict=True)).as_posix()
+    registered = open_assets(workspace).register(relative, role)
+    return {"entry": entry, "asset": registered, "media": item["media"]}

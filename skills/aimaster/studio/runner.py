@@ -47,6 +47,7 @@ from .adapters import (
     load_capability_candidates,
     validate_public_result,
 )
+from .autopilot import StoreAutopilotPolicy
 from .domain import DomainValidationError, _stage_sequence, derive_view_stage
 from .ledger import GRANT_REQUIRED_ACTIONS, ActionLedger, normalize_recovery_decision
 from .projection import ProjectionError, action_target_stage
@@ -395,6 +396,7 @@ def open_ledger(workspace) -> ActionLedger:
     return ActionLedger(
         private_root / ACTIONS_DB_NAME,
         revision_resolver=lambda project_id: store.load(project_id)["revision"],
+        autopilot=StoreAutopilotPolicy(store),
     )
 
 

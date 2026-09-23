@@ -15,7 +15,7 @@ import sqlite3
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .status_messages import STATUS_MESSAGE_RU
@@ -73,6 +73,12 @@ TERMINAL_STATUSES = frozenset(
 )
 GRANT_REQUIRED_ACTIONS = frozenset({"vary", "regenerate", "generate"})
 _GENERATION_CLASS = "generation"
+# Spec 2026-09-23 §2: who issued a grant. `chat` is the `grant` command;
+# `autopilot` is a grant an autopilot project issued to itself inside
+# `enqueue` (see `studio/autopilot.py`).
+GRANT_ISSUERS = frozenset({"chat", "autopilot"})
+_AUTOPILOT_ISSUER = "autopilot"
+_AUTOPILOT_GRANT_TTL = timedelta(hours=1)
 _REDACTED = "[redacted]"
 _SECRET_FIELD = re.compile(
     r"(?:^|[_-])(token|password|passwd|secret|credential|cookie|authorization|"
@@ -268,11 +274,21 @@ def normalize_recovery_decision(decision) -> dict:
 class ActionLedger:
     """SQLite-backed source of truth for action authorization and lifecycle."""
 
-    def __init__(self, db_path, revision_resolver=None):
+    def __init__(self, db_path, revision_resolver=None, autopilot=None):
         if revision_resolver is not None and not callable(revision_resolver):
             raise TypeError("revision_resolver must be callable")
+        # Spec 2026-09-23 §2: optional `autopilot.StoreAutopilotPolicy`-shaped
+        # object (`is_autopilot(project_id)`, `record_grant(project_id,
+        # expected_revision, action_type, target_id)`). `None` keeps the
+        # original grant-only behavior for every project.
+        if autopilot is not None and not (
+            callable(getattr(autopilot, "is_autopilot", None))
+            and callable(getattr(autopilot, "record_grant", None))
+        ):
+            raise TypeError("autopilot must provide is_autopilot and record_grant")
         self.db_path = Path(db_path)
         self.revision_resolver = revision_resolver
+        self.autopilot = autopilot
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
@@ -301,7 +317,8 @@ class ActionLedger:
                     expires_epoch REAL NOT NULL,
                     issued_at TEXT NOT NULL,
                     reserved_action_id TEXT UNIQUE,
-                    reserved_at TEXT
+                    reserved_at TEXT,
+                    issued_by TEXT NOT NULL DEFAULT 'chat'
                 );
 
                 CREATE TABLE IF NOT EXISTS actions (
@@ -352,6 +369,16 @@ class ActionLedger:
                 END;
                 """
             )
+            # Spec 2026-09-23 §2: a ledger created before `issued_by`
+            # existed gains the column in place; its old rows were all
+            # issued by the `grant` command.
+            grant_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(grants)")
+            }
+            if "issued_by" not in grant_columns:
+                connection.execute(
+                    "ALTER TABLE grants ADD COLUMN issued_by TEXT NOT NULL DEFAULT 'chat'"
+                )
         finally:
             connection.close()
         try:
@@ -505,6 +532,7 @@ class ActionLedger:
 
             action_id = f"action-{uuid.uuid4().hex}"
             grant_id = None
+            grant_issuer = None
             status = "queued"
             if action_type in GRANT_REQUIRED_ACTIONS:
                 grant = connection.execute(
@@ -521,6 +549,9 @@ class ActionLedger:
                         action_type,
                     ),
                 ).fetchone()
+                if grant is None and self._autopilot_applies(project_id):
+                    grant = {"grant_id": self._issue_autopilot_grant(connection, project_id, action_type)}
+                    grant_issuer = _AUTOPILOT_ISSUER
                 if grant is None:
                     status = "needs_chat"
                 else:
@@ -553,18 +584,62 @@ class ActionLedger:
                     now,
                 ),
             )
-            self._event(
-                connection,
-                action_id,
-                None,
-                status,
-                {"grant_id": grant_id, "grant_reserved": grant_id is not None},
-            )
+            detail = {"grant_id": grant_id, "grant_reserved": grant_id is not None}
+            if grant_issuer is not None:
+                detail["issued_by"] = grant_issuer
+            self._event(connection, action_id, None, status, detail)
             # Resolve again after every planned mutation.  A canonical change
             # observed while this SQLite transaction is open rolls back the
             # action, event and any one-use grant reservation together.
             self._verify_revision(project_id, expected_revision)
+            if grant_issuer == _AUTOPILOT_ISSUER:
+                # The history fact is the last write: if the project store
+                # refuses it (revision moved, mode no longer autopilot), the
+                # raise rolls back the self-issued grant and the action.
+                self.autopilot.record_grant(project_id, expected_revision, action_type, target_id)
             return self._action(self._fetch_action(connection, action_id))
+
+    def _autopilot_applies(self, project_id) -> bool:
+        if self.autopilot is None:
+            return False
+        try:
+            return self.autopilot.is_autopilot(project_id) is True
+        except RevisionConflict:
+            raise
+        except Exception as error:
+            raise RevisionResolutionError("cannot resolve the project mode") from error
+
+    @staticmethod
+    def _issue_autopilot_grant(connection, project_id, action_type) -> str:
+        grant_id = f"grant-{uuid.uuid4().hex}"
+        expires_text, expires_epoch = _expiry(_utc_now() + _AUTOPILOT_GRANT_TTL)
+        connection.execute(
+            "INSERT INTO grants "
+            "(grant_id, project_id, action_class, expires_at, expires_epoch, issued_at, issued_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                grant_id,
+                project_id,
+                action_type,
+                expires_text,
+                expires_epoch,
+                _timestamp(),
+                _AUTOPILOT_ISSUER,
+            ),
+        )
+        return grant_id
+
+    def grant_issuer(self, grant_id) -> str | None:
+        """Who issued `grant_id` (`chat` or `autopilot`), or `None` if unknown."""
+
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT issued_by FROM grants WHERE grant_id = ?", (grant_id,)
+            ).fetchone()
+        finally:
+            connection.close()
+        return None if row is None else row["issued_by"]
 
     def claim_next(self, worker_id, action_types=None) -> dict | None:
         worker_id = _non_empty_string(worker_id, "worker_id")

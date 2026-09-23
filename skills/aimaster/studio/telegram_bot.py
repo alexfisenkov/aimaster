@@ -918,7 +918,10 @@ class TelegramBotController:
                     f"telegram-{update_id}",
                 ),
             )
-            if action["status"] == "queued":
+            issuer = getattr(self.ledger, "grant_issuer", None)
+            if action["status"] == "queued" and issuer and issuer(action["grant_id"]) == "autopilot":
+                text = "Платное действие поставлено в очередь: в автопилоте разрешение выдаётся само."
+            elif action["status"] == "queued":
                 text = "Платное действие поставлено в очередь по ранее выданному разрешению."
             else:
                 text = "Нужно разрешение в чате. После его выдачи отправьте новую команду."
