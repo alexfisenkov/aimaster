@@ -34,6 +34,7 @@ from pathlib import Path
 
 MIN_PYTHON = (3, 11)
 OFFICIAL_ORIGIN = "https://github.com/alexfisenkov/aimaster.git"
+OFFICIAL_BRANCH = "main"
 MARKER = ".aimaster-install.json"
 AGENT_DIRS = (
     ("claude", "Claude Code", (".claude", "skills")),
@@ -63,7 +64,13 @@ DEPS = (
         "windows": "winget install -e --id OpenJS.NodeJS.LTS",
         "macos": "brew install node", "linux": "sudo apt install nodejs"}),
 )
-WINGET_FLAGS = ["--accept-package-agreements", "--accept-source-agreements"]
+WINGET_FLAGS = ["--accept-package-agreements", "--accept-source-agreements",
+                "--disable-interactivity"]
+INSTALL_TIMEOUT = 900  # секунд на одну программу: winget/brew качают сотни мегабайт
+TIMEOUT_CODE = 124
+# cmd.exe толкует эти знаки даже внутри кавычек (% и !) или вне их; путь с ними
+# в команду mklink не передаём.
+CMD_UNSAFE = set('&^%!|<>"')
 
 
 def _is_windows():
@@ -92,14 +99,56 @@ def ensure_utf8_output():
 
 
 def _run(argv, cwd=None, timeout=None):
-    """Запуск без оболочки; вывод как байты, декодируем сами (UTF-8 с заменой)."""
+    """Запуск без оболочки; вывод как байты, декодируем сами (UTF-8 с заменой).
+
+    Код TIMEOUT_CODE — программа не уложилась в timeout и остановлена."""
     try:
         proc = subprocess.run(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               stdin=subprocess.DEVNULL, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return TIMEOUT_CODE, "", "не завершилась за %s с" % timeout
     except (OSError, subprocess.SubprocessError) as error:
         return 127, "", str(error)
     decode = lambda raw: (raw or b"").decode("utf-8", errors="replace")  # noqa: E731
     return proc.returncode, decode(proc.stdout), decode(proc.stderr)
+
+
+# ---------- поиск программ ----------
+
+def _search_dirs():
+    """Каталоги PATH, только абсолютные: пустой или относительный элемент PATH
+    означал бы текущую папку, а в ней может лежать чужой git.exe."""
+    dirs = []
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        entry = entry.strip().strip('"')
+        if entry and os.path.isabs(entry) and entry not in dirs:
+            dirs.append(entry)
+    return dirs
+
+
+def _find_program(name):
+    """Полный путь к программе или None. Голое имя в subprocess на Windows
+    сначала ищется в текущей папке (CreateProcess), поэтому запускаем только
+    по полному пути; shutil.which на Windows тоже подставляет текущую папку."""
+    dirs = _search_dirs()
+    if not _is_windows():
+        return shutil.which(name, path=os.pathsep.join(dirs)) if dirs else None
+    # .bat/.cmd запускаются через cmd.exe — берём только настоящие программы
+    suffixes = ("",) if os.path.splitext(name)[1] else (".exe", ".com")
+    for folder in dirs:
+        for suffix in suffixes:
+            candidate = os.path.join(folder, name + suffix)
+            # лишний lexists: псевдонимы из WindowsApps (winget) — точки повторной обработки
+            if (os.path.isfile(candidate) or os.path.lexists(candidate)) \
+                    and not os.path.isdir(candidate):
+                return candidate
+    return None
+
+
+def _system_program(name):
+    """Программа из System32 (cmd.exe) — не из PATH и не из текущей папки."""
+    root = os.environ.get("SystemRoot") or os.environ.get("windir") or "C:\\Windows"
+    return os.path.join(root, "System32", name)
 
 
 # ---------- Python ----------
@@ -123,9 +172,10 @@ def python_cmd():
     else:
         candidates = [["python3"], ["python"]]
     for argv in candidates:
-        if shutil.which(argv[0]) is None:
+        found = _find_program(argv[0])
+        if found is None:
             continue
-        version = _probe_python(argv)
+        version = _probe_python([found] + argv[1:])
         if version is not None and version >= MIN_PYTHON:
             return " ".join(argv)
     exe = sys.executable
@@ -182,8 +232,33 @@ def _make_symlink(source, target):
     os.symlink(str(source), str(target), target_is_directory=True)
 
 
+def _winapi_module():
+    try:
+        import _winapi
+    except ImportError:
+        return None
+    return _winapi if hasattr(_winapi, "CreateJunction") else None
+
+
+def _mklink_command(source, target):
+    """Строка для cmd.exe или OSError, если путь cmd испортит."""
+    for path in (str(source), str(target)):
+        bad = sorted(set(path) & CMD_UNSAFE)
+        if bad:
+            raise OSError("в пути есть знаки %s, которые cmd.exe толкует как команды; "
+                          "junction через cmd не создаю: %s" % (" ".join(bad), path))
+    return '"%s" /d /c mklink /J "%s" "%s"' % (_system_program("cmd.exe"), target, source)
+
+
 def _make_junction(source, target):
-    code, out, err = _run(["cmd", "/c", "mklink", "/J", str(target), str(source)], timeout=60)
+    """Junction без оболочки (_winapi.CreateJunction), иначе cmd — только для
+    путей без спецзнаков cmd (& ^ % ! | < >)."""
+    winapi = _winapi_module()
+    if winapi is not None:
+        winapi.CreateJunction(str(source), str(target))
+        return
+    command = _mklink_command(source, target)
+    code, out, err = _run(command, timeout=60)
     if code != 0:
         raise OSError((err or out).strip() or "mklink /J завершился с кодом %s" % code)
 
@@ -198,7 +273,9 @@ def _make_copy(source, target, version):
 
 
 def connect(source, target, version):
-    """Подключает навык; возвращает (метод, заметки о неудачных способах)."""
+    """Подключает навык на пустое место; возвращает (метод, заметки о неудачных
+    способах). Всё, что неудачная попытка успела создать, убирается перед
+    следующей; если не удалась и копия — OSError, на месте ничего не остаётся."""
     attempts = []
     makers = [("symlink", _make_symlink)]
     if _is_windows():
@@ -208,13 +285,34 @@ def connect(source, target, version):
             make(source, target)
         except (OSError, NotImplementedError) as error:
             attempts.append("%s: %s" % (method, error))
+            _discard_partial(target)
             continue
         if _norm(target) == _norm(source):
             return method, attempts
         attempts.append("%s: ссылка создана, но ведёт не туда" % method)
-        _remove_link(target)
-    _make_copy(source, target, version)
+        _discard_partial(target)
+    try:
+        _make_copy(source, target, version)
+    except (OSError, shutil.Error) as error:
+        _discard_partial(target)
+        attempts.append("copy: %s" % _short_error(error))
+        raise OSError("; ".join(attempts))
     return "copy", attempts
+
+
+def _short_error(error):
+    text = str(error)
+    return text if len(text) <= 400 else text[:400] + "…"
+
+
+def _discard_partial(target):
+    """Убирает недоделанную ссылку или копию, созданную этим запуском."""
+    if _is_link_like(target) or os.path.islink(str(target)):
+        _remove_link(target)
+    elif os.path.isdir(str(target)):
+        shutil.rmtree(str(target))
+    elif os.path.lexists(str(target)):
+        os.unlink(str(target))
 
 
 def _remove_link(target):
@@ -222,6 +320,63 @@ def _remove_link(target):
         os.unlink(str(target))
     except OSError:
         os.rmdir(str(target))  # junction и dir-symlink на Windows
+
+
+def _inside(path, folder):
+    path, folder = _norm(path), _norm(folder)
+    return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
+
+
+def _leave(folder):
+    """Если текущая папка процесса внутри folder — выйти из неё: Windows не даёт
+    переименовать или удалить папку, в которой стоит чей-то cwd."""
+    try:
+        cwd = os.getcwd()
+    except OSError:
+        cwd = None
+    if cwd is None or _inside(cwd, folder):
+        os.chdir(str(Path(folder).parent))
+
+
+def replace_installed(source, target, version):
+    """Меняет свою старую ссылку или копию на новую без окна «навыка нет».
+
+    Новое собирается рядом во временной папке (…/new), старое переименовывается
+    туда же (…/old), новое встаёт на место, старое удаляется последним. Если
+    замена сорвалась — старое возвращается на место. Возвращает (метод,
+    заметки, путь к недоудалённому старому или None)."""
+    target = Path(target)
+    _leave(target)
+    work = Path(tempfile.mkdtemp(prefix=".aimaster-update-", dir=str(target.parent)))
+    fresh, old = work / "new", work / "old"
+    try:
+        method, attempts = connect(source, fresh, version)
+        os.rename(str(target), str(old))  # ссылка переименовывается сама, не её цель
+        try:
+            os.rename(str(fresh), str(target))
+        except OSError:
+            if not os.path.lexists(str(target)):
+                os.rename(str(old), str(target))
+            raise
+    finally:
+        leftover = _cleanup_work(work)
+    return method, attempts, leftover
+
+
+def _cleanup_work(work):
+    """Удаляет временную папку замены; путь, если удалить не вышло."""
+    for child in ("new", "old"):
+        path = work / child
+        if os.path.lexists(str(path)):
+            try:
+                _discard_partial(path)
+            except OSError:
+                pass
+    try:
+        os.rmdir(str(work))
+    except OSError:
+        return str(work) if os.path.lexists(str(work)) else None
+    return None
 
 
 def install_target(agent, label, target, source, version, force, update):
@@ -247,12 +402,21 @@ def install_target(agent, label, target, source, version, force, update):
             "стоит копия; обновить её: повторите с --update"))
         return item
     replaced = state in ("old_link", "ours_copy")
-    if state == "old_link":
-        _remove_link(target)
-    elif state == "ours_copy":
-        shutil.rmtree(str(target))
-    Path(target).parent.mkdir(parents=True, exist_ok=True)
-    method, attempts = connect(source, target, version)
+    try:
+        Path(target).parent.mkdir(parents=True, exist_ok=True)
+        leftover = None
+        if replaced:
+            method, attempts, leftover = replace_installed(source, target, version)
+        else:
+            method, attempts = connect(source, target, version)
+    except (OSError, shutil.Error) as error:
+        message = "подключить не удалось: %s." % _short_error(error)
+        if replaced:
+            message += (" Прежняя версия оставлена на месте. Если папка навыка открыта в "
+                        "другом окне или терминале (на Windows это мешает замене), закройте "
+                        "его и повторите из другой папки")
+        item.update(status="failed", message=message)
+        return item
     item["method"] = method
     item["status"] = "refreshed" if replaced else "linked"
     if method == "copy":
@@ -262,40 +426,64 @@ def install_target(agent, label, target, source, version, force, update):
             item["message"] += " (" + "; ".join(attempts) + ")"
     else:
         item["message"] = "подключено (%s)" % method
+    if leftover:
+        item["message"] += ("; старую версию удалить не удалось — удалите папку %s сами"
+                            % leftover)
     return item
 
 
 # ---------- обновление клона ----------
 
+def normalize_origin(url):
+    """https://github.com/a/b(.git)(/), git@github.com:a/b(.git), ssh://git@github.com/a/b
+    → «github.com/a/b» в нижнем регистре (GitHub к регистру не чувствителен)."""
+    url = (url or "").strip()
+    lowered = url.lower()
+    for prefix in ("https://", "http://", "ssh://", "git://"):
+        if lowered.startswith(prefix):
+            url = url[len(prefix):]
+            break
+    else:
+        if "@" in url.split("/", 1)[0] and ":" in url:
+            url = url.replace(":", "/", 1)  # scp-вид: git@github.com:a/b
+    url = url.split("@", 1)[-1] if "@" in url.split("/", 1)[0] else url
+    url = url.rstrip("/")
+    if url.lower().endswith(".git"):
+        url = url[:-4]
+    return url.lower()
+
+
 def git_update(repo):
-    if shutil.which("git") is None:
+    git = _find_program("git")
+    if git is None:
         return {"status": "skipped", "message": "git не найден; обновите папку вручную"}
-    code, out, _ = _run(["git", "-C", str(repo), "rev-parse", "--is-inside-work-tree"])
+    code, out, _ = _run([git, "-C", str(repo), "rev-parse", "--is-inside-work-tree"])
     if code != 0 or out.strip() != "true":
         return {"status": "skipped", "message": "папка не git-клон (например, из zip); "
                 "скачайте новый архив и запустите install.py --update из него"}
-    _, origin, _ = _run(["git", "-C", str(repo), "remote", "get-url", "origin"])
-    _, branch, _ = _run(["git", "-C", str(repo), "symbolic-ref", "--short", "HEAD"])
-    _, dirty, _ = _run(["git", "-C", str(repo), "status", "--porcelain"])
-    if origin.strip() != OFFICIAL_ORIGIN or branch.strip() != "main":
+    _, origin, _ = _run([git, "-C", str(repo), "remote", "get-url", "origin"])
+    _, branch, _ = _run([git, "-C", str(repo), "symbolic-ref", "--short", "HEAD"])
+    _, dirty, _ = _run([git, "-C", str(repo), "status", "--porcelain"])
+    if normalize_origin(origin) != normalize_origin(OFFICIAL_ORIGIN) \
+            or branch.strip() != OFFICIAL_BRANCH:
         return {"status": "blocked", "message": "клон не официальный или не на ветке main; "
                 "ничего не сделано"}
     if dirty.strip():
         return {"status": "blocked", "message": "в клоне есть локальные изменения; ничего "
                 "не сброшено. Перенесите свои файлы из клона и повторите"}
-    for argv in (["pull", "--ff-only"], ["fetch", "--tags"]):
-        code, out, err = _run(["git", "-C", str(repo)] + argv, timeout=300)
+    for argv in (["pull", "--ff-only", "origin", OFFICIAL_BRANCH], ["fetch", "--tags", "origin"]):
+        code, out, err = _run([git, "-C", str(repo)] + argv, timeout=300)
         if code != 0:
             return {"status": "failed", "message": "git %s: %s" % (" ".join(argv),
                                                                    (err or out).strip())}
-    _, tag, _ = _run(["git", "-C", str(repo), "describe", "--tags", "--exact-match", "HEAD"])
+    _, tag, _ = _run([git, "-C", str(repo), "describe", "--tags", "--exact-match", "HEAD"])
     return {"status": "updated", "message": "клон обновлён", "tag": tag.strip() or None}
 
 
 # ---------- зависимости ----------
 
 def _which(name):
-    found = shutil.which(name)
+    found = _find_program(name)
     if found or not _is_windows():
         return found
     links = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Links"
@@ -304,15 +492,35 @@ def _which(name):
 
 
 def _install_argv(kind, group, command):
+    """argv с полным путём к winget/brew или (None, причина)."""
     if kind == "windows":
-        if shutil.which("winget") is None:
+        winget = _find_program("winget")
+        if winget is None:
             return None, "winget не найден (установите «Установщик приложений» из Microsoft Store)"
-        return command.split() + WINGET_FLAGS, None
+        return [winget] + command.split()[1:] + WINGET_FLAGS, None
     if kind == "macos":
-        if shutil.which("brew") is None:
+        brew = _find_program("brew")
+        if brew is None:
             return None, "Homebrew не найден: https://brew.sh/"
-        return command.split(), None
+        return [brew] + command.split()[1:], None
     return None, "на Linux ставьте сами командой выше (нужен sudo)"
+
+
+def _run_installer(kind, argv, command):
+    """(ok, статус, сообщение); статус installed | timeout | failed."""
+    code, out, err = _run(argv, timeout=INSTALL_TIMEOUT)
+    if code == 0:
+        return True, "installed", ""
+    if code == TIMEOUT_CODE:
+        why = ("установщик не завершился за %d мин и остановлен — возможно, ждал "
+               "подтверждения. Поставьте вручную в обычном терминале: %s"
+               % (INSTALL_TIMEOUT // 60, command))
+        return False, "timeout", why
+    why = "%s (код %s)" % ((err or out).strip()[-400:] or "установщик завершился с ошибкой", code)
+    if kind == "windows":
+        why += ("; если Windows спрашивала разрешение администратора (UAC) и оно не дано — "
+                "поставьте вручную: %s" % command)
+    return False, "failed", why
 
 
 def check_deps(kind, install):
@@ -320,17 +528,18 @@ def check_deps(kind, install):
     for name, purpose, group, commands in DEPS:
         path = _which(name)
         item = {"name": name, "purpose": purpose, "found": bool(path), "path": path,
-                "install_cmd": commands[kind], "installed": None, "message": ""}
+                "install_cmd": commands[kind], "installed": None, "install_status": None,
+                "message": ""}
         if not path and install and group is not None:
             if group not in done:
                 argv, why = _install_argv(kind, group, commands[kind])
                 if argv is None:
-                    done[group] = (False, why)
+                    done[group] = (False, "unavailable", why)
                 else:
-                    code, out, err = _run(argv)
-                    done[group] = (code == 0, "" if code == 0 else (err or out).strip()[-400:])
-            ok, why = done[group]
+                    done[group] = _run_installer(kind, argv, commands[kind])
+            ok, status, why = done[group]
             item["installed"] = ok
+            item["install_status"] = status
             item["path"] = _which(name)
             item["found"] = bool(item["path"])
             if ok and not item["found"]:
@@ -376,7 +585,7 @@ def self_check(skill_dir):
 # ---------- вывод ----------
 
 STATUS_WORDS = {"linked": "подключено", "already": "уже на месте", "refreshed": "обновлено",
-                "conflict": "НЕ подключено"}
+                "conflict": "НЕ подключено", "failed": "ОШИБКА, не подключено"}
 
 
 def render_text(report):
@@ -481,7 +690,9 @@ def main(argv=None):
         report["update"] = git_update(repo)
     version_file = source / "VERSION"
     report["version"] = version_file.read_text(encoding="utf-8").strip() if version_file.is_file() else "?"
-    home = Path(args.home) if args.home else Path.home()
+    # абсолютный путь: при замене копии процесс может сменить текущую папку
+    # (abspath, не resolve: путь в отчёте остаётся тем, что дал пользователь)
+    home = Path(os.path.abspath(str(Path(args.home).expanduser() if args.home else Path.home())))
     report["targets"] = [
         install_target(agent, label, home.joinpath(*parts) / "aimaster", source,
                        report["version"], args.force, args.update)
@@ -489,7 +700,7 @@ def main(argv=None):
     report["deps"] = check_deps(kind, args.install_deps)
     report["self_check"] = None if args.skip_self_check else self_check(source)
     report["python_cmd"] = python_cmd()
-    failed = [t for t in report["targets"] if t["status"] == "conflict"]
+    failed = [t for t in report["targets"] if t["status"] in ("conflict", "failed")]
     failed += [c for c in (report["self_check"] or []) if not c["ok"]]
     if report.get("update", {}).get("status") in ("blocked", "failed"):
         failed.append(report["update"])

@@ -51,10 +51,15 @@ Use the repository README's safe update procedure: resolve the actual install
 clone from the invoked skill; verify the official origin, `main` branch and
 clean worktree; use a fast-forward update; preserve local modifications,
 personal preferences, guides and projects. On every OS the bundled installer
-does exactly this: `python3 scripts/install.py --update --json` (Windows:
-`py -3 scripts/install.py --update --json`); read `update.status` and
-`update.tag`. It also refreshes installed copies (Windows fallback without
-links). Do not reset/stash/overwrite to
+does exactly this: `python3 "<skill dir>/scripts/install.py" --update --json`
+(Windows: `py -3 "<skill dir>\scripts\install.py" --update --json`), where
+`<skill dir>` is the absolute path of the invoked skill. Start it from a
+folder outside the skill (for example the home folder: `cd ~` first), never
+with the working directory inside the installed skill: on Windows an open
+shell there blocks replacing an installed copy, and the installer then reports
+that target as `status: failed` and keeps the old copy. Read `update.status`,
+`update.tag` and every `targets[].status`. It also refreshes installed copies
+(Windows fallback without links). Do not reset/stash/overwrite to
 force an update. A copied standalone skill without a verified clone needs the
 documented installation route; do not guess its repository or replace it blindly.
 
