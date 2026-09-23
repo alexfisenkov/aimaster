@@ -139,8 +139,11 @@ body[data-ui="v2"][data-rail="collapsed"] .app-shell {
 body[data-ui="v2"] .project-rail {
   grid-area: rail;
   position: sticky;
-  top: 0;
+  /* `inset` сбрасывает fixed-раскладку v1 и обязан стоять до `top`,
+     иначе он сам обнуляет `top` и панель перестаёт прилипать. */
   inset: auto;
+  top: 0;
+  align-self: start;
   width: auto;
   height: 100vh;
   z-index: 30;
