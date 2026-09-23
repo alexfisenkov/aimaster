@@ -66,6 +66,7 @@ export function metaLine(project) {
     MODE_WORDS[project?.gen_mode] || "",
     Number.isFinite(endMs) ? `${Math.round(endMs / 1000)} с` : "",
     scenes.length ? scenesWord(scenes.length) : "",
+    project?.mode === "autopilot" ? "автопилот: тратит кредиты без подтверждения" : "",
   ].filter(Boolean).join(" · ");
 }
 
@@ -91,8 +92,11 @@ function agentButton(project, revision) {
   agent.append(icon, el("span", "v2-agent-word", "Агент"));
   agent.addEventListener("click", () => requestAgentPrompt({
     title: "Продолжить проект в чате",
-    prompt: `Открой ${projectRef(project, revision)}. Покажи, на каком шаге проект и что осталось решить, `
-      + `и предложи ближайший допустимый шаг. Ничего не генерируй и не меняй без моего подтверждения.`,
+    prompt: project?.mode === "autopilot"
+      ? `Открой ${projectRef(project, revision)}. Проект в автопилоте: продолжай по references/autopilot.md `
+        + `без вопросов до готового ролика и в конце пришли отчёт.`
+      : `Открой ${projectRef(project, revision)}. Покажи, на каком шаге проект и что осталось решить, `
+        + `и предложи ближайший допустимый шаг. Ничего не генерируй и не меняй без моего подтверждения.`,
   }, agent));
   return agent;
 }

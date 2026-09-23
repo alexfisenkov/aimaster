@@ -65,6 +65,10 @@ export const HISTORY_KIND_TEXT = Object.freeze({
   "scenes-ready": () => "Раскадровка готова",
   "assembly-ready": () => "Финал собран",
   "frame-plan-set": () => "План кадров изменён",
+  "autopilot-grant": (entry) => {
+    const action = { generate: "генерация", vary: "вариант", regenerate: "перегенерация" }[entry?.params?.action];
+    return action ? `Автопилот: ${action} без подтверждения` : "Автопилот: списание без подтверждения";
+  },
   "gen-mode-set": () => "Способ генерации изменён",
   "video-mode-set": () => "Способ оживления изменён",
   "continuity-set": () => "Связь с предыдущей сценой выбрана",
