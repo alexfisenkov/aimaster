@@ -87,8 +87,8 @@ def current_user_sid() -> str:
         kernel32.CloseHandle(token)
 
 
-def _allowed_sids(path: Path) -> list[str] | None:
-    """SIDs of allow entries that apply to ``path`` itself; None = no DACL."""
+def _aces(path: Path):
+    """``(type, flags, sid)`` for every entry of the DACL; None = no DACL."""
 
     advapi32, kernel32, _ = _libraries()
     dacl = ctypes.c_void_p()
@@ -103,22 +103,35 @@ def _allowed_sids(path: Path) -> list[str] | None:
         if not dacl.value:
             return None  # a NULL DACL grants everyone everything
         count = ctypes.cast(dacl, ctypes.POINTER(ctypes.c_ushort))[2]  # ACL.AceCount
-        sids = []
+        entries = []
         for index in range(count):
             ace = ctypes.c_void_p()
             if not advapi32.GetAce(dacl, index, ctypes.byref(ace)):
                 raise ctypes.WinError(ctypes.get_last_error())
             header = ctypes.cast(ace, ctypes.POINTER(ctypes.c_ubyte))
             ace_type, ace_flags = header[0], header[1]
-            if ace_flags & _INHERIT_ONLY_ACE or ace_type == _ACCESS_DENIED_ACE_TYPE:
-                continue
-            if ace_type != _ACCESS_ALLOWED_ACE_TYPE:
-                sids.append("unsupported-ace")  # object/callback ACEs: fail closed
-                continue
-            sids.append(_sid_string(ace.value + 8))  # header(4) + mask(4)
-        return sids
+            if ace_type in (_ACCESS_ALLOWED_ACE_TYPE, _ACCESS_DENIED_ACE_TYPE):
+                sid = _sid_string(ace.value + 8)  # header(4) + mask(4)
+            else:
+                sid = None  # object/callback ACEs: the caller fails closed
+            entries.append((ace_type, ace_flags, sid))
+        return entries
     finally:
         kernel32.LocalFree(descriptor)
+
+
+def _allowed_sids(path: Path) -> list[str] | None:
+    """SIDs of allow entries that apply to ``path`` itself; None = no DACL."""
+
+    entries = _aces(path)
+    if entries is None:
+        return None
+    sids = []
+    for ace_type, ace_flags, sid in entries:
+        if ace_flags & _INHERIT_ONLY_ACE or ace_type == _ACCESS_DENIED_ACE_TYPE:
+            continue
+        sids.append(sid if sid is not None else "unsupported-ace")
+    return sids
 
 
 def is_private(path: Path) -> bool:
@@ -129,14 +142,10 @@ def is_private(path: Path) -> bool:
     return all(sid in allowed for sid in sids)
 
 
-def make_private(path: Path, *, directory: bool = False) -> None:
-    rights = "(OI)(CI)(F)" if directory else "(F)"
+def _icacls(path: Path, *arguments: str) -> None:
     # The system copy, not whatever `icacls` comes first on PATH.
     system_copy = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "icacls.exe")
-    command = [
-        system_copy if os.path.isfile(system_copy) else "icacls", str(path), "/inheritance:r",
-        "/grant:r", f"*{current_user_sid()}:{rights}",
-    ]
+    command = [system_copy if os.path.isfile(system_copy) else "icacls", str(path), *arguments]
     try:
         result = subprocess.run(
             command, capture_output=True, encoding="utf-8", errors="replace",
@@ -146,6 +155,24 @@ def make_private(path: Path, *, directory: bool = False) -> None:
         raise OSError(f"icacls could not restrict access to {path.name}") from error
     if result.returncode != 0:
         raise OSError(f"icacls could not restrict access to {path.name} (exit {result.returncode})")
+
+
+def make_private(path: Path, *, directory: bool = False) -> None:
+    rights = "(OI)(CI)(F)" if directory else "(F)"
+    user = current_user_sid()
+    # Drop inherited entries and replace the user's own grant ...
+    _icacls(path, "/inheritance:r", "/grant:r", f"*{user}:{rights}")
+    # ... then every explicit grant to anyone else (an "Everyone: read"
+    # added earlier survives `/grant:r`, which only rewrites the named SID).
+    # Inherit-only grants count too: on a directory they would reach the
+    # files created inside it later.
+    entries = _aces(path) or []
+    foreign = sorted({
+        sid for ace_type, _, sid in entries
+        if ace_type == _ACCESS_ALLOWED_ACE_TYPE and sid and sid != user and sid not in _TRUSTED_SIDS
+    })
+    if foreign:
+        _icacls(path, "/remove:g", *(f"*{sid}" for sid in foreign))
 
 
 def _blob(data: bytes):

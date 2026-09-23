@@ -205,12 +205,22 @@ class TlsTrustTests(unittest.TestCase):
     """A python.org Python has an empty trust store; the client must still verify."""
 
     def _empty_store(self):
+        """``create_default_context`` as on a python.org build: nothing trusted.
+
+        Patching ``cert_store_stats`` alone is not enough: on Windows the real
+        ``create_default_context`` itself feeds the system store through
+        ``load_verify_locations(cadata=...)``, which the tests below count.
+        A bare client context is what an empty trust store really is.
+        """
         import ssl
         from unittest import mock
 
-        return mock.patch.object(
-            ssl.SSLContext, "cert_store_stats", return_value={"x509_ca": 0, "x509": 0, "crl": 0}
-        )
+        def bare_context():
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            self.assertEqual(context.cert_store_stats()["x509_ca"], 0)
+            return context
+
+        return mock.patch("creator_studio_bot.ssl.create_default_context", side_effect=bare_context)
 
     def test_certifi_bundle_is_loaded_when_the_default_store_is_empty(self):
         import ssl
@@ -222,6 +232,7 @@ class TlsTrustTests(unittest.TestCase):
             context = build_ssl_context(certifi_path="/bundle/cacert.pem", system_roots=lambda: "")
         load.assert_called_once_with(cafile="/bundle/cacert.pem")
         self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
 
     def test_system_roots_are_the_fallback_without_certifi(self):
         import ssl
@@ -232,6 +243,18 @@ class TlsTrustTests(unittest.TestCase):
         ) as load:
             build_ssl_context(certifi_path="", system_roots=lambda: "-----BEGIN CERTIFICATE-----\n")
         load.assert_called_once_with(cadata="-----BEGIN CERTIFICATE-----\n")
+
+    def test_populated_default_store_is_used_as_is(self):
+        import ssl
+        from unittest import mock
+
+        with mock.patch.object(ssl.SSLContext, "cert_store_stats", return_value={"x509_ca": 5}):
+            reference = ssl.create_default_context()
+            with mock.patch("creator_studio_bot.ssl.create_default_context", return_value=reference), \
+                    mock.patch.object(ssl.SSLContext, "load_verify_locations") as load:
+                context = build_ssl_context(certifi_path="/bundle/cacert.pem", system_roots=lambda: "x")
+        self.assertIs(context, reference)
+        load.assert_not_called()
 
     def test_verification_is_never_disabled(self):
         import ssl
@@ -470,6 +493,9 @@ class TelegramTransportEndToEndTests(unittest.TestCase):
             "LANG": "en_US.UTF-8",
             "PYTHONIOENCODING": "utf-8",
             "PYTHONPATH": str(_SKILL_ROOT),
+            # A stuck transport prints every thread's stack on SIGABRT
+            # (see `_stack_dump`), so a timeout names where it hung.
+            "PYTHONFAULTHANDLER": "1",
         }
         api = getattr(cls, "api", None)
         if api is not None:
@@ -540,9 +566,30 @@ class TelegramTransportEndToEndTests(unittest.TestCase):
         raise AssertionError(
             f"timed out waiting for {description}\n"
             + "\n".join(cls.output)
+            + cls._stack_dump()
             + "\nsent: "
             + json.dumps(cls.api.sent_texts(), ensure_ascii=False)
         )
+
+    @classmethod
+    def _stack_dump(cls):
+        """Where the transport is stuck, from its own faulthandler (POSIX).
+
+        The process is aborted to get the dump, so the remaining scenario
+        steps fail too -- a timeout already means the run is broken.
+        """
+        if os.name == "nt" or cls.process.poll() is not None:
+            return ""
+        import signal
+
+        seen = len(cls.output)
+        os.kill(cls.process.pid, signal.SIGABRT)
+        try:
+            cls.process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            return "\n(transport did not react to SIGABRT)"
+        cls._reader.join(timeout=5)
+        return "\ntransport stacks:\n" + "\n".join(cls.output[seen:])
 
     @classmethod
     def _wait_for_text(cls, fragment, description):
