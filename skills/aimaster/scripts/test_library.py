@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -242,6 +243,66 @@ class LibraryImportMatchTests(Base):
         with self.assertRaises(ValueError):
             cli("reference", "add", self.ws, "three", "--from-library", voice["library_id"],
                 "--expected-revision", self.rev("three"))
+
+
+class GeneratedReferenceImportTests(Base):
+    """Сгенерированный референс даёт выбранный результат, иначе принятый."""
+
+    def setUp(self):
+        super().setUp()
+        self.project_at_references("gen")
+        self.assets = {}
+        for name, red in (("cafe-v1", 40), ("cafe-v2", 41), ("pen-v1", 50), ("pen-v2", 51),
+                          ("wall-v1", 60), ("hidden-v1", 70)):
+            (self.ws / "media" / f"{name}.png").write_bytes(png_bytes(red))
+            self.assets[name] = cli("asset", "register", self.ws, "--path", f"media/{name}.png",
+                                    "--role", "result")["asset_id"]
+        refs = {}
+        for label, kind in (("Кафе — паб", "location"), ("Ручка — сувенир", "product"),
+                            ("Стена", "style"), ("Скрытое", "other"), ("Пустое", "location")):
+            refs[label] = cli("reference", "add", self.ws, "gen", "--kind", kind, "--name", label,
+                              "--source", "generate",
+                              "--expected-revision", self.rev("gen"))["reference_id"]
+        self.refs = refs
+        a = self.assets
+
+        def version(ref, n, asset, **extra):
+            return {"result_id": f"result:ref:{ref}", "version_id": f"result:ref:{ref}-v{n}",
+                    "asset_id": asset, "status": "ready", **extra}
+
+        cafe, pen, wall, hidden = (refs[k] for k in ("Кафе — паб", "Ручка — сувенир", "Стена", "Скрытое"))
+
+        def mutate(state):
+            state.setdefault("image_results", []).extend([
+                version(cafe, 1, a["cafe-v1"], decision="approved"),
+                version(cafe, 2, a["cafe-v2"]),
+                version(pen, 1, a["pen-v1"], decision="approved"),
+                version(pen, 2, a["pen-v2"], decision="rejected"),
+                version(wall, 1, a["wall-v1"], decision="rejected"),
+                version(hidden, 1, a["hidden-v1"], decision="approved", hidden=True),
+            ])
+            for reference in state["references"]:
+                if reference["reference_id"] == cafe:
+                    reference.setdefault("links", {})["image_result_id"] = f"result:ref:{cafe}-v2"
+                if reference["reference_id"] == pen:
+                    reference.setdefault("links", {})["image_result_id"] = f"result:ref:{pen}-v2"
+
+        self.store.transact("gen", self.rev("gen"), mutate)
+
+    def test_selected_then_approved_and_skips(self):
+        result = cli("library", "import", self.ws, "--from-projects")
+        self.assertEqual(len(result["created"]), 2)
+        reasons = {item["reference_id"]: item["reason"] for item in result["skipped"]}
+        for label in ("Стена", "Скрытое", "Пустое"):
+            self.assertEqual(reasons[self.refs[label]], "no_selected_result", label)
+        entries = {e["label"]: e for e in cli("library", "list", self.ws)["entries"]}
+        self.assertEqual(entries["Кафе"]["kind"], "location")
+        self.assertEqual(entries["Ручка"]["kind"], "product")
+        cafe_v2 = (self.ws / "media" / "cafe-v2.png").read_bytes()
+        pen_v1 = (self.ws / "media" / "pen-v1.png").read_bytes()
+        self.assertEqual(entries["Кафе"]["files"][0]["sha256"], hashlib.sha256(cafe_v2).hexdigest())
+        self.assertEqual(entries["Ручка"]["files"][0]["sha256"], hashlib.sha256(pen_v1).hexdigest())
+        self.assertEqual(cli("library", "import", self.ws, "--from-projects")["created"], [])
 
 
 if __name__ == "__main__":

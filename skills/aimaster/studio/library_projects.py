@@ -2,7 +2,9 @@
 
 Spec 2026-09-23 §3. Import walks every project's references that carry a
 registered file, skipping scene-local ones (`local`, or bound to one
-`scene_id`), and adds each file once (sha256). Labels are shortened to
+`scene_id`), and adds each file once (sha256). A generated reference
+(`source=generate`) contributes its selected result version, else its
+approved one (`generated_asset_id`). Labels are shortened to
 their name part («Артём — второй персонаж» → «Артём»); the most frequent
 name becomes the entry label, the others its aliases. A character's
 attached voice file becomes its own `kind=voice` entry with `voice_of`.
@@ -39,22 +41,56 @@ def _candidate_name(reference) -> str | None:
     return None if not name or name.startswith(_TAG_LIKE) else name
 
 
+def _usable(result) -> bool:
+    return (isinstance(result, dict) and result.get("asset_id")
+            and result.get("decision") != "rejected"
+            and result.get("hidden") is not True and result.get("retired") is not True)
+
+
+def generated_asset_id(state, reference) -> tuple[str | None, str | None]:
+    """File of a generated reference: the selected result version the
+    reference links to, else its latest `decision: approved` version.
+    Rejected, hidden and retired versions never count.
+    Returns `(asset_id, None)` or `(None, "no_selected_result")`.
+    """
+
+    results = [r for r in state.get("image_results", []) or [] if isinstance(r, dict)]
+    links = reference.get("links") if isinstance(reference.get("links"), dict) else {}
+    selected = links.get("image_result_id")
+    for result in results:
+        if selected and result.get("version_id") == selected and _usable(result):
+            return result["asset_id"], None
+    own = f"result:ref:{reference.get('reference_id')}"
+    approved = [r for r in results if r.get("result_id") == own
+                and r.get("decision") == "approved" and _usable(r)]
+    if approved:
+        return approved[-1]["asset_id"], None
+    return None, "no_selected_result"
+
+
 def _collect(workspace):
     store, assets = open_store(workspace), open_assets(workspace)
     found, skipped = {}, []
     for summary in store.list_projects():
         project_id = summary["id"]
-        for reference in store.load(project_id).get("references", []) or []:
+        state = store.load(project_id)
+        for reference in state.get("references", []) or []:
             ref_id = reference.get("reference_id")
             where = {"project_id": project_id, "reference_id": ref_id}
             if reference.get("local", "scene_id" in reference):
                 skipped.append({**where, "reason": "local"})
                 continue
             kind = _ROLE_TO_KIND.get(reference.get("role"))
-            if kind is None or "asset_id" not in reference:
+            asset_id = reference.get("asset_id")
+            if kind is not None and asset_id is None and reference.get("source") == "generate":
+                asset_id, reason = generated_asset_id(state, reference)
+                if asset_id is None:
+                    skipped.append({**where, "reason": reason})
+                    continue
+            if kind is None or asset_id is None:
                 skipped.append({**where, "reason": "no_file"})
                 continue
-            jobs = [(kind, reference["asset_id"])]
+            jobs = [(kind, asset_id)]
             voice = reference.get("voice") or {}
             if kind == "character" and isinstance(voice, dict) and voice.get("asset_id"):
                 jobs.append(("voice", voice["asset_id"]))
