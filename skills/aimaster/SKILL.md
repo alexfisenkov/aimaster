@@ -12,7 +12,9 @@ description: Use when turning a text or voice video idea into a script, storyboa
 удалось, не сообщай о проверке и продолжай обычную работу. Если новая версия
 найдена, сначала предложи обновиться. После успешного обновления попроси
 полностью перезапустить приложение и написать здесь «Продолжай»; до этого
-останови работу над проектом.
+останови работу над проектом. Исключение: если продолжается проект в режиме
+`autopilot` после одобрения брифа, не спрашивай — упомяни новую версию только
+в финальном отчёте.
 
 ## Установка с нуля (первое обращение)
 
@@ -146,11 +148,15 @@ report are in [autopilot](references/autopilot.md), which overrides every
 ## External actions and recovery
 
 - First load [saved provider preferences](references/provider-preferences.md),
-  then discover MCP/tools/routes exposed in this session. Never say an MCP or
-  tool is missing before the three-step check: (1) find it in your own tool
-  list (Claude Code: `ToolSearch` by server name), (2) run
-  `python3 <skill>/scripts/detect_tools.py --json`, (3) make a free probe call
-  (balance, model list). Configured but not exposed → say exactly that. Offer
+  then discover MCP/tools/routes exposed in this session. Before treating a
+  route as unavailable, skipping it, or saying an MCP/tool is missing, run the
+  three-step check: (1) find it in your own tool list (Claude Code:
+  `ToolSearch` by server name; Codex/Gemini: re-read the list after a short
+  pause, servers may still be connecting), (2) run
+  `python3 scripts/detect_tools.py --json` from this skill folder, (3) if 1–2
+  found it, make a free probe call (balance, model list). A provider named in
+  the idea is never skipped silently. Configured but not exposed → say exactly
+  that. Offer
   the saved preferred service first; keep an unavailable saved service as a
   declaration, not as verified access. Persist user declarations/selections
   and read back. In `guided`, selection stays in chat and must be offered in
@@ -215,7 +221,8 @@ report are in [autopilot](references/autopilot.md), which overrides every
   with the same `result_group_id`; never split IDs. Select and record the exact
   current prompt, included references, verified assets and observed revision.
   If that mapping is stale or ambiguous, make no external call: finish
-  `needs_chat` and explain the blocker.
+  `needs_chat` and explain the blocker (in `autopilot`: fix, re-read and queue
+  again, or stop with a report per the autopilot canon).
 - For a canonical write, use `context.state_revision` when present and still
   current; otherwise use the revision from the verified read. Never guess
   `N+1`, substitute a newer prompt after execution, or rebase an unknown result.
@@ -247,7 +254,8 @@ it: file/container integrity, reference identity, style, light/color,
 storyboard continuity and motion. Record what was technically checked,
 visually checked, user-approved, unavailable and unfinished. If no suitable
 viewer ran, say visual review was not performed. Finding a defect does not
-authorize another paid call.
+authorize another paid call (guided; in `autopilot`, see
+[autopilot](references/autopilot.md)).
 
 ## Legacy projects only
 

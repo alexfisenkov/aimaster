@@ -24,14 +24,13 @@ in `guided` wait for the user's choice, in `autopilot` resolve it without a
 question. For video, in `guided` ask the intended duration and whether the
 output is one whole video (`one-shot`) or separate scenes (`per-scene`) before
 writing the storyboard; in `autopilot` decide both and include them in the
-brief the user approves.
+brief the user approves. Store the accepted answer through the question
+lifecycle, then apply `one-shot` as `one_shot` or `per-scene` as `per_scene` at
+`image_plan` with `project set-gen-mode`; do not rely on the default value.
 
 **Autopilot.** A project with `mode=autopilot` has one user decision, the
 idea/brief approval. After it, ask nothing until the finished video and follow
 [autopilot](autopilot.md) wherever this file says ask, offer or wait.
-Store the accepted answer through the question lifecycle, then apply `one-shot`
-as `one_shot` or `per-scene` as `per_scene` at `image_plan` with
-`project set-gen-mode`; do not rely on the default value.
 
 At activation read [saved provider preferences](provider-preferences.md) across
 projects, then in chat discover the MCP/tools/routes exposed in this session. Do
@@ -197,8 +196,9 @@ doors and exact revisions.
 | `pos:oneshot` | one whole video | `motion` |
 | `pos:audio:atmos|fx|music|voice` | four sound layers | `audio` |
 
-All current positions are required. In particular, the four audio layers are a
-current product limitation; do not invent a skip or optional-layer flag.
+All current positions are required, except audio layers: an audio position is
+required only when its result group has at least one entry, so an untouched
+audio stage can be approved empty. Do not invent a skip or optional-layer flag.
 
 ## Authoring and direct chat decisions
 
@@ -396,7 +396,9 @@ infer IDs. Resolve the position's current prompt through its owner link, collect
 only currently included references, re-resolve their assets, and record those
 exact inputs plus the observed state revision before any external call. If the
 version is stale, the owner is ambiguous, or required inputs cannot be verified,
-make no external call: finish `needs_chat` and explain the blocker in chat.
+make no external call: finish `needs_chat` and explain the blocker in chat
+(`autopilot`: fix, re-read and queue again, or stop with a report per
+[autopilot](autopilot.md#allowed-stops)).
 
 ### Recording a generated result
 
@@ -430,7 +432,8 @@ There is no QA stage. Before showing material, the agent still checks container
 integrity and, when tools allow, reference identity, style, light/color,
 storyboard continuity and motion. Separate technical checks, visual checks and
 owner approval. State clearly when visual review did not run. A detected defect
-does not grant another paid call.
+does not grant another paid call (guided; in `autopilot`, see
+[autopilot](autopilot.md)).
 
 ## Common refusals
 

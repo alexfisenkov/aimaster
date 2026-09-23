@@ -2,9 +2,11 @@
 
 Complete this procedure **before every external generation** (including vary
 and regenerate), after route/model/mode are verified and before any paid call.
-It is a binding check, not authorization: uploading is an external action and
-requires authorization; execution still needs its scoped approval in `guided`
-(in `autopilot`, see [autopilot](autopilot.md)).
+It is a binding check, not authorization. In `guided`, uploading is an
+external action and requires authorization, and execution needs its scoped
+approval. In `autopilot`, the mode itself authorizes both uploading the
+project's own assets to the selected verified route and execution (see
+[autopilot](autopilot.md)).
 First pass the target-stage preflight in [the completion loop](completion-loop.md).
 
 ## Canonical and native forms
@@ -44,7 +46,8 @@ produce different tags.
    assets and versions and verify their creative role/input function. Do not
    use a vague request such as “character reference”: name the exact canonical
    reference or frame/audio input and its role.
-2. Perform the authorized upload/attachment and read back the actual native
+2. Perform the authorized upload/attachment (in `autopilot`, authorized by the
+   mode for project assets) and read back the actual native
    tag, field, slot and order from the selected route. Record the mapping above
    for this operation only. A different model, mode, reordering, removal or
    replacement invalidates it and requires a new binding.
@@ -148,5 +151,7 @@ python3 scripts/validate_reference_bindings.py \
 If the route cannot expose a native binding, an upload/attachment did not read
 back, a role is unclear, the machine preflight fails, or the final payload cannot be audited, stop at
 `prepare`: a claimed job finishes `needs_chat`; a direct-chat operation stops
-and explains the blocker. Make no paid call. A live mapping does not override
+and explains the blocker. Make no paid call. In `autopilot`, fix the cause,
+re-read the state and queue again; stop with a report only if it cannot be
+fixed ([autopilot](autopilot.md#allowed-stops)). A live mapping does not override
 the selected writing guide or other creative constraints.

@@ -14,7 +14,8 @@ prompt or a visible future position does not bypass this gate.
 
 If the target belongs to a future stage, do **not** call the provider. Complete
 the current stage's prompts and writing-guide choices, show the plan, and obtain
-the normal stage decision first. A generated reference prompt is prepared at
+the normal stage decision first (in `autopilot`: finish the current stage's
+work, run `stage approve` yourself, then generate at the target stage). A generated reference prompt is prepared at
 `image_plan`, but its external image generation and result collection occur at
 `image_results`. Motion prompts may be prepared at `image_plan`; motion media is
 generated only at `motion`.
@@ -28,7 +29,9 @@ asset, external ID, prompt/model/bindings, source revision and required stage;
 write `unavailable` for facts that cannot be verified—never reconstruct or
 invent them. This is a durable **manual recovery record**, not a runtime
 queue or proof that the result is already in Studio. Do not auto-approve stages
-to force insertion. Resolve the current stage with the user; once the target
+to force insertion. Resolve the current stage with the user (in `autopilot`:
+continue the normal stage order yourself; approve each stage only when its own
+checklist passes, never just to reach the record's stage); once the target
 stage is reached, read that record, revalidate target/prompt/references and
 append the same asset through the normal result command. Mark the record
 collected only after snapshot read-back. A claimed job stops `needs_chat` until
@@ -62,7 +65,9 @@ generation task.
    in the dashboard, then finish the claimed job. Do not report the generation
    as done or `succeeded` before this read-back. If provider execution succeeded
    but collection cannot be completed, preserve the external evidence and stop
-   with an explicit `needs_chat`/collection blocker; never generate again.
+   with an explicit `needs_chat`/collection blocker; never generate again. In
+   `autopilot`, fix the collection cause and retry the collection (not the
+   generation); only an unfixable blocker becomes a stop with a report.
 5. In `guided`, show the result and offer the decisions supported for that
    material: accept/reject, another variation, regenerate with stated changes,
    hide, retire/restore, or continue. Do not auto-accept a creative result.
@@ -97,7 +102,8 @@ Read the canonical state and explicitly check:
   decision paths; in `autopilot`, you reviewed them and recorded your choices.
 
 If something optional could materially improve the result, offer it once with
-its effect and cost boundary. If required work is missing, do not offer stage
+its effect and cost boundary (in `autopilot`, do it yourself when it serves the
+approved brief, otherwise list it in the final report). If required work is missing, do not offer stage
 approval as though the stage were complete. If all required material is ready,
 offer approval and state what the next stage will add (`guided`), or run
 `stage approve` yourself and continue (`autopilot`).

@@ -32,7 +32,9 @@ offered automatically; conversation reuse is not a match.
 Reference binding is a provider-neutral safety contract, not a universal prompt
 syntax: route, model and mode determine whether an observed native inline tag,
 structured file field/order, or hybrid form is used. Unknown mapping blocks
-preparation and execution; it never permits a paid probe or invented tag.
+preparation and execution; it never permits a paid probe or invented tag. In
+`autopilot`, resolve the mapping (re-read the schema, try another verified
+model/route) instead of asking; an unresolvable mapping is a stop with a report.
 
 Select the model through [model selection](model-selection.md). Provider or
 catalog defaults are candidates, not a sufficient shortlist or compatibility
