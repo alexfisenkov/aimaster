@@ -19,9 +19,16 @@ Accept text or voice. Use speech-to-text only when it is actually available;
 record which source was transcribed and never fabricate missing words. Without
 ASR, ask for a text version. Capture purpose, audience, format, duration,
 constraints, references and success criteria before authoring the scenario. Run
-the [writing-guide gate](writing-guides.md) before every new project's scenario,
-including in `autopilot` mode, and wait for the user's choice. For video, ask the intended duration and whether the output is one whole video
-(`one-shot`) or separate scenes (`per-scene`) before writing the storyboard.
+the [writing-guide gate](writing-guides.md) before every new project's scenario;
+in `guided` wait for the user's choice, in `autopilot` resolve it without a
+question. For video, in `guided` ask the intended duration and whether the
+output is one whole video (`one-shot`) or separate scenes (`per-scene`) before
+writing the storyboard; in `autopilot` decide both and include them in the
+brief the user approves.
+
+**Autopilot.** A project with `mode=autopilot` has one user decision, the
+idea/brief approval. After it, ask nothing until the finished video and follow
+[autopilot](autopilot.md) wherever this file says ask, offer or wait.
 Store the accepted answer through the question lifecycle, then apply `one-shot`
 as `one_shot` or `per-scene` as `per_scene` at `image_plan` with
 `project set-gen-mode`; do not rely on the default value.
@@ -32,12 +39,17 @@ not browse a provider website merely to discover one. Live-probe the selected
 route and present only models actually exposed by that verified route. For each
 newly selected model and relevant prompt task/stage, run the
 [writing-guide gate](writing-guides.md) before writing prompts. The gate names
-any matching saved guide, waits for the user's choice and makes an explicitly
-selected guide the creative specification only for that task.
+any matching saved guide, waits for the user's choice (`guided`) or takes the
+first exact match (`autopilot`) and makes the selected guide the creative
+specification only for that task. Before saying a route is unavailable, run
+the three-step tool check from [provider preferences](provider-preferences.md),
+including `scripts/detect_tools.py --json`.
 
-For every character, location, product and style reference, ask one of: none,
-upload, generate. Uploads come through chat. Generation requires a verified
-route and scoped authorization.
+For every character, location, product and style reference, in `guided` ask
+one of: none, upload, generate. In `autopilot`, run `library match` on the idea
+and add every hit with `reference add --from-library`; generate the rest.
+Uploads come through chat. Generation requires a verified route and, in
+`guided`, scoped authorization.
 
 Before every external generation, follow the mandatory
 [reference-binding procedure](reference-bindings.md). Studio's canonical
@@ -59,22 +71,47 @@ The per-scene add action must offer both upload and generation. A generated
 local reference keeps its scene link, receives its own prompt during
 `image_plan`, and is executed/collected only after `image_results` is current.
 
-Ask only material questions. Prefer the runtime's native choice tool when it is
-available; otherwise use numbered choices or concise free text in chat. Store
+Ask only material questions (`guided`; none after brief approval in
+`autopilot`). Prefer the runtime's native choice tool when it is available; otherwise use numbered choices or concise free text in chat. Store
 the accepted answer through the question lifecycle. The dashboard never shows
 question text or choices.
 
 ## Workspace and dashboard
 
-A workspace contains `projects/<id>/state.json`, `media/`, and private
-`.studio/` SQLite stores. Create `projects/` explicitly; otherwise the project
-store falls back to the workspace root. Never hand-edit state or private stores.
+A workspace contains `projects/<id>/state.json`, `media/`, `instructions/`,
+`library/` and private `.studio/` SQLite stores. Create the layout with
+`workspace init` on first activation in a folder (idempotent; safe on an
+existing workspace). Without `projects/` the project store falls back to the
+workspace root. Never hand-edit state, the library index or private stores.
 
 ```bash
-mkdir -p <workspace>/projects <workspace>/media
+python3 scripts/creator_studio.py workspace init <workspace>
 python3 scripts/creator_studio.py project create <workspace> <project-id> \
   --title "…" --type {photo,video,mixed} --mode {guided,autopilot}
 ```
+
+`project create --mode autopilot` and `mode set --mode autopilot` return a
+`notice` field. Show it to the user once, verbatim.
+
+### Workspace library
+
+Characters, voices, locations, products and styles shared by all projects live
+in `<workspace>/library/` (`index.json` plus one folder per kind):
+
+```bash
+creator_studio.py library list WS [--kind K]
+creator_studio.py library add WS --kind K --label "…" [--alias "…"]... --file PATH
+creator_studio.py library import WS --from-projects
+creator_studio.py library match WS --text "идея"
+creator_studio.py reference add WS P --kind … --from-library LIBRARY_ID --expected-revision N
+```
+
+`library add` copies the file into `library/<kind>/` and skips sha256
+duplicates. For an existing workspace, run `library import --from-projects`
+once to collect references that already have files. `library match` returns
+entries whose label or alias occurs in the text. `reference add --from-library`
+registers the library file as a project asset and creates a `source=upload`
+reference. Run `--help` before relying on exact flags.
 
 Start the server as soon as the workspace is known or created:
 
@@ -290,13 +327,18 @@ creator_studio.py finish WS ACTION --status \
 creator_studio.py recover WS
 ```
 
-`generate`, `vary`, and `regenerate` require a one-use grant; `generation`
-covers all three. Permission and route selection happen in chat. Once the route
+In `guided`, `generate`, `vary`, and `regenerate` require a one-use grant;
+`generation` covers all three. Permission and route selection happen in chat. Once the route
 is verified, the grant is issued and the user explicitly approves that scoped
 chat action; do not ask again for the same action. It does not authorize an
 extra variation, regeneration or retry.
 
-A chat action without a matching grant becomes terminal `needs_chat`. Issuing a
+In `autopilot`, do not run `grant` and do not ask: a queued paid action finds
+no grant, the engine issues one itself (`issued_by: autopilot`) and appends an
+`autopilot-grant` entry (action, target) to the project history. See
+[autopilot](autopilot.md).
+
+In `guided`, a chat action without a matching grant becomes terminal `needs_chat`. Issuing a
 grant later does not revive it: the user must make a new explicit chat action. An active
 agent may watch the queue within the granted scope, but the dashboard itself
 does not start an operator.
@@ -370,4 +412,6 @@ does not grant another paid call.
 - Reusing an asset path under a different role: register a distinct file path;
   role is immutable.
 - `outcome_unknown` or an evicted operation receipt: inspect external/canonical
-  state and ask for a decision; never rebase and replay automatically.
+  state and ask for a decision (`autopilot`: resolve it from the provider's
+  own history when possible, otherwise report it instead of asking);
+  never rebase and replay automatically.

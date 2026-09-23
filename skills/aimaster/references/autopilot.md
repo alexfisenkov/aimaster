@@ -93,10 +93,11 @@ available route of the same modality and continue; mention it in the report.
 ## Allowed stops
 
 Stop only when continuing is physically impossible: no route at all for the
-required modality after the tool check, or the provider refused on payment or
-balance. Then write a report, not a question: what is done (with dashboard
-link), what blocked, which routes were checked, and the exact command or action
-that resumes the work. Everything else — an unclear detail, several good
+required modality after the tool check, the provider refused on payment or
+balance, or an `outcome_unknown` that the provider's own history cannot
+resolve (never retry it blindly). Then write a report, not a question: what
+is done (with dashboard link), what blocked, which routes were checked, and the
+exact command or action that resumes the work. Everything else — an unclear detail, several good
 models, a mediocre variant — is decided by you.
 
 ## Final report

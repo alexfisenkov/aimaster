@@ -3,10 +3,13 @@
 Every capability follows: `discover`, `probe`, `prepare`, `execute`, `collect`, `validate`, `provenance`.
 
 - `discover`: first load [saved provider preferences](provider-preferences.md), then inspect the MCP/tools/routes exposed in the current chat. Offer the preferred saved provider first; a missing tool does not delete the saved declaration. Persist explicit user choices with read-back. Do not browse a provider site merely to discover a route.
-- `probe`: confirm current-session availability, relevant capability, authentication without secret values, and observable cost/limit. Present only models exposed by that verified route.
+- `probe`: before calling anything unavailable, run the three-step tool check
+  (own tool list, `scripts/detect_tools.py --json`, free probe call) from
+  [autopilot](autopilot.md#tool-check-before-any-no). Confirm current-session availability, relevant capability, authentication without secret values, and observable cost/limit. Present only models exposed by that verified route.
 - `prepare`: a reviewable prompt/job package and intended outputs. Before every
   external generation, complete [reference binding](reference-bindings.md).
-- `execute`: only after fresh approval for an external or paid action.
+- `execute`: in `guided`, only after fresh approval for an external or paid
+  action; in `autopilot`, without asking, as described in [autopilot](autopilot.md).
 - `collect`: follow the mandatory [completion loop](completion-loop.md): save
   confirmed output locally, bind it to the exact Studio `pos:*` target (or
   legacy `shot_id`) and revision, read back the dashboard state, then finish.
@@ -18,8 +21,8 @@ Canonical capability IDs are `transcription`, `knowledge`, `image_generation`, `
 If unavailable, record the probe result and choose: verified local implementation, already connected adapter, manual job package, or one explicit blocker. `outcome_unknown` is not failure or success and forbids automatic retry.
 
 Before prompt preparation for each newly selected model and relevant task, use
-the [writing-guide gate](writing-guides.md). A guide the user selects is the
-creative specification for that prompt task, but never authorizes provider
+the [writing-guide gate](writing-guides.md). A guide the user selects (or, in `autopilot`,
+the first exact registry match) is the creative specification for that prompt task, but never authorizes provider
 execution. Reusable opt-in guides live in the workspace catalogue; an existing
 `instructions/model-prompt-instructions.md` is discovery-only until its exact
 scope is classified and registered.

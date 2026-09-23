@@ -24,7 +24,9 @@ their current request, accept it without asking the same question again.
    cut, location/time/wardrobe discontinuity, or when the model cannot accept
    the required continuation input.
 
-Briefly recommend one based on the scene transition, but let the user choose.
+Briefly recommend one based on the scene transition, but let the user choose
+in `guided`. In `autopilot`, take the recommended strategy without asking and
+record it with `scene continuity`.
 Offer “use this preference for subsequent unchanged scenes” to reduce repeated
 questions; even then revalidate every previous result and model schema before
 each operation, and ask again when continuity conditions change.

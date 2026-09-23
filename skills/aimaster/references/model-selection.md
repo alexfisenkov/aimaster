@@ -45,9 +45,16 @@ route when available. If fewer qualify, show all that qualify. Include:
 - observed duration/resolution/reference boundary;
 - price only after a current supported cost preview.
 
-Always include **“Показать все совместимые модели”** and **“Выбрать за меня”**.
-“Choose for me” selects from the compatible set and records the reason; it does
-not bypass the model-specific writing-guide choice or paid-action approval.
+In `guided`, always include **“Показать все совместимые модели”** and
+**“Выбрать за меня”**. “Choose for me” selects from the compatible set and
+records the reason; it does not bypass the model-specific writing-guide choice
+or paid-action approval.
+
+In `autopilot`, do not present the list. Use the model named in the idea when
+it is in the compatible set; otherwise apply “Выбрать за меня” yourself, weighing
+the number of image references and whether video references are used
+([video inputs](video-inputs.md)). The writing-guide gate and spending then
+follow [autopilot](autopilot.md).
 Do not overwhelm the user with incompatible catalog entries. If a well-known
 or previously mentioned model was excluded, briefly say why—for example,
 “Kling 2.5 не показан: текущий маршрут не принимает character references.”
@@ -57,14 +64,16 @@ whole catalog unless asked.
 
 If no model satisfies all hard requirements, explain the exact conflict and
 offer concrete changes (shorter duration, different reference strategy,
-per-scene generation, another provider). Never silently drop a reference,
-shorten the output, lower resolution or switch providers.
+per-scene generation, another provider). In `autopilot`, apply the smallest
+such change yourself (or the next verified route), record it and list it in
+the final report. Never silently drop a reference, shorten the output, lower
+resolution or switch providers.
 
 Sound settings require the same schema check. “No music” or “sound effects
 off” does not prove that the returned file has no audio stream. When a silent
 container is a hard requirement and the model cannot guarantee it, disclose
 that and include a verified mute/remux step after generation.
 
-After the user chooses, record provider, model/mode, observed schema facts and
+After the choice (the user's, or yours in `autopilot`), record provider, model/mode, observed schema facts and
 selection reason in the private operation record. Re-run selection when the
 target, required references, model, provider or material constraints change.
