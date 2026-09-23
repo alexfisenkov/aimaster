@@ -252,6 +252,34 @@ class TunnelOutputDrainTests(ChildProcessCase):
         self.assertTrue(child.terminated)
 
 
+class TunnelStartTests(ChildProcessCase):
+    def test_a_child_that_never_prints_a_url_is_stopped_after_the_timeout(self):
+        child = self.child("https://not-a-quick-tunnel.example.com")
+        temporary = tempfile.TemporaryDirectory(prefix="aimaster-config-")
+        self.addCleanup(temporary.cleanup)
+        with mock.patch("shutil.which", return_value="cloudflared"):
+            with self.assertRaisesRegex(RuntimeError, "did not provide"):
+                transport.start_cloudflared(
+                    LOCAL_URL, popen=lambda *args, **kwargs: child, timeout=0.5,
+                    config_path=Path(temporary.name) / "empty-config.yml",
+                )
+        self.assertTrue(child.terminated)
+
+    def test_the_url_line_is_found_and_the_pipe_left_to_the_drain(self):
+        child = self.child(FIRST_URL, noise_lines=3)
+        temporary = tempfile.TemporaryDirectory(prefix="aimaster-config-")
+        self.addCleanup(temporary.cleanup)
+        with mock.patch("shutil.which", return_value="cloudflared"):
+            process, url = transport.start_cloudflared(
+                LOCAL_URL, popen=lambda *args, **kwargs: child, timeout=5,
+                config_path=Path(temporary.name) / "empty-config.yml",
+            )
+        self.assertIs(process, child)
+        self.assertEqual(url, FIRST_URL)
+        self.assertTrue(child.noise_written.wait(timeout=5))
+        self.assertIn("heartbeat 0", child.stdout.readline())
+
+
 class TunnelSupervisionTests(ChildProcessCase):
     def test_live_tunnel_is_reported_without_restarting_it(self):
         first = self.child(FIRST_URL)
