@@ -15,7 +15,9 @@ the user's persistent preference file:
 `<config-home>/aimaster/preferences.json`
 
 Use an absolute `XDG_CONFIG_HOME` when set; otherwise use the current user's
-`~/.config`. Resolve this in the execution environment: never hardcode the
+`~/.config`. On Windows use `%APPDATA%\aimaster\preferences.json`; if that file
+is missing but `~/.config/aimaster/preferences.json` exists, read that one
+(`detect_tools.py --json` reports which file it found). Resolve this in the execution environment: never hardcode the
 author's home. This file belongs to the user, outside the installed skill and
 outside any individual project. The same environment reuses it across chats,
 workspaces, restarts and official updates. A different machine/environment
