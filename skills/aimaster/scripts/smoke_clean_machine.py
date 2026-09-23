@@ -220,8 +220,11 @@ def step_serve(env: dict, workspace: Path) -> None:
         log("  сервер %s: /, /api/projects, /static/ui/v2/shell.js — 200" % base_url)
     finally:
         stop_server(proc)
-    if os.name != "nt":
-        expect(proc.returncode == 0, "сервер завершился с кодом %s после SIGINT" % proc.returncode)
+    # Windows: Ctrl+Break ends the process with STATUS_CONTROL_C_EXIT
+    # (0xC000013A) unless it exits cleanly first; anything else is a crash.
+    allowed = (0, 0xC000013A) if os.name == "nt" else (0,)
+    expect(proc.returncode in allowed, "сервер завершился с кодом %s после сигнала остановки"
+           % proc.returncode)
     log("  сервер остановлен (код %s)" % proc.returncode)
 
 
