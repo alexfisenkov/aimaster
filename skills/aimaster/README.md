@@ -11,6 +11,7 @@
 - `references/creator-studio.md` — подробный справочник команд для агента.
 - `references/writing-guides.md` — правила выбора, хранения и применения
   сценарных и model-prompt гайдов.
+- `scripts/install.py` ставит навык на macOS, Linux и Windows и печатает `python_cmd`.
 - `scripts/creator_studio.py` и `studio/` сохраняют проекты и открывают их в браузере.
 - `scripts/validate_reference_bindings.py` проверяет теги и поля референсов перед внешней генерацией.
 - `scripts/creator_studio_bot.py` при отдельном ручном запуске подключает Telegram.
@@ -23,20 +24,38 @@
 Код движка меняется только по согласованию с владельцем. Для личных материалов
 используйте отдельную папку — так их не затронет обновление навыка.
 
-Поместите всю эту папку в каталог навыков, указанный в документации вашего
-агента, и не переименовывайте файлы внутри. При удалении навыка удаляйте только
-установленную копию или ссылку. Папки с вашими проектами должны храниться
-отдельно; при удалении навыка их сохраняйте.
+Проще всего поставить навык установщиком: `python3 scripts/install.py` на
+macOS и Linux, `py -3 scripts\install.py` на Windows (без WSL). Он подключит
+эту папку к Claude Code и Codex, проверит необязательные программы и в конце
+напечатает `python_cmd` — команду Python для вашей машины. Дальше в примерах
+`python3` означает именно её: на Windows это обычно `py -3`. Подробности — в
+[инструкции по установке](../../INSTALL_WITH_AGENT.md) в корне репозитория.
+
+Можно и вручную: поместите всю эту папку в каталог навыков, указанный в
+документации вашего агента, и не переименовывайте файлы внутри. При удалении
+навыка удаляйте только установленную копию или ссылку. Папки с вашими
+проектами должны храниться отдельно; при удалении навыка их сохраняйте.
 
 ## Первый проект
 
 Папка проектов должна находиться вне установленной копии навыка. Откройте
-терминал в каталоге `skills/aimaster` и выполните:
+терминал в каталоге `skills/aimaster` и выполните.
+
+macOS и Linux:
 
 ```bash
 AIMASTER_WORKSPACE="$HOME/Documents/AI-Master-Projects"
 python3 scripts/creator_studio.py workspace init "$AIMASTER_WORKSPACE"
 python3 scripts/creator_studio.py project create "$AIMASTER_WORKSPACE" first-video \
+  --title "First video" --type video --mode guided
+```
+
+Windows (PowerShell):
+
+```powershell
+$env:AIMASTER_WORKSPACE = "$HOME\Documents\AI-Master-Projects"
+py -3 scripts\creator_studio.py workspace init "$env:AIMASTER_WORKSPACE"
+py -3 scripts\creator_studio.py project create "$env:AIMASTER_WORKSPACE" first-video `
   --title "First video" --type video --mode guided
 ```
 
@@ -52,6 +71,8 @@ python3 scripts/creator_studio.py project create "$AIMASTER_WORKSPACE" first-vid
 ```bash
 python3 scripts/creator_studio.py serve "$AIMASTER_WORKSPACE" --port 0
 ```
+
+В PowerShell: `py -3 scripts\creator_studio.py serve "$env:AIMASTER_WORKSPACE" --port 0`.
 
 Начните с [инструкции для пользователя](references/getting-started.md). Стадии,
 точные команды и правила согласования описаны в
