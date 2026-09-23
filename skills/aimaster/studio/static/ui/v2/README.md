@@ -107,7 +107,7 @@
   прокрутки страницы. Нет сцены или кадры не запланированы — строка
   пояснения вместо холста.
 - `viewer-canvas.js` — чистые `filmstrip(counts)`, `slotOptions(project, scene)`,
-  `canvasCaption({index, total, mark, promptLabel})`, `ownFileStrip(assetUrl,
+  `canvasCaption({index, total, mark, promptLabel})`, `soloStrip(assetUrl,
   caption)`, `promptOfVariant(version, promptVersions)`,
   `captionMark(state)` → «выбран / не выбран / отклонён…» под холстом,
   `tileMark(item)` → «✓ выбран», решение или «вариант N» на плитке,
