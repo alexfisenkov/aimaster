@@ -88,7 +88,7 @@ export function renderUsedIn(title, items) {
   for (const item of items) {
     const pill = el("button", "v2-viewer-used-item", item.label);
     pill.type = "button";
-    pill.addEventListener("click", () => openViewer(item.target, { tab: item.tab }));
+    pill.addEventListener("click", () => openViewer(item.target, { tab: item.tab, trigger: pill }));
     list.append(pill);
   }
   block.append(list);

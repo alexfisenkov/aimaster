@@ -189,6 +189,7 @@ function pickTab(tab) {
 }
 
 function leftColumn(snapshot, project) {
+  const own = view;
   const { target, tab, slot } = view;
   const column = el("div", "v2-viewer-left");
   const missing = target.kind === "scene" && target.id !== "oneshot" && !sceneOf(project, target.id);
@@ -271,7 +272,10 @@ function leftColumn(snapshot, project) {
     mark: shown?.mark,
     keepLabel: keepLabel(target, tab),
     statusText: view.statusText,
-    onStatus: (text) => { view.statusText = text; },
+    // Исход пишется в тот показ, который отправил запрос: окно могли
+    // закрыть или открыть на другом месте, пока запрос в полёте, — тогда
+    // модульный `view` уже чужой или `null`.
+    onStatus: (text) => { if (view === own) own.statusText = text; },
     noun: nounFor(target, tab),
     onOutcome: showToast,
     // Свой файл референса вариантов не имеет: его можно только заменить.
@@ -362,7 +366,7 @@ function paint() {
   close.type = "button";
   close.setAttribute("aria-label", "Закрыть просмотрщик");
   close.title = "Закрыть (Esc)";
-  close.addEventListener("click", closeViewer);
+  close.addEventListener("click", () => closeViewer());
   bar.append(heading, tabs, close);
 
   const body = el("div", "v2-viewer-body");
@@ -422,6 +426,9 @@ function focusable() {
 }
 
 function onKeyDown(event) {
+  // Поверх просмотрщика открыт `<dialog>` «Запрос агенту»: `Esc` и
+  // стрелки принадлежат ему, окно под ним не закрывается и не листается.
+  if (document.querySelector("dialog[open]")) return;
   if (event.key === "Escape") {
     // Слушатель висит на `document` в capture — то есть раньше «···» и
     // формы комментария внутри него. Если нажали внутри меню, `Esc`
@@ -478,7 +485,7 @@ function onKeyDown(event) {
 }
 
 /** Закрыть просмотрщик и вернуть фокус туда, откуда его открыли. */
-export function closeViewer() {
+export function closeViewer({ restoreFocus = true } = {}) {
   if (!root) return;
   const back = view?.returnFocus;
   root.remove();
@@ -486,7 +493,22 @@ export function closeViewer() {
   view = null;
   document.body.classList.remove("v2-viewer-open");
   document.removeEventListener("keydown", onKeyDown, true);
-  if (back?.isConnected) back.focus();
+  if (restoreFocus && back?.isConnected) back.focus();
+}
+
+/**
+ * Пока решение в полёте, переходы внутри окна закрыты: вкладки, слоты,
+ * плёнка, пилюли «Где используется» / «Из чего собран» и чипсы зон.
+ * Иначе окно открылось бы на другом месте посреди запроса.
+ */
+function blockWhileBusy(event) {
+  if (!busy() || !(event.target instanceof Element)) return;
+  const control = event.target.closest(
+    ".v2-viewer-right button, .v2-viewer-tab, .v2-viewer-slot, .v2-viewer-tile, .v2-viewer-tile-add",
+  );
+  if (!control) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
 }
 
 function openViewer(detail) {
@@ -494,7 +516,12 @@ function openViewer(detail) {
   if (!target || typeof target.id !== "string" || !target.id) return;
   const tabs = tabsFor(target).map(([id]) => id);
   const tab = tabs.includes(detail.tab) ? detail.tab : tabs[0];
-  if (root) closeViewer();
+  // Переход изнутри окна (пилюля, чипса зоны): фокус вернётся туда,
+  // откуда окно открыли впервые, — нажатая пилюля исчезнет вместе с окном.
+  const trigger = detail.trigger instanceof HTMLElement ? detail.trigger : null;
+  const inherited = root && trigger && root.contains(trigger) ? view?.returnFocus || null : null;
+  const fromInside = Boolean(root && trigger && root.contains(trigger));
+  if (root) closeViewer({ restoreFocus: false });
   view = {
     target,
     tab,
@@ -504,12 +531,13 @@ function openViewer(detail) {
     promptPinned: false,
     statusText: "",
     draftKeys: [],
-    returnFocus: detail.trigger instanceof HTMLElement ? detail.trigger : null,
+    returnFocus: fromInside ? inherited : trigger,
   };
   root = el("div", "v2-viewer");
   root.dataset.hook = "v2-viewer";
   root.setAttribute("role", "dialog");
   root.setAttribute("aria-modal", "true");
+  root.addEventListener("click", blockWhileBusy, true);
   root.addEventListener("click", (event) => { if (event.target === root) closeViewer(); });
   document.addEventListener("keydown", onKeyDown, true);
   document.body.append(root);
