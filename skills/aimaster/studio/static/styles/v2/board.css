@@ -607,6 +607,9 @@
 }
 
 .v2-slot-status .v2-dot { width: 5px; height: 5px; }
+/* В слоте 112×66 подпись заглушки не помещается между меткой и статусом:
+   «не задан» уже сказан пилюлей. На телефоне слот крупнее — подпись есть. */
+.v2-slot .v2-thumb-note { display: none; }
 
 /* --- Видео: превью клипа и «Продолжение» ------------------------------ */
 
@@ -740,6 +743,7 @@
 .v2-layer-status { gap: 6px; margin-top: 6px; font-size: var(--v2-fs-13); color: var(--v2-ink-2); }
 .v2-layer-status .v2-dot { width: 7px; height: 7px; }
 .v2-layer-arrow { flex: none; color: var(--v2b-faint); font-size: 18px; }
+.v2-layers + .v2-section-hint { margin-top: 12px; }
 
 /* --- Сборка ---------------------------------------------------------- */
 
@@ -944,6 +948,7 @@
   .v2-slot-label { left: 6px; top: 6px; padding: 0 7px; border-radius: 6px; font-size: var(--v2-fs-11); line-height: 19px; }
   .v2-slot-status { left: 6px; right: 6px; bottom: 6px; padding: 0 8px; gap: 5px; font-size: var(--v2-fs-11); line-height: 20px; }
   .v2-slot-status .v2-dot { width: 6px; height: 6px; }
+  .v2-slot .v2-thumb-note { display: block; }
 
   .v2-zone[data-zone="in-frame"] .v2-zone-items,
   .v2-zone[data-zone="local"] .v2-zone-items,
