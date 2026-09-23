@@ -174,6 +174,23 @@ class TelegramTransportSetupTests(unittest.TestCase):
             if os.name != "nt":
                 self.assertEqual(stat.S_IMODE(token_path.stat().st_mode), 0o600)
 
+    @unittest.skipUnless(os.name == "nt", "DPAPI exists only on Windows")
+    def test_windows_token_is_sealed_with_dpapi_and_round_trips(self):
+        from creator_studio_telegram import DpapiSecretStore, LocalSecretStore
+
+        with tempfile.TemporaryDirectory() as directory:
+            sealed_path = Path(directory) / "telegram-bot-token.dpapi"
+            token = "123456789:" + "C" * 36
+            DpapiSecretStore(sealed_path).store(token)
+            self.assertNotIn(token.encode("utf-8"), sealed_path.read_bytes())
+            self.assertEqual(DpapiSecretStore(sealed_path).load(), token)
+            store = LocalSecretStore(
+                Path(directory) / "telegram-bot-token",
+                keychain_factory=lambda: DpapiSecretStore(sealed_path),
+            )
+            self.assertEqual(store.load(), token)
+            self.assertFalse((Path(directory) / "telegram-bot-token").exists())
+
     def test_keychain_timeout_becomes_recoverable_runtime_error(self):
         import creator_studio_telegram as transport
 
