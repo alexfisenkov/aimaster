@@ -35,7 +35,7 @@
 
 ```bash
 AIMASTER_WORKSPACE="$HOME/Documents/AI-Master-Projects"
-mkdir -p "$AIMASTER_WORKSPACE/projects" "$AIMASTER_WORKSPACE/media"
+python3 scripts/creator_studio.py workspace init "$AIMASTER_WORKSPACE"
 python3 scripts/creator_studio.py project create "$AIMASTER_WORKSPACE" first-video \
   --title "First video" --type video --mode guided
 ```
@@ -63,8 +63,8 @@ python3 scripts/creator_studio.py serve "$AIMASTER_WORKSPACE" --port 0
 
 ## Гайды для сценария и промптов
 
-Перед сценарием каждого нового проекта агент обязательно спрашивает, есть ли
-гайд. Перед промптами он отдельно спрашивает для каждой новой пары выбранных
+Перед сценарием каждого нового проекта агент в режиме `guided` обязательно
+спрашивает, есть ли гайд (в `autopilot` берёт точно подходящий сохранённый сам). Перед промптами он отдельно спрашивает для каждой новой пары выбранных
 модели и задачи/этапа. Если в `<workspace>/instructions/index.md` есть
 подходящий гайд, агент называет его и предлагает использовать, загрузить новый
 или работать без гайда. Загружаемый файл сначала полностью читается; выбранный
