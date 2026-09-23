@@ -194,6 +194,8 @@ function splitRejectForm(wrap) {
  *   `statusText`/`onStatus` — текст исхода, переживающий перерисовку,
  *   `onOutcome` — текст тоста после подтверждённого решения,
  *   `noun` — «кадр», «клип», «картинка», «звук» для этого тоста.
+ *   Без `version` и `secondary` кнопки «＋ Ещё вариант» нет: просьба о
+ *   первом варианте — на пустой сцене (`viewer-canvas.renderCanvas`).
  * @returns {HTMLElement} `<div class="v2-viewer-actions">`
  */
 export function renderDecideRow(context) {
@@ -221,7 +223,9 @@ export function renderDecideRow(context) {
     slot: context.slot,
     layer: context.layer,
   };
-  buttons.append(context.secondary
+  // Вариантов нет — просьба о первом стоит на самой сцене, второй такой
+  // же кнопки в ряду не нужно.
+  if (context.secondary || version) buttons.append(context.secondary
     ? chatButton(context.secondary.label, context.secondary.request, "v2-viewer-secondary")
     : chatButton(
       "＋ Ещё вариант",

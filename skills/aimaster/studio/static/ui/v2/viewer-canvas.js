@@ -8,6 +8,7 @@
 import { variantCounts } from "./counts.js";
 import { variantState, versionsMadeBy } from "./variants.js";
 import { chatButton, el } from "./dom.js";
+import { renderMedia } from "./viewer-media.js";
 
 /** Пометки плёнки — четыре из спецификации плюс «принят» и «убран». */
 export const VARIANT_MARKS = Object.freeze({
@@ -172,25 +173,6 @@ export function promptOfVariant(version, promptVersions) {
   return null;
 }
 
-/** Холст: картинка, видео с управлением или звук — по виду материала. */
-function media(version, mediaKind) {
-  const url = typeof version?.asset_url === "string" ? version.asset_url : "";
-  if (!url) return el("p", "v2-viewer-empty", "Файла пока нет");
-  if (mediaKind === "video" || mediaKind === "audio") {
-    const node = document.createElement(mediaKind);
-    node.src = url;
-    node.controls = true;
-    node.preload = "metadata";
-    node.className = "v2-viewer-media";
-    return node;
-  }
-  const image = document.createElement("img");
-  image.src = url;
-  image.alt = version?.caption || "Вариант";
-  image.className = "v2-viewer-media";
-  return image;
-}
-
 function arrow(label, title, onClick, disabled) {
   const button = el("button", "v2-viewer-arrow", label);
   button.type = "button";
@@ -198,27 +180,6 @@ function arrow(label, title, onClick, disabled) {
   button.setAttribute("aria-label", title);
   button.addEventListener("click", onClick);
   return button;
-}
-
-function tilePreview(url, mediaKind) {
-  if (typeof url !== "string" || !url.startsWith("/assets/")) return null;
-  if (mediaKind === "audio") return null;
-  if (mediaKind === "video") {
-    // `<img>` на mp4 даёт битую плитку (`video-thumb.js`): первый кадр
-    // берётся из самого ролика, без звука и без загрузки целиком.
-    const clip = document.createElement("video");
-    clip.src = url;
-    clip.preload = "metadata";
-    clip.muted = true;
-    clip.playsInline = true;
-    clip.tabIndex = -1;
-    return clip;
-  }
-  const preview = document.createElement("img");
-  preview.src = url;
-  preview.alt = "";
-  preview.loading = "lazy";
-  return preview;
 }
 
 /**
@@ -250,32 +211,32 @@ function attachSwipe(stage, shownIndex, onShow) {
  * листание — свайпом по сцене.
  *
  * @param {{strip: object, shownIndex: number, mediaKind: string, caption: string,
- *          stageMark?: string, addRequest?: object|null,
+ *          stageMark?: string, addRequest?: object|null, emptyText?: string,
  *          onShow: (index: number) => void}} context
  *   `shownIndex` — номер показанного варианта с 1; `stageMark` — пилюля
  *   в углу сцены; `addRequest` — запрос из `chat-prompts.moreVariants`,
  *   без него плитки «＋» нет.
  * @returns {HTMLElement}
  */
-export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark, addRequest, onShow }) {
+export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark, addRequest, emptyText, onShow }) {
   const wrap = el("div", "v2-viewer-canvas-wrap");
   const canvas = el("div", "v2-viewer-canvas");
   canvas.dataset.hook = "v2-viewer-canvas";
   const shown = strip.items[shownIndex - 1];
-  canvas.append(arrow("‹", "Предыдущий вариант (←)", () => onShow(shownIndex - 1), shownIndex <= 1));
+  if (shown) canvas.append(arrow("‹", "Предыдущий вариант (←)", () => onShow(shownIndex - 1), shownIndex <= 1));
   const frame = el("div", "v2-viewer-frame");
   frame.dataset.media = mediaKind || "image";
   if (shown) {
     frame.dataset.dim = String(shown.dim === true);
-    frame.append(media(shown.version, mediaKind));
+    frame.append(renderMedia(shown.version?.asset_url, mediaKind, { size: "big", label: shown.version?.caption || "Вариант" }));
     if (stageMark) frame.append(el("span", "v2-viewer-stage-mark", stageMark));
   } else {
     frame.dataset.empty = "true";
-    frame.append(el("p", "v2-viewer-empty", "Вариантов пока нет — попросите агента сделать первый."));
+    frame.append(el("p", "v2-viewer-empty", emptyText || "Вариантов пока нет — попросите агента сделать первый."));
     if (addRequest) frame.append(chatButton("＋ Попросить вариант", addRequest, "v2-viewer-ask"));
   }
   canvas.append(frame);
-  canvas.append(arrow("›", "Следующий вариант (→)", () => onShow(shownIndex + 1), shownIndex >= strip.total));
+  if (shown) canvas.append(arrow("›", "Следующий вариант (→)", () => onShow(shownIndex + 1), shownIndex >= strip.total));
   if (strip.total > 1) attachSwipe(canvas, shownIndex, onShow);
   wrap.append(canvas);
   if (shown) {
@@ -293,8 +254,7 @@ export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark,
     tile.dataset.dim = String(item.dim);
     tile.setAttribute("aria-current", String(item.index === shownIndex));
     tile.setAttribute("aria-label", `Вариант ${item.index}${item.mark ? `, ${item.mark}` : ""}`);
-    const preview = tilePreview(item.version.asset_url, mediaKind);
-    if (preview) tile.append(preview);
+    tile.append(renderMedia(item.version.asset_url, mediaKind, { size: "tile" }));
     // Единственный файл не нумеруется: «1 · Финальный ролик» — лишнее.
     const mark = item.state === "selected" ? `✓ ${item.mark}` : item.mark;
     tile.append(el("span", "v2-viewer-tile-mark", strip.solo

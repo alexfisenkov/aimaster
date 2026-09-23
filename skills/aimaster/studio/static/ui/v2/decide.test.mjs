@@ -124,3 +124,14 @@ test("подвал: пройденный шаг и шаг без прямого 
   const blocked = { ...snapshot, view_stage: { ...snapshot.view_stage, allowed_actions: ["continue-in-chat"] } };
   assert.equal(footerMode(blocked, { screen: "video", stage: "motion" }), "chat");
 });
+
+test("тост — только после подтверждённого успеха", async () => {
+  const { outcomeToast } = await import("./decide.js");
+  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Решение отправлено.", "кадр"), "Кадр выбран");
+  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Решение отправлено.", "картинка"), "Картинка выбрана");
+  assert.equal(outcomeToast("reject", SUBMITTING_TEXT, ""), "Вариант отклонён");
+  assert.equal(outcomeToast("hide", SUBMITTING_TEXT, "Отправлено."), "Вариант скрыт");
+  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Исход не подтверждён. Обновите страницу."), "");
+  assert.equal(outcomeToast("approve", "", "Решение отправлено."), "", "без запроса в полёте — не тост");
+  assert.equal(outcomeToast("", SUBMITTING_TEXT, "Отправлено."), "");
+});

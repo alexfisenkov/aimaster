@@ -174,3 +174,21 @@ test("по плитке без версии решать нечего", () => {
     }
   }
 });
+
+test("слово состояния под холстом", async () => {
+  const { captionMark } = await import("./viewer-canvas.js");
+  assert.equal(captionMark("selected"), "выбран");
+  assert.equal(captionMark("new"), "не выбран");
+  assert.equal(captionMark("retired"), "убран из работы");
+  assert.equal(captionMark("что-то"), "не выбран");
+});
+
+test("свайп: порог 50px, вертикаль — прокрутка, а не листание", async () => {
+  const { SWIPE_THRESHOLD, swipeStep } = await import("./viewer-canvas.js");
+  assert.equal(SWIPE_THRESHOLD, 50);
+  assert.equal(swipeStep(-50), 1, "влево — следующий");
+  assert.equal(swipeStep(80), -1, "вправо — предыдущий");
+  assert.equal(swipeStep(49), 0);
+  assert.equal(swipeStep(-120, 200), 0);
+  assert.equal(swipeStep(Number.NaN), 0);
+});

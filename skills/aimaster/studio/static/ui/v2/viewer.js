@@ -59,9 +59,11 @@ function headline(project, target) {
   }
   if (target.kind === "layer") return { title: LAYER_TITLES[target.id] || target.id, time: "" };
   if (target.kind === "assembly") return { title: "Финальный ролик", time: "" };
+  if (target.id === "oneshot") return { title: "Ролик одним заходом", time: "" };
   const scenes = scenesInOrder(project);
   const index = scenes.findIndex((item) => item?.scene_id === target.id);
-  const scene = scenes[index] || {};
+  if (index < 0) return { title: target.id, time: "" };
+  const scene = scenes[index];
   const time = Number.isFinite(scene.start_ms) ? `${clock(scene.start_ms)}–${clock(scene.end_ms)}` : "";
   return { title: `Сцена ${index + 1} · ${scene.title || target.id}`, time };
 }
@@ -119,6 +121,8 @@ function mediaKindFor(project, target, tab) {
 }
 
 function tabsFor(target) {
+  // Ролик одним заходом — один клип на весь проект, кадров у него нет.
+  if (target.kind === "scene" && target.id === "oneshot") return TABS.scene.filter(([id]) => id !== "frames");
   return TABS[target.kind] || TABS.scene;
 }
 
@@ -178,14 +182,27 @@ function pickTab(tab) {
 function leftColumn(snapshot, project) {
   const { target, tab, slot } = view;
   const column = el("div", "v2-viewer-left");
+  const missing = target.kind === "scene" && target.id !== "oneshot" && !sceneOf(project, target.id);
+  const noFrames = target.kind === "scene" && tab === "frames" && !missing
+    && !slotOptions(project, sceneOf(project, target.id)).length;
+  if (missing || noFrames) {
+    // Решать и просить здесь нечего: сцены нет (её убрали, пока окно
+    // было открыто) или кадры для неё не запланированы.
+    column.append(el("p", "v2-viewer-note", missing
+      ? "Этой сцены в проекте уже нет."
+      : "Для этой сцены кадры не запланированы — она оживает по референсам."));
+    view.strip = { items: [], total: 0, selectedIndex: 0 };
+    view.shown = 1;
+    const prompts = promptVersions(project, promptPlace(project, target, { tab, slot: view.slot }));
+    if (!view.promptPinned) view.promptShown = prompts.index || 0;
+    view.promptShown = Math.min(Math.max(view.promptShown, 1), Math.max(prompts.total, 1));
+    return { column, prompts, chat: { sceneId: target.id, slot: view.slot }, strip: view.strip };
+  }
   if (target.kind === "scene" && tab === "frames") {
     const options = slotOptions(project, sceneOf(project, target.id));
-    if (options.length) {
-      if (!options.some((item) => item.slot === view.slot)) view.slot = options[0].slot;
-      column.append(renderSlotSwitch(options, view.slot, pickSlot));
-    } else {
-      column.append(el("p", "v2-viewer-empty-line", "Кадров у этой сцены нет — она оживает по референсам."));
-    }
+    if (!options.some((item) => item.slot === view.slot)) view.slot = options[0].slot;
+    // Даже один слот показывается пилюлей: она называет, какой это кадр.
+    column.append(renderSlotSwitch(options, view.slot, pickSlot));
   }
   const counts = target.kind === "assembly"
     ? { versions: [], total: 0, selected: null }
@@ -222,6 +239,7 @@ function leftColumn(snapshot, project) {
       solo: strip.solo === true,
       promptLabel: byPromptIndex ? `v${byPromptIndex}` : "",
     }),
+    emptyText: target.kind === "assembly" ? "Ролик ещё не собран — попросите агента собрать его." : undefined,
     stageMark: shown && !strip.solo ? (shown.state === "selected" ? `✓ ${shown.mark}` : shown.mark) : "",
     addRequest: target.kind === "assembly" || strip.solo
       ? null
@@ -400,7 +418,10 @@ function onKeyDown(event) {
     // формы комментария внутри него. Если нажали внутри меню, `Esc`
     // принадлежит меню: оно закроет себя само (`ui/more-menu.js`), и
     // просмотрщик остаётся открытым вместе с набранным текстом.
-    if (event.target instanceof Element && event.target.closest('[data-hook="more-menu"]')) return;
+    // Закрытое меню `Esc` не держит: фокус на «···» после закрытия меню
+    // или формы отказа — и следующий `Esc` закрывает уже окно.
+    const menuHere = event.target instanceof Element ? event.target.closest('[data-hook="more-menu"]') : null;
+    if (menuHere?.dataset.open === "true") return;
     // Лист «···» закрывается и тогда, когда фокус ушёл из него: нижний
     // лист занимает пол-экрана, и `Esc` при нём означает «убрать лист», а
     // не «закрыть весь просмотрщик».

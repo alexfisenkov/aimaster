@@ -210,7 +210,61 @@ body.v2-viewer-open {
 }
 
 .v2-viewer-frame[data-media="audio"] { align-self: stretch; }
-audio.v2-viewer-media { width: 100%; max-height: none; }
+audio.v2-viewer-media { flex: 1; min-width: 0; width: 100%; max-height: none; }
+
+.v2-viewer-audio {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 26px 18px;
+  border-radius: var(--v2-r-btn, 12px);
+  background: #181818;
+}
+
+.v2-viewer-audio-glyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #fff;
+  color: #111;
+  font-size: 20px;
+}
+
+/* Заглушка: файла нет или он не открылся. Всегда с подписью. */
+.v2-viewer-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-sizing: border-box;
+  color: var(--vw-muted);
+  text-align: center;
+  background: repeating-linear-gradient(45deg, #1a1a1a, #1a1a1a 8px, #202020 8px, #202020 16px);
+}
+
+.v2-viewer-placeholder[data-size="big"] {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 20px;
+  border: 1px dashed var(--v2-viewer-line-2, #3a3a3a);
+  border-radius: var(--v2-r-md, 10px);
+  font-size: var(--v2-fs-13, 13px);
+}
+
+.v2-viewer-placeholder[data-size="tile"] {
+  width: 100%;
+  height: 100%;
+  padding: 2px 4px 14px;
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+.v2-viewer-placeholder-glyph { font-size: 16px; color: var(--vw-text); }
 
 .v2-viewer-stage-mark {
   position: absolute;
@@ -284,8 +338,7 @@ audio.v2-viewer-media { width: 100%; max-height: none; }
   cursor: pointer;
 }
 
-.v2-viewer-tile img,
-.v2-viewer-tile video {
+.v2-viewer-tile-media {
   display: block;
   width: 100%;
   height: 100%;
@@ -392,7 +445,7 @@ audio.v2-viewer-media { width: 100%; max-height: none; }
    поповер вверх от кнопки: кнопка стоит у нижнего края окна, вниз
    список уезжал бы за экран. */
 
-.v2-viewer .more-menu { position: relative; }
+.v2-viewer .more-menu { position: relative; margin-left: auto; }
 
 .v2-viewer .more-menu-trigger {
   width: 52px;
@@ -658,6 +711,13 @@ audio.v2-viewer-media { width: 100%; max-height: none; }
   font-size: 11px;
 }
 
+/* Аватар без файла или с файлом, который не открылся, — штриховка,
+   а не пустой квадрат (`dom.thumb` ставит эти классы). */
+.v2-viewer .v2-thumb-empty,
+.v2-viewer .v2-thumb-broken {
+  background: repeating-linear-gradient(45deg, #2b3338, #2b3338 3px, #4a5359 3px, #4a5359 6px);
+}
+
 .v2-viewer .v2-avatar img,
 .v2-viewer .v2-ref-chip-picture img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
@@ -827,4 +887,15 @@ audio.v2-viewer-media { width: 100%; max-height: none; }
   }
 
   .v2-viewer .v2-viewer-menu-split { margin-top: 12px; }
+}
+
+/* Сцены нет или кадры не запланированы — вместо холста одна строка. */
+.v2-viewer-note {
+  margin: 0;
+  padding: 28px 20px;
+  border: 1px dashed var(--v2-viewer-line-2, #3a3a3a);
+  border-radius: var(--v2-r-group, 14px);
+  color: var(--vw-muted);
+  font-size: var(--v2-fs-13, 13px);
+  text-align: center;
 }
