@@ -108,8 +108,8 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
 In an `autopilot` project the only user decision is approval of the
 idea/brief. After it, ask no questions until the finished video: choose guides,
 generation method, model, references, variants and stage approvals yourself,
-spend without a grant (the engine issues it), and show the `notice` returned on
-enabling autopilot once. The full order, the allowed stops and the final
+queue paid actions with `action enqueue` without a `grant` (the engine issues
+it), and show the `notice` returned on enabling autopilot once. The full order, the allowed stops and the final
 report are in [autopilot](references/autopilot.md), which overrides every
 "ask", "offer" and "wait" rule in this file for such projects.
 
@@ -200,10 +200,11 @@ report are in [autopilot](references/autopilot.md), which overrides every
   user's explicit approval in chat authorize that one action; do not ask for a
   second approval. A new action or extra paid attempt needs its own
   authorization.
-- **Autopilot:** do not ask and do not run `grant`; the engine issues the
-  grant for a queued paid action and records `autopilot-grant`. Preflight,
-  reference binding and collection still apply (see
-  [autopilot](references/autopilot.md)).
+- **Autopilot:** do not ask and do not run `grant`. Queue the paid action with
+  `action enqueue --type … --target … --expected-revision N`; it returns
+  `status: queued, issued_by: autopilot` and bumps the revision by one (history
+  `autopilot-grant`). Preflight, reference binding and collection still apply
+  (see [autopilot](references/autopilot.md)).
 - Fresh claim context is supplied only for `generate`, `prompts-generate`,
   `prompt-refresh`, and `assemble`. The legacy four (`vary`, `regenerate`,
   `revise-scenario`, `continue-in-chat`) may be payload-only; never pretend the

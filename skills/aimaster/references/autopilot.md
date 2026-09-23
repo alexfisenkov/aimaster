@@ -21,16 +21,23 @@ end. A question after the approval point is a defect.
 
 ## Spending
 
-When autopilot is switched on (`project create --mode autopilot` or
-`mode set --mode autopilot`), the CLI returns a `notice`. Show it to the user
+When autopilot is switched on (`project create --mode autopilot`,
+`mode set --mode autopilot` or `project set-mode --mode autopilot`), the CLI
+returns a `notice`. Show it to the user
 once, verbatim: «Автопилот тратит кредиты без подтверждения». Do not repeat it
 and do not turn it into a question.
 
-- Do not run `grant` and do not ask for spending approval. A queued
-  `generate`, `vary` or `regenerate` in an autopilot project receives its grant
-  from the engine (`issued_by: autopilot`, history entry `autopilot-grant`).
-- A direct chat generation needs no separate approval either: autopilot mode
-  is the owner's standing authorization for this project. There is no limit.
+- Do not run `grant` and do not ask for spending approval. Queue each paid
+  action with
+  `creator_studio.py action enqueue <ws> <project> --type generate|vary|regenerate --target <T> --expected-revision N [--payload JSON] [--idempotency-key K]`.
+  In autopilot it returns `status: queued, issued_by: autopilot` and writes an
+  `autopilot-grant` history entry. That entry raises the revision by one: take
+  the fresh revision for the next `--expected-revision`. Then `claim`, execute,
+  collect and `finish` as in [Creator Studio](creator-studio.md).
+- If enqueue returns `needs_chat`, the project is not in autopilot: re-read
+  `project.mode`; do not issue a grant on your own.
+- Autopilot mode is the owner's standing authorization for spending in this
+  project. There is no limit.
 - Everything else still applies: stage preflight in the
   [completion loop](completion-loop.md), [reference binding](reference-bindings.md)
   and its validator, collection and read-back. A failed check is fixed and
@@ -40,9 +47,14 @@ and do not turn it into a question.
 
 1. **Tool check** (below). Know every route before planning.
 2. **Library.** Run `creator_studio.py library match <ws> --text "<idea>"`.
-   Every returned character, voice, location, product or style becomes a
-   project reference with `reference add … --from-library <library_id>`
-   (`source=upload`). Do not generate what the library already has.
+   Every returned character, location, product or style becomes a project
+   reference with
+   `reference add <ws> <project> --from-library <library_id> --expected-revision N`
+   (`source=upload`). A voice (returned with its character,
+   `matched_via: "voice_of"`) is not a reference of its own: enable
+   `voice_enabled` on the character reference, then
+   `reference attach … --reference IMG_NN --from-library <voice_id>`.
+   Do not generate what the library already has.
 3. **Scenario guide.** Run the exact `guide_registry.py match` from
    [writing guides](writing-guides.md). Use the first entry in `matches`; if
    none, write without a guide. Write the decision into `--reason` of
@@ -65,7 +77,8 @@ and do not turn it into a question.
 8. **Prompt guide** for the selected model and task: exact registry match as in
    step 3, first match or none, decision written into `--reason` of
    `prompt add-version`.
-9. **Prompts → generations → collection** for the current stage only.
+9. **Prompts → generations → collection** for the current stage only:
+   `action enqueue` (see Spending), `claim`, execute, collect, `finish`.
 10. **Pick variants.** After your own visual review, keep the best version with
     `decide approve --target <version> --comment "autopilot: <reason>"`.
     Regenerate or vary yourself when a result has a clear defect.

@@ -90,8 +90,13 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
   --title "…" --type {photo,video,mixed} --mode {guided,autopilot}
 ```
 
-`project create --mode autopilot` and `mode set --mode autopilot` return a
-`notice` field. Show it to the user once, verbatim.
+`workspace init` prints `{"workspace", "created": [...], "already_initialized"}`.
+It never overwrites existing files and writes `README.md` only when absent, so
+it is safe on an existing workspace.
+
+`project create --mode autopilot`, `mode set --mode autopilot` and
+`project set-mode --mode autopilot` return a `notice` field. Show it to the
+user once, verbatim.
 
 ### Workspace library
 
@@ -99,19 +104,32 @@ Characters, voices, locations, products and styles shared by all projects live
 in `<workspace>/library/` (`index.json` plus one folder per kind):
 
 ```bash
-creator_studio.py library list WS [--kind K]
-creator_studio.py library add WS --kind K --label "…" [--alias "…"]... --file PATH
+creator_studio.py library list WS [--kind {character,voice,location,product,style,other}]
+creator_studio.py library add WS --kind K --label "…" [--alias "…"]... --file PATH \
+  [--voice-of CHARACTER_LIBRARY_ID]
 creator_studio.py library import WS --from-projects
 creator_studio.py library match WS --text "идея"
-creator_studio.py reference add WS P --kind … --from-library LIBRARY_ID --expected-revision N
+creator_studio.py reference add WS P --from-library LIBRARY_ID --expected-revision N \
+  [--kind …] [--name "…"] [--scene SCENE | --all-scenes]
+creator_studio.py reference attach WS P --reference IMG_NN --from-library VOICE_ID \
+  --expected-revision N
 ```
 
 `library add` copies the file into `library/<kind>/` and skips sha256
-duplicates. For an existing workspace, run `library import --from-projects`
-once to collect references that already have files. `library match` returns
-entries whose label or alias occurs in the text. `reference add --from-library`
-registers the library file as a project asset and creates a `source=upload`
-reference. Run `--help` before relying on exact flags.
+duplicates. A `voice` entry accepts MP3/WAV only; `--voice-of` links it to a
+character entry. For an existing workspace, run `library import
+--from-projects` once: it collects references that already have files, takes
+the label as the part of the reference name before « — », and stores voices as
+separate `kind=voice` entries with `voice_of`. `library match` returns entries
+whose label or alias occurs in the text; a character's voice is returned with it
+and marked `matched_via: "voice_of"`.
+
+`reference add --from-library` registers the library file as a project asset
+and creates a `source=upload` reference; `--expected-revision` is required and
+a voice entry is rejected there. Attach a voice to its character reference with
+`reference attach --reference IMG_NN --from-library <voice_id>` (enable
+`voice_enabled` first, as for any voice). Take the fresh revision from each
+command's output for the next write.
 
 Start the server as soon as the workspace is known or created:
 
@@ -320,6 +338,8 @@ The eight job types serviced by chat are `generate`, `vary`, `regenerate`,
 
 ```bash
 creator_studio.py grant WS P {generate,vary,regenerate,generation} --expires-at ISO
+creator_studio.py action enqueue WS P --type {generate,vary,regenerate} --target T \
+  --expected-revision N [--payload JSON] [--idempotency-key K]
 creator_studio.py claim WS --worker ID [--profile PATH]
 creator_studio.py finish WS ACTION --status \
   {succeeded,failed,needs_chat,needs_chat_setup,outcome_unknown} \
@@ -333,10 +353,16 @@ is verified, the grant is issued and the user explicitly approves that scoped
 chat action; do not ask again for the same action. It does not authorize an
 extra variation, regeneration or retry.
 
-In `autopilot`, do not run `grant` and do not ask: a queued paid action finds
-no grant, the engine issues one itself (`issued_by: autopilot`) and appends an
-`autopilot-grant` entry (action, target) to the project history. See
-[autopilot](autopilot.md).
+A paid action from chat is queued with `action enqueue`. In `guided`, issue the
+`grant` first; an enqueue without a matching grant returns `status: needs_chat`
+and is terminal.
+
+In `autopilot`, do not run `grant` and do not ask: `action enqueue` returns
+`status: queued, issued_by: autopilot`, and the engine appends an
+`autopilot-grant` entry (action, target) to the project history. That history
+write raises the project revision by one, so read the fresh revision before the
+next `--expected-revision`. Then `claim` the action, execute it, collect the
+result and `finish`. See [autopilot](autopilot.md).
 
 In `guided`, a chat action without a matching grant becomes terminal `needs_chat`. Issuing a
 grant later does not revive it: the user must make a new explicit chat action. An active
