@@ -2,10 +2,10 @@
 // звук; где файла нет или он не открылся — явная заглушка с подписью.
 // Битых картинок и пустых прямоугольников не бывает.
 //
-// Вид материала по адресу не узнать: `/assets/asset-<хэш>` без
-// расширения, а в записи результата типа нет. Поэтому вид приходит от
-// места: коллекция `video_results` — клип, `audio_results` — звук,
-// видеореференс — клип, остальное — картинка.
+// Тип файла определяет одно правило на весь дашборд — `previewKind()`
+// из `preview.js` (запись, расширение, `kind: "video"`, затем тип по
+// месту). Здесь свои только крупные плееры с управлением и плитки
+// плёнки: у миниатюр доски другая задача.
 //
 // Клип: `<video preload="metadata">` с якорем `#t=0.1` — браузер
 // докачивает начало и показывает первый кадр, не проигрывая
@@ -14,6 +14,7 @@
 // Чистая часть — `mediaPlan(url, kind)`; её и покрывают тесты.
 
 import { el } from "./dom.js";
+import { assetUrlOf, previewKind } from "./preview.js";
 
 /** Подписи заглушек — по виду материала и причине. */
 export const PLACEHOLDER_TEXT = Object.freeze({
@@ -24,20 +25,22 @@ export const PLACEHOLDER_TEXT = Object.freeze({
 const AUDIO_GLYPH = "♪";
 
 /**
- * Что рисовать для этого адреса.
- * @param {string|null|undefined} url `/assets/…`
- * @param {"image"|"video"|"audio"} [kind]
+ * Что рисовать для этой записи.
+ * @param {object|null} record запись с `asset_url` (вариант, свой файл, сборка)
+ * @param {"image"|"video"|"audio"} [fallback] тип по месту, если запись молчит
  * @returns {{tag: "img"|"video"|"audio"|null, src: string, kind: string,
  *            placeholder: string}} `tag: null` — только заглушка
  */
-export function mediaPlan(url, kind = "image") {
-  const safeKind = kind === "video" || kind === "audio" ? kind : "image";
-  if (typeof url !== "string" || !url.startsWith("/assets/")) {
-    return { tag: null, src: "", kind: safeKind, placeholder: PLACEHOLDER_TEXT.missing[safeKind] };
+export function mediaPlan(record, fallback = "image") {
+  const place = fallback === "video" || fallback === "audio" ? fallback : "image";
+  const kind = previewKind(record, { fallback: place });
+  const url = assetUrlOf(record);
+  if (kind === "none" || !url) {
+    return { tag: null, src: "", kind: place, placeholder: PLACEHOLDER_TEXT.missing[place] };
   }
-  if (safeKind === "video") return { tag: "video", src: `${url}#t=0.1`, kind: safeKind, placeholder: "" };
-  if (safeKind === "audio") return { tag: "audio", src: url, kind: safeKind, placeholder: "" };
-  return { tag: "img", src: url, kind: safeKind, placeholder: "" };
+  if (kind === "video") return { tag: "video", src: `${url}#t=0.1`, kind, placeholder: "" };
+  if (kind === "audio") return { tag: "audio", src: url, kind, placeholder: "" };
+  return { tag: "img", src: url, kind, placeholder: "" };
 }
 
 /**
@@ -60,14 +63,14 @@ export function placeholder(text, kind, size) {
 /**
  * Превью одного файла.
  *
- * @param {string|null} url `/assets/…`
- * @param {"image"|"video"|"audio"} kind вид материала по месту
+ * @param {object|null} record запись с `asset_url`
+ * @param {"image"|"video"|"audio"} kind тип по месту, если запись молчит
  * @param {{size?: "big"|"tile", label?: string}} [options]
  *   `big` — холст с управлением, `tile` — плитка плёнки без звука и фокуса
  * @returns {HTMLElement}
  */
-export function renderMedia(url, kind, { size = "big", label = "" } = {}) {
-  const plan = mediaPlan(url, kind);
+export function renderMedia(record, kind, { size = "big", label = "" } = {}) {
+  const plan = mediaPlan(record, kind);
   if (!plan.tag) return placeholder(plan.placeholder, plan.kind, size);
   // Звук в плёнке — значок, а не плеер: плитка узкая, а проигрывать
   // надо на холсте.

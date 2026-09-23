@@ -692,8 +692,29 @@ audio.v2-viewer-media { flex: 1; min-width: 0; width: 100%; max-height: none; }
   transform: none;
 }
 
-.v2-viewer .v2-avatar { cursor: pointer; }
-.v2-viewer .v2-avatar:hover { border-color: #777; transform: none; }
+.v2-viewer .v2-avatar,
+.v2-viewer button.v2-ref-chip { cursor: pointer; }
+.v2-viewer .v2-avatar:hover,
+.v2-viewer button.v2-ref-chip:hover { border-color: #777; transform: none; }
+
+/* Подпись заглушки внутри маленькой картинки не помещается — её несёт
+   имя рядом; статус слота кадра — светлым по тёмному. */
+.v2-viewer .v2-ref-chip-picture .v2-thumb-note,
+.v2-viewer .v2-avatar .v2-thumb-note { display: none; }
+.v2-viewer .v2-ref-chip-picture .v2-thumb { width: 100%; height: 100%; }
+.v2-viewer .v2-thumb-audio { color: var(--vw-text); }
+
+.v2-viewer .v2-slot-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border-radius: var(--v2-r-pill, 999px);
+  background: var(--v2-viewer-2, #1f1f1f);
+  color: var(--vw-text);
+  font-size: 10px;
+  line-height: 18px;
+}
 .v2-viewer .v2-ref-chip-video,
 .v2-viewer .v2-slot { padding-left: 10px; }
 
@@ -832,7 +853,7 @@ audio.v2-viewer-media { flex: 1; min-width: 0; width: 100%; max-height: none; }
   .v2-viewer .v2-plus,
   .v2-viewer-used-item { height: 44px; }
   .v2-viewer .v2-ref-chip,
-  .v2-viewer .v2-slot { height: 36px; }
+  .v2-viewer .v2-slot { height: 44px; }
   .v2-viewer .v2-plus { width: 44px; }
   .v2-viewer-reject .card-comment-actions button { height: 44px; }
 

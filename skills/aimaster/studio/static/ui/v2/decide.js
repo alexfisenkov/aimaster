@@ -42,7 +42,9 @@ const SUCCESS_TEXTS = new Set(["", "Отправлено.", "Решение от
 /** Тост после подтверждённого прямого решения — по действию и по тому,
  * что это за материал (кадр, клип, картинка, звук). */
 export const OUTCOME_TOASTS = Object.freeze({
-  approve: (noun) => `${noun.charAt(0).toUpperCase()}${noun.slice(1)} выбран${noun.endsWith("а") ? "а" : ""}`,
+  // `approve` на сервере — «принят»: ссылка «выбран» может не сдвинуться,
+  // и тост говорит то же, что кнопка после решения («✓ Принят»).
+  approve: (noun) => `${noun.charAt(0).toUpperCase()}${noun.slice(1)} принят${noun.endsWith("а") ? "а" : ""}`,
   reject: () => "Вариант отклонён",
   hide: () => "Вариант скрыт",
   unhide: () => "Вариант снова виден",

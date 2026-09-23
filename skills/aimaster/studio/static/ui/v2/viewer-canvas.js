@@ -241,7 +241,7 @@ export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark,
   frame.dataset.media = mediaKind || "image";
   if (shown) {
     frame.dataset.dim = String(shown.dim === true);
-    frame.append(renderMedia(shown.version?.asset_url, mediaKind, { size: "big", label: shown.version?.caption || "Вариант" }));
+    frame.append(renderMedia(shown.version, mediaKind, { size: "big", label: shown.version?.caption || "Вариант" }));
     if (stageMark) frame.append(el("span", "v2-viewer-stage-mark", stageMark));
   } else {
     frame.dataset.empty = "true";
@@ -267,7 +267,7 @@ export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark,
     tile.dataset.dim = String(item.dim);
     tile.setAttribute("aria-current", String(item.index === shownIndex));
     tile.setAttribute("aria-label", `Вариант ${item.index}${item.mark ? `, ${item.mark}` : ""}`);
-    tile.append(renderMedia(item.version.asset_url, mediaKind, { size: "tile" }));
+    tile.append(renderMedia(item.version, mediaKind, { size: "tile" }));
     tile.append(el("span", "v2-viewer-tile-mark", strip.solo ? item.mark : tileMark(item)));
     tile.addEventListener("click", () => onShow(item.index));
     film.append(tile);

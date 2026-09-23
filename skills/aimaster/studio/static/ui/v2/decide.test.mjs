@@ -127,8 +127,10 @@ test("подвал: пройденный шаг и шаг без прямого 
 
 test("тост — только после подтверждённого успеха", async () => {
   const { outcomeToast } = await import("./decide.js");
-  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Решение отправлено.", "кадр"), "Кадр выбран");
-  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Решение отправлено.", "картинка"), "Картинка выбрана");
+  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Решение отправлено.", "кадр"), "Кадр принят");
+  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Решение отправлено.", "картинка"), "Картинка принята");
+  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Решение отправлено.", "клип"), "Клип принят");
+  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Решение отправлено.", "звук"), "Звук принят");
   assert.equal(outcomeToast("reject", SUBMITTING_TEXT, ""), "Вариант отклонён");
   assert.equal(outcomeToast("hide", SUBMITTING_TEXT, "Отправлено."), "Вариант скрыт");
   assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Исход не подтверждён. Обновите страницу."), "");
