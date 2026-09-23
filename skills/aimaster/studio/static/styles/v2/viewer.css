@@ -420,6 +420,7 @@ audio.v2-viewer-media { flex: 1; min-width: 0; width: 100%; max-height: none; }
   background: transparent;
   color: var(--vw-chosen);
   border-color: var(--vw-chosen-bg);
+  opacity: 1;
   cursor: default;
 }
 

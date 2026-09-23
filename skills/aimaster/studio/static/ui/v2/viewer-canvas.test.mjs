@@ -192,3 +192,11 @@ test("свайп: порог 50px, вертикаль — прокрутка, а
   assert.equal(swipeStep(-120, 200), 0);
   assert.equal(swipeStep(Number.NaN), 0);
 });
+
+test("подпись плитки: «✓ выбран», решение или «вариант N»", async () => {
+  const { tileMark } = await import("./viewer-canvas.js");
+  assert.equal(tileMark({ state: "selected", mark: "выбран", index: 2 }), "✓ выбран");
+  assert.equal(tileMark({ state: "new", mark: "новый", index: 3 }), "вариант 3");
+  assert.equal(tileMark({ state: "rejected", mark: "отклонён", index: 1 }), "отклонён");
+  assert.equal(tileMark(null), "");
+});

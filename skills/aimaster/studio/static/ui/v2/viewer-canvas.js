@@ -137,6 +137,19 @@ export function canvasCaption({ index, total, mark, promptLabel, solo } = {}) {
 }
 
 /**
+ * Подпись плитки плёнки и пилюли на сцене (макет): «✓ выбран»,
+ * «отклонён», а у варианта без решения — просто «вариант 2».
+ * @param {{state: string, mark: string, index: number}} item элемент `filmstrip`
+ * @returns {string}
+ */
+export function tileMark(item) {
+  if (!item) return "";
+  if (item.state === "selected") return `✓ ${item.mark}`;
+  if (item.state === "new" || !item.mark) return `вариант ${item.index}`;
+  return item.mark;
+}
+
+/**
  * Слово состояния варианта для подписи под холстом.
  * @param {string} state состояние из `filmstrip`
  * @returns {string}
@@ -255,11 +268,7 @@ export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark,
     tile.setAttribute("aria-current", String(item.index === shownIndex));
     tile.setAttribute("aria-label", `Вариант ${item.index}${item.mark ? `, ${item.mark}` : ""}`);
     tile.append(renderMedia(item.version.asset_url, mediaKind, { size: "tile" }));
-    // Единственный файл не нумеруется: «1 · Финальный ролик» — лишнее.
-    const mark = item.state === "selected" ? `✓ ${item.mark}` : item.mark;
-    tile.append(el("span", "v2-viewer-tile-mark", strip.solo
-      ? item.mark
-      : `${item.index}${mark ? ` · ${mark}` : ""}`));
+    tile.append(el("span", "v2-viewer-tile-mark", strip.solo ? item.mark : tileMark(item)));
     tile.addEventListener("click", () => onShow(item.index));
     film.append(tile);
   }

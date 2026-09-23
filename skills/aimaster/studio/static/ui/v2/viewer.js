@@ -25,6 +25,7 @@ import {
   renderSlotSwitch,
   slotOptions,
   soloStrip,
+  tileMark,
 } from "./viewer-canvas.js";
 import { promptPlace, promptVersions, renderPromptPanel, variantsByPrompt } from "./viewer-prompt.js";
 import { renderAssemblyParts, renderReferenceUsage, renderViewerZones, whereUsed } from "./viewer-zones.js";
@@ -102,6 +103,14 @@ function keepLabel(target, tab) {
   if (target.kind === "reference") return "Оставить эту картинку";
   if (tab === "audio") return "Оставить этот звук";
   return tab === "video" ? "Оставить этот клип" : "Оставить этот кадр";
+}
+
+/** Заголовок блока промпта справа — как в макете. */
+function promptTitle(target, tab) {
+  if (target.kind === "reference") return "Промпт";
+  if (target.kind === "assembly") return "Задание на сборку";
+  if (tab === "audio") return "Промпт звука";
+  return tab === "video" ? "Промпт движения" : "Промпт кадра";
 }
 
 /** Чем назвать материал в тосте после решения. */
@@ -240,7 +249,7 @@ function leftColumn(snapshot, project) {
       promptLabel: byPromptIndex ? `v${byPromptIndex}` : "",
     }),
     emptyText: target.kind === "assembly" ? "Ролик ещё не собран — попросите агента собрать его." : undefined,
-    stageMark: shown && !strip.solo ? (shown.state === "selected" ? `✓ ${shown.mark}` : shown.mark) : "",
+    stageMark: shown && !strip.solo ? tileMark(shown) : "",
     addRequest: target.kind === "assembly" || strip.solo
       ? null
       : moreVariants({ ...chat, project, revision: snapshot.revision, promptVersion: prompts.versions[view.promptShown - 1] || null, selectedVariant: shown?.version || null }),
@@ -300,7 +309,7 @@ function rightColumn(snapshot, project, prompts, chat, strip) {
     revision: snapshot.revision,
     state: prompts,
     shownIndex: view.promptShown,
-    title: view.tab === "video" ? "Промпт движения" : view.tab === "audio" ? "Промпт звука" : "Промпт кадра",
+    title: promptTitle(view.target, view.tab),
     chat,
     editWhat: view.target.kind === "reference" ? `референса «${view.target.id}»` : undefined,
     madeBy: variantsByPrompt(prompts.versions[view.promptShown - 1] || null, strip.solo ? [] : strip.items),
