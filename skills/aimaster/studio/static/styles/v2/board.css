@@ -2,141 +2,12 @@
  * Светлая доска v2 — экраны (редизайн 2026-09-23, хэндофф
  * docs/design/2026-09-23-redesign/README.md): Сценарий, Кадры с полкой
  * референсов и карточками сцен, Видео, Звук, Сборка. Каркас — шапка,
- * путь, подвал — переезжает в shell.css; пока он там не появился, его
- * старые правила живут здесь, в разделе «Каркас (переезжает)».
+ * путь, заголовок экрана, подвал, общие кнопки — в shell.css.
  * Телефон с 360px — без горизонтальной прокрутки: сетки сворачиваются в
  * одну колонку, полка листается по горизонтали сама. Брейкпойнт общий —
  * `@media (max-width: 759px)`. Inline-стилей нет нигде: CSP запрещает.
  * Цвета, радиусы, тени и кегли — токены --v2-* из tokens-v2.css.
  */
-
-body[data-ui="v2"] .main-content {
-  background: var(--v2-board-bg);
-  padding: 0 0 var(--space-7);
-}
-
-/* --- Шапка ---------------------------------------------------------- */
-
-.v2-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  width: 100%;
-  flex-wrap: wrap;
-}
-
-.v2-topbar-title { font-size: var(--font-size-md); }
-.v2-topbar-meta { color: var(--color-text-muted); font-weight: 400; font-size: var(--font-size-sm); }
-
-/* --- Путь ------------------------------------------------------------ */
-
-.v2-path { padding: var(--space-4) var(--v2-gutter) 0; }
-
-.v2-path-strip {
-  display: flex;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.v2-path-step { flex: 1 1 0; min-width: 0; }
-
-.v2-path-button {
-  display: block;
-  width: 100%;
-  padding: var(--space-2) var(--space-1);
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: var(--font-size-sm);
-  color: var(--color-text-muted);
-  text-align: center;
-  cursor: pointer;
-}
-
-.v2-path-button::before {
-  content: "";
-  display: block;
-  height: 4px;
-  margin-bottom: var(--space-2);
-  border-radius: 2px;
-  background: var(--v2-path-idle);
-}
-
-.v2-path-step[data-state="done"] .v2-path-button { color: var(--color-accent-strong); }
-.v2-path-step[data-state="done"] .v2-path-button::before { background: var(--v2-path-done); }
-.v2-path-step[data-state="current"] .v2-path-button { color: var(--color-text); font-weight: 700; }
-.v2-path-step[data-state="current"] .v2-path-button::before { background: var(--v2-path-current); }
-.v2-path-button[aria-disabled="true"] { cursor: default; }
-
-/* Открытый на просмотр шаг: видно, куда смотришь, даже если текущий
-   шаг проекта другой. */
-.v2-path-step[data-open="true"] .v2-path-button { color: var(--color-text); }
-.v2-path-step[data-open="true"] .v2-path-button::before {
-  outline: 2px solid var(--v2-path-current);
-  outline-offset: 2px;
-}
-.v2-path-hint { display: block; font-weight: 400; font-size: var(--v2-font-meta); color: var(--color-text-subtle); }
-
-.v2-path-explain {
-  margin: var(--space-3) 0 0;
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--v2-board-sunken);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-}
-
-/* --- Каркас (переезжает в shell.css) -------------------------------- */
-
-.v2-chat-button {
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--font-size-sm);
-  padding: var(--space-2) var(--space-3);
-  min-height: var(--touch-target-min);
-  cursor: pointer;
-}
-
-.v2-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  margin-top: var(--space-5);
-  padding: var(--space-4) var(--v2-gutter);
-  border-top: 1px solid var(--v2-line);
-  background: var(--v2-board-sunken);
-}
-
-.v2-footer-summary { margin: 0; font-size: var(--font-size-sm); color: var(--color-text-secondary); }
-.v2-footer-buttons { display: flex; gap: var(--space-2); }
-
-.v2-primary {
-  border: 0;
-  border-radius: var(--radius-md);
-  background: var(--v2-primary-bg);
-  color: var(--v2-primary-fg);
-  font-weight: 600;
-  padding: var(--space-3) var(--space-4);
-  min-height: var(--touch-target-min);
-}
-
-/* Недоступная главная кнопка всё равно должна читаться: белым по
-   светло-серому её не видно (контраст около 1.9:1). */
-.v2-primary[disabled] { background: var(--v2-primary-off); color: var(--color-text-secondary); cursor: not-allowed; }
-
-@media (max-width: 759px) {
-  .v2-path-button { font-size: var(--v2-font-meta); }
-  .v2-footer { justify-content: stretch; }
-  .v2-footer-buttons, .v2-primary { width: 100%; }
-}
 
 /* --- Общее для экранов ----------------------------------------------- */
 
@@ -185,6 +56,11 @@ body[data-ui="v2"] .main-content {
 .v2-thumb img, .v2-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .v2-thumb video { pointer-events: none; background: var(--v2-placeholder); }
 .v2-thumb-broken { background: var(--color-danger-bg); }
+
+/* В превью с aspect-ratio картинка лежит слоем под подписями: процентная
+   высота внутри такой кнопки иначе схлопывает её до нуля. */
+.v2-slot > .v2-thumb, .v2-clip > .v2-thumb,
+.v2-big-preview > .v2-thumb, .v2-final-preview > .v2-thumb { position: absolute; inset: 0; }
 
 /* Карточка — белая, тонкая граница, радиус 16. */
 .v2-card {
@@ -1055,7 +931,7 @@ body[data-ui="v2"] .main-content {
   .v2-zone[data-zone="video-ref"] .v2-zone-items { flex-wrap: nowrap; overflow-x: auto; padding: 0 0 2px; }
   .v2-avatar { width: 40px; height: 40px; }
   .v2-avatar:hover { transform: none; }
-  .v2-ref-chip { height: 40px; white-space: nowrap; }
+  .v2-ref-chip { flex: 0 1 auto; max-width: 100%; height: 40px; white-space: nowrap; }
   .v2-ref-chip-picture { width: 30px; height: 30px; }
 
   .v2-scene[data-mode="frames"] .v2-scene-actions { order: 7; grid-column: 1 / -1; margin-top: 12px; }
@@ -1084,22 +960,24 @@ body[data-ui="v2"] .main-content {
   .v2-scene[data-mode="video"] {
     display: flex;
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
     gap: 0;
     padding: 0;
     overflow: hidden;
   }
   .v2-scene[data-mode="video"] .v2-scene-zones { display: contents; }
-  .v2-scene[data-mode="video"] .v2-clip-zone { order: 1; }
-  .v2-scene[data-mode="video"] .v2-scene-main { order: 2; padding: 12px 14px 0; }
+  /* Колонка без переноса: в многострочном flex ширина элемента ещё не
+     растянута, когда считается пропорция, и превью схлопывается. */
+  .v2-scene[data-mode="video"] .v2-clip-zone { order: 1; flex: none; aspect-ratio: 16 / 9; }
+  .v2-scene[data-mode="video"] .v2-scene-main { order: 2; flex: none; padding: 12px 14px 0; }
   .v2-scene[data-mode="video"] .v2-continuation { order: 3; padding: 8px 14px 14px; }
-  .v2-scene[data-mode="video"] .v2-zone { order: 4; padding: 0 14px 14px; }
+  .v2-scene[data-mode="video"] .v2-zone { order: 4; flex: none; padding: 0 14px 14px; }
   .v2-scene[data-mode="video"] .v2-scene-open { display: none; }
   .v2-scene[data-mode="video"] .v2-scene-actions { margin-top: 10px; }
   .v2-clip {
     width: 100%;
-    height: auto;
-    aspect-ratio: 16 / 9;
+    height: 100%;
     border: 0;
     border-bottom: 1px solid var(--v2-line);
     border-radius: 0;

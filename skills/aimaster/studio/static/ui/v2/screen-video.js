@@ -59,16 +59,10 @@ export function renderVideoScreen(root, { state, screen = "video" } = {}) {
   const scenes = scenesInOrder(project);
   const list = el("section", "v2-scenes");
   list.dataset.hook = "v2-scenes";
-  const head = el("div", "v2-section-head");
-  head.append(
-    el("h2", "v2-section-title", "Сцены"),
-    el("span", "v2-section-note", !scenes.length
-      ? "Сцен пока нет — они появятся после раскадровки."
-      : project.gen_mode === "one_shot"
-        ? `${scenes.length} · ролик делается целиком, своих клипов у сцен может и не быть`
-        : `${scenes.length} · нажмите на клип, чтобы посмотреть варианты и выбрать`),
-  );
-  list.append(head);
+  if (!scenes.length) list.append(el("p", "v2-section-hint", "Сцен пока нет — они появятся после раскадровки."));
+  else if (project.gen_mode === "one_shot") {
+    list.append(el("p", "v2-section-hint", "Ролик делается целиком, поэтому своих клипов у сцен может и не быть."));
+  }
   scenes.forEach((scene, index) => list.append(
     renderSceneRow(project, snapshot.revision, scene, index + 1, { mode: "video" }),
   ));
