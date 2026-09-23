@@ -13,16 +13,24 @@ from functools import lru_cache
 from pathlib import Path
 
 _SE_FILE_OBJECT = 1
+_OWNER_SECURITY_INFORMATION = 0x1
 _DACL_SECURITY_INFORMATION = 0x4
 _TOKEN_QUERY = 0x0008
 _TOKEN_USER = 1
 _ACCESS_ALLOWED_ACE_TYPE = 0x0
 _ACCESS_DENIED_ACE_TYPE = 0x1
+_OBJECT_INHERIT_ACE = 0x01
+_CONTAINER_INHERIT_ACE = 0x02
 _INHERIT_ONLY_ACE = 0x08
 _CRYPTPROTECT_UI_FORBIDDEN = 0x1
 # SYSTEM, Administrators, CREATOR OWNER, OWNER RIGHTS: the Windows
 # equivalent of root, which a 0600 file on POSIX cannot keep out either.
 _TRUSTED_SIDS = {"S-1-5-18", "S-1-5-32-544", "S-1-3-0", "S-1-3-4"}
+# Who may own a private object besides the current user.  An owner has
+# implicit READ_CONTROL and WRITE_DAC, so a folder pre-created by another
+# account stays theirs no matter what its DACL says.  An elevated
+# administrator's files are owned by the Administrators group by default.
+_TRUSTED_OWNERS = {"S-1-5-18", "S-1-5-32-544"}
 
 
 class _Blob(ctypes.Structure):
@@ -52,7 +60,7 @@ def _libraries():
              ctypes.POINTER(dword))
     _declare(advapi32.ConvertSidToStringSidW, boolean, pointer, ctypes.POINTER(wintypes.LPWSTR))
     _declare(advapi32.GetNamedSecurityInfoW, dword, wintypes.LPCWSTR, ctypes.c_int, dword,
-             pointer, pointer, out_pointer, pointer, out_pointer)
+             out_pointer, pointer, out_pointer, pointer, out_pointer)
     _declare(advapi32.GetAce, boolean, pointer, dword, out_pointer)
     for name in ("CryptProtectData", "CryptUnprotectData"):
         _declare(getattr(crypt32, name), boolean, blob, pointer, blob, pointer, pointer, dword, blob)
@@ -87,21 +95,24 @@ def current_user_sid() -> str:
         kernel32.CloseHandle(token)
 
 
-def _aces(path: Path):
-    """``(type, flags, sid)`` for every entry of the DACL; None = no DACL."""
+def _security(path: Path):
+    """``(owner_sid, entries)``; entries are ``(type, flags, sid)`` of the
+    DACL, or None for a NULL DACL."""
 
     advapi32, kernel32, _ = _libraries()
+    owner = ctypes.c_void_p()
     dacl = ctypes.c_void_p()
     descriptor = ctypes.c_void_p()
     error = advapi32.GetNamedSecurityInfoW(
-        str(path), _SE_FILE_OBJECT, _DACL_SECURITY_INFORMATION,
-        None, None, ctypes.byref(dacl), None, ctypes.byref(descriptor),
+        str(path), _SE_FILE_OBJECT, _OWNER_SECURITY_INFORMATION | _DACL_SECURITY_INFORMATION,
+        ctypes.byref(owner), None, ctypes.byref(dacl), None, ctypes.byref(descriptor),
     )
     if error:
         raise ctypes.WinError(error)
     try:
+        owner_sid = _sid_string(owner.value) if owner.value else None
         if not dacl.value:
-            return None  # a NULL DACL grants everyone everything
+            return owner_sid, None  # a NULL DACL grants everyone everything
         count = ctypes.cast(dacl, ctypes.POINTER(ctypes.c_ushort))[2]  # ACL.AceCount
         entries = []
         for index in range(count):
@@ -115,31 +126,62 @@ def _aces(path: Path):
             else:
                 sid = None  # object/callback ACEs: the caller fails closed
             entries.append((ace_type, ace_flags, sid))
-        return entries
+        return owner_sid, entries
     finally:
         kernel32.LocalFree(descriptor)
 
 
-def _allowed_sids(path: Path) -> list[str] | None:
-    """SIDs of allow entries that apply to ``path`` itself; None = no DACL."""
+def _aces(path: Path):
+    """``(type, flags, sid)`` for every entry of the DACL; None = no DACL."""
 
-    entries = _aces(path)
+    return _security(path)[1]
+
+
+def _applies(ace_flags: int, directory: bool) -> bool:
+    """Does an allow entry grant access now or to what is created inside?
+
+    An inherit-only entry does not apply to the object itself, but on a
+    directory it is copied onto new files (OI) and subfolders (CI) -- the
+    SQLite ``-wal``/``-shm`` files of a private folder, for example.
+    """
+
+    if not ace_flags & _INHERIT_ONLY_ACE:
+        return True
+    return directory and bool(ace_flags & (_OBJECT_INHERIT_ACE | _CONTAINER_INHERIT_ACE))
+
+
+def _allowed_sids(entries, *, directory: bool = False) -> list[str] | None:
+    """SIDs of allow entries that matter for the object; None = no DACL."""
+
     if entries is None:
         return None
     sids = []
     for ace_type, ace_flags, sid in entries:
-        if ace_flags & _INHERIT_ONLY_ACE or ace_type == _ACCESS_DENIED_ACE_TYPE:
+        if ace_type == _ACCESS_DENIED_ACE_TYPE or not _applies(ace_flags, directory):
             continue
         sids.append(sid if sid is not None else "unsupported-ace")
     return sids
 
 
-def is_private(path: Path) -> bool:
-    sids = _allowed_sids(path)
+def owner_is_trusted(owner_sid, user_sid: str) -> bool:
+    return owner_sid is not None and (owner_sid == user_sid or owner_sid in _TRUSTED_OWNERS)
+
+
+def evaluate_private(owner_sid, entries, user_sid: str, *, directory: bool = False) -> bool:
+    """Pure decision behind ``is_private`` (portable, unit-tested everywhere)."""
+
+    if not owner_is_trusted(owner_sid, user_sid):
+        return False
+    sids = _allowed_sids(entries, directory=directory)
     if sids is None:
         return False
-    allowed = _TRUSTED_SIDS | {current_user_sid()}
+    allowed = _TRUSTED_SIDS | {user_sid}
     return all(sid in allowed for sid in sids)
+
+
+def is_private(path: Path, *, directory: bool = False) -> bool:
+    owner_sid, entries = _security(path)
+    return evaluate_private(owner_sid, entries, current_user_sid(), directory=directory)
 
 
 def _icacls(path: Path, *arguments: str) -> None:
@@ -157,22 +199,42 @@ def _icacls(path: Path, *arguments: str) -> None:
         raise OSError(f"icacls could not restrict access to {path.name} (exit {result.returncode})")
 
 
+def _take_ownership(path: Path, owner_sid, user: str) -> None:
+    """Make the current user the owner, or refuse with a clear error."""
+
+    if owner_is_trusted(owner_sid, user):
+        return
+    try:
+        _icacls(path, "/setowner", f"*{user}")
+    except OSError:
+        raise OSError(
+            f"{path.name} belongs to another Windows account ({owner_sid}); it cannot be made "
+            "private. Delete it (or ask an administrator to) and run the command again"
+        ) from None
+    if not owner_is_trusted(_security(path)[0], user):
+        raise OSError(f"{path.name} still belongs to another Windows account ({owner_sid})")
+
+
 def make_private(path: Path, *, directory: bool = False) -> None:
     rights = "(OI)(CI)(F)" if directory else "(F)"
     user = current_user_sid()
+    _take_ownership(path, _security(path)[0], user)
     # Drop inherited entries and replace the user's own grant ...
     _icacls(path, "/inheritance:r", "/grant:r", f"*{user}:{rights}")
     # ... then every explicit grant to anyone else (an "Everyone: read"
     # added earlier survives `/grant:r`, which only rewrites the named SID).
     # Inherit-only grants count too: on a directory they would reach the
     # files created inside it later.
-    entries = _aces(path) or []
-    foreign = sorted({
+    foreign = foreign_grants(_aces(path) or [], user)
+    if foreign:
+        _icacls(path, "/remove:g", *(f"*{sid}" for sid in foreign))
+
+
+def foreign_grants(entries, user: str) -> list[str]:
+    return sorted({
         sid for ace_type, _, sid in entries
         if ace_type == _ACCESS_ALLOWED_ACE_TYPE and sid and sid != user and sid not in _TRUSTED_SIDS
     })
-    if foreign:
-        _icacls(path, "/remove:g", *(f"*{sid}" for sid in foreign))
 
 
 def _blob(data: bytes):

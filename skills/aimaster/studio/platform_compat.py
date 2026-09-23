@@ -9,6 +9,7 @@ and are imported only on Windows.
 
 from __future__ import annotations
 
+import errno
 import os
 import stat
 import sys
@@ -25,23 +26,62 @@ def _descriptor(target) -> int:
     return target if isinstance(target, int) else target.fileno()
 
 
+# msvcrt.locking reports "held by another process" as EACCES or EDEADLOCK;
+# anything else (a filesystem without byte-range locks: EINVAL, EBADF) will
+# never succeed and must not be retried forever.
+_LOCK_BUSY_ERRNOS = frozenset(
+    {errno.EACCES, getattr(errno, "EDEADLOCK", errno.EDEADLK), errno.EDEADLK}
+)
+DEFAULT_LOCK_TIMEOUT = 60.0
+
+
+class LockTimeoutError(TimeoutError):
+    """Another process kept the lock for longer than the timeout."""
+
+
+def _acquire_polling(try_lock, *, timeout, poll=_LOCK_POLL_SECONDS,
+                     clock=time.monotonic, sleep=time.sleep, name="the lock file") -> None:
+    """Call ``try_lock`` until it succeeds; retry only while the lock is busy."""
+
+    deadline = clock() + timeout
+    while True:
+        try:
+            try_lock()
+            return
+        except OSError as error:
+            if error.errno not in _LOCK_BUSY_ERRNOS:
+                raise
+            if clock() >= deadline:
+                raise LockTimeoutError(
+                    f"{name} is still locked by another process after {timeout:g} s; "
+                    "close the other Aimaster window or command and try again"
+                ) from None
+        sleep(poll)
+
+
 @contextmanager
-def file_lock(target):
-    """Hold an exclusive, blocking lock on an open file (or descriptor)."""
+def file_lock(target, *, timeout: float = DEFAULT_LOCK_TIMEOUT):
+    """Hold an exclusive lock on an open file (or descriptor).
+
+    POSIX blocks in ``flock`` exactly as before.  Windows polls
+    ``msvcrt.locking`` for at most ``timeout`` seconds and then raises
+    ``LockTimeoutError``; a filesystem that cannot lock raises ``OSError``
+    at once instead of hanging.
+    """
 
     descriptor = _descriptor(target)
     if IS_WINDOWS:
         import msvcrt
 
-        # msvcrt locks from the current position: always byte 0, which may
-        # lie past the end of an empty lock file (Windows allows that).
-        while True:
+        def lock_byte_zero():
+            # msvcrt locks from the current position: always byte 0, which
+            # may lie past the end of an empty lock file (Windows allows it).
             os.lseek(descriptor, 0, os.SEEK_SET)
-            try:
-                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
-                break
-            except OSError:
-                time.sleep(_LOCK_POLL_SECONDS)
+            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+
+        label = getattr(target, "name", None)
+        label = os.path.basename(label) if isinstance(label, str) else "the lock file"
+        _acquire_polling(lock_byte_zero, timeout=timeout, name=label)
         try:
             yield
         finally:
@@ -62,14 +102,16 @@ def is_private(path, *, directory=False) -> bool:
 
     POSIX: the mode is exactly 0600 (0700 for a directory).  Windows: every
     allow entry of the DACL names the current user, SYSTEM, Administrators
-    or the owner-rights SIDs -- checked by SID, so it does not depend on the
-    language of the Windows installation.
+    or the owner-rights SIDs, and the owner is the current user, SYSTEM or
+    Administrators -- checked by SID, so it does not depend on the language
+    of the Windows installation.  For a directory, inherit-only entries that
+    new files or subfolders would receive count as well.
     """
 
     if IS_WINDOWS:
         from . import _windows_security
 
-        return _windows_security.is_private(Path(path))
+        return _windows_security.is_private(Path(path), directory=directory)
     expected = 0o700 if directory else 0o600
     return stat.S_IMODE(os.stat(path).st_mode) == expected
 

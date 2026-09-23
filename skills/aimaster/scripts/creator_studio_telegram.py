@@ -742,14 +742,20 @@ class KeychainSecretStore:
         return validate_bot_token(result.stdout.rstrip("\n"))
 
 
+class SecretUnreadableError(RuntimeError):
+    """The OS store holds a token but cannot open it: never fall back silently."""
+
+
 class DpapiSecretStore:
     """Windows: the token encrypted with DPAPI for the current user only.
 
     Only this Windows account on this computer can decrypt the file; the
-    owner-only ACL on it is a second, best-effort layer.
+    owner-only ACL on it is a second, best-effort layer.  Once it holds the
+    token, a plaintext fallback file left by an earlier setup is deleted.
     """
 
     _ENTROPY = b"aimaster-telegram-bot-token"
+    replaces_plain_fallback = True
 
     def __init__(self, path=None):
         if not IS_WINDOWS:
@@ -787,7 +793,10 @@ class DpapiSecretStore:
         try:
             value = _windows_security.unprotect(sealed, self._ENTROPY).decode("utf-8")
         except (OSError, UnicodeError):
-            raise RuntimeError("Windows DPAPI could not decrypt the Telegram token") from None
+            raise SecretUnreadableError(
+                "Windows DPAPI could not decrypt the Telegram token (was it saved by another "
+                "Windows account or computer?). Run `creator_studio_telegram.py setup` again"
+            ) from None
         return validate_bot_token(value)
 
 
@@ -813,15 +822,34 @@ class LocalSecretStore:
         if self.keychain is not None:
             try:
                 self.keychain.store(token)
-                return
             except RuntimeError:
                 pass
+            else:
+                self._drop_plain_fallback()
+                return
         self.fallback.store(token)
+
+    def _drop_plain_fallback(self):
+        """A plaintext copy next to an encrypted store only weakens it."""
+
+        if not getattr(self.keychain, "replaces_plain_fallback", False):
+            return
+        try:
+            self.fallback.path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            raise RuntimeError(
+                "the Telegram token is now encrypted, but the old plaintext file "
+                f"{self.fallback.path.name} could not be deleted; delete it by hand"
+            ) from None
 
     def load(self) -> str:
         if self.keychain is not None:
             try:
                 return self.keychain.load()
+            except SecretUnreadableError:
+                raise
             except RuntimeError:
                 pass
         return self.fallback.load()
@@ -995,6 +1023,11 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
             if mini_app is not None:
                 mini_app.close()
             studio.close()
+    except SecretUnreadableError as error:
+        # Written here without the token: the owner must know the stored
+        # token is unreadable rather than see a stale plaintext one used.
+        print(f"Telegram transport setup or launch failed: {error}", file=sys.stderr)
+        return 2
     except (OSError, RuntimeError, TelegramBotError, ValueError) as error:
         # Credential-bearing exceptions are intentionally not interpolated.
         print("Telegram transport setup or launch failed", file=sys.stderr)
