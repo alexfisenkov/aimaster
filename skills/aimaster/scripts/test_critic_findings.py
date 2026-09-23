@@ -151,6 +151,22 @@ class EnqueueKeyTests(Base):
         self.assertEqual(len(self.grants()), 1)
 
 
+    def test_same_key_replays_despite_new_revision(self):
+        cli("project", "create", self.ws, "p", "--title", "P", "--type", "photo", "--mode", "autopilot")
+        first = self.enqueue("p", "k1")
+        history = len(self.store.load("p")["history"])
+        replay = self.enqueue("p", "k1")  # fresh revision, as the instructions say
+        self.assertEqual((replay["action_id"], replay["status"]), (first["action_id"], first["status"]))
+        self.assertEqual(len(self.grants()), 1)
+        self.assertEqual(len(self.store.load("p")["history"]), history)
+
+    def test_same_key_for_another_request_names_the_existing_action(self):
+        cli("project", "create", self.ws, "p", "--title", "P", "--type", "photo", "--mode", "autopilot")
+        first = self.enqueue("p", "k1")
+        with self.assertRaisesRegex(ValueError, first["action_id"]):
+            self.enqueue("p", "k1", target="scene-2")
+
+
 class DetectToolsRobustnessTests(unittest.TestCase):
     """Находка 4: плохие конфиги не роняют скрипт и не выдают секрет."""
 
@@ -250,6 +266,20 @@ class ImportRobustnessTests(Base):
         result = cli("library", "import", self.ws, "--from-projects")
         self.assertEqual(result["created"], [])
         self.assertEqual({item["reason"] for item in result["skipped"]}, {"add_failed"})
+
+    def test_tie_prefers_cyrillic_then_current_label(self):
+        from collections import Counter
+        from studio.library_projects import _label_and_aliases
+        slot = {"names": Counter({"Artem": 1, "Артём": 1}), "fulls": [], "path": Path("x.png")}
+        self.assertEqual(_label_and_aliases(slot)[0], "Артём")
+        latin = {"names": Counter({"Tom": 1, "Tim": 1}), "fulls": [], "path": Path("x.png")}
+        self.assertEqual(_label_and_aliases(latin, "Tim")[0], "Tim")
+        self.assertEqual(_label_and_aliases(latin)[0], "Tom")
+        self.project_with_reference("a", "Artem — worker", 5)  # seen first
+        self.project_with_reference("b", "Артём — герой", 5)   # same file bytes
+        cli("library", "import", self.ws, "--from-projects")
+        entries = cli("library", "list", self.ws)["entries"]
+        self.assertEqual([e["label"] for e in entries], ["Артём"])
 
 
 class MigrationRaceTests(Base):

@@ -51,8 +51,19 @@ def _candidate_name(kind, full) -> str:
     return name_part(full) if kind in _NAME_KINDS else full
 
 
-def _label_and_aliases(slot) -> tuple[str, list[str]]:
-    names = [name for name, _ in slot["names"].most_common()] or [slot["path"].stem]
+def _has_cyrillic(text: str) -> bool:
+    return any("а" <= char <= "я" or char == "ё" for char in text.casefold())
+
+
+def _label_and_aliases(slot, current_label=None) -> tuple[str, list[str]]:
+    """Most frequent name wins; a tie prefers a Cyrillic spelling, then the
+    entry's current label (stable across imports), then first seen."""
+
+    counts = slot["names"]
+    order = {name: position for position, name in enumerate(counts)}
+    names = sorted(counts, key=lambda name: (-counts[name], not _has_cyrillic(name),
+                                             name != current_label, order[name]))
+    names = names or [slot["path"].stem]
     aliases = [*names[1:], *slot["fulls"]]
     return names[0], [a for a in dict.fromkeys(aliases) if a != names[0]]
 
@@ -150,9 +161,9 @@ def import_from_projects(workspace) -> dict:
     character_ids = {}
     with locked_index(library) as index:
         for digest, slot in sorted(found.items(), key=lambda item: item[1]["kind"] == "voice"):
-            label, aliases = _label_and_aliases(slot)
-            voice_of = character_ids.get(slot["owner_digest"]) if slot["kind"] == "voice" else None
             before = find_by_sha(index, digest)
+            label, aliases = _label_and_aliases(slot, before["label"] if before else None)
+            voice_of = character_ids.get(slot["owner_digest"]) if slot["kind"] == "voice" else None
             before = None if before is None else (before["label"], list(before["aliases"]))
             try:
                 entry, is_new, _ = add_file(index, library, kind=slot["kind"], label=label,

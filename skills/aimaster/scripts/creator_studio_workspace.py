@@ -54,20 +54,32 @@ def command_action_enqueue(args):
         )
     payload = json.loads(args.payload) if args.payload else {}
     ledger = open_ledger(args.workspace)
-    if ledger.action_by_key(args.project, args.idempotency_key) is None:
+    existing = ledger.action_by_key(args.project, args.idempotency_key)
+    if existing is not None:
+        # A retry of the same request replays it whatever revision it
+        # carries now (the self-issued grant itself moved the revision on).
+        same = (existing["action_type"], existing["target_id"], existing["payload"]) == (
+            args.type, args.target, payload)
+        if not same:
+            raise ValueError(
+                f"idempotency key belongs to a different action request "
+                f"({existing['action_id']}: {existing['action_type']} {existing['target_id']})"
+            )
+        action = existing
+    else:
         for pending in ledger.pending_actions(args.project):
             if pending["action_type"] == args.type and pending["target_id"] == args.target:
                 raise ValueError(
                     f"{args.type} for {args.target} is already {pending['status']} "
                     f"({pending['action_id']}); wait for it to finish or retry with its own key"
                 )
-    action = ledger.enqueue(args.project, ActionRequest(
-        action_type=args.type,
-        target_id=args.target,
-        payload=payload,
-        expected_revision=args.expected_revision,
-        idempotency_key=args.idempotency_key,
-    ))
+        action = ledger.enqueue(args.project, ActionRequest(
+            action_type=args.type,
+            target_id=args.target,
+            payload=payload,
+            expected_revision=args.expected_revision,
+            idempotency_key=args.idempotency_key,
+        ))
     grant_id = action["grant_id"]
     _print({
         "action_id": action["action_id"],
