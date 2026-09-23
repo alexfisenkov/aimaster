@@ -4,7 +4,7 @@
 // (`ui/stage-approval.js`); никаких вторых кнопок здесь нет: «вернуть на
 // доработку» и прочее редкое уходит в чат.
 
-import { buildSimpleButton, buildStatusLine } from "../card-forms.js";
+import { SUBMITTING_TEXT, buildSimpleButton, buildStatusLine } from "../card-forms.js";
 import { agentControl, exactTarget } from "../agent-control.js";
 import { SCREEN_LABELS, primaryAction, projectFinished, screenForStage } from "./screen-map.js";
 import { el, openViewer } from "./dom.js";
@@ -58,6 +58,26 @@ export function footerMode(snapshot, { screen, stage } = {}) {
   const actionType = DIRECT_STAGES[stage];
   const direct = viewStage.current_stage === stage && Boolean(actionType) && allowed.includes(actionType);
   return direct ? "decide" : "chat";
+}
+
+/**
+ * Одобрение стадии, пока его запрос в полёте, и последний исход — вне
+ * узлов подвала. Подвал пересобирается на каждой перерисовке (фоновый
+ * опрос раз в 8 с), и без этого кнопка поднималась бы снова активной, а
+ * «Отправляется…» пропадало: второй клик ушёл бы вторым `approve`.
+ * Пока запрос в полёте, в новый подвал переносятся те же кнопка и строка
+ * исхода — их держит сам запрос (`submitAction` вернёт кнопке `disabled`).
+ */
+const flight = { key: "", button: null, status: null, text: "" };
+
+/** Ключ одобрения: проект и стадия. */
+export function footerFlightKey(projectId, stage) {
+  return `${projectId || ""}::${stage || ""}`;
+}
+
+/** Идёт ли сейчас одобрение с этим ключом. */
+export function footerInFlight(key) {
+  return flight.key === key && Boolean(flight.button) && flight.status?.textContent === SUBMITTING_TEXT;
 }
 
 function note(text, hook) {
@@ -165,11 +185,16 @@ export function renderFooter(snapshot, { screen } = {}) {
   } else {
     left.append(note(FOOTER_NOTICES.ready, "v2-remaining"));
   }
-  const status = buildStatusLine();
-  status.classList.add("v2-footer-status");
-
   const actionType = DIRECT_STAGES[action.stage];
-  if (mode === "decide") {
+  const key = footerFlightKey(project?.id, action.stage);
+  let status;
+  if (mode === "decide" && footerInFlight(key)) {
+    status = flight.status;
+    row.append(flight.button);
+  } else if (mode === "decide") {
+    status = buildStatusLine();
+    status.classList.add("v2-footer-status");
+    if (flight.key === key) status.textContent = flight.text;
     const button = buildSimpleButton({
       actionType,
       targetId: action.stage,
@@ -179,6 +204,17 @@ export function renderFooter(snapshot, { screen } = {}) {
       status,
       label: action.label,
       hookAction: "approve-stage",
+      requireActionSuccess: true,
+      onSettled: () => {
+        if (flight.button !== button) return;
+        flight.text = status.textContent;
+        flight.button = null;
+        flight.status = null;
+      },
+    });
+    // Слушатель после `card-forms`: строка исхода уже «Отправляется…».
+    button.addEventListener("click", () => {
+      Object.assign(flight, { key, button, status, text: SUBMITTING_TEXT });
     });
     button.classList.add("v2-primary");
     button.disabled = !action.enabled;
@@ -196,6 +232,10 @@ export function renderFooter(snapshot, { screen } = {}) {
     }));
   }
 
+  if (!status) {
+    status = buildStatusLine();
+    status.classList.add("v2-footer-status");
+  }
   inner.append(status);
   return footer;
 }

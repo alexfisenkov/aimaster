@@ -143,3 +143,10 @@ test("строка «в полёте» — одна на ряд и card-forms", 
   assert.equal(forms.isConfirmedSuccess({ ok: true, confirmed: false }), false);
   assert.equal(forms.isConfirmedSuccess({ ok: false, code: "action_failed" }), false);
 });
+
+test("подвал: ключ одобрения — проект и стадия; без запроса в полёте — свободно", async () => {
+  const { footerFlightKey, footerInFlight } = await import("./footer.js");
+  assert.equal(footerFlightKey("p", "motion"), "p::motion");
+  assert.notEqual(footerFlightKey("p", "motion"), footerFlightKey("q", "motion"));
+  assert.equal(footerInFlight(footerFlightKey("p", "motion")), false);
+});
