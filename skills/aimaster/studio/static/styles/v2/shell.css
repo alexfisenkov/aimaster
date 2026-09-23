@@ -28,6 +28,11 @@
 
 .v2-toast[hidden] { display: none; }
 
+/* В окне агента на телефоне низ занят кнопками — тост уходит наверх. */
+@media (max-width: 759px) {
+  dialog .v2-toast { top: calc(16px + env(safe-area-inset-top)); bottom: auto; }
+}
+
 /* --- Шторка ---------------------------------------------------------- */
 
 .v2-sheet {
@@ -335,7 +340,7 @@ button.v2-path-button:hover { background: var(--v2-surface); }
 }
 
 .v2-path-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
-.v2-path-label { font-size: var(--v2-fs-13); font-weight: 500; white-space: nowrap; }
+.v2-path-label { font-size: var(--v2-fs-13); font-weight: 500; color: var(--v2-ink); white-space: nowrap; }
 .v2-path-step[data-open="true"] .v2-path-label { font-weight: 700; }
 .v2-path-step[data-state="next"] .v2-path-label { color: #9aa1a8; }
 
