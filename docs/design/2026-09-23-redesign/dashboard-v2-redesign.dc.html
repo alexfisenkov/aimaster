@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+html,body{margin:0;padding:0;background:#f5f6f7;}
+*{box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased;}
+button,input,textarea{font-family:inherit;}
+a{color:#0f6b3c;}
+a:hover{color:#15864a;}
+</style>
+</helmet>
+<div style="min-height:100vh;background:{{ fr.pageBg }};display:flex;align-items:{{ fr.align }};justify-content:center;padding:{{ fr.pagePad }}">
+<div style="position:relative;width:{{ fr.w }};height:{{ fr.h }};flex:{{ fr.flex }};overflow:{{ fr.o }};transform:{{ fr.t }};border-radius:{{ fr.r }};box-shadow:{{ fr.sh }};background:#f5f6f7">
+<div style="height:{{ fr.ih }};overflow-y:{{ fr.io }};overflow-x:{{ fr.ix }}">
+<sc-if value="{{ isDesktop }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;min-height:100vh;background:#f5f6f7;color:#0e1013;font-size:14px;line-height:1.5">
+
+  <sc-if value="{{ railOpen }}" hint-placeholder-val="{{ true }}">
+    <aside style="position:sticky;top:0;height:100vh;width:256px;flex:none;background:#101215;color:#e9ebed;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 12px 14px 18px">
+        <span style="font-weight:700;font-size:15px;letter-spacing:-0.01em">AI Мастерская</span>
+        <button onClick="{{ toggleRail }}" title="Скрыть панель проектов" style="width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:#9aa1a8;font-size:16px;cursor:pointer" style-hover="background:#1e2226;color:#e9ebed">‹</button>
+      </div>
+      <div style="padding:0 16px 12px">
+        <label style="display:block;margin-bottom:4px;color:#8e959d;font-size:11px">Поиск проектов</label>
+        <input value="{{ query }}" onChange="{{ onQuery }}" type="search" style="width:100%;height:38px;padding:0 12px;border:1px solid #2f343a;border-radius:10px;background:#191c20;color:#e9ebed;font-size:14px;outline:none"></input>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 16px 14px">
+        <sc-for list="{{ filters }}" as="f" hint-placeholder-count="4">
+          <button onClick="{{ f.onClick }}" style="height:28px;padding:0 10px;border-radius:999px;border:1px solid {{ f.border }};background:{{ f.bg }};color:{{ f.fg }};font-size:12px;font-weight:600;cursor:pointer">{{ f.label }}</button>
+        </sc-for>
+      </div>
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:0 8px 12px;display:flex;flex-direction:column;gap:2px">
+        <sc-for list="{{ projects }}" as="p" hint-placeholder-count="5">
+          <button onClick="{{ p.onClick }}" style="position:relative;width:100%;display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;padding:10px 12px 10px 14px;border-radius:10px;border:0;background:{{ p.bg }};cursor:pointer" style-hover="background:#1e2226">
+            <span style="position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:2px;background:{{ p.bar }}"></span>
+            <span style="font-weight:600;font-size:14px;color:#e9ebed;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.title }}</span>
+            <span style="font-size:11px;color:#9aa1a8">{{ p.meta }}</span>
+          </button>
+        </sc-for>
+        <sc-if value="{{ noProjects }}" hint-placeholder-val="{{ false }}">
+          <p style="padding:16px 12px;color:#9aa1a8;font-size:13px;margin:0">Ничего не найдено.</p>
+        </sc-if>
+      </div>
+      <div style="padding:12px 18px 16px;border-top:1px solid #2f343a">
+        <a href="https://t.me/masterskaya_video" target="_blank" rel="noreferrer noopener" style="color:#8e959d;font-size:11px;text-decoration:none">Канал</a>
+      </div>
+    </aside>
+  </sc-if>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <header style="position:sticky;top:0;z-index:20;background:rgba(245,246,247,0.9);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid #e3e6e9">
+      <div style="max-width:1180px;margin:0 auto;padding:14px 28px 12px;display:flex;align-items:center;gap:14px">
+        <sc-if value="{{ railClosed }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ toggleRail }}" title="Открыть панель проектов" style="width:40px;height:40px;border:1px solid #e3e6e9;border-radius:10px;background:#fff;font-size:16px;cursor:pointer;flex:none" style-hover="border-color:#929292">☰</button>
+        </sc-if>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;color:#6e767f">{{ metaLine }}</div>
+          <div style="font-size:20px;font-weight:700;letter-spacing:-0.015em;line-height:1.25">Ночной город</div>
+        </div>
+        <span style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;background:{{ pill.bg }};color:{{ pill.fg }};white-space:nowrap">
+          <span style="width:7px;height:7px;border-radius:50%;background:currentColor"></span>{{ pill.text }}
+        </span>
+        <button onClick="{{ openAgent }}" style="height:40px;padding:0 16px;border:1px solid #d5d8dc;border-radius:999px;background:#fff;color:#0e1013;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap" style-hover="border-color:#0e1013">💬 Агент</button>
+      </div>
+      <ol style="max-width:1180px;margin:0 auto;padding:2px 28px 14px;list-style:none;display:flex;align-items:center;gap:0">
+        <sc-for list="{{ steps }}" as="st" hint-placeholder-count="5">
+          <li style="display:flex;align-items:center;flex:{{ st.flex }};min-width:0">
+            <button onClick="{{ st.onClick }}" title="{{ st.title }}" style="display:flex;align-items:center;gap:10px;padding:6px 10px 6px 6px;border:0;border-radius:12px;background:{{ st.bg }};cursor:{{ st.cursor }};text-align:left;min-width:0" style-hover="background:{{ st.hoverBg }}">
+              <span style="flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;background:{{ st.cBg }};color:{{ st.cFg }};box-shadow:inset 0 0 0 1.5px {{ st.cRing }}">{{ st.mark }}</span>
+              <span style="display:flex;flex-direction:column;min-width:0;line-height:1.2">
+                <span style="font-size:13px;font-weight:{{ st.weight }};color:{{ st.color }};white-space:nowrap">{{ st.label }}</span>
+                <span style="font-size:11px;color:{{ st.hintColor }};white-space:nowrap">{{ st.hint }}</span>
+              </span>
+            </button>
+            <sc-if value="{{ st.line }}" hint-placeholder-val="{{ true }}">
+              <span style="flex:1;height:2px;min-width:12px;margin:0 6px;border-radius:1px;background:{{ st.lineColor }}"></span>
+            </sc-if>
+          </li>
+        </sc-for>
+      </ol>
+    </header>
+
+    <main style="flex:1;width:100%;max-width:1180px;margin:0 auto;padding:28px 28px 40px">
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:24px">
+        <div style="min-width:0">
+          <div style="font-size:11px;font-weight:600;color:#6e767f;text-transform:uppercase;letter-spacing:0.07em">{{ screenKicker }}</div>
+          <h1 style="margin:4px 0 0;font-size:28px;letter-spacing:-0.02em;line-height:1.15">{{ screenLabel }}</h1>
+          <p style="margin:6px 0 0;color:#6e767f;font-size:14px">{{ screenHint }}</p>
+        </div>
+        <sc-if value="{{ isFrames }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:12px;font-weight:600;color:#3b4149">Как делаем ролик</span>
+              <div style="display:flex;padding:3px;border-radius:999px;background:#e9ebed">
+                <sc-for list="{{ modes }}" as="m" hint-placeholder-count="2">
+                  <button onClick="{{ m.onClick }}" style="height:32px;padding:0 14px;border:0;border-radius:999px;background:{{ m.bg }};color:{{ m.fg }};box-shadow:{{ m.shadow }};font-size:13px;font-weight:600;cursor:pointer">{{ m.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+            <span style="font-size:11px;color:#6e767f;max-width:420px;text-align:right">{{ modeHint }}</span>
+          </div>
+        </sc-if>
+        <sc-if value="{{ isScenario }}" hint-placeholder-val="{{ false }}">
+          <div style="position:relative">
+            <button onClick="{{ toggleScreenMenu }}" style="height:36px;padding:0 14px;border:1px solid #d5d8dc;border-radius:999px;background:#fff;color:#3b4149;font-size:16px;letter-spacing:1px;cursor:pointer">···</button>
+            <sc-if value="{{ screenMenuOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;right:0;top:calc(100% + 6px);z-index:30;width:260px;padding:6px;background:#fff;border:1px solid #e3e6e9;border-radius:12px;box-shadow:0 12px 32px rgba(14,16,19,0.12)">
+                <sc-for list="{{ screenMenu }}" as="mi" hint-placeholder-count="2">
+                  <button onClick="{{ mi.onClick }}" style="display:block;width:100%;text-align:left;padding:9px 10px;border:0;border-radius:8px;background:transparent;font-size:13px;color:#0e1013;cursor:pointer" style-hover="background:#f3f4f6">{{ mi.label }}</button>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ isScenario }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;align-items:start">
+          <section style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:20px 22px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">
+              <h2 style="margin:0;font-size:15px">Текст сценария</h2>
+              <div style="display:flex;align-items:center;gap:6px">
+                <button onClick="{{ script.prev }}" disabled="{{ script.prevOff }}" style="width:30px;height:30px;border:1px solid #e3e6e9;border-radius:50%;background:#fff;cursor:pointer;color:{{ script.prevColor }}">‹</button>
+                <span style="font-size:12px;color:#3b4149;font-variant-numeric:tabular-nums;min-width:60px;text-align:center">{{ script.label }}</span>
+                <button onClick="{{ script.next }}" disabled="{{ script.nextOff }}" style="width:30px;height:30px;border:1px solid #e3e6e9;border-radius:50%;background:#fff;cursor:pointer;color:{{ script.nextColor }}">›</button>
+              </div>
+            </div>
+            <p style="margin:0 0 10px;font-size:11px;color:#6e767f">{{ script.meta }}</p>
+            <p style="margin:0;font-size:14px;line-height:1.65;white-space:pre-wrap;color:#1d2126">{{ script.text }}</p>
+            <p style="margin:14px 0 0;padding-top:12px;border-top:1px solid #eeeff1;font-size:12px;color:#6e767f">{{ script.reason }}</p>
+          </section>
+          <section style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:8px 22px">
+            <h2 style="margin:12px 0 4px;font-size:15px">Раскадровка · 4 сцены</h2>
+            <sc-for list="{{ storyboard }}" as="sb" hint-placeholder-count="4">
+              <div style="display:grid;grid-template-columns:32px minmax(0,1fr);gap:12px;padding:14px 0;border-top:{{ sb.border }}">
+                <span style="width:28px;height:28px;border-radius:8px;background:#f3f4f6;display:grid;place-items:center;font-weight:700;font-size:12px;color:#3b4149">{{ sb.n }}</span>
+                <div style="min-width:0">
+                  <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b style="font-size:14px">{{ sb.title }}</b><span style="font-size:12px;color:#6e767f;font-variant-numeric:tabular-nums">{{ sb.time }}</span></div>
+                  <p style="margin:2px 0 0;font-size:13px;color:#3b4149;text-wrap:pretty">{{ sb.text }}</p>
+                </div>
+              </div>
+            </sc-for>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isFrames }}" hint-placeholder-val="{{ true }}">
+        <sc-if value="{{ isOneShot }}" hint-placeholder-val="{{ false }}">
+          <section style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:18px 20px;margin-bottom:28px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <h2 style="margin:0;font-size:15px">Промпт на весь ролик</h2>
+              <span style="font-size:12px;color:#6e767f">v1 из 1</span>
+            </div>
+            <p style="margin:10px 0 12px;font-size:13px;line-height:1.6;color:#1d2126">Ночной город под дождём, 30 секунд. Анна на крыше на закате, курьер приносит записку, погоня по мокрой улице на велосипеде, встреча снова на крыше. Неон, отражения, холодные тени и тёплые акценты.</p>
+            <button onClick="{{ editOneShot }}" style="height:34px;padding:0 14px;border:1px solid #d5d8dc;border-radius:999px;background:#fff;font-size:13px;cursor:pointer">Изменить → чат</button>
+          </section>
+        </sc-if>
+
+        <section style="margin-bottom:32px">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+            <h2 style="margin:0;font-size:17px;letter-spacing:-0.01em">Референсы</h2>
+            <span style="font-size:13px;color:#6e767f">Постоянные для всего ролика: кто в кадре, где, с чем и в каком стиле.</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px">
+            <sc-for list="{{ shelf }}" as="g" hint-placeholder-count="5">
+              <div style="background:#fff;border:1px solid #e3e6e9;border-radius:14px;padding:14px;min-width:0">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+                  <h3 style="margin:0;font-size:13px">{{ g.title }}</h3>
+                  <span style="font-size:11px;color:#6e767f;font-variant-numeric:tabular-nums">{{ g.count }}</span>
+                </div>
+                <p style="margin:2px 0 12px;font-size:11px;color:#6f7479;line-height:1.35;min-height:30px">{{ g.sub }}</p>
+                <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px">
+                  <sc-for list="{{ g.items }}" as="t" hint-placeholder-count="1">
+                    <button onClick="{{ t.onClick }}" title="{{ t.aria }}" style="flex:none;width:104px;padding:0;border:1px solid #e3e6e9;border-radius:10px;background:#fafbfb;overflow:hidden;text-align:left;cursor:pointer;transition:transform 120ms ease, box-shadow 120ms ease" style-hover="box-shadow:0 6px 16px rgba(14,16,19,0.10);transform:translateY(-1px)">
+                      <span style="position:relative;display:block;height:72px;background:{{ t.bg }}">
+                        <sc-if value="{{ t.hasCount }}" hint-placeholder-val="{{ false }}">
+                          <span style="position:absolute;right:5px;top:5px;padding:0 6px;border-radius:999px;background:rgba(16,18,21,0.72);color:#fff;font-size:10px;font-weight:600;line-height:17px">{{ t.count }}</span>
+                        </sc-if>
+                        <sc-if value="{{ t.voice }}" hint-placeholder-val="{{ false }}">
+                          <span style="position:absolute;left:5px;top:5px;padding:0 5px;border-radius:999px;background:#fff;font-size:10px;line-height:17px">🎙</span>
+                        </sc-if>
+                      </span>
+                      <span style="display:block;padding:6px 8px 7px">
+                        <b style="display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.name }}</b>
+                        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6e767f"><span style="width:6px;height:6px;border-radius:50%;background:{{ t.dot }};flex:none"></span>{{ t.status }}</span>
+                      </span>
+                    </button>
+                  </sc-for>
+                  <button onClick="{{ g.add }}" title="Добавить референс" style="flex:none;width:44px;min-height:112px;border:1px dashed #c9ccd0;border-radius:10px;background:transparent;color:#6e767f;font-size:18px;cursor:pointer" style-hover="border-color:#0e1013;color:#0e1013">＋</button>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+
+        <section>
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">
+            <h2 style="margin:0;font-size:17px;letter-spacing:-0.01em">Сцены</h2>
+            <span style="font-size:13px;color:#6e767f">4 · нажмите на кадр, чтобы выбрать вариант</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <sc-for list="{{ sceneRows }}" as="sc" hint-placeholder-count="4">
+              <div style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:18px 20px;display:flex;flex-wrap:wrap;gap:18px 32px">
+                <div style="flex:1 1 280px;min-width:0;display:flex;gap:14px">
+                  <button onClick="{{ sc.open }}" title="Открыть сцену" style="flex:none;width:34px;height:34px;border:0;border-radius:10px;background:#f3f4f6;font-weight:700;font-size:13px;color:#3b4149;cursor:pointer" style-hover="background:#e3e6e9">{{ sc.n }}</button>
+                  <div style="min-width:0">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                      <b style="font-size:15px;letter-spacing:-0.005em">{{ sc.title }}</b>
+                      <span style="font-size:12px;color:#6e767f;font-variant-numeric:tabular-nums">{{ sc.time }}</span>
+                      <span style="padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;background:{{ sc.badgeBg }};color:{{ sc.badgeFg }}">{{ sc.badge }}</span>
+                    </div>
+                    <p style="margin:4px 0 0;font-size:13px;color:#3b4149;line-height:1.5;text-wrap:pretty">{{ sc.text }}</p>
+                    <button onClick="{{ sc.openPrompt }}" style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border:1px solid #e3e6e9;border-radius:999px;background:#fafbfb;font-size:11px;color:#3b4149;cursor:pointer" style-hover="border-color:#929292"><span style="width:6px;height:6px;border-radius:50%;background:#15864a"></span>{{ sc.promptLabel }}</button>
+                  </div>
+                </div>
+                <div style="flex:1 1 420px;min-width:0;display:grid;gap:10px;padding-left:0">
+                  <div style="display:grid;grid-template-columns:104px minmax(0,1fr);gap:10px;align-items:center">
+                    <span style="font-size:11px;color:#6e767f">В кадре</span>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap">
+                      <sc-for list="{{ sc.inFrame }}" as="a" hint-placeholder-count="6">
+                        <button onClick="{{ a.onClick }}" title="{{ a.title }}" style="width:34px;height:34px;border:0;border-radius:9px;background:{{ a.bg }};opacity:{{ a.opacity }};color:#fff;font-size:12px;font-weight:700;cursor:pointer;outline:{{ a.outline }};outline-offset:-1px" style-hover="transform:scale(1.06)">{{ a.initial }}</button>
+                      </sc-for>
+                    </div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:104px minmax(0,1fr);gap:10px;align-items:center">
+                    <span style="font-size:11px;color:#6e767f">Только здесь</span>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                      <sc-for list="{{ sc.locals }}" as="l" hint-placeholder-count="0">
+                        <button onClick="{{ l.onClick }}" title="{{ l.name }}" style="display:flex;align-items:center;gap:6px;height:34px;padding:0 10px 0 3px;border:1px solid #e3e6e9;border-radius:9px;background:#fff;font-size:12px;cursor:pointer"><span style="width:26px;height:26px;border-radius:7px;background:{{ l.bg }}"></span>{{ l.name }}</button>
+                      </sc-for>
+                      <sc-if value="{{ sc.noLocals }}" hint-placeholder-val="{{ true }}"><span style="font-size:11px;color:#9aa1a8">нет</span></sc-if>
+                      <button onClick="{{ sc.addLocal }}" title="Добавить референс только для этой сцены" style="width:34px;height:34px;border:1px dashed #c9ccd0;border-radius:9px;background:transparent;color:#6e767f;cursor:pointer" style-hover="border-color:#0e1013;color:#0e1013">＋</button>
+                    </div>
+                  </div>
+                  <sc-if value="{{ sc.framesMode }}" hint-placeholder-val="{{ true }}">
+                    <div style="display:grid;grid-template-columns:104px minmax(0,1fr);gap:10px;align-items:center">
+                      <span style="font-size:11px;color:#6e767f">Видеореференс</span>
+                      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                        <sc-for list="{{ sc.vrefs }}" as="vr" hint-placeholder-count="0">
+                          <span style="display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 10px;border:1px solid #e3e6e9;border-radius:9px;background:#fff;font-size:12px"><span style="padding:0 6px;border-radius:5px;background:#101215;color:#fff;font-size:10px;line-height:17px">{{ vr.usage }}</span>{{ vr.label }}</span>
+                        </sc-for>
+                        <sc-if value="{{ sc.noVrefs }}" hint-placeholder-val="{{ true }}"><span style="font-size:11px;color:#9aa1a8">нет</span></sc-if>
+                        <button onClick="{{ sc.addVref }}" title="Добавить видеореференс" style="width:34px;height:34px;border:1px dashed #c9ccd0;border-radius:9px;background:transparent;color:#6e767f;cursor:pointer" style-hover="border-color:#0e1013;color:#0e1013">＋</button>
+                      </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:104px minmax(0,1fr);gap:10px;align-items:center">
+                      <span style="font-size:11px;color:#6e767f">Кадры</span>
+                      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                        <sc-for list="{{ sc.slots }}" as="sl" hint-placeholder-count="1">
+                          <button onClick="{{ sl.onClick }}" style="position:relative;width:112px;height:66px;padding:0;border:1px solid #e3e6e9;border-radius:10px;background:{{ sl.bg }};overflow:hidden;cursor:pointer;transition:box-shadow 120ms ease" style-hover="box-shadow:0 6px 16px rgba(14,16,19,0.14)">
+                            <span style="position:absolute;left:5px;top:5px;padding:0 6px;border-radius:5px;background:rgba(16,18,21,0.78);color:#fff;font-size:10px;line-height:17px">{{ sl.label }}</span>
+                            <span style="position:absolute;left:5px;right:5px;bottom:5px;display:flex;align-items:center;gap:4px;padding:0 6px;border-radius:999px;background:#fff;font-size:10px;line-height:17px;color:#0e1013;white-space:nowrap;overflow:hidden"><span style="width:5px;height:5px;border-radius:50%;background:{{ sl.dot }};flex:none"></span>{{ sl.status }}</span>
+                          </button>
+                        </sc-for>
+                        <sc-if value="{{ sc.noSlots }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;color:#9aa1a8">без кадров</span></sc-if>
+                        <button onClick="{{ sc.addSlot }}" title="Загрузить свой кадр" style="width:34px;height:34px;border:1px dashed #c9ccd0;border-radius:9px;background:transparent;color:#6e767f;cursor:pointer" style-hover="border-color:#0e1013;color:#0e1013">＋</button>
+                      </div>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{ isVideo }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <sc-for list="{{ sceneRows }}" as="sc" hint-placeholder-count="4">
+            <div style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:18px 20px;display:flex;flex-wrap:wrap;gap:18px 32px;align-items:center">
+              <div style="flex:1 1 300px;min-width:0;display:flex;gap:14px">
+                <button onClick="{{ sc.openVideo }}" style="flex:none;width:34px;height:34px;border:0;border-radius:10px;background:#f3f4f6;font-weight:700;font-size:13px;color:#3b4149;cursor:pointer">{{ sc.n }}</button>
+                <div style="min-width:0">
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <b style="font-size:15px">{{ sc.title }}</b>
+                    <span style="font-size:12px;color:#6e767f;font-variant-numeric:tabular-nums">{{ sc.time }}</span>
+                    <span style="padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;background:{{ sc.clipBadgeBg }};color:{{ sc.clipBadgeFg }}">{{ sc.clipBadge }}</span>
+                  </div>
+                  <p style="margin:4px 0 0;font-size:13px;color:#3b4149;text-wrap:pretty">{{ sc.text }}</p>
+                  <button onClick="{{ sc.openVideo }}" style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border:1px solid #e3e6e9;border-radius:999px;background:#fafbfb;font-size:11px;color:#3b4149;cursor:pointer"><span style="width:6px;height:6px;border-radius:50%;background:#15864a"></span>{{ sc.motionLabel }}</button>
+                </div>
+              </div>
+              <div style="flex:0 1 460px;min-width:0;display:flex;gap:16px;align-items:center">
+                <button onClick="{{ sc.openVideo }}" style="position:relative;flex:none;width:176px;height:99px;padding:0;border:1px solid #e3e6e9;border-radius:12px;background:{{ sc.clipBg }};overflow:hidden;cursor:pointer" style-hover="box-shadow:0 6px 16px rgba(14,16,19,0.14)">
+                  <span style="position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:rgba(255,255,255,0.92);display:grid;place-items:center;font-size:12px;color:#0e1013">▶</span>
+                  <span style="position:absolute;left:6px;right:6px;bottom:6px;display:flex;align-items:center;gap:4px;padding:0 7px;border-radius:999px;background:#fff;font-size:10px;line-height:18px;color:#0e1013;white-space:nowrap"><span style="width:5px;height:5px;border-radius:50%;background:{{ sc.clipDot }}"></span>{{ sc.clipStatus }}</span>
+                </button>
+                <div style="min-width:0;display:flex;flex-direction:column;gap:4px">
+                  <span style="font-size:11px;color:#6e767f">Продолжение</span>
+                  <span style="font-size:13px;color:{{ sc.contColor }};text-wrap:pretty">{{ sc.cont }}</span>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isAudio }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px">
+          <sc-for list="{{ layers }}" as="ly" hint-placeholder-count="4">
+            <button onClick="{{ ly.onClick }}" style="display:flex;flex-direction:column;padding:0;border:1px solid #e3e6e9;border-radius:16px;background:#fff;overflow:hidden;text-align:left;cursor:pointer;transition:box-shadow 120ms ease" style-hover="box-shadow:0 8px 22px rgba(14,16,19,0.10)">
+              <span style="display:flex;align-items:center;gap:3px;height:84px;padding:0 16px;background:{{ ly.bandBg }}">
+                <sc-for list="{{ ly.bars }}" as="b" hint-placeholder-count="28">
+                  <span style="flex:1;height:{{ b.h }};border-radius:2px;background:{{ b.c }}"></span>
+                </sc-for>
+              </span>
+              <span style="display:flex;flex-direction:column;gap:3px;padding:14px 16px 16px">
+                <span style="display:flex;justify-content:space-between;align-items:baseline"><b style="font-size:15px">{{ ly.title }}</b><span style="font-size:11px;color:#6e767f">{{ ly.count }}</span></span>
+                <span style="font-size:12px;color:#6f7479">{{ ly.hint }}</span>
+                <span style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px;color:#3b4149"><span style="width:7px;height:7px;border-radius:50%;background:{{ ly.dot }}"></span>{{ ly.status }}</span>
+              </span>
+            </button>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isAssembly }}" hint-placeholder-val="{{ false }}">
+        <sc-if value="{{ finished }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;margin-bottom:18px;border-radius:14px;background:#eaf6ee;color:#0f6b3c;font-weight:600"><span style="width:26px;height:26px;border-radius:50%;background:#15864a;color:#fff;display:grid;place-items:center">✓</span>Ролик принят. Проект завершён.</div>
+        </sc-if>
+        <div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start">
+          <button onClick="{{ openAsm }}" style="position:relative;flex:1 1 480px;max-width:640px;aspect-ratio:16/9;padding:0;border:1px solid #e3e6e9;border-radius:18px;background:{{ asm.bg }};overflow:hidden;cursor:pointer" style-hover="box-shadow:0 10px 28px rgba(14,16,19,0.16)">
+            <span style="position:absolute;left:50%;top:50%;width:60px;height:60px;margin:-30px 0 0 -30px;border-radius:50%;background:rgba(255,255,255,0.94);display:grid;place-items:center;font-size:18px;color:#0e1013">▶</span>
+            <span style="position:absolute;left:14px;bottom:14px;padding:3px 10px;border-radius:999px;background:#fff;font-size:12px;color:#0e1013">{{ asm.status }}</span>
+            <span style="position:absolute;right:14px;bottom:14px;padding:3px 10px;border-radius:999px;background:rgba(16,18,21,0.72);font-size:12px;color:#fff;font-variant-numeric:tabular-nums">0:30</span>
+          </button>
+          <div style="flex:1 1 280px;min-width:0;display:flex;flex-direction:column;gap:14px">
+            <div style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:18px 20px">
+              <h2 style="margin:0 0 10px;font-size:15px">Финальный ролик</h2>
+              <sc-for list="{{ asm.lines }}" as="al" hint-placeholder-count="4">
+                <div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid #eeeff1;font-size:13px"><span style="color:#6e767f">{{ al.k }}</span><span style="text-align:right">{{ al.v }}</span></div>
+              </sc-for>
+              <button onClick="{{ assembleChat }}" style="margin-top:12px;height:36px;padding:0 16px;border:1px solid #d5d8dc;border-radius:999px;background:#fff;font-size:13px;cursor:pointer" style-hover="border-color:#0e1013">Собрать заново → чат</button>
+            </div>
+            <div style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:6px 20px">
+              <button onClick="{{ toggleHist }}" style="display:flex;justify-content:space-between;width:100%;padding:12px 0;border:0;background:none;font-size:14px;font-weight:600;cursor:pointer"><span>История решений</span><span style="color:#6e767f;font-weight:400">{{ histToggle }}</span></button>
+              <sc-if value="{{ histOpen }}" hint-placeholder-val="{{ false }}">
+                <div style="padding-bottom:12px">
+                  <sc-for list="{{ allLog }}" as="lg" hint-placeholder-count="4">
+                    <div style="display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px;padding:6px 0;border-top:1px solid #eeeff1;font-size:12px"><span style="color:#6e767f">{{ lg.when }}</span><span>{{ lg.text }}</span></div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+    </main>
+
+    <div style="position:sticky;bottom:0;z-index:15;background:rgba(255,255,255,0.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid #e3e6e9">
+      <div style="max-width:1180px;margin:0 auto;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div style="flex:1 1 360px;min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <sc-if value="{{ footer.hasRemaining }}" hint-placeholder-val="{{ true }}">
+            <span style="font-size:13px;color:#3b4149;font-weight:600">Осталось решить:</span>
+            <sc-for list="{{ footer.remaining }}" as="r" hint-placeholder-count="3">
+              <button onClick="{{ r.onClick }}" style="height:28px;padding:0 10px;border:1px solid #f0dcb8;border-radius:999px;background:#fdf3e3;color:#8a5a11;font-size:12px;cursor:pointer" style-hover="border-color:#8a5a11">{{ r.label }}</button>
+            </sc-for>
+          </sc-if>
+          <sc-if value="{{ footer.note }}" hint-placeholder-val="{{ false }}">
+            <span style="display:flex;align-items:center;gap:8px;font-size:13px;color:{{ footer.noteColor }}"><span style="width:7px;height:7px;border-radius:50%;background:currentColor"></span>{{ footer.noteText }}</span>
+          </sc-if>
+        </div>
+        <sc-if value="{{ footer.showButton }}" hint-placeholder-val="{{ true }}">
+          <button onClick="{{ footer.onClick }}" disabled="{{ footer.disabled }}" style="height:44px;padding:0 22px;border:0;border-radius:12px;background:{{ footer.bg }};color:{{ footer.fg }};font-size:14px;font-weight:600;cursor:{{ footer.cursor }};white-space:nowrap">{{ footer.label }}</button>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+<sc-if value="{{ isMobile }}" hint-placeholder-val="{{ false }}">
+<div style="min-height:{{ fr.mh }};display:flex;flex-direction:column;background:#f5f6f7;color:#0e1013;font-size:14px;line-height:1.45">
+  <header style="position:sticky;top:0;z-index:20;background:rgba(245,246,247,0.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid #e3e6e9">
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px 6px">
+      <button onClick="{{ m.openDrawer }}" title="Проекты" style="flex:none;width:44px;height:44px;border:1px solid #e3e6e9;border-radius:12px;background:#fff;font-size:17px;cursor:pointer">☰</button>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:17px;font-weight:700;letter-spacing:-0.015em;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Ночной город</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:{{ pill.fg }};font-weight:600"><span style="width:6px;height:6px;border-radius:50%;background:currentColor"></span>{{ pill.text }}</div>
+      </div>
+      <button onClick="{{ openAgent }}" title="Агент" style="flex:none;width:44px;height:44px;border:1px solid #e3e6e9;border-radius:12px;background:#fff;font-size:17px;cursor:pointer">💬</button>
+    </div>
+    <div style="display:flex;gap:4px;padding:4px 8px 8px">
+      <sc-for list="{{ steps }}" as="st" hint-placeholder-count="5">
+        <button onClick="{{ st.onClick }}" style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px 7px;border:0;border-radius:12px;background:{{ st.bg }};cursor:{{ st.cursor }}">
+          <span style="width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;background:{{ st.cBg }};color:{{ st.cFg }};box-shadow:inset 0 0 0 1.5px {{ st.cRing }}">{{ st.mark }}</span>
+          <span style="max-width:100%;font-size:11px;font-weight:{{ st.weight }};color:{{ st.color }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ st.label }}</span>
+        </button>
+      </sc-for>
+    </div>
+  </header>
+
+  <main style="flex:1;padding:18px 14px 20px">
+    <div style="font-size:11px;font-weight:600;color:#6e767f;text-transform:uppercase;letter-spacing:0.07em">{{ screenKicker }}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <h1 style="margin:2px 0 0;font-size:24px;letter-spacing:-0.02em;line-height:1.2">{{ screenLabel }}</h1>
+      <sc-if value="{{ isScenario }}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{ m.openScreenSheet }}" style="width:44px;height:44px;border:1px solid #d5d8dc;border-radius:12px;background:#fff;font-size:16px;letter-spacing:1px;cursor:pointer">···</button>
+      </sc-if>
+    </div>
+    <p style="margin:4px 0 16px;color:#6e767f;font-size:13px">{{ screenHint }}</p>
+
+    <sc-if value="{{ isScenario }}" hint-placeholder-val="{{ false }}">
+      <section style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:16px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+          <h2 style="margin:0;font-size:15px">Текст сценария</h2>
+          <div style="display:flex;align-items:center;gap:4px">
+            <button onClick="{{ script.prev }}" style="width:36px;height:36px;border:1px solid #e3e6e9;border-radius:50%;background:#fff;color:{{ script.prevColor }};cursor:pointer">‹</button>
+            <span style="font-size:12px;min-width:52px;text-align:center">{{ script.label }}</span>
+            <button onClick="{{ script.next }}" style="width:36px;height:36px;border:1px solid #e3e6e9;border-radius:50%;background:#fff;color:{{ script.nextColor }};cursor:pointer">›</button>
+          </div>
+        </div>
+        <p style="margin:0 0 8px;font-size:11px;color:#6e767f">{{ script.meta }}</p>
+        <p style="margin:0;font-size:14px;line-height:1.6;white-space:pre-wrap">{{ script.text }}</p>
+        <p style="margin:12px 0 0;padding-top:10px;border-top:1px solid #eeeff1;font-size:12px;color:#6e767f">{{ script.reason }}</p>
+      </section>
+      <section style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:4px 16px">
+        <h2 style="margin:12px 0 2px;font-size:15px">Раскадровка · 4 сцены</h2>
+        <sc-for list="{{ storyboard }}" as="sb" hint-placeholder-count="4">
+          <div style="display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;padding:12px 0;border-top:{{ sb.border }}">
+            <span style="width:28px;height:28px;border-radius:8px;background:#f3f4f6;display:grid;place-items:center;font-weight:700;font-size:12px">{{ sb.n }}</span>
+            <div style="min-width:0"><b style="font-size:14px">{{ sb.title }}</b> <span style="font-size:12px;color:#6e767f">{{ sb.time }}</span><p style="margin:2px 0 0;font-size:13px;color:#3b4149">{{ sb.text }}</p></div>
+          </div>
+        </sc-for>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ isFrames }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;padding:3px;border-radius:12px;background:#e9ebed">
+        <sc-for list="{{ modes }}" as="md" hint-placeholder-count="2">
+          <button onClick="{{ md.onClick }}" style="flex:1;height:40px;border:0;border-radius:10px;background:{{ md.bg }};color:{{ md.fg }};box-shadow:{{ md.shadow }};font-size:13px;font-weight:600;cursor:pointer">{{ md.label }}</button>
+        </sc-for>
+      </div>
+      <p style="margin:6px 2px 20px;font-size:12px;color:#6e767f">{{ modeHint }}</p>
+
+      <sc-if value="{{ isOneShot }}" hint-placeholder-val="{{ false }}">
+        <section style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:14px 16px;margin-bottom:20px">
+          <h2 style="margin:0 0 6px;font-size:15px">Промпт на весь ролик</h2>
+          <p style="margin:0 0 10px;font-size:13px;line-height:1.55">Ночной город под дождём, 30 секунд. Анна на крыше на закате, курьер приносит записку, погоня по мокрой улице на велосипеде, встреча снова на крыше.</p>
+          <button onClick="{{ editOneShot }}" style="height:40px;padding:0 14px;border:1px solid #d5d8dc;border-radius:12px;background:#fff;font-size:13px;cursor:pointer">Изменить → чат</button>
+        </section>
+      </sc-if>
+
+      <h2 style="margin:0 2px 2px;font-size:17px">Референсы</h2>
+      <p style="margin:0 2px 10px;font-size:12px;color:#6e767f">Кто в кадре, где, с чем и в каком стиле.</p>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:26px">
+        <sc-for list="{{ shelf }}" as="g" hint-placeholder-count="5">
+          <div style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:12px 0 12px 12px">
+            <div style="display:flex;align-items:baseline;gap:6px;padding-right:12px;margin-bottom:8px"><h3 style="margin:0;font-size:14px">{{ g.title }}</h3><span style="font-size:12px;color:#6e767f">{{ g.count }}</span><span style="flex:1;min-width:0;text-align:right;font-size:11px;color:#6f7479;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.sub }}</span></div>
+            <div style="display:flex;gap:8px;overflow-x:auto;padding-right:12px;scroll-snap-type:x mandatory">
+              <sc-for list="{{ g.items }}" as="t" hint-placeholder-count="1">
+                <button onClick="{{ t.onClick }}" style="flex:none;width:112px;padding:0;border:1px solid #e3e6e9;border-radius:12px;background:#fafbfb;overflow:hidden;text-align:left;cursor:pointer;scroll-snap-align:start">
+                  <span style="position:relative;display:block;height:80px;background:{{ t.bg }}">
+                    <sc-if value="{{ t.hasCount }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:5px;top:5px;padding:0 6px;border-radius:999px;background:rgba(16,18,21,0.72);color:#fff;font-size:10px;line-height:17px">{{ t.count }}</span></sc-if>
+                    <sc-if value="{{ t.voice }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:5px;top:5px;padding:0 5px;border-radius:999px;background:#fff;font-size:10px;line-height:17px">🎙</span></sc-if>
+                  </span>
+                  <span style="display:block;padding:6px 8px 8px"><b style="display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.name }}</b><span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6e767f"><span style="width:6px;height:6px;border-radius:50%;background:{{ t.dot }};flex:none"></span>{{ t.status }}</span></span>
+                </button>
+              </sc-for>
+              <button onClick="{{ g.add }}" title="Добавить" style="flex:none;width:48px;min-height:124px;border:1px dashed #c9ccd0;border-radius:12px;background:transparent;color:#6e767f;font-size:18px;cursor:pointer">＋</button>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <h2 style="margin:0 2px 10px;font-size:17px">Сцены</h2>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ sceneRows }}" as="sc" hint-placeholder-count="4">
+          <div style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:14px">
+            <div style="display:flex;gap:10px;align-items:flex-start">
+              <span style="flex:none;width:30px;height:30px;border-radius:9px;background:#f3f4f6;display:grid;place-items:center;font-weight:700;font-size:13px">{{ sc.n }}</span>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b style="font-size:15px">{{ sc.title }}</b><span style="font-size:12px;color:#6e767f">{{ sc.time }}</span></div>
+                <span style="display:inline-block;margin-top:3px;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;background:{{ sc.badgeBg }};color:{{ sc.badgeFg }}">{{ sc.badge }}</span>
+              </div>
+            </div>
+            <p style="margin:8px 0 12px;font-size:13px;color:#3b4149">{{ sc.text }}</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">
+              <sc-for list="{{ sc.slots }}" as="sl" hint-placeholder-count="1">
+                <button onClick="{{ sl.onClick }}" style="position:relative;aspect-ratio:16/10;padding:0;border:1px solid #e3e6e9;border-radius:12px;background:{{ sl.bg }};overflow:hidden;cursor:pointer">
+                  <span style="position:absolute;left:6px;top:6px;padding:0 7px;border-radius:6px;background:rgba(16,18,21,0.78);color:#fff;font-size:11px;line-height:19px">{{ sl.label }} кадр</span>
+                  <span style="position:absolute;left:6px;right:6px;bottom:6px;display:flex;align-items:center;gap:5px;padding:0 8px;border-radius:999px;background:#fff;font-size:11px;line-height:20px;white-space:nowrap;overflow:hidden"><span style="width:6px;height:6px;border-radius:50%;background:{{ sl.dot }};flex:none"></span>{{ sl.status }}</span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="margin-top:12px;font-size:11px;color:#6e767f">В кадре</div>
+            <div style="display:flex;gap:6px;overflow-x:auto;padding:6px 0 2px">
+              <sc-for list="{{ sc.inFrame }}" as="a" hint-placeholder-count="6">
+                <button onClick="{{ a.onClick }}" title="{{ a.title }}" style="flex:none;width:40px;height:40px;border:0;border-radius:10px;background:{{ a.bg }};opacity:{{ a.opacity }};outline:{{ a.outline }};outline-offset:-1px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">{{ a.initial }}</button>
+              </sc-for>
+              <sc-for list="{{ sc.locals }}" as="l" hint-placeholder-count="0">
+                <button onClick="{{ l.onClick }}" style="flex:none;display:flex;align-items:center;gap:6px;height:40px;padding:0 10px 0 4px;border:1px solid #e3e6e9;border-radius:10px;background:#fff;font-size:12px;cursor:pointer;white-space:nowrap"><span style="width:30px;height:30px;border-radius:7px;background:{{ l.bg }}"></span>{{ l.name }}</button>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button onClick="{{ sc.openPrompt }}" style="flex:1;min-width:0;height:40px;padding:0 12px;border:1px solid #e3e6e9;border-radius:12px;background:#fafbfb;font-size:12px;color:#3b4149;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ sc.promptLabel }}</button>
+              <button onClick="{{ sc.openAdd }}" title="Добавить" style="flex:none;width:44px;height:40px;border:1px dashed #c9ccd0;border-radius:12px;background:transparent;color:#6e767f;font-size:16px;cursor:pointer">＋</button>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isVideo }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ sceneRows }}" as="sc" hint-placeholder-count="4">
+          <button onClick="{{ sc.openVideo }}" style="display:block;width:100%;padding:0;border:1px solid #e3e6e9;border-radius:16px;background:#fff;overflow:hidden;text-align:left;cursor:pointer">
+            <span style="position:relative;display:block;aspect-ratio:16/9;background:{{ sc.clipBg }}">
+              <span style="position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:rgba(255,255,255,0.94);display:grid;place-items:center;font-size:14px;color:#0e1013">▶</span>
+              <span style="position:absolute;left:10px;top:10px;padding:0 8px;border-radius:6px;background:rgba(16,18,21,0.78);color:#fff;font-size:11px;line-height:20px">Сцена {{ sc.n }} · {{ sc.time }}</span>
+              <span style="position:absolute;left:10px;bottom:10px;display:flex;align-items:center;gap:5px;padding:0 9px;border-radius:999px;background:#fff;font-size:11px;line-height:22px;color:#0e1013"><span style="width:6px;height:6px;border-radius:50%;background:{{ sc.clipDot }}"></span>{{ sc.clipStatus }}</span>
+            </span>
+            <span style="display:block;padding:12px 14px 14px">
+              <b style="font-size:15px">{{ sc.title }}</b>
+              <span style="display:block;margin-top:2px;font-size:13px;color:#3b4149">{{ sc.text }}</span>
+              <span style="display:block;margin-top:8px;font-size:12px;color:{{ sc.contColor }}">Продолжение: {{ sc.cont }}</span>
+            </span>
+          </button>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isAudio }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ layers }}" as="ly" hint-placeholder-count="4">
+          <button onClick="{{ ly.onClick }}" style="display:flex;align-items:center;gap:14px;width:100%;padding:12px 14px;border:1px solid #e3e6e9;border-radius:16px;background:#fff;text-align:left;cursor:pointer">
+            <span style="flex:none;display:flex;align-items:center;gap:2px;width:86px;height:52px;padding:0 8px;border-radius:10px;background:{{ ly.bandBg }}">
+              <sc-for list="{{ ly.bars }}" as="b" hint-placeholder-count="28"><span style="flex:1;height:{{ b.h }};border-radius:1px;background:{{ b.c }}"></span></sc-for>
+            </span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+              <b style="font-size:15px">{{ ly.title }}</b>
+              <span style="font-size:12px;color:#6f7479">{{ ly.hint }}</span>
+              <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#3b4149"><span style="width:6px;height:6px;border-radius:50%;background:{{ ly.dot }}"></span>{{ ly.status }}</span>
+            </span>
+            <span style="color:#9aa1a8;font-size:18px">›</span>
+          </button>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isAssembly }}" hint-placeholder-val="{{ false }}">
+      <sc-if value="{{ finished }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:12px;border-radius:14px;background:#eaf6ee;color:#0f6b3c;font-weight:600;font-size:14px"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:#15864a;color:#fff;display:grid;place-items:center">✓</span>Ролик принят. Проект завершён.</div>
+      </sc-if>
+      <button onClick="{{ openAsm }}" style="position:relative;display:block;width:100%;aspect-ratio:16/9;padding:0;border:1px solid #e3e6e9;border-radius:16px;background:{{ asm.bg }};overflow:hidden;cursor:pointer">
+        <span style="position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:rgba(255,255,255,0.94);display:grid;place-items:center;font-size:17px;color:#0e1013">▶</span>
+        <span style="position:absolute;left:10px;bottom:10px;padding:2px 9px;border-radius:999px;background:#fff;font-size:12px;color:#0e1013">{{ asm.status }}</span>
+      </button>
+      <section style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:14px 16px;margin-top:12px">
+        <sc-for list="{{ asm.lines }}" as="al" hint-placeholder-count="4">
+          <div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid #eeeff1;font-size:13px"><span style="color:#6e767f">{{ al.k }}</span><span style="text-align:right">{{ al.v }}</span></div>
+        </sc-for>
+        <button onClick="{{ assembleChat }}" style="width:100%;margin-top:10px;height:44px;border:1px solid #d5d8dc;border-radius:12px;background:#fff;font-size:14px;cursor:pointer">Собрать заново → чат</button>
+      </section>
+      <section style="background:#fff;border:1px solid #e3e6e9;border-radius:16px;padding:4px 16px;margin-top:12px">
+        <button onClick="{{ toggleHist }}" style="display:flex;justify-content:space-between;width:100%;padding:14px 0;border:0;background:none;font-size:14px;font-weight:600;cursor:pointer"><span>История решений</span><span style="color:#6e767f;font-weight:400">{{ histToggle }}</span></button>
+        <sc-if value="{{ histOpen }}" hint-placeholder-val="{{ false }}">
+          <sc-for list="{{ allLog }}" as="lg" hint-placeholder-count="4">
+            <div style="padding:8px 0;border-top:1px solid #eeeff1;font-size:13px"><div style="font-size:11px;color:#6e767f">{{ lg.when }}</div>{{ lg.text }}</div>
+          </sc-for>
+        </sc-if>
+      </section>
+    </sc-if>
+  </main>
+
+  <div style="position:sticky;bottom:0;z-index:15;background:rgba(255,255,255,0.96);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid #e3e6e9;padding:10px 12px calc(10px + env(safe-area-inset-bottom))">
+    <sc-if value="{{ footer.hasRemaining }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ m.openRem }}" style="display:flex;align-items:center;justify-content:space-between;width:100%;margin-bottom:8px;padding:0 12px;height:40px;border:1px solid #f0dcb8;border-radius:12px;background:#fdf3e3;color:#8a5a11;font-size:13px;font-weight:600;cursor:pointer"><span>Осталось решить: {{ m.remCount }}</span><span>показать ›</span></button>
+    </sc-if>
+    <sc-if value="{{ footer.note }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;color:{{ footer.noteColor }}"><span style="width:6px;height:6px;border-radius:50%;background:currentColor"></span>{{ footer.noteText }}</div>
+    </sc-if>
+    <sc-if value="{{ footer.showButton }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ footer.onClick }}" disabled="{{ footer.disabled }}" style="width:100%;height:50px;border:0;border-radius:14px;background:{{ footer.bg }};color:{{ footer.fg }};font-size:15px;font-weight:600;cursor:{{ footer.cursor }}">{{ footer.label }}</button>
+    </sc-if>
+  </div>
+</div>
+</sc-if>
+</div>
+
+<sc-if value="{{ m.drawer }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ m.closeDrawer }}" style="position:fixed;inset:0;z-index:70;background:rgba(14,16,19,0.5)">
+    <aside onClick="{{ stop }}" style="position:absolute;left:0;top:0;bottom:0;width:min(86%,320px);background:#101215;color:#e9ebed;display:flex;flex-direction:column;box-shadow:10px 0 40px rgba(0,0,0,0.3)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 10px 10px 18px">
+        <span style="font-weight:700;font-size:16px">AI Мастерская</span>
+        <button onClick="{{ m.closeDrawer }}" style="width:44px;height:44px;border:0;border-radius:12px;background:transparent;color:#9aa1a8;font-size:16px;cursor:pointer">✕</button>
+      </div>
+      <div style="padding:0 14px 10px"><input value="{{ query }}" onChange="{{ onQuery }}" type="search" placeholder="Поиск проектов" style="width:100%;height:44px;padding:0 12px;border:1px solid #2f343a;border-radius:12px;background:#191c20;color:#e9ebed;font-size:15px;outline:none"></input></div>
+      <div style="display:flex;gap:6px;overflow-x:auto;padding:0 14px 12px">
+        <sc-for list="{{ filters }}" as="f" hint-placeholder-count="4">
+          <button onClick="{{ f.onClick }}" style="flex:none;height:34px;padding:0 12px;border-radius:999px;border:1px solid {{ f.border }};background:{{ f.bg }};color:{{ f.fg }};font-size:13px;font-weight:600;cursor:pointer">{{ f.label }}</button>
+        </sc-for>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:0 8px 12px;display:flex;flex-direction:column;gap:2px">
+        <sc-for list="{{ m.projects }}" as="p" hint-placeholder-count="5">
+          <button onClick="{{ p.onClick }}" style="position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:12px 12px 12px 16px;border:0;border-radius:12px;background:{{ p.bg }};text-align:left;cursor:pointer">
+            <span style="position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:2px;background:{{ p.bar }}"></span>
+            <span style="font-weight:600;font-size:15px;color:#e9ebed">{{ p.title }}</span>
+            <span style="font-size:12px;color:#9aa1a8">{{ p.meta }}</span>
+          </button>
+        </sc-for>
+        <sc-if value="{{ noProjects }}" hint-placeholder-val="{{ false }}"><p style="padding:16px 12px;margin:0;color:#9aa1a8;font-size:13px">Ничего не найдено.</p></sc-if>
+      </div>
+    </aside>
+  </div>
+</sc-if>
+
+<sc-if value="{{ m.sheet }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ m.closeSheet }}" style="position:fixed;inset:0;z-index:75;display:flex;align-items:flex-end;background:rgba(14,16,19,0.5)">
+    <div onClick="{{ stop }}" style="width:100%;max-height:80%;overflow-y:auto;background:#fff;color:#0e1013;border-radius:20px 20px 0 0;padding:8px 14px calc(16px + env(safe-area-inset-bottom))">
+      <div style="width:40px;height:4px;margin:0 auto 12px;border-radius:2px;background:#d5d8dc"></div>
+      <h2 style="margin:0 4px 10px;font-size:17px">{{ m.sheetTitle }}</h2>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <sc-for list="{{ m.sheetItems }}" as="si" hint-placeholder-count="3">
+          <button onClick="{{ si.onClick }}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:50px;padding:0 14px;border:1px solid #e3e6e9;border-radius:12px;background:#fff;font-size:14px;text-align:left;cursor:pointer"><span>{{ si.label }}</span><span style="color:#9aa1a8">›</span></button>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ viewerOpen }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ vm.backdrop }}" style="position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:{{ ov.pad }};background:rgba(6,7,8,0.8);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#e8e8e8">
+    <div onClick="{{ stop }}" style="width:min(1180px,100%);height:{{ ov.h }};max-height:100%;overflow:auto;background:#141414;border:1px solid #2a2a2a;border-radius:{{ ov.r }};box-shadow:0 30px 80px rgba(0,0,0,0.5)">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:10px 12px 10px 18px;border-bottom:1px solid #242424;position:sticky;top:0;z-index:4;background:#141414">
+        <h2 style="margin:0;flex:1 1 160px;min-width:0;font-size:15px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ vm.title }} <span style="color:#8a8a8a;font-weight:400">· {{ vm.time }}</span></h2>
+        <div style="display:flex;padding:3px;border-radius:999px;background:#1f1f1f;order:{{ ov.tabsOrder }};flex:{{ ov.tabsFlex }}">
+          <sc-for list="{{ vm.tabs }}" as="tb" hint-placeholder-count="3">
+            <button onClick="{{ tb.onClick }}" style="flex:1;height:{{ ov.tabH }};padding:0 14px;border:0;border-radius:999px;background:{{ tb.bg }};color:{{ tb.fg }};font-size:13px;font-weight:600;cursor:pointer">{{ tb.label }}</button>
+          </sc-for>
+        </div>
+        <button onClick="{{ closeViewer }}" title="Закрыть (Esc)" style="width:44px;height:44px;border:0;border-radius:50%;background:transparent;color:#9a9a9a;font-size:16px;cursor:pointer" style-hover="background:#242424;color:#fff">✕</button>
+      </div>
+
+      <sc-if value="{{ vm.isHistory }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:20px 24px 26px">
+          <h3 style="margin:0 0 10px;font-size:13px;color:#fff">История решений</h3>
+          <sc-for list="{{ vm.history }}" as="h" hint-placeholder-count="3">
+            <div style="display:grid;grid-template-columns:130px minmax(0,1fr);gap:12px;padding:9px 0;border-top:1px solid #242424;font-size:13px"><span style="color:#8a8a8a">{{ h.when }}</span><span>{{ h.text }}</span></div>
+          </sc-for>
+          <sc-if value="{{ vm.noHistory }}" hint-placeholder-val="{{ false }}"><p style="margin:0;color:#8a8a8a;font-size:13px">Решений по этому пока не было.</p></sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ vm.notHistory }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-wrap:wrap">
+          <div style="flex:999 1 520px;padding:{{ ov.colPad }};border-right:{{ ov.lRight }};min-width:0">
+            <sc-if value="{{ vm.showSlots }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+                <sc-for list="{{ vm.slots }}" as="vs" hint-placeholder-count="2">
+                  <button onClick="{{ vs.onClick }}" style="height:32px;padding:0 14px;border:1px solid {{ vs.border }};border-radius:999px;background:{{ vs.bg }};color:{{ vs.fg }};font-size:12px;font-weight:600;cursor:pointer">{{ vs.label }}</button>
+                </sc-for>
+              </div>
+            </sc-if>
+
+            <div onTouchStart="{{ vm.ts }}" onTouchEnd="{{ vm.te }}" style="position:relative;display:flex;align-items:center;justify-content:center;gap:{{ ov.stageGap }};padding:{{ ov.stagePad }};min-height:{{ ov.stageMin }};border-radius:14px;background:#0b0b0b">
+              <button onClick="{{ vm.prev }}" disabled="{{ vm.prevOff }}" title="Предыдущий (←)" style="display:{{ ov.arrows }};flex:none;width:38px;height:38px;border:0;border-radius:50%;background:#fff;color:#111;font-size:17px;cursor:pointer;opacity:{{ vm.prevOpacity }}">‹</button>
+              <div style="flex:1;min-width:0;max-width:720px">
+                <sc-if value="{{ vm.showVisual }}" hint-placeholder-val="{{ true }}">
+                  <div style="position:relative;width:100%;aspect-ratio:16/9;border-radius:10px;background:{{ vm.curBg }};opacity:{{ vm.curOpacity }};overflow:hidden">
+                    <span style="position:absolute;left:12px;top:12px;padding:2px 9px;border-radius:999px;background:rgba(0,0,0,0.55);font-size:11px;color:#fff">{{ vm.curLabel }}</span>
+                    <sc-if value="{{ vm.isMotion }}" hint-placeholder-val="{{ false }}">
+                      <button onClick="{{ togglePlay }}" style="position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border:0;border-radius:50%;background:rgba(255,255,255,0.94);color:#111;font-size:17px;cursor:pointer">{{ playGlyph }}</button>
+                      <span style="position:absolute;left:12px;right:12px;bottom:12px;height:3px;border-radius:2px;background:rgba(255,255,255,0.3)"><span style="display:block;height:100%;width:{{ playPct }};border-radius:2px;background:#fff"></span></span>
+                    </sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ vm.isAudio }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;align-items:center;gap:14px;padding:26px 18px;border-radius:12px;background:#181818">
+                    <button onClick="{{ togglePlay }}" style="flex:none;width:48px;height:48px;border:0;border-radius:50%;background:#fff;color:#111;font-size:15px;cursor:pointer">{{ playGlyph }}</button>
+                    <div style="flex:1;display:flex;align-items:center;gap:2px;height:96px">
+                      <sc-for list="{{ vm.wave }}" as="w" hint-placeholder-count="60">
+                        <span style="flex:1;height:{{ w.h }};border-radius:2px;background:{{ w.c }}"></span>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ vm.isEmpty }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;aspect-ratio:16/9;border-radius:10px;border:1px dashed #3a3a3a;color:#9a9a9a;font-size:13px;text-align:center;padding:20px">
+                    <span>{{ vm.emptyText }}</span>
+                    <button onClick="{{ vm.more }}" style="height:36px;padding:0 16px;border:0;border-radius:10px;background:#fff;color:#111;font-size:13px;font-weight:600;cursor:pointer">＋ Попросить вариант</button>
+                  </div>
+                </sc-if>
+              </div>
+              <button onClick="{{ vm.next }}" disabled="{{ vm.nextOff }}" title="Следующий (→)" style="display:{{ ov.arrows }};flex:none;width:38px;height:38px;border:0;border-radius:50%;background:#fff;color:#111;font-size:17px;cursor:pointer;opacity:{{ vm.nextOpacity }}">›</button>
+            </div>
+            <p style="margin:10px 0 0;font-size:12px;color:#9a9a9a;text-align:center">{{ vm.caption }}</p>
+
+            <div style="display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding:2px 2px 4px">
+              <sc-for list="{{ vm.film }}" as="fl" hint-placeholder-count="3">
+                <button onClick="{{ fl.onClick }}" style="position:relative;flex:none;width:84px;height:54px;padding:0;border:0;border-radius:8px;background:{{ fl.bg }};opacity:{{ fl.opacity }};box-shadow:{{ fl.ring }};overflow:hidden;cursor:pointer">
+                  <span style="position:absolute;left:0;right:0;bottom:0;padding:1px 5px;background:rgba(0,0,0,0.62);font-size:9px;color:#fff;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ fl.mark }}</span>
+                </button>
+              </sc-for>
+              <sc-if value="{{ vm.showAddTile }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ vm.more }}" title="Ещё вариант" style="flex:none;width:54px;height:54px;border:1px dashed #4a4a4a;border-radius:8px;background:transparent;color:#9a9a9a;font-size:16px;cursor:pointer" style-hover="border-color:#fff;color:#fff">＋</button>
+              </sc-if>
+            </div>
+
+            <sc-if value="{{ vm.showActions }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;gap:8px;margin-top:16px;align-items:stretch;flex-wrap:wrap">
+                <button onClick="{{ vm.keep }}" disabled="{{ vm.keepOff }}" style="flex:1 1 180px;height:44px;border:1px solid {{ vm.keepBorder }};border-radius:11px;background:{{ vm.keepBg }};color:{{ vm.keepFg }};font-size:14px;font-weight:600;cursor:pointer">{{ vm.keepLabel }}</button>
+                <button onClick="{{ vm.more }}" style="flex:1 1 160px;height:44px;border:1px solid #3a3a3a;border-radius:11px;background:#1f1f1f;color:#e8e8e8;font-size:14px;cursor:pointer" style-hover="background:#262626">＋ Ещё вариант</button>
+                <div style="position:relative">
+                  <button onClick="{{ toggleMenu }}" title="Ещё действия" style="width:52px;height:44px;border:1px solid #3a3a3a;border-radius:11px;background:#1f1f1f;color:#e8e8e8;font-size:16px;letter-spacing:1px;cursor:pointer">···</button>
+                  <sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+                    <div style="position:absolute;right:0;bottom:calc(100% + 8px);z-index:5;width:280px;padding:6px;background:#1e1e1e;border:1px solid #3a3a3a;border-radius:12px;box-shadow:0 14px 34px rgba(0,0,0,0.55)">
+                      <sc-for list="{{ vm.menu }}" as="mn" hint-placeholder-count="5">
+                        <button onClick="{{ mn.onClick }}" style="display:block;width:100%;text-align:left;padding:10px 12px;border:0;border-top:{{ mn.sep }};border-radius:8px;background:transparent;color:{{ mn.fg }};font-size:13px;cursor:pointer" style-hover="background:#2a2a2a">{{ mn.label }}</button>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+              <sc-if value="{{ rejecting }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:12px;padding:12px;border:1px solid #3a3a3a;border-radius:12px;background:#1a1a1a">
+                  <label style="display:block;margin-bottom:6px;font-size:12px;color:#9a9a9a">Что не так с этим вариантом? Комментарий увидит агент.</label>
+                  <textarea value="{{ comment }}" onChange="{{ onComment }}" rows="3" style="width:100%;padding:9px 10px;border:1px solid #3a3a3a;border-radius:8px;background:#111;color:#e8e8e8;font-size:13px;resize:vertical;outline:none"></textarea>
+                  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+                    <button onClick="{{ cancelReject }}" style="height:36px;padding:0 14px;border:1px solid #3a3a3a;border-radius:9px;background:transparent;color:#e8e8e8;font-size:13px;cursor:pointer">Отмена</button>
+                    <button onClick="{{ vm.reject }}" style="height:36px;padding:0 14px;border:0;border-radius:9px;background:#b42318;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Отклонить вариант</button>
+                  </div>
+                </div>
+              </sc-if>
+            </sc-if>
+            <sc-if value="{{ vm.showOwnActions }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;gap:8px;margin-top:16px">
+                <button onClick="{{ vm.upload }}" style="flex:1;height:44px;border:1px solid #3a3a3a;border-radius:11px;background:#1f1f1f;color:#e8e8e8;font-size:14px;cursor:pointer">Заменить файл → чат</button>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="flex:1 1 300px;padding:{{ ov.colPad }};border-top:{{ ov.rTop }};display:flex;flex-direction:column;gap:18px;min-width:0">
+            <sc-if value="{{ vm.showPrompt }}" hint-placeholder-val="{{ true }}">
+              <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+                  <span style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#9a9a9a">{{ vm.promptTitle }}</span>
+                  <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#ccc">
+                    <button onClick="{{ vm.pPrev }}" disabled="{{ vm.pPrevOff }}" style="width:26px;height:26px;border:0;border-radius:50%;background:#2a2a2a;color:#e8e8e8;cursor:pointer;opacity:{{ vm.pPrevOpacity }}">‹</button>
+                    <span style="font-variant-numeric:tabular-nums">{{ vm.pLabel }}</span>
+                    <button onClick="{{ vm.pNext }}" disabled="{{ vm.pNextOff }}" style="width:26px;height:26px;border:0;border-radius:50%;background:#2a2a2a;color:#e8e8e8;cursor:pointer;opacity:{{ vm.pNextOpacity }}">›</button>
+                  </span>
+                </div>
+                <p style="margin:0;padding:11px 12px;background:#1c1c1c;border:1px solid #2e2e2e;border-radius:10px;font-size:12.5px;line-height:1.55;color:#ddd">
+                  <sc-for list="{{ vm.segs }}" as="sg" hint-placeholder-count="3"><span style="background:{{ sg.bg }};color:{{ sg.fg }};border-radius:4px;padding:{{ sg.pad }}">{{ sg.t }}</span></sc-for>
+                </p>
+                <p style="margin:6px 0 0;font-size:11px;color:#7c7c7c">{{ vm.pMeta }}</p>
+                <button onClick="{{ vm.editPrompt }}" style="margin-top:4px;padding:6px 0;border:0;background:none;color:#9ecbff;font-size:12px;cursor:pointer">Изменить промпт → чат</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ vm.showZones }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:16px">
+                <div>
+                  <div style="margin-bottom:8px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#9a9a9a">В кадре</div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap">
+                    <sc-for list="{{ vm.inFrame }}" as="za" hint-placeholder-count="6">
+                      <button onClick="{{ za.onClick }}" title="{{ za.title }}" style="display:flex;align-items:center;gap:6px;height:32px;padding:0 10px 0 3px;border:1px solid #333;border-radius:9px;background:#1c1c1c;opacity:{{ za.opacity }};color:#e8e8e8;font-size:12px;cursor:pointer"><span style="width:24px;height:24px;border-radius:6px;background:{{ za.bg }}"></span>{{ za.name }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+                <div>
+                  <div style="margin-bottom:8px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#9a9a9a">Только здесь</div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                    <sc-for list="{{ vm.locals }}" as="zl" hint-placeholder-count="0">
+                      <button onClick="{{ zl.onClick }}" style="display:flex;align-items:center;gap:6px;height:32px;padding:0 10px 0 3px;border:1px solid #333;border-radius:9px;background:#1c1c1c;color:#e8e8e8;font-size:12px;cursor:pointer"><span style="width:24px;height:24px;border-radius:6px;background:{{ zl.bg }}"></span>{{ zl.name }}</button>
+                    </sc-for>
+                    <sc-if value="{{ vm.noLocals }}" hint-placeholder-val="{{ true }}"><span style="font-size:12px;color:#6e6e6e">нет</span></sc-if>
+                    <button onClick="{{ vm.addLocal }}" style="width:32px;height:32px;border:1px dashed #555;border-radius:9px;background:none;color:#9a9a9a;cursor:pointer">＋</button>
+                  </div>
+                </div>
+                <div>
+                  <div style="margin-bottom:8px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#9a9a9a">Видеореференс</div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                    <sc-for list="{{ vm.vrefs }}" as="zv" hint-placeholder-count="0">
+                      <span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid #333;border-radius:9px;background:#1c1c1c;font-size:12px"><span style="padding:0 6px;border-radius:5px;background:#fff;color:#111;font-size:10px;line-height:17px">{{ zv.usage }}</span>{{ zv.label }}</span>
+                    </sc-for>
+                    <sc-if value="{{ vm.noVrefs }}" hint-placeholder-val="{{ true }}"><span style="font-size:12px;color:#6e6e6e">нет</span></sc-if>
+                    <button onClick="{{ vm.addVref }}" style="width:32px;height:32px;border:1px dashed #555;border-radius:9px;background:none;color:#9a9a9a;cursor:pointer">＋</button>
+                  </div>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ vm.showUsedIn }}" hint-placeholder-val="{{ false }}">
+              <div>
+                <div style="margin-bottom:8px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#9a9a9a">{{ vm.usedTitle }}</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <sc-for list="{{ vm.usedIn }}" as="u" hint-placeholder-count="2">
+                    <button onClick="{{ u.onClick }}" style="height:30px;padding:0 12px;border:1px solid #333;border-radius:999px;background:#1c1c1c;color:#e8e8e8;font-size:12px;cursor:pointer" style-hover="border-color:#777">{{ u.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ chatOpen }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closeChat }}" style="position:fixed;inset:0;z-index:80;display:flex;align-items:{{ ov.chatAlign }};justify-content:center;padding:{{ ov.chatPad }};background:rgba(14,16,19,0.5)">
+    <div onClick="{{ stop }}" style="width:min(560px,100%);background:#fff;color:#0e1013;border-radius:{{ ov.chatR }};padding:22px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:0 30px 80px rgba(0,0,0,0.3)">
+      <h2 style="margin:0;font-size:17px;letter-spacing:-0.01em">{{ chat.title }}</h2>
+      <p style="margin:4px 0 14px;font-size:13px;color:#6e767f">Скопируйте текст и отправьте его агенту в рабочий чат.</p>
+      <textarea readonly="{{ true }}" value="{{ chat.prompt }}" rows="7" style="width:100%;padding:12px;border:1px solid #e3e6e9;border-radius:12px;background:#fafbfb;font-size:13px;line-height:1.5;color:#1d2126;resize:none;outline:none"></textarea>
+      <p style="margin:8px 0 0;min-height:18px;font-size:12px;color:#0f6b3c">{{ chat.status }}</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:8px">
+        <button onClick="{{ closeChat }}" style="height:40px;padding:0 16px;border:1px solid #d5d8dc;border-radius:11px;background:#fff;font-size:13px;cursor:pointer">Закрыть</button>
+        <sc-if value="{{ chat.canSimulate }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ simulate }}" title="Только для макета: имитирует ответ агента" style="height:40px;padding:0 16px;border:1px solid #bfe2cc;border-radius:11px;background:#eaf6ee;color:#0f6b3c;font-size:13px;font-weight:600;cursor:pointer">Имитировать ответ агента</button>
+        </sc-if>
+        <button onClick="{{ copyChat }}" style="height:40px;padding:0 18px;border:0;border-radius:11px;background:#111315;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Скопировать запрос</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ toastOn }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;left:50%;bottom:{{ ov.toastB }};z-index:90;transform:translateX(-50%);padding:10px 16px;border-radius:999px;background:#111315;color:#fff;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,0.25);text-align:center;max-width:calc(100% - 32px)">{{ toast }}</div>
+</sc-if>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;device&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Авто&quot;,&quot;Десктоп&quot;,&quot;Телефон&quot;],&quot;default&quot;:&quot;Авто&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Демо&quot;},&quot;startStage&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Сценарий&quot;,&quot;Кадры&quot;,&quot;Видео&quot;,&quot;Звук&quot;,&quot;Сборка&quot;],&quot;default&quot;:&quot;Кадры&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Демо&quot;},&quot;railOpen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Демо&quot;}}">
+const SCREENS=['scenario','frames','video','audio','assembly'];
+const LABELS={scenario:'Сценарий',frames:'Кадры',video:'Видео',audio:'Звук',assembly:'Сборка'};
+const HINTS={scenario:'О чём ролик и из каких сцен он состоит.',frames:'Кто и что в кадре: референсы, промпты и картинки сцен.',video:'Движение в каждой сцене.',audio:'Голос, музыка, эффекты и атмосфера.',assembly:'Всё вместе — готовый ролик.'};
+const PRIMARY={scenario:'Одобрить сценарий → Кадры',frames:'Одобрить кадры → Видео',video:'Одобрить видео → Звук',audio:'Одобрить звук → Сборка',assembly:'Принять ролик'};
+const PROJ='проект «Ночной город» (ревизия 62)';
+const REFS=[
+ {id:'anna',kind:'character',label:'Анна',voice:true,hue:25},
+ {id:'courier',kind:'character',label:'Курьер',hue:250},
+ {id:'roof',kind:'location',label:'Крыша',hue:205},
+ {id:'street',kind:'location',label:'Ночная улица',hue:285},
+ {id:'bike',kind:'product',label:'Велосипед',hue:140},
+ {id:'neon',kind:'style',label:'Неон и дождь',hue:325},
+];
+const LOCALS=[{id:'note',kind:'other',label:'Записка',scene:'s2',hue:70}];
+const VREFS=[{id:'camrun',label:'Проезд камеры',scene:'s3',usage:'движение'}];
+const GROUPS=[
+ {kind:'character',title:'Персонажи',sub:'люди и герои; у каждого может быть голос'},
+ {kind:'location',title:'Локации',sub:'места, где идёт действие'},
+ {kind:'product',title:'Реквизит',sub:'предметы, которые должны выглядеть одинаково'},
+ {kind:'style',title:'Стиль',sub:'общая картинка: свет, цвет, оптика'},
+ {kind:'other',title:'Прочее',sub:'всё остальное — загрузите что угодно'},
+];
+const OWN={'ref:roof':true};
+const SCENES=[
+ {id:'s1',n:1,title:'Крыша на закате',time:'0:00–0:06',text:'Анна стоит на краю крыши и смотрит, как загораются огни города.',refs:['anna','roof','neon'],need:['first'],hue:35,first:'общий план, закат, огни города внизу',motion:'Медленный наезд камеры, @anna поворачивает голову к городу',cont:'с первого кадра сцены',warn:false},
+ {id:'s2',n:2,title:'Записка',time:'0:06–0:13',text:'Курьер протягивает Анне сложенную записку; дождь усиливается.',refs:['anna','courier','street','neon'],need:['first','last'],hue:255,first:'средний план, @courier протягивает записку',last:'крупный план, записка в руке @anna',motion:'@courier делает шаг вперёд, @anna берёт записку, капли на объективе',cont:'от первого кадра к последнему',warn:false},
+ {id:'s3',n:3,title:'Погоня',time:'0:13–0:22',text:'Курьер уходит на велосипеде по мокрой улице, Анна бежит следом.',refs:['courier','bike','street'],need:['first'],hue:300,first:'низкий ракурс, @courier на @bike, брызги',motion:'Камера едет следом за @courier, как в видеореференсе',cont:'по видеореференсу «Проезд камеры»',warn:false},
+ {id:'s4',n:4,title:'Встреча',time:'0:22–0:30',text:'Они снова на крыше. Анна разворачивает записку и улыбается.',refs:['anna','courier','roof'],need:['last'],hue:15,last:'@anna и @courier на крыше, синий час',motion:'Статичный план, @anna разворачивает записку и улыбается',cont:'нет первого кадра — клип начнётся с конца сцены 3',warn:true},
+];
+const LAYERS=[
+ {id:'voice',title:'Голос',hint:'Анна, закадровый текст',hue:25,prompt:'Женский голос, тихо и тепло: «Этот город никогда не спит…»'},
+ {id:'music',title:'Музыка',hint:'подложка на весь ролик',hue:280,prompt:'Синтвейв, 88 BPM, мягкий бас, без вокала'},
+ {id:'sfx',title:'Эффекты',hint:'дождь, шаги, велосипед',hue:200,prompt:'Шаги по лужам, звонок велосипеда, шорох бумаги'},
+ {id:'amb',title:'Атмосфера',hint:'шум ночного города',hue:160,prompt:'Дальний трафик, дождь по жести, редкие сирены'},
+];
+const SLOTW={first:'первый',last:'последний'};
+const WHENS=['вчера, 20:14','вчера, 21:40','сегодня, 09:05','сегодня, 09:30'];
+const INIT={
+ 'ref:anna':{n:3,p:1},'ref:courier':{n:2},'ref:roof':{n:0},'ref:street':{n:4,p:2,st:{1:'rejected'}},'ref:bike':{n:2,p:0},'ref:neon':{n:3,p:0,st:{2:'hidden'}},'ref:note':{n:1,p:0},
+ 'frame:s1:first':{n:3,p:1},'frame:s2:first':{n:4,st:{0:'rejected'}},'frame:s2:last':{n:2},'frame:s3:first':{n:2,p:0},'frame:s4:last':{n:0},
+ 'clip:s1':{n:2},'clip:s2':{n:1},'clip:s3':{n:3},'clip:s4':{n:0},
+ 'audio:voice':{n:3},'audio:music':{n:2},'audio:sfx':{n:0},'audio:amb':{n:1},
+ 'asm':{n:1},
+};
+const STRIPE='repeating-linear-gradient(45deg,#ececee,#ececee 6px,#f7f7f8 6px,#f7f7f8 12px)';
+const STAGE_NAMES=['Сценарий','Кадры','Видео','Звук','Сборка'];
+const PROJECTS=[
+ {id:'night',title:'Ночной город',type:'Видео',group:'active'},
+ {id:'coffee',title:'Кофейня «Зерно» — промо',type:'Видео',stage:'Звук',group:'review'},
+ {id:'look',title:'Лукбук осень',type:'Фото',stage:'Готов',group:'done'},
+ {id:'card',title:'Открытка для мамы',type:'Видео и фото',stage:'Сценарий',group:'active'},
+ {id:'pod',title:'Тизер подкаста',type:'Видео',stage:'Видео',group:'active'},
+];
+const FILTERS=[['all','Все'],['active','Активные'],['review','На проверке'],['done','Завершённые']];
+
+const allRefs=()=>REFS.concat(LOCALS);
+const findRef=id=>allRefs().find(r=>r.id===id);
+const SC=id=>SCENES.find(s=>s.id===id);
+const labelOf=id=>{const r=findRef(id);return r?r.label:id;};
+const screenOfKey=k=>k.startsWith('ref:')||k.startsWith('frame:')?'frames':k.startsWith('clip:')?'video':k.startsWith('audio:')?'audio':'assembly';
+
+function promptTexts(key){
+ const [k,a,b]=key.split(':');
+ if(k==='ref'){const r=findRef(a);const base={character:`@${a} — портрет в полный рост, нейтральный серый фон, мягкий рисующий свет`,location:`@${a} — общий план без людей, ночь, мокрый асфальт, отражения`,product:`@${a} — предмет целиком, три четверти, нейтральный фон`,style:'Стиль ролика: неоновые вывески, дождь, холодные тени и тёплые акценты',other:`@${a} — крупный план, сложенный лист бумаги, мягкий свет`}[r.kind];return [base,base+', 35 мм, лёгкое зерно'];}
+ if(k==='frame'){const s=SC(a);const tags=s.refs.filter(r=>r!=='neon').map(r=>'@'+r).join(' ');const d=b==='first'?s.first:s.last;const v=[`${tags} — ${d}`,`${tags} — ${d}, свет в духе @neon`];if(s.n<=2)v.push(v[1]+', 35 мм, неглубокая резкость');return v;}
+ if(k==='clip'){const s=SC(a);return [s.motion,s.motion+', камера плавная, без рывков'];}
+ if(k==='audio'){const l=LAYERS.find(x=>x.id===a);return [l.prompt];}
+ return ['Склей сцены 1–4 по порядку. Голос поверх музыки, атмосфера на −12 дБ, в конце затухание 1 с.'];
+}
+function hueOf(key){const [k,a]=key.split(':');if(k==='ref')return findRef(a).hue;if(k==='frame'||k==='clip')return SC(a).hue;if(k==='audio')return LAYERS.find(l=>l.id===a).hue;return 230;}
+function col(key,i){const h=hueOf(key)+(i||0)*24;const L=[0.5,0.42,0.58,0.46,0.54][(i||0)%5];return `linear-gradient(135deg, oklch(${L} 0.11 ${h%360}), oklch(${L-0.14} 0.08 ${(h+40)%360}))`;}
+function humanKey(key){const [k,a,b]=key.split(':');if(k==='ref')return labelOf(a);if(k==='frame')return `Сцена ${SC(a).n} · ${SLOTW[b]} кадр`;if(k==='clip')return `Сцена ${SC(a).n} · клип`;if(k==='audio')return LAYERS.find(l=>l.id===a).title;return 'Финальный ролик';}
+function ctxOf(key){const [k,a,b]=key.split(':');if(k==='ref')return `, референс «${labelOf(a)}» (${a})`;if(k==='frame'){const s=SC(a);return `, сцена ${s.n} «${s.title}», ${SLOTW[b]} кадр`;}if(k==='clip'){const s=SC(a);return `, сцена ${s.n} «${s.title}», клип`;}if(k==='audio')return `, звуковой слой «${humanKey(key)}»`;return ', финальная сборка';}
+
+class Component extends DCLogic {
+ constructor(props){super(props);this.state=this.init(props||{});this._onKey=this.onKey.bind(this);}
+ init(props){
+  const stage=Math.max(0,STAGE_NAMES.indexOf(props.startStage??'Кадры'));
+  const v={},picked={},prompts={};
+  for(const [k,c] of Object.entries(INIT)){const V=promptTexts(k).length;v[k]=[];for(let i=0;i<c.n;i++)v[k].push({st:(c.st&&c.st[i])||'new',pv:Math.min(V,Math.floor(i*V/c.n)+1)});if(c.p!=null)picked[k]=c.p;prompts[k]=promptTexts(k).map((t,i)=>({text:t,when:WHENS[i]}));}
+  for(const k of Object.keys(INIT)){if(OWN[k])continue;const si=SCREENS.indexOf(screenOfKey(k));if(si<stage){if(!v[k].length&&!k.startsWith('audio:'))v[k].push({st:'new',pv:prompts[k].length});if(picked[k]==null&&v[k].length){let i=v[k].findIndex(x=>x.st==='new');if(i<0)i=0;v[k][i].st='new';picked[k]=i;}}}
+  const included={};SCENES.forEach(s=>included[s.id]=s.refs.slice());
+  const log=[
+   {when:'вчера, 20:55',text:'Сценарий v2 одобрен',key:'stage'},
+   {when:'вчера, 21:40',text:'Анна — оставлен вариант 2',key:'ref:anna'},
+   {when:'вчера, 21:52',text:'Ночная улица — вариант 2 отклонён: «слишком светло»',key:'ref:street'},
+   {when:'вчера, 21:53',text:'Ночная улица — оставлен вариант 3',key:'ref:street'},
+   {when:'сегодня, 09:10',text:'Сцена 1 · первый кадр — оставлен вариант 2',key:'frame:s1:first'},
+   {when:'сегодня, 09:12',text:'Сцена 2 · первый кадр — вариант 1 отклонён: «Анна не похожа»',key:'frame:s2:first'},
+  ];
+  return {stage,view:null,rail:props.railOpen??true,query:'',filter:'all',genMode:'per_scene',v,picked,prompts,included,scriptIdx:1,viewer:null,menu:false,rejecting:false,comment:'',pvOverride:null,chat:null,toast:null,log,playing:false,screenMenu:false,histOpen:false};
+ }
+ componentDidMount(){document.addEventListener('keydown',this._onKey);this._onResize=()=>this.setState({narrow:window.innerWidth<760});window.addEventListener('resize',this._onResize);this._onResize();}
+ componentWillUnmount(){document.removeEventListener('keydown',this._onKey);window.removeEventListener('resize',this._onResize);clearTimeout(this._t);}
+ mobileVals(base){
+  const s=this.state;const dev=this.props.device??'Авто';
+  const mobile=dev==='Телефон'||(dev==='Авто'&&s.narrow);
+  const framed=dev==='Телефон'&&!s.narrow;
+  const fr=framed?{pageBg:'#dcdfe3',align:'center',pagePad:'24px',w:'390px',h:'min(844px, calc(100vh - 48px))',flex:'none',o:'hidden',t:'translateZ(0)',r:'40px',sh:'0 0 0 10px #101215, 0 30px 80px rgba(0,0,0,0.3)',ih:'100%',io:'auto',ix:'hidden',mh:'100%'}
+   :{pageBg:'#f5f6f7',align:'stretch',pagePad:'0',w:'100%',h:'auto',flex:'1',o:'visible',t:'none',r:'0',sh:'none',ih:'auto',io:'visible',ix:'visible',mh:'100vh'};
+  const ov=mobile?{pad:'0',h:'100%',r:'0',tabsOrder:3,tabsFlex:'1 1 100%',tabH:'38px',colPad:'12px 14px 16px',stageGap:'0',stagePad:'8px',stageMin:'0',arrows:'none',chatAlign:'flex-end',chatPad:'0',chatR:'20px 20px 0 0',toastB:'150px',lRight:'none',rTop:'1px solid #242424'}
+   :{pad:'24px',h:'auto',r:'18px',tabsOrder:0,tabsFlex:'0 0 auto',tabH:'30px',colPad:'16px 20px 20px',stageGap:'12px',stagePad:'14px',stageMin:'300px',arrows:'block',chatAlign:'center',chatPad:'24px',chatR:'18px',toastB:'92px',lRight:'1px solid #242424',rTop:'none'};
+  const close=()=>this.setState({sheet:null});
+  const go=f=>()=>{this.setState({sheet:null,drawer:false});f();};
+  let sheetTitle='',sheetItems=[];
+  if(s.sheet==='rem'){sheetTitle='Осталось решить';sheetItems=base.footer.remaining||[];sheetItems=sheetItems.map(r=>({label:r.label,onClick:go(r.onClick)}));}
+  else if(s.sheet==='screen'){sheetTitle='Сценарий';sheetItems=base.screenMenu.map(r=>({label:r.label,onClick:go(r.onClick)}));}
+  else if(s.sheet&&s.sheet.startsWith('add:')){const sc=SC(s.sheet.slice(4));sheetTitle=`Сцена ${sc.n} · добавить`;sheetItems=[
+   {label:'Референс только для этой сцены',onClick:go(()=>this.askAddRef('other',sc))},
+   {label:'Видеореференс',onClick:go(()=>this.askAddRef('video',sc))},
+   {label:'Свой кадр',onClick:go(()=>this.askSlot(sc))}];}
+  const sceneRows=base.sceneRows.map((r,i)=>({...r,openAdd:()=>this.setState({sheet:'add:'+SCENES[i].id})}));
+  return {isDesktop:!mobile,isMobile:mobile,fr,ov,sceneRows,
+   m:{drawer:!!s.drawer,openDrawer:()=>this.setState({drawer:true}),closeDrawer:()=>this.setState({drawer:false}),
+    projects:base.projects.map(p=>({...p,onClick:go(p.onClick)})),
+    sheet:!!s.sheet,sheetTitle,sheetItems,closeSheet:close,
+    openRem:()=>this.setState({sheet:'rem'}),openScreenSheet:()=>this.setState({sheet:'screen'}),
+    remCount:String((base.footer.remaining||[]).length)}};
+ }
+ componentDidUpdate(pp){
+  document.body.style.overflow=(this.state.viewer||this.state.chat)?'hidden':'';
+  if(pp.startStage!==this.props.startStage){this.setState(this.init(this.props));}
+  if(pp.railOpen!==this.props.railOpen)this.setState({rail:this.props.railOpen??true});
+ }
+ onKey(e){
+  const s=this.state;const tag=(e.target&&e.target.tagName)||'';
+  if(e.key==='Escape'){if(s.chat)return this.setState({chat:null});if(s.menu||s.rejecting)return this.setState({menu:false,rejecting:false});if(s.viewer)return this.closeViewer();if(s.screenMenu)return this.setState({screenMenu:false});}
+  if(!s.viewer||s.chat||tag==='TEXTAREA'||tag==='INPUT')return;
+  const n=(s.v[this.keyOf(s.viewer)]||[]).length;
+  if(e.key==='ArrowLeft'&&s.viewer.idx>0)this.setIdx(s.viewer.idx-1);
+  if(e.key==='ArrowRight'&&s.viewer.idx<n-1)this.setIdx(s.viewer.idx+1);
+ }
+ now(){const d=new Date();return `сегодня, ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;}
+ toast(msg){clearTimeout(this._t);this.setState({toast:msg});this._t=setTimeout(()=>this.setState({toast:null}),2600);}
+ addLog(text,key){return [{when:this.now(),text,key}].concat(this.state.log);}
+ status(key){
+  if(OWN[key])return {text:'ваш файл',dot:'#15864a',ok:true};
+  const l=this.state.v[key]||[];const p=this.state.picked[key];
+  if(!l.length)return {text:key.startsWith('audio:')?'не делали':'не задан',dot:'#b4b9bf',ok:false,empty:true};
+  if(p!=null)return {text:l.length>1?`выбран ${p+1} из ${l.length}`:'выбран',dot:'#15864a',ok:true};
+  return {text:`выберите из ${l.length}`,dot:'#d08a1c',ok:false};
+ }
+ keysFor(screen){
+  if(screen==='frames'){const k=allRefs().map(r=>'ref:'+r.id);SCENES.forEach(s=>s.need.forEach(sl=>k.push(`frame:${s.id}:${sl}`)));return k;}
+  if(screen==='video')return SCENES.map(s=>'clip:'+s.id);
+  if(screen==='audio')return LAYERS.map(l=>'audio:'+l.id);
+  if(screen==='assembly')return ['asm'];
+  return [];
+ }
+ remaining(screen){
+  return this.keysFor(screen).filter(k=>{if(OWN[k])return false;const st=this.status(k);if(k.startsWith('audio:')&&st.empty)return false;return !st.ok;})
+   .map(k=>({label:humanKey(k)+(this.status(k).empty?' — нет вариантов':''),onClick:()=>this.openKey(k)}));
+ }
+ targetOfKey(key){const [k,a,b]=key.split(':');if(k==='ref')return {kind:'reference',id:a,tab:'frames'};if(k==='frame')return {kind:'scene',id:a,tab:'frames',slot:b};if(k==='clip')return {kind:'scene',id:a,tab:'video'};if(k==='audio')return {kind:'layer',id:a,tab:'audio'};return {kind:'assembly',id:'asm',tab:'video'};}
+ keyOf(vw){const tab=vw.tab==='history'?vw.prevTab:vw.tab;if(vw.kind==='reference')return 'ref:'+vw.id;if(vw.kind==='layer')return 'audio:'+vw.id;if(vw.kind==='assembly')return 'asm';if(tab==='video')return 'clip:'+vw.id;return `frame:${vw.id}:${vw.slot||SC(vw.id).need[0]||'first'}`;}
+ open(t){const vw={...t,prevTab:t.tab};const key=this.keyOf(vw);vw.idx=this.state.picked[key]??0;this.setState({viewer:vw,menu:false,rejecting:false,comment:'',pvOverride:null,playing:false,screenMenu:false});}
+ openKey(key){this.open(this.targetOfKey(key));}
+ closeViewer(){this.setState({viewer:null,menu:false,rejecting:false,playing:false});}
+ setIdx(i){this.setState(s=>({viewer:{...s.viewer,idx:i},pvOverride:null,rejecting:false,menu:false,playing:false}));}
+ setTab(tab){this.setState(s=>{const vw={...s.viewer,tab};if(tab!=='history')vw.prevTab=tab;const key=this.keyOf(vw);if(tab!=='history')vw.idx=s.picked[key]??0;return {viewer:vw,pvOverride:null,menu:false,rejecting:false,playing:false};});}
+ setSlot(slot){this.setState(s=>{const vw={...s.viewer,slot};vw.idx=s.picked[this.keyOf(vw)]??0;return {viewer:vw,pvOverride:null,menu:false,rejecting:false};});}
+ mutate(key,idx,st,text){this.setState(s=>{const l=s.v[key].slice();l[idx]={...l[idx],st};const picked={...s.picked};if(st!=='new'&&picked[key]===idx)delete picked[key];return {v:{...s.v,[key]:l},picked,menu:false,rejecting:false,comment:'',log:this.addLog(text,key)};});}
+ keep(key,idx){this.setState(s=>{const l=s.v[key].slice();l[idx]={...l[idx],st:'new',fresh:false};return {v:{...s.v,[key]:l},picked:{...s.picked,[key]:idx},log:this.addLog(`${humanKey(key)} — оставлен вариант ${idx+1}`,key)};});this.toast(`Вариант ${idx+1} оставлен`);}
+ addVariant(key){this.setState(s=>{const l=(s.v[key]||[]).concat([{st:'new',pv:s.prompts[key].length,fresh:true}]);const st={v:{...s.v,[key]:l},log:this.addLog(`${humanKey(key)} — агент прислал вариант ${l.length}`,key)};if(s.viewer&&this.keyOf(s.viewer)===key)st.viewer={...s.viewer,idx:l.length-1};return st;});this.toast(`Агент прислал вариант для «${humanKey(key)}»`);}
+ ask(chat){this.setState({chat:{...chat,status:''},menu:false,screenMenu:false});}
+ askMore(key){const p=this.state.picked[key];const pv=this.state.prompts[key].length;this.ask({title:'Ещё вариант',prompt:`Открой ${PROJ}${ctxOf(key)}. Сделай ещё один вариант по промпту v${pv}${p!=null?`; сейчас выбран вариант ${p+1}`:'; выбранного варианта пока нет'}. Остальное не трогай.`,apply:()=>this.addVariant(key)});}
+ askEditPrompt(key,vi){this.ask({title:'Изменить промпт',prompt:`Открой ${PROJ}${ctxOf(key)}. Возьми промпт v${vi+1} и предложи новую версию — что поменять, я напишу ниже. Не генерируй, пока я не подтвержу.\n\nЧто поменять: `,apply:()=>{this.setState(s=>{const arr=s.prompts[key].concat([{text:s.prompts[key][vi].text+', больше контраста',when:this.now()}]);return {prompts:{...s.prompts,[key]:arr},pvOverride:arr.length-1,log:this.addLog(`${humanKey(key)} — новая версия промпта v${arr.length}`,key)};});this.toast('Агент записал новую версию промпта');}});}
+ askUpload(key){this.ask({title:'Загрузить свой файл',prompt:`Открой ${PROJ}${ctxOf(key)}. Я пришлю файл следующим сообщением — поставь его на это место как свой и сделай выбранным.`});}
+ askToggle(sc,r,include){this.ask({title:include?'Добавить в сцену':'Убрать из сцены',prompt:`Открой ${PROJ}, сцена ${sc.n} «${sc.title}». ${include?'Включи':'Выключи'} общий референс «${r.label}» (${r.id}) в этой сцене. Больше ничего не меняй.`,apply:()=>{this.setState(s=>{const cur=s.included[sc.id];const next=include?cur.concat([r.id]):cur.filter(x=>x!==r.id);return {included:{...s.included,[sc.id]:next},log:this.addLog(`Сцена ${sc.n} — «${r.label}» ${include?'в кадре':'убран из кадра'}`,'frame:'+sc.id)};});this.toast(`«${r.label}» ${include?'добавлен в сцену':'убран из сцены'} ${sc.n}`);}});}
+ askAddRef(kind,sc){const w={character:'персонажа',location:'локацию',product:'реквизит',style:'референс стиля',other:'референс',video:'видеореференс'}[kind];this.ask({title:'Добавить референс',prompt:`Открой ${PROJ}${sc?`, сцена ${sc.n} «${sc.title}»`:''}. Добавь ${w}${sc?' только для этой сцены':' в общие референсы'}. Файл или описание пришлю следующим сообщением.`});}
+ askSlot(sc){const slot=sc.need.length?'last':'first';this.ask({title:'Загрузить свой кадр',prompt:`Открой ${PROJ}, сцена ${sc.n} «${sc.title}». Я пришлю файл — поставь его как ${SLOTW[slot]} кадр сцены и сделай выбранным.`});}
+
+ renderVals(){
+  const s=this.state;
+  const stageIdx=s.stage;const finished=stageIdx>=5;
+  const curStageScreen=SCREENS[Math.min(stageIdx,4)];
+  const screen=s.view&&SCREENS.indexOf(s.view)<=stageIdx?s.view:curStageScreen;
+  const sIdx=SCREENS.indexOf(screen);
+  const rem=this.remaining(curStageScreen);
+
+  const steps=SCREENS.map((id,i)=>{
+   const done=i<stageIdx,cur=i===stageIdx,next=i>stageIdx,openN=id===screen;
+   return {label:LABELS[id],hint:done?'одобрен':cur?'вы здесь':i===stageIdx+1?'дальше':'',mark:done?'✓':String(i+1),
+    flex:i<4?'1 1 0':'0 0 auto',line:i<4,lineColor:done?'#15864a':'#e0e2e5',
+    cBg:done?'#eaf6ee':cur?'#111315':'#fff',cFg:done?'#0f6b3c':cur?'#fff':'#9aa1a8',cRing:done?'#bfe2cc':cur?'#111315':'#d5d8dc',
+    color:next?'#9aa1a8':'#0e1013',weight:openN?700:500,hintColor:done?'#0f6b3c':'#6f7479',
+    bg:openN?'#fff':'transparent',hoverBg:next?'transparent':'#fff',cursor:next?'default':'pointer',
+    title:next?'Откроется, когда одобрите предыдущий шаг':HINTS[id],
+    onClick:()=>{if(!next)this.setState({view:id,screenMenu:false});}};
+  });
+
+  const rows=SCENES.map(sc=>{
+   const inc=s.included[sc.id];
+   const inFrame=REFS.map(r=>{const on=inc.includes(r.id);return {initial:r.label[0],name:r.label,bg:col('ref:'+r.id,s.picked['ref:'+r.id]??0),opacity:on?1:0.28,outline:on?'none':'1px dashed #929292',title:`${r.label}: ${on?'в кадре — нажмите, чтобы убрать':'не в кадре — нажмите, чтобы добавить'}`,onClick:()=>this.askToggle(sc,r,!on)};});
+   const locals=LOCALS.filter(l=>l.scene===sc.id).map(l=>({name:l.label,bg:col('ref:'+l.id,0),onClick:()=>this.openKey('ref:'+l.id)}));
+   const vrefs=VREFS.filter(x=>x.scene===sc.id);
+   const slots=sc.need.map(sl=>{const key=`frame:${sc.id}:${sl}`;const st=this.status(key);const p=s.picked[key];return {label:SLOTW[sl],status:st.text,dot:st.dot,bg:p!=null?col(key,p):STRIPE,onClick:()=>this.openKey(key)};});
+   const allOk=sc.need.every(sl=>this.status(`frame:${sc.id}:${sl}`).ok);
+   const pk=`frame:${sc.id}:${sc.need[0]}`;
+   const ck='clip:'+sc.id;const cst=this.status(ck);const cp=s.picked[ck];
+   return {n:sc.n,title:sc.title,time:sc.time,text:sc.text,
+    badge:allOk?'кадры готовы':'нужно выбрать',badgeBg:allOk?'#eaf6ee':'#fdf3e3',badgeFg:allOk?'#0f6b3c':'#8a5a11',
+    promptLabel:`промпт v${s.prompts[pk].length} · готов`,openPrompt:()=>this.openKey(pk),open:()=>this.openKey(pk),
+    inFrame,locals,noLocals:!locals.length,addLocal:()=>this.askAddRef('other',sc),
+    vrefs,noVrefs:!vrefs.length,addVref:()=>this.askAddRef('video',sc),
+    slots,noSlots:!slots.length,addSlot:()=>this.askSlot(sc),framesMode:true,
+    clipBg:cp!=null?col(ck,cp):STRIPE,clipStatus:cst.text,clipDot:cst.dot,clipBadge:cst.ok?'клип выбран':cst.empty?'клипа нет':'нужно выбрать',clipBadgeBg:cst.ok?'#eaf6ee':'#fdf3e3',clipBadgeFg:cst.ok?'#0f6b3c':'#8a5a11',
+    motionLabel:`промпт движения v${s.prompts[ck].length} · готов`,openVideo:()=>this.openKey(ck),
+    cont:sc.cont,contColor:sc.warn?'#8a5a11':'#3b4149'};
+  });
+
+  const shelf=GROUPS.map(g=>{
+   const items=allRefs().filter(r=>r.kind===g.kind&&!r.scene).map(r=>{const key='ref:'+r.id;const st=this.status(key);const p=s.picked[key];const n=(s.v[key]||[]).length;
+    return {name:r.label,status:st.text,dot:st.dot,bg:OWN[key]?col(key,0):p!=null?col(key,p):STRIPE,hasCount:n>1,count:String(n),voice:!!r.voice,aria:`${r.label}: ${st.text}`,onClick:()=>this.openKey(key)};});
+   return {title:g.title,sub:g.sub,items,count:items.length?String(items.length):'',add:()=>this.askAddRef(g.kind)};
+  });
+
+  const layers=LAYERS.map((l,li)=>{const key='audio:'+l.id;const st=this.status(key);const n=s.v[key].length;const p=s.picked[key];
+   const bars=Array.from({length:28},(_,i)=>({h:(n?18+Math.round(70*Math.abs(Math.sin(i*0.9+li)*Math.cos(i*0.31))):8)+'%',c:n?(p!=null?'#15864a':'#3b4149'):'#d5d8dc'}));
+   return {title:l.title,hint:l.hint,status:st.text,dot:st.dot,count:n?`${n} вар.`:'',bars,bandBg:n?'#f3f4f6':'#fafbfb',onClick:()=>this.openKey(key)};});
+
+  const asmKey='asm';const ast=this.status(asmKey);
+  const asm={bg:(s.v.asm.length?col(asmKey,s.picked.asm??0):STRIPE),status:finished?'принят':ast.text,
+   lines:[{k:'Сцены',v:'4 · 0:30'},{k:'Режим',v:s.genMode==='one_shot'?'одним заходом':'кадр за кадром'},{k:'Звук',v:'голос, музыка, атмосфера'},{k:'Статус',v:finished?'принят':'ждёт вашего решения'}]};
+
+  // footer
+  let footer;
+  if(sIdx<stageIdx){footer={hasRemaining:false,note:true,noteText:'Шаг одобрен. Вы смотрите пройденный экран.',noteColor:'#0f6b3c',showButton:true,label:`Вернуться к шагу «${finished?'Сборка':LABELS[curStageScreen]}»`,disabled:false,bg:'#fff',fg:'#0e1013',cursor:'pointer',onClick:()=>this.setState({view:null})};
+   if(finished){footer={...footer,noteText:'Проект завершён. Все шаги одобрены.',showButton:sIdx!==4};}
+  } else {
+   const ok=rem.length===0;
+   const label=screen==='audio'&&LAYERS.every(l=>!(s.v['audio:'+l.id]||[]).length)?'Пропустить звук → Сборка':PRIMARY[screen];
+   footer={hasRemaining:!ok,remaining:rem,note:ok,noteText:'Всё решено — можно одобрять.',noteColor:'#0f6b3c',showButton:true,label,disabled:!ok,bg:ok?'#111315':'#c9ccd0',fg:ok?'#fff':'#3b4149',cursor:ok?'pointer':'not-allowed',
+    onClick:()=>{if(!ok)return;const nxt=stageIdx+1;this.setState({stage:nxt,view:null,log:this.addLog(`${LABELS[screen]} — шаг одобрен`,'stage')});this.toast(nxt>=5?'Ролик принят 🎬':`Шаг «${LABELS[screen]}» одобрен`);}};
+  }
+
+  const pill=finished?{text:'Проект завершён',bg:'#eaf6ee',fg:'#0f6b3c'}:rem.length?{text:`${LABELS[curStageScreen]} · осталось ${rem.length}`,bg:'#fdf3e3',fg:'#8a5a11'}:{text:`${LABELS[curStageScreen]} · можно одобрять`,bg:'#eaf6ee',fg:'#0f6b3c'};
+
+  const q=s.query.trim().toLowerCase();
+  const projects=PROJECTS.filter(p=>(s.filter==='all'||p.group===s.filter)&&(!q||p.title.toLowerCase().includes(q))).map(p=>{const cur=p.id==='night';return {title:p.title,meta:`${p.type} · ${cur?(finished?'Готов':LABELS[curStageScreen]):p.stage}`,bg:cur?'#1e2226':'transparent',bar:cur?'#15864a':'transparent',onClick:()=>{if(!cur)this.toast('В макете открыт только «Ночной город»');}};});
+
+  const sv=s.scriptIdx;const scripts=[
+   {text:'Ночной город под дождём. Анна на крыше смотрит, как загораются огни. Курьер приносит ей записку. Он уезжает на велосипеде, она бежит следом по мокрой улице. В конце они снова на крыше, и Анна наконец читает записку.',when:'вчера, 19:30',reason:'Первая версия по брифу.'},
+   {text:'Анна стоит на краю крыши на закате и смотрит, как загораются огни города.\n\nКурьер протягивает ей сложенную записку; дождь усиливается.\n\nОн уходит на велосипеде по мокрой улице, Анна бежит следом.\n\nОни снова на крыше. Анна разворачивает записку и улыбается.',when:'вчера, 20:40',reason:'Что изменилось: четыре сцены вместо пяти, финал короче.'},
+  ];
+  const script={text:scripts[sv].text,label:`v${sv+1} из 2`,meta:`${sv===1?'активная версия':'прежняя версия'} · ${scripts[sv].when}`,reason:scripts[sv].reason,
+   prevOff:sv===0,nextOff:sv===1,prevColor:sv===0?'#c9ccd0':'#0e1013',nextColor:sv===1?'#c9ccd0':'#0e1013',
+   prev:()=>this.setState({scriptIdx:0}),next:()=>this.setState({scriptIdx:1})};
+  const storyboard=SCENES.map((x,i)=>({n:x.n,title:x.title,time:x.time,text:x.text,border:i?'1px solid #eeeff1':'0'}));
+  const screenMenu=[{label:'Изменить сценарий → чат',onClick:()=>this.ask({title:'Изменить сценарий',prompt:`Открой ${PROJ}. Хочу поправить сценарий v2 — что поменять, напишу ниже. Раскадровку перестрой только после моего подтверждения.\n\nЧто поменять: `})}];
+  if(stageIdx>0)screenMenu.push({label:'Переоткрыть сценарий → чат',onClick:()=>this.ask({title:'Переоткрыть сценарий',prompt:`Открой ${PROJ}. Верни проект на шаг «Сценарий»: я хочу его переписать. Предупреди, какие кадры и клипы после этого устареют.`})});
+
+  const modes=[['per_scene','Кадр за кадром'],['one_shot','Одним заходом']].map(([id,label])=>{const on=s.genMode===id;return {label,bg:on?'#fff':'transparent',fg:on?'#0e1013':'#6e767f',shadow:on?'0 1px 3px rgba(14,16,19,0.14)':'none',onClick:()=>{if(on)return;this.ask({title:'Как делаем ролик',prompt:`Открой ${PROJ}. Переключи способ на «${label.toLowerCase()}». Покажи, какие промпты и позиции перепишутся, и ничего не генерируй без моего подтверждения.`,apply:()=>{this.setState({genMode:id});this.toast(`Способ: ${label.toLowerCase()}`);}});}};});
+
+  const vm=this.viewerVals();
+  const out={
+   railOpen:s.rail,railClosed:!s.rail,toggleRail:()=>this.setState(x=>({rail:!x.rail})),
+   query:s.query,onQuery:e=>this.setState({query:e.target.value}),
+   filters:FILTERS.map(([id,label])=>{const on=s.filter===id;return {label,bg:on?'#e9ebed':'transparent',fg:on?'#101215':'#9aa1a8',border:on?'#e9ebed':'#2f343a',onClick:()=>this.setState({filter:id})};}),
+   projects,noProjects:!projects.length,
+   metaLine:`видео · ${s.genMode==='one_shot'?'одним заходом':'кадр за кадром'} · 30 с · 4 сцены`,
+   pill,steps,
+   openAgent:()=>this.ask({title:'Продолжить проект в чате',prompt:`Открой ${PROJ}. Покажи, на каком шаге проект и что осталось решить, и предложи ближайший допустимый шаг. Ничего не генерируй и не меняй без моего подтверждения.`}),
+   screenKicker:`Шаг ${sIdx+1} из 5${sIdx<stageIdx?' · одобрен':''}`,screenLabel:LABELS[screen],screenHint:HINTS[screen],
+   isScenario:screen==='scenario',isFrames:screen==='frames',isVideo:screen==='video',isAudio:screen==='audio',isAssembly:screen==='assembly',
+   modes,modeHint:s.genMode==='one_shot'?'Один промпт на весь ролик: модель делает его целиком, посценно переделать не получится.':'Каждая сцена — свой промпт и свой клип. Можно переделать одну, не трогая остальные.',
+   isOneShot:s.genMode==='one_shot',editOneShot:()=>this.ask({title:'Изменить промпт',prompt:`Открой ${PROJ}. Поправь промпт всего ролика — что поменять, напишу ниже.\n\nЧто поменять: `}),
+   screenMenuOpen:s.screenMenu,toggleScreenMenu:()=>this.setState(x=>({screenMenu:!x.screenMenu})),screenMenu,
+   script,storyboard,shelf,sceneRows:rows,layers,asm,finished,
+   openAsm:()=>this.openKey('asm'),
+   assembleChat:()=>this.ask({title:'Собрать ролик',prompt:`Открой ${PROJ}. Собери финальный ролик заново из выбранных клипов и звука. Покажи результат, ничего не публикуй.`,apply:()=>this.addVariant('asm')}),
+   histOpen:s.histOpen,histToggle:s.histOpen?'скрыть':`${s.log.length} записей`,toggleHist:()=>this.setState(x=>({histOpen:!x.histOpen})),allLog:s.log,
+   footer,
+   viewerOpen:!!s.viewer,vm,closeViewer:()=>this.closeViewer(),stop:e=>e.stopPropagation(),
+   menuOpen:s.menu,toggleMenu:()=>this.setState(x=>({menu:!x.menu})),
+   rejecting:s.rejecting,comment:s.comment,onComment:e=>this.setState({comment:e.target.value}),cancelReject:()=>this.setState({rejecting:false,comment:''}),
+   togglePlay:()=>this.setState(x=>({playing:!x.playing})),playGlyph:s.playing?'❚❚':'▶',playPct:s.playing?'42%':'0%',
+   chatOpen:!!s.chat,chat:s.chat?{title:s.chat.title,prompt:s.chat.prompt,status:s.chat.status,canSimulate:!!s.chat.apply}:{},
+   closeChat:()=>this.setState({chat:null}),
+   copyChat:()=>{const t=s.chat&&s.chat.prompt;const done=()=>this.setState(x=>({chat:x.chat&&{...x.chat,status:'Скопировано. Вернитесь в чат и отправьте запрос агенту.'}}));try{navigator.clipboard.writeText(t).then(done,done);}catch(e){done();}},
+   simulate:()=>{const a=s.chat&&s.chat.apply;this.setState({chat:null});this.toast('Запрос ушёл агенту…');setTimeout(()=>a&&a(),900);},
+   toastOn:!!s.toast,toast:s.toast||'',
+  };
+  return {...out,...this.mobileVals(out)};
+ }
+
+ viewerVals(){
+  const s=this.state;const vw=s.viewer;if(!vw)return {};
+  let title,time,tabs;
+  if(vw.kind==='scene'){const sc=SC(vw.id);title=`Сцена ${sc.n} · ${sc.title}`;time=sc.time;tabs=[['frames','Кадры'],['video','Видео'],['history','История']];}
+  else if(vw.kind==='reference'){const r=findRef(vw.id);title=r.label;time=r.scene?`только сцена ${SC(r.scene).n}`:GROUPS.find(g=>g.kind===r.kind).title.toLowerCase();tabs=[['frames','Картинка'],['history','История']];}
+  else if(vw.kind==='layer'){const l=LAYERS.find(x=>x.id===vw.id);title=l.title;time='звук';tabs=[['audio','Звук'],['history','История']];}
+  else {title='Финальный ролик';time='0:30';tabs=[['video','Ролик'],['history','История']];}
+  const tabsV=tabs.map(([id,label])=>{const on=vw.tab===id;return {label,bg:on?'#fff':'transparent',fg:on?'#111':'#9a9a9a',onClick:()=>this.setTab(id)};});
+  const isHistory=vw.tab==='history';
+  const hist=s.log.filter(e=>e.key&&e.key.includes(vw.id));
+  const base={title,time,tabs:tabsV,isHistory,notHistory:!isHistory,history:hist,noHistory:!hist.length,backdrop:()=>this.closeViewer()};
+  if(isHistory)return base;
+
+  const key=this.keyOf(vw);const list=s.v[key]||[];const own=!!OWN[key];const n=list.length;
+  const idx=Math.min(vw.idx,Math.max(0,n-1));const cur=list[idx];const p=s.picked[key];
+  const tab=vw.tab;const isAudio=tab==='audio';const isMotion=tab==='video';
+  let slots=[];
+  if(vw.kind==='scene'&&tab==='frames'){const sc=SC(vw.id);const curSlot=vw.slot||sc.need[0];slots=sc.need.map(sl=>{const k=`frame:${sc.id}:${sl}`;const c=(s.v[k]||[]).length;const on=sl===curSlot;return {label:`${sl==='first'?'Первый':'Последний'} кадр · ${c?c+' вар.':'нет'}`,bg:on?'#fff':'transparent',fg:on?'#111':'#9a9a9a',border:on?'#fff':'#3a3a3a',onClick:()=>this.setSlot(sl)};});}
+  const markOf=(v,i)=>p===i?'✓ выбран':v.st==='rejected'?'отклонён':v.st==='hidden'?'скрыт':v.st==='retired'?'убран':v.fresh?'новый':`вариант ${i+1}`;
+  const dim=v=>['rejected','hidden','retired'].includes(v.st);
+  const film=own?[{bg:col(key,0),opacity:1,ring:'0 0 0 2px #fff',mark:'ваш файл',onClick:()=>{}}]:list.map((v,i)=>({bg:col(key,i),opacity:dim(v)?0.35:1,ring:i===idx?'0 0 0 2px #fff':'none',mark:markOf(v,i),onClick:()=>this.setIdx(i)}));
+  const word=vw.kind==='reference'?'Оставить эту картинку':isMotion?(vw.kind==='assembly'?'Оставить этот ролик':'Оставить этот клип'):isAudio?'Оставить этот вариант':'Оставить этот кадр';
+  const isSel=p===idx;const retired=cur&&cur.st==='retired';
+  const versions=s.prompts[key]||[];
+  const pvi=s.pvOverride!=null?Math.min(s.pvOverride,versions.length-1):(cur?cur.pv-1:versions.length-1);
+  const pver=versions[Math.max(0,pvi)]||{text:'',when:''};
+  const made=list.map((v,i)=>v.pv===pvi+1?i+1:0).filter(Boolean);
+  const segs=pver.text.split(/(@[a-z]+)/).filter(Boolean).map(t=>t[0]==='@'?{t:'@'+labelOf(t.slice(1)),bg:'#2e4a3a',fg:'#a5e0b4',pad:'0 4px'}:{t,bg:'transparent',fg:'#ddd',pad:'0'});
+  const menu=[];
+  if(cur&&!own){
+   if(cur.st!=='rejected')menu.push({label:'Отклонить с комментарием…',fg:'#ff8a80',sep:'0',onClick:()=>this.setState({rejecting:true,menu:false})});
+   else menu.push({label:'Вернуть из отклонённых',fg:'#e8e8e8',sep:'0',onClick:()=>this.mutate(key,idx,'new',`${humanKey(key)} — вариант ${idx+1} возвращён`)});
+   menu.push({label:cur.st==='hidden'?'Показать':'Скрыть',fg:'#e8e8e8',sep:'0',onClick:()=>this.mutate(key,idx,cur.st==='hidden'?'new':'hidden',`${humanKey(key)} — вариант ${idx+1} ${cur.st==='hidden'?'показан':'скрыт'}`)});
+   menu.push({label:retired?'Вернуть в работу':'Убрать из работы',fg:'#e8e8e8',sep:'0',onClick:()=>this.mutate(key,idx,retired?'new':'retired',`${humanKey(key)} — вариант ${idx+1} ${retired?'возвращён в работу':'убран из работы'}`)});
+  }
+  menu.push({label:'Загрузить свой файл → чат',fg:'#e8e8e8',sep:menu.length?'1px solid #2e2e2e':'0',onClick:()=>this.askUpload(key)});
+  menu.push({label:'Изменить промпт → чат',fg:'#e8e8e8',sep:'0',onClick:()=>this.askEditPrompt(key,Math.max(0,pvi))});
+
+  let zones={};
+  if(vw.kind==='scene'){const sc=SC(vw.id);const inc=s.included[sc.id];
+   zones={showZones:true,inFrame:REFS.map(r=>{const on=inc.includes(r.id);return {name:r.label,bg:col('ref:'+r.id,s.picked['ref:'+r.id]??0),opacity:on?1:0.4,title:on?'в кадре — нажмите, чтобы убрать':'не в кадре — нажмите, чтобы добавить',onClick:()=>this.askToggle(sc,r,!on)};}),
+    locals:LOCALS.filter(l=>l.scene===sc.id).map(l=>({name:l.label,bg:col('ref:'+l.id,0),onClick:()=>this.open({kind:'reference',id:l.id,tab:'frames'})})),
+    vrefs:VREFS.filter(x=>x.scene===sc.id)};
+   zones.noLocals=!zones.locals.length;zones.noVrefs=!zones.vrefs.length;zones.addLocal=()=>this.askAddRef('other',sc);zones.addVref=()=>this.askAddRef('video',sc);}
+  let used={};
+  if(vw.kind==='reference'){const r=findRef(vw.id);const scs=SCENES.filter(x=>r.scene?x.id===r.scene:s.included[x.id].includes(r.id));used={showUsedIn:true,usedTitle:'Где используется',usedIn:scs.map(x=>({label:`Сцена ${x.n} · ${x.title}`,onClick:()=>this.open({kind:'scene',id:x.id,tab:'frames'})}))};}
+  if(vw.kind==='assembly'){used={showUsedIn:true,usedTitle:'Из чего собран',usedIn:SCENES.map(x=>({label:`Сцена ${x.n}`,onClick:()=>this.open({kind:'scene',id:x.id,tab:'video'})}))};}
+
+  const wave=Array.from({length:60},(_,i)=>({h:(14+Math.round(80*Math.abs(Math.sin(i*0.55+idx*1.7)*Math.cos(i*0.17+idx))))+'%',c:s.playing&&i<25?'#fff':'#5a5a5a'}));
+  const empty=!own&&n===0;
+  return {...base,...zones,...used,
+   showSlots:slots.length>1,slots,
+   showVisual:!isAudio&&!empty,isMotion,isAudio:isAudio&&!empty,isEmpty:empty,
+   emptyText:vw.kind==='scene'&&tab==='frames'&&!SC(vw.id).need.length?'Для этой сцены кадры не запланированы.':'Вариантов пока нет — попросите агента сделать первый.',
+   wave,curBg:own?col(key,0):col(key,idx),curOpacity:cur&&dim(cur)?0.45:1,curLabel:own?'ваш файл':cur?markOf(cur,idx):'',
+   caption:own?'Ваш файл · используется как есть':empty?'':`Вариант ${idx+1} из ${n} · ${isSel?'выбран':cur.st==='rejected'?'отклонён':cur.st==='hidden'?'скрыт':retired?'убран из работы':'не выбран'} · по промпту v${cur.pv}`,
+   prev:()=>idx>0&&this.setIdx(idx-1),next:()=>idx<n-1&&this.setIdx(idx+1),
+   ts:e=>{this._tx=e.changedTouches[0].clientX;},te:e=>{const dx=e.changedTouches[0].clientX-(this._tx??0);if(own)return;if(dx>50&&idx>0)this.setIdx(idx-1);if(dx<-50&&idx<n-1)this.setIdx(idx+1);},prevOff:idx<=0||own,nextOff:idx>=n-1||own,prevOpacity:idx<=0||own?0.25:1,nextOpacity:idx>=n-1||own?0.25:1,
+   film,showAddTile:!own,
+   showActions:!own&&n>0,showOwnActions:own,upload:()=>this.askUpload(key),
+   keepLabel:isSel?'✓ Выбран':word,keepOff:isSel||retired,keepBg:isSel?'transparent':retired?'#3a3a3a':'#fff',keepFg:isSel?'#a5e0b4':retired?'#9a9a9a':'#111',keepBorder:isSel?'#2e4a3a':retired?'#3a3a3a':'#fff',
+   keep:()=>{if(!isSel&&!retired)this.keep(key,idx);},more:()=>this.askMore(key),
+   reject:()=>this.mutate(key,idx,'rejected',`${humanKey(key)} — вариант ${idx+1} отклонён${s.comment.trim()?`: «${s.comment.trim()}»`:''}`),
+   menu,
+   showPrompt:versions.length>0,promptTitle:isMotion&&vw.kind==='scene'?'Промпт движения':isAudio?'Промпт звука':vw.kind==='assembly'?'Задание на сборку':'Промпт',
+   pLabel:`v${pvi+1} из ${versions.length}`,segs,
+   pMeta:`v${pvi+1} · ${pver.when}${own?'':made.length?` · по нему варианты ${made.join(', ')}`:' · вариантов по нему нет'}`,
+   pPrev:()=>pvi>0&&this.setState({pvOverride:pvi-1}),pNext:()=>pvi<versions.length-1&&this.setState({pvOverride:pvi+1}),
+   pPrevOff:pvi<=0,pNextOff:pvi>=versions.length-1,pPrevOpacity:pvi<=0?0.35:1,pNextOpacity:pvi>=versions.length-1?0.35:1,
+   editPrompt:()=>this.askEditPrompt(key,Math.max(0,pvi)),
+  };
+ }
+}
+</script>
+</body>
+</html>
