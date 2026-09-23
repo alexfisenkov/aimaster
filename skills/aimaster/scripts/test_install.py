@@ -196,7 +196,12 @@ class InstallTests(_TempInstall, unittest.TestCase):
         self.assertEqual(report["platform"], "windows")
         self.assertEqual(report["targets"][0]["method"], "junction")
         self.assertEqual(calls, [(str(self.skill.resolve()), str(self.target()))])
-        run.assert_not_called()  # ни cmd, ни другой оболочки
+        # ни cmd, ни другой оболочки (запуски python для python_cmd не в счёт)
+        for call in run.call_args_list:
+            command = call.args[0] if call.args else call.kwargs.get("args")
+            text = command if isinstance(command, str) else " ".join(map(str, command))
+            self.assertNotIn("mklink", text.lower())
+            self.assertNotIn("cmd.exe", text.lower())
 
     def test_windows_falls_back_to_symlink_and_cleans_the_partial_junction(self):
         self.need_symlinks()
