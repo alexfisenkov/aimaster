@@ -201,3 +201,14 @@ test("заголовок экрана: номер шага и отметка о�
   assert.equal(screenHeading(PROJECT, "video").kicker, "Шаг 3 из 5");
   assert.equal(screenHeading(projectWith({ type: "photo", stage: "image_results" }), "assembly").kicker, "Шаг 3 из 3");
 });
+
+test("пункт без строкового id — надпись, а не адрес просмотрщика", () => {
+  const project = projectWith({
+    stage: "motion",
+    positions: [{ position_id: "pos:odd", kind: "video", scene_id: 7, prompt_group_id: "prompt:odd" }],
+    motion_prompts: [{ prompt_id: "prompt:odd", version_id: "prompt:odd-v1", stale: true }],
+  });
+  const odd = unresolvedEntries(project, "motion").find((item) => item.label.includes("устарел"));
+  assert.ok(odd, "устаревший промпт попадает в список");
+  assert.deepEqual([odd.target, odd.tab, odd.slot], [null, null, null]);
+});

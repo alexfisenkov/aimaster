@@ -26,7 +26,10 @@ function sceneName(scene, position) {
  * @param {string} [slot] слот кадра (`first`/`last`/`video`)
  */
 function entry(label, target = null, tab = null, slot = null) {
-  return { label, target, tab, slot };
+  // Адрес без строкового `id` просмотрщику нечего открыть: такой пункт
+  // становится надписью, а не кнопкой (подвал — `footer.js`).
+  const usable = target && typeof target.id === "string" && target.id !== "" ? target : null;
+  return { label, target: usable, tab: usable ? tab : null, slot: usable ? slot : null };
 }
 
 /** Референсы, которые решено генерировать, но вариант ещё не выбран. */
