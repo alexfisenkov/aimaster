@@ -667,6 +667,7 @@ export async function submitAction({
   awaitUpdate = true,
   waitOptions,
   reenableOnSuccess = false,
+  requireActionSuccess = false,
 }) {
   const previousDisabled = controls.map((control) => (control ? control.disabled : undefined));
   for (const control of controls) {
@@ -674,7 +675,12 @@ export async function submitAction({
       control.disabled = true;
     }
   }
-  const result = await runAction({ actionType, targetId, payload, expectedRevision, awaitUpdate, waitOptions });
+  // `requireActionSuccess` (дашборд v2): подтверждением считается статус
+  // своего `action_id`, а не любой сдвиг ревизии проекта — иначе чужая
+  // запись в проект выдала бы проваленное решение за принятое.
+  const result = await runAction({
+    actionType, targetId, payload, expectedRevision, awaitUpdate, waitOptions, requireActionSuccess,
+  });
   const staysDisabled = result.ok && result.confirmed !== false && !reenableOnSuccess;
   if (!staysDisabled) {
     controls.forEach((control, index) => {

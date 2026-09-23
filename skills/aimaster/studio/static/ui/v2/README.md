@@ -26,8 +26,15 @@
   из четырёх формулировок спецификации.
 - `screen-map.js` — `SCREENS`, `SCREEN_LABELS`, `SCREEN_HINTS`,
   `screensFor(type)`, `screenForStage(stage)`, `stagesForScreen(screen)`,
-  `pathState(project)`, `primaryAction(project)` → `{label, stage, enabled, remaining[]}`.
-- `unresolved.js` — `unresolvedItems(project, stage)` → строки «осталось решить».
+  `pathState(project)`, `primaryAction(project)` → `{label, stage, enabled, remaining[], items[]}`,
+  `projectFinished(snapshot)`, `projectStatus(snapshot)` → `{text, tone: "warn"|"ok", count}|null`
+  (пилюля шапки), `screenHeading(project, screen)` → `{kicker, title, hint}`.
+- `unresolved.js` — `unresolvedEntries(project, stage)` → `{label, target: {kind, id}|null,
+  tab, slot}[]` (каждый пункт открывает просмотрщик); `unresolvedItems` — те же пункты строками.
+- `status-tone.js` — `statusTone(counts, {source, hasAsset})` → `none|warn|ok|own`
+  (цвет точки по тем же правилам, что слова `variantStatus`);
+  `framesBadge(slots)` и `clipBadge(counts)` → бейдж строки сцены.
+- `responsive.js` — `PHONE_QUERY`, `isPhone()` (`(max-width: 759px)`), `onViewportChange(cb)` → отписка.
 - `scenario-model.js` — `scriptVersions(project)` → `{versions, activeIndex}`,
   `storyboardRows(project)`, `activeBlockText(scene)`.
 - `video-model.js` — `clipStatus(project, scene)` и `continuationLine(project,
@@ -51,7 +58,22 @@
   (zone, note)`, `dropCardFocusNote()`. Листок `studio:card-focus-pending`
   вычёркивается только когда фокус поставлен: зоны две (доска и оверлей),
   и спросивший первым иначе забрал бы чужой.
-- `path-nav.js` — `renderPath(project, {current})`, `requestScreen(screen, trigger)`.
+- `path-nav.js` — `renderPath(project, {current})`, `requestScreen(screen, trigger)`:
+  степпер в шапке; будущие шаги — `span` с причиной в `title`.
+- `sheet.js` — `openSheet({title, items: [{label, hint?, tone?, onSelect}], returnFocus})`
+  → `close()`: нижняя шторка с ловушкой фокуса, `Esc` ловит на `window` раньше просмотрщика.
+- `preview.js` — одно правило превью на весь дашборд: `assetUrlOf(record)` →
+  свой `/assets/…` или `null`; `previewKind(record, {fallback})` →
+  `image|video|audio|none` (`media_type`, `mime`, расширение, `kind: "video"`,
+  затем тип по месту); `placeholder(text)` — штриховка с подписью;
+  `renderPreview(record, {kind, fallback, label, emptyText, small})` —
+  миниатюра или заглушка, `error` → «файл не открылся».
+- `board-bits.js` — мелочи доски: `dot(tone)`, `statusLine(text, tone)`,
+  `badge(text, tone)`, `playMark()`, `waveform(heights, tone)`,
+  `placeScreenTools(root, surface, node)` — управление экрана справа от заголовка.
+- `screen-menu.js` — `screenMenu(items, {title})`: «···» у заголовка экрана;
+  на десктопе список, на телефоне шторка `openSheet`.
+- `toast.js` — `showToast(text)`: 2,6 с снизу по центру; при открытом `<dialog>` живёт в нём.
 - `reference-shelf.js` — `SHELF_GROUPS`, `shelfGroups(project)`, `renderShelf(project, revision)`.
 - `scene-zones.js` — `inFrameZone`/`localZone`/`videoReferenceZone`/`framesZone`
   `(project, revision, scene)`.
@@ -71,33 +93,61 @@
   `screen-assembly.js` — `render*Screen(root, {state, screen})`, внизу каждого
   `renderFooter(snapshot, {screen})`.
 - `footer.js` — `renderFooter(snapshot, {screen})`: одна главная кнопка
-  (direct через `card-forms.buildSimpleButton`) и строка «Осталось решить».
+  (direct через `card-forms.buildSimpleButton`), чипсы «Осталось решить»
+  (на телефоне — плашка со шторкой), на пройденном экране — «Вернуться к
+  шагу …». Экран кладёт подвал в свою область, `shell.js` переносит его в
+  липкую полосу на всю ширину.
   У сценария свой тип действия `approve-scenario`, у остальных пяти стадий —
   общий `approve` с именем стадии; сервер различает их по `target_id`
   (`decision_stages.MILESTONE_TARGETS` вычитает `scenario`). На пройденном
   экране кнопки нет вовсе.
 - `viewer.js` — `attachViewerV2(getSnapshot)`, `repaintViewer()`, `closeViewer()`:
-  тёмный оверлей на весь экран, вкладки, ловушка фокуса, `Esc`/✕, `←`/`→`,
-  свайп и блокировка прокрутки страницы.
+  тёмный оверлей (на телефоне — на весь экран), вкладки-пилюли, ловушка
+  фокуса, `Esc` (меню → форма отказа → окно)/✕, `←`/`→` и блокировка
+  прокрутки страницы. Нет сцены или кадры не запланированы — строка
+  пояснения вместо холста.
 - `viewer-canvas.js` — чистые `filmstrip(counts)`, `slotOptions(project, scene)`,
-  `canvasCaption({index, total, mark, promptLabel})`, `ownFileStrip(assetUrl,
-  caption)`, `promptOfVariant(version, promptVersions)`; с DOM —
-  `renderCanvas`, `renderSlotSwitch`.
+  `canvasCaption({index, total, mark, promptLabel})`, `soloStrip(assetUrl,
+  caption)`, `promptOfVariant(version, promptVersions)`,
+  `captionMark(state)` → «выбран / не выбран / отклонён…» под холстом,
+  `tileMark(item)` → «✓ выбран», решение или «вариант N» на плитке,
+  `swipeStep(dx, dy)` → `1|-1|0` (порог `SWIPE_THRESHOLD` = 50px, вертикаль
+  не листает); с DOM — `renderCanvas` (сцена, свайп, плёнка с «＋»),
+  `renderSlotSwitch`.
+- `viewer-media.js` — крупные плееры и плитки плёнки просмотрщика. Тип файла
+  — `preview.previewKind`; чистая `mediaPlan(record, fallback)` →
+  `{tag, src, kind, placeholder}`; `renderMedia(record, kind, {size, label})`
+  — `<img>`, `<video preload=metadata #t=0.1>`, звук с ♪ или заглушка
+  (`PLACEHOLDER_TEXT`: «Клипа пока нет», «Файл не открылся»…).
 - `viewer-prompt.js` — чистые `promptPlace(project, target, {tab, slot})`,
   `promptVersions(project, place)`, `splitTags(text)`, `promptMeta(version,
-  index)`; с DOM — `renderPromptPanel`. Теги промпта собираются из
+  index)`, `variantsByPrompt(prompt, items)` → «по нему варианты 1, 3» только
+  при связи в данных; с DOM — `renderPromptPanel`. Теги промпта собираются из
   `textContent`: разметку из текста страница не исполняет.
 - `viewer-zones.js` — `renderViewerZones(project, revision, scene)`: те же
-  зоны из `scene-zones.js`, тёмный вид задаёт `styles/v2/viewer.css`.
+  зоны из `scene-zones.js`, тёмный вид задаёт `styles/v2/viewer.css`;
+  чистые `whereUsed(project, referenceId)` → сцены, где референс включён
+  (общий — по `reference_ids`, свой — по `scene_id`) и `assemblyParts(project)`
+  → выбранные клипы и слои звука; с DOM — `renderReferenceUsage`
+  («Где используется»), `renderAssemblyParts` («Из чего собран/соберётся»).
 - `decide.js` — чистые `resultTargetId(version)`, `directActionsFor({allowedActions,
   currentStage, collection, version})`, `directActionRequest(actionType, version,
-  revision, {comment})` и ряд «две кнопки и «···»» `renderDecideRow(context)`.
+  revision, {comment})`, `outcomeToast(action, before, after, noun)` → текст
+  тоста только после подтверждённого успеха («Клип принят», «Вариант
+  отклонён») и ряд «две кнопки и «···»» `renderDecideRow(context)`; форма
+  отказа стоит под рядом, пункт — в «···».
   Шесть прямых действий идут через `ui/actions.js`; `vary`/`regenerate` не
   показываются никогда. Решение предлагается только на стадии, которой
   принадлежит коллекция результата (`studio/decision_cards.STAGE_COLLECTIONS`).
-- `shell.js` — `renderShellV2(root, state)`, `setViewedScreen`, `currentScreen`.
-- `rail-drawer.js` — `createRailDrawer()`: ☰, затемнение, `Esc` и ловушка
-  Tab для панели проектов. Список внутри неё рисует v1 (`ui/rail.js`).
+- `shell.js` — `renderShellV2(root, state)`, `setViewedScreen`, `currentScreen`,
+  `metaLine`. Рисует шапку (мета, название, пилюля, «💬 Агент», степпер) и
+  **заголовок экрана** (kicker, H1, подсказка) — экраны свои заголовки не
+  рисуют; справа от заголовка пустой `[data-hook="v2-screen-aside"]` для
+  управления экрана. Стили каркаса — `styles/v2/shell.css`.
+- `rail-drawer.js` — `createRailDrawer()`: на десктопе панель стоит в сетке
+  и сворачивается «‹» (выбор в `localStorage`), на телефоне выдвигается
+  поверх с затемнением, `Esc` и ловушкой Tab. `body[data-rail]` —
+  `docked|collapsed|open|closed`. Список внутри рисует `ui/rail.js`.
 - `boot.js` — `bootV2()`: стор, контроллер и fetch те же, что у v1, плюс
   `ensureStylesheet(href)` — `index.html` принадлежит оболочке, поэтому
   `styles/v2/viewer.css` подключается отсюда тегом `<link>`. Здесь же

@@ -79,11 +79,11 @@ test("выбран не первый из нескольких — номер в
 test("видеореференс usage=continue читается как продолжение предыдущей сцены", () => {
   assert.deepEqual(
     continuationLine(PROJECT, sceneBy(PROJECT, "skeptic-online")),
-    { text: "Продолжение: с конца сцены 1", warn: false },
+    { text: "Продолжение: с конца сцены 1", detail: "с конца сцены 1", warn: false },
   );
   assert.deepEqual(
     continuationLine(PROJECT, sceneBy(PROJECT, "money-question")),
-    { text: "Продолжение: с конца сцены 3", warn: false },
+    { text: "Продолжение: с конца сцены 3", detail: "с конца сцены 3", warn: false },
   );
 });
 

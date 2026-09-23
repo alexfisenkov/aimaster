@@ -12,6 +12,7 @@
 // связь стоит перепроверить.
 
 import { variantCounts } from "./counts.js";
+import { statusTone } from "./status-tone.js";
 
 const MODE_WORDS = Object.freeze({
   first: "Оживляем первый кадр",
@@ -24,7 +25,8 @@ const MODE_WORDS = Object.freeze({
  *
  * @param {object} project `snapshot.active_project`
  * @param {object} scene запись сцены
- * @returns {{total: number, index: number, selected: object|null, text: string}}
+ * @returns {{total: number, index: number, selected: object|null, text: string,
+ *            tone: "ok"|"warn"|"none"}}
  */
 export function clipStatus(project, scene) {
   const counts = variantCounts(project, { sceneId: scene?.scene_id, slot: "video" });
@@ -33,7 +35,7 @@ export function clipStatus(project, scene) {
   if (total === 0) text = "клипов пока нет";
   else if (!selected) text = `выберите из ${total}`;
   else text = total > 1 ? `клип выбран · ${index} из ${total}` : "клип выбран";
-  return { total, index, selected, text };
+  return { total, index, selected, text, tone: statusTone(counts) };
 }
 
 /**
@@ -41,8 +43,10 @@ export function clipStatus(project, scene) {
  *
  * @param {object} project `snapshot.active_project`
  * @param {object} scene запись сцены
- * @returns {{text: string, warn: boolean}} `warn` — сцену меняли после
- *   расстановки ссылок, связь стоит перепроверить.
+ * @returns {{text: string, detail: string, warn: boolean}} `detail` — та
+ *   же строка без слова «Продолжение:», для места под подписью
+ *   «Продолжение»; `warn` — сцену меняли после расстановки ссылок, связь
+ *   стоит перепроверить.
  */
 export function continuationLine(project, scene) {
   const scenes = [...(project?.scenes || [])].sort((left, right) => (left?.order || 0) - (right?.order || 0));
@@ -50,11 +54,12 @@ export function continuationLine(project, scene) {
   const continues = (project?.references || []).some(
     (item) => item?.kind === "video" && item.usage === "continue" && item.scene_id === scene?.scene_id,
   );
-  let text;
+  let detail;
   if (continues) {
-    text = index > 0 ? `Продолжение: с конца сцены ${index}` : "Продолжение: с конца соседнего клипа";
+    detail = index > 0 ? `с конца сцены ${index}` : "с конца соседнего клипа";
   } else {
-    text = MODE_WORDS[scene?.video_mode] || "Способ оживления пока не выбран";
+    detail = MODE_WORDS[scene?.video_mode] || "Способ оживления пока не выбран";
   }
-  return { text, warn: scene?.linkage_status === "review_linkage" };
+  const text = continues ? `Продолжение: ${detail}` : detail;
+  return { text, detail, warn: scene?.linkage_status === "review_linkage" };
 }

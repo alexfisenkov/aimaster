@@ -1,10 +1,12 @@
-// Экран «Сценарий» (спецификация §3.1): текст активной версии с
-// листалкой версий, раскадровка списком и одна главная кнопка внизу.
-// Правка сценария и возврат к нему — за «···», через чат.
+// Экран «Сценарий» (спецификация §3.1, хэндофф 2026-09-23): две карточки
+// в сетке — текст сценария с листалкой версий и раскадровка списком.
+// Заголовок экрана рисует оболочка; здесь только «···» справа — правка
+// сценария и возврат к нему, оба через чат.
 
+import { placeScreenTools } from "./board-bits.js";
 import { clock, el } from "./dom.js";
 import { renderFooter } from "./footer.js";
-import { moreMenu } from "./more-menu.js";
+import { screenMenu } from "./screen-menu.js";
 import { editScenario, reopenScenario } from "./screen-prompts.js";
 import { screenForStage } from "./screen-map.js";
 import { scriptVersions, storyboardRows } from "./scenario-model.js";
@@ -12,8 +14,11 @@ import { scriptVersions, storyboardRows } from "./scenario-model.js";
 /** Текст сценария с листалкой ‹ v1 из 3 ›: листается на месте. */
 function scriptBlock(project) {
   const { versions, activeIndex } = scriptVersions(project);
-  const box = el("section", "v2-script");
+  const box = el("section", "v2-card v2-script");
   box.dataset.hook = "v2-script";
+  const top = el("div", "v2-card-head");
+  top.append(el("h2", "v2-card-title", "Текст сценария"));
+  box.append(top);
   if (!versions.length) {
     box.append(el("p", "v2-section-hint", "Сценария пока нет — попросите агента его написать."));
     return box;
@@ -21,7 +26,8 @@ function scriptBlock(project) {
   let shown = activeIndex;
   const back = el("button", "v2-step-arrow", "‹");
   const forward = el("button", "v2-step-arrow", "›");
-  const meta = el("span", "v2-script-meta");
+  const label = el("span", "v2-script-label");
+  const meta = el("p", "v2-script-meta");
   const text = el("p", "v2-script-text");
   const reason = el("p", "v2-script-reason");
   for (const arrow of [back, forward]) arrow.type = "button";
@@ -30,9 +36,13 @@ function scriptBlock(project) {
 
   const paint = () => {
     const version = versions[shown];
-    meta.textContent = `v${shown + 1} из ${versions.length}${shown === activeIndex ? " · сейчас в работе" : ""}`;
+    label.textContent = `v${shown + 1} из ${versions.length}`;
+    meta.textContent = shown === activeIndex
+      ? "активная версия · сейчас в работе"
+      : shown < activeIndex ? "прежняя версия" : "более новая версия, не в работе";
     text.textContent = version?.text || "";
     reason.textContent = version?.reason ? `Почему так: ${version.reason}` : "";
+    reason.hidden = !version?.reason;
     back.disabled = shown === 0;
     forward.disabled = shown === versions.length - 1;
   };
@@ -41,17 +51,18 @@ function scriptBlock(project) {
   paint();
 
   const bar = el("div", "v2-script-bar");
-  bar.append(back, meta, forward);
-  box.append(bar, text, reason);
+  bar.append(back, label, forward);
+  top.append(bar);
+  box.append(meta, text, reason);
   return box;
 }
 
 /** Раскадровка: номер · название · время · текст. */
 function storyboard(project) {
   const rows = storyboardRows(project);
-  const list = el("section", "v2-storyboard");
+  const list = el("section", "v2-card v2-storyboard");
   list.dataset.hook = "v2-storyboard";
-  list.append(el("h2", "v2-section-title", `Раскадровка · ${rows.length}`));
+  list.append(el("h2", "v2-card-title", `Раскадровка · ${rows.length}`));
   if (!rows.length) {
     list.append(el("p", "v2-section-hint", "Сцен пока нет — попросите агента разбить сценарий на сцены."));
     return list;
@@ -59,10 +70,12 @@ function storyboard(project) {
   for (const row of rows) {
     const item = el("article", "v2-storyboard-row");
     item.dataset.sceneId = row.sceneId;
-    const title = el("b", "v2-scene-title", row.title);
-    const time = row.startMs === null ? "" : ` · ${clock(row.startMs)}–${clock(row.endMs)}`;
-    if (time) title.append(el("span", "v2-scene-time", time));
-    item.append(el("span", "v2-storyboard-number", String(row.position)), title, el("p", "v2-scene-text", row.text));
+    const body = el("div", "v2-storyboard-body");
+    const line = el("div", "v2-storyboard-line");
+    line.append(el("b", "v2-storyboard-title", row.title));
+    if (row.startMs !== null) line.append(el("span", "v2-time", `${clock(row.startMs)}–${clock(row.endMs)}`));
+    body.append(line, el("p", "v2-storyboard-text", row.text));
+    item.append(el("span", "v2-storyboard-number", String(row.position)), body);
     list.append(item);
   }
   return list;
@@ -86,12 +99,11 @@ export function renderScenarioScreen(root, { state, screen = "scenario" } = {}) 
   }
   const passed = screenForStage(project.stage) !== "scenario";
   const { versions, activeIndex } = scriptVersions(project);
-  const head = el("div", "v2-screen-head");
-  head.append(el("h2", "v2-section-title", "Сценарий"));
-  const menu = moreMenu([passed
-    ? { label: "Вернуться к сценарию → чат", request: reopenScenario(project, snapshot.revision) }
-    : { label: "Изменить сценарий → чат", request: editScenario(project, snapshot.revision, versions[activeIndex]) }]);
-  if (menu) head.append(menu);
-  surface.append(head, scriptBlock(project), storyboard(project), renderFooter(snapshot, { screen }));
+  const items = [{ label: "Изменить сценарий → чат", request: editScenario(project, snapshot.revision, versions[activeIndex]) }];
+  if (passed) items.push({ label: "Переоткрыть сценарий → чат", request: reopenScenario(project, snapshot.revision) });
+  const grid = el("div", "v2-scenario-grid");
+  grid.append(scriptBlock(project), storyboard(project));
+  surface.append(grid, renderFooter(snapshot, { screen }));
+  placeScreenTools(root, surface, screenMenu(items, { title: "Сценарий" }));
   root.append(surface);
 }

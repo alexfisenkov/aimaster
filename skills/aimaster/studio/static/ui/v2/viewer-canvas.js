@@ -7,7 +7,8 @@
 
 import { variantCounts } from "./counts.js";
 import { variantState, versionsMadeBy } from "./variants.js";
-import { el } from "./dom.js";
+import { chatButton, el } from "./dom.js";
+import { renderMedia } from "./viewer-media.js";
 
 /** Пометки плёнки — четыре из спецификации плюс «принят» и «убран». */
 export const VARIANT_MARKS = Object.freeze({
@@ -20,6 +21,19 @@ export const VARIANT_MARKS = Object.freeze({
   hidden: "скрыт",
   retired: "убран",
 });
+
+/** Слово состояния в подписи под холстом: «Вариант 2 из 4 · не выбран». */
+export const CAPTION_WORDS = Object.freeze({
+  selected: "выбран",
+  approved: "принят",
+  rejected: "отклонён",
+  hidden: "скрыт",
+  retired: "убран из работы",
+  new: "не выбран",
+});
+
+/** Сколько пикселей пальцем по сцене — уже листание (хэндофф: 50). */
+export const SWIPE_THRESHOLD = 50;
 
 const DIMMED = new Set(["rejected", "hidden", "retired"]);
 const SLOT_TITLES = Object.freeze({ first: "Первый кадр", last: "Последний кадр", video: "Клип" });
@@ -123,6 +137,42 @@ export function canvasCaption({ index, total, mark, promptLabel, solo } = {}) {
 }
 
 /**
+ * Подпись плитки плёнки и пилюли на сцене (макет): «✓ выбран»,
+ * «отклонён», а у варианта без решения — просто «вариант 2».
+ * @param {{state: string, mark: string, index: number}} item элемент `filmstrip`
+ * @returns {string}
+ */
+export function tileMark(item) {
+  if (!item) return "";
+  if (item.state === "selected") return `✓ ${item.mark}`;
+  if (item.state === "new" || !item.mark) return `вариант ${item.index}`;
+  return item.mark;
+}
+
+/**
+ * Слово состояния варианта для подписи под холстом.
+ * @param {string} state состояние из `filmstrip`
+ * @returns {string}
+ */
+export function captionMark(state) {
+  return CAPTION_WORDS[state] || CAPTION_WORDS.new;
+}
+
+/**
+ * Куда листать по жесту пальцем: `1` — к следующему, `-1` — к
+ * предыдущему, `0` — не листать. Вертикальный жест — прокрутка страницы,
+ * а не листание, поэтому он не считается даже длинным.
+ *
+ * @param {number} dx сдвиг по горизонтали, px
+ * @param {number} [dy] сдвиг по вертикали, px
+ */
+export function swipeStep(dx, dy = 0) {
+  if (!Number.isFinite(dx) || Math.abs(dx) < SWIPE_THRESHOLD) return 0;
+  if (Number.isFinite(dy) && Math.abs(dy) > Math.abs(dx)) return 0;
+  return dx < 0 ? 1 : -1;
+}
+
+/**
  * Версия промпта, по которой сделан этот вариант, — или `null`, если
  * связи в данных нет.
  *
@@ -136,25 +186,6 @@ export function promptOfVariant(version, promptVersions) {
   return null;
 }
 
-/** Холст: картинка, видео с управлением или звук — по виду материала. */
-function media(version, mediaKind) {
-  const url = typeof version?.asset_url === "string" ? version.asset_url : "";
-  if (!url) return el("p", "v2-viewer-empty", "Файла пока нет");
-  if (mediaKind === "video" || mediaKind === "audio") {
-    const node = document.createElement(mediaKind);
-    node.src = url;
-    node.controls = true;
-    node.preload = "metadata";
-    node.className = "v2-viewer-media";
-    return node;
-  }
-  const image = document.createElement("img");
-  image.src = url;
-  image.alt = version?.caption || "Вариант";
-  image.className = "v2-viewer-media";
-  return image;
-}
-
 function arrow(label, title, onClick, disabled) {
   const button = el("button", "v2-viewer-arrow", label);
   button.type = "button";
@@ -165,28 +196,67 @@ function arrow(label, title, onClick, disabled) {
 }
 
 /**
+ * Листание пальцем по сцене: порог `SWIPE_THRESHOLD`, вертикальный жест
+ * остаётся прокруткой. Слушатель висит на самой сцене, а не на всём окне:
+ * плёнка под ней прокручивается вбок тем же жестом и листать не должна.
+ */
+function attachSwipe(stage, shownIndex, onShow) {
+  let from = null;
+  stage.addEventListener("touchstart", (event) => {
+    const touch = event.changedTouches?.[0];
+    from = touch ? { x: touch.clientX, y: touch.clientY } : null;
+  }, { passive: true });
+  stage.addEventListener("touchend", (event) => {
+    const touch = event.changedTouches?.[0];
+    if (!from || !touch) return;
+    const step = swipeStep(touch.clientX - from.x, touch.clientY - from.y);
+    from = null;
+    if (step) onShow(shownIndex + step);
+  }, { passive: true });
+  stage.addEventListener("touchcancel", () => { from = null; }, { passive: true });
+}
+
+/**
  * Холст с листалкой и плёнкой.
  *
- * Плитки «＋ Ещё» в плёнке нет: она открывала тот же диалог с тем же
- * текстом, что кнопка «＋ Ещё вариант» под холстом, — владелец попросил
- * оставить одну (правило спецификации §1: ничего лишнего).
+ * В конце плёнки — плитка «＋»: тот же запрос агенту, что «＋ Ещё
+ * вариант» под холстом (хэндофф 2026-09-23). На телефоне стрелок нет,
+ * листание — свайпом по сцене.
  *
  * @param {{strip: object, shownIndex: number, mediaKind: string, caption: string,
+ *          stageMark?: string, addRequest?: object|null, emptyText?: string,
  *          onShow: (index: number) => void}} context
- *   `shownIndex` — номер показанного варианта с 1.
+ *   `shownIndex` — номер показанного варианта с 1; `stageMark` — пилюля
+ *   в углу сцены; `addRequest` — запрос из `chat-prompts.moreVariants`,
+ *   без него плитки «＋» нет.
  * @returns {HTMLElement}
  */
-export function renderCanvas({ strip, shownIndex, mediaKind, caption, onShow }) {
+export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark, addRequest, emptyText, onShow }) {
   const wrap = el("div", "v2-viewer-canvas-wrap");
   const canvas = el("div", "v2-viewer-canvas");
   canvas.dataset.hook = "v2-viewer-canvas";
   const shown = strip.items[shownIndex - 1];
-  canvas.append(arrow("‹", "Предыдущий вариант", () => onShow(shownIndex - 1), shownIndex <= 1));
-  canvas.append(shown ? media(shown.version, mediaKind) : el("p", "v2-viewer-empty", "Вариантов пока нет"));
-  canvas.append(arrow("›", "Следующий вариант", () => onShow(shownIndex + 1), shownIndex >= strip.total));
-  const label = el("p", "v2-viewer-caption", caption);
-  label.dataset.hook = "v2-viewer-caption";
-  wrap.append(canvas, label);
+  if (shown) canvas.append(arrow("‹", "Предыдущий вариант (←)", () => onShow(shownIndex - 1), shownIndex <= 1));
+  const frame = el("div", "v2-viewer-frame");
+  frame.dataset.media = mediaKind || "image";
+  if (shown) {
+    frame.dataset.dim = String(shown.dim === true);
+    frame.append(renderMedia(shown.version, mediaKind, { size: "big", label: shown.version?.caption || "Вариант" }));
+    if (stageMark) frame.append(el("span", "v2-viewer-stage-mark", stageMark));
+  } else {
+    frame.dataset.empty = "true";
+    frame.append(el("p", "v2-viewer-empty", emptyText || "Вариантов пока нет — попросите агента сделать первый."));
+    if (addRequest) frame.append(chatButton("＋ Попросить вариант", addRequest, "v2-viewer-ask"));
+  }
+  canvas.append(frame);
+  if (shown) canvas.append(arrow("›", "Следующий вариант (→)", () => onShow(shownIndex + 1), shownIndex >= strip.total));
+  if (strip.total > 1) attachSwipe(canvas, shownIndex, onShow);
+  wrap.append(canvas);
+  if (shown) {
+    const label = el("p", "v2-viewer-caption", caption);
+    label.dataset.hook = "v2-viewer-caption";
+    wrap.append(label);
+  }
 
   const film = el("div", "v2-viewer-film");
   film.dataset.hook = "v2-viewer-film";
@@ -197,21 +267,18 @@ export function renderCanvas({ strip, shownIndex, mediaKind, caption, onShow }) 
     tile.dataset.dim = String(item.dim);
     tile.setAttribute("aria-current", String(item.index === shownIndex));
     tile.setAttribute("aria-label", `Вариант ${item.index}${item.mark ? `, ${item.mark}` : ""}`);
-    if (typeof item.version.asset_url === "string" && item.version.asset_url.startsWith("/assets/")) {
-      const preview = document.createElement("img");
-      preview.src = item.version.asset_url;
-      preview.alt = "";
-      preview.loading = "lazy";
-      tile.append(preview);
-    }
-    // Единственный файл не нумеруется: «1 · Финальный ролик» — лишнее.
-    tile.append(el("span", "v2-viewer-tile-mark", strip.solo
-      ? item.mark
-      : `${item.index}${item.mark ? ` · ${item.mark}` : ""}`));
+    tile.append(renderMedia(item.version, mediaKind, { size: "tile" }));
+    tile.append(el("span", "v2-viewer-tile-mark", strip.solo ? item.mark : tileMark(item)));
     tile.addEventListener("click", () => onShow(item.index));
     film.append(tile);
   }
-  wrap.append(film);
+  if (addRequest && strip.total > 0) {
+    const plus = chatButton("＋", addRequest, "v2-viewer-tile-add");
+    plus.setAttribute("aria-label", "Ещё вариант");
+    plus.title = "Ещё вариант";
+    film.append(plus);
+  }
+  if (film.childElementCount) wrap.append(film);
   return wrap;
 }
 

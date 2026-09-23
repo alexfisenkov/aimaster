@@ -3,8 +3,8 @@
 // с `detail.version === 2`; слушатель v1 (`ui/viewer.js`) такое событие
 // пропускает, поэтому оба живут рядом и не мешают друг другу.
 //
-// Здесь только оболочка: диалог, ловушка фокуса, клавиши, свайп и сборка
-// колонок. Холст и плёнка — `viewer-canvas.js`, промпт — `viewer-prompt.js`,
+// Здесь только оболочка: диалог, ловушка фокуса, клавиши и сборка
+// колонок. Холст, плёнка и свайп — `viewer-canvas.js`, промпт — `viewer-prompt.js`,
 // зоны — `viewer-zones.js`, кнопки — `decide.js`.
 
 import { renderDecisionHistory } from "../decision-history.js";
@@ -12,19 +12,23 @@ import { formatHistoryEntries } from "../history-panel.js";
 import { pruneDrafts } from "../card-drafts.js";
 import { variantCounts } from "./counts.js";
 import { assembleFinal } from "./screen-prompts.js";
+import { moreVariants, uploadFrame } from "./chat-prompts.js";
+import { showToast } from "./toast.js";
 import { cardFocusNote, clock, dropCardFocusNote, el, restoreCardFocus } from "./dom.js";
 import { decideDraftKeys, isSubmitting, renderDecideRow } from "./decide.js";
 import {
   canvasCaption,
+  captionMark,
   filmstrip,
   promptOfVariant,
   renderCanvas,
   renderSlotSwitch,
   slotOptions,
   soloStrip,
+  tileMark,
 } from "./viewer-canvas.js";
-import { promptPlace, promptVersions, renderPromptPanel } from "./viewer-prompt.js";
-import { renderViewerZones } from "./viewer-zones.js";
+import { promptPlace, promptVersions, renderPromptPanel, variantsByPrompt } from "./viewer-prompt.js";
+import { renderAssemblyParts, renderReferenceUsage, renderViewerZones, whereUsed } from "./viewer-zones.js";
 
 const TABS = Object.freeze({
   scene: [["frames", "Кадры"], ["video", "Видео"], ["history", "История"]],
@@ -38,7 +42,7 @@ const LAYER_TITLES = Object.freeze({ voice: "Голос", music: "Музыка",
 
 let getSnapshot = () => null;
 let root = null;
-let view = null; // {target, tab, slot, shown, promptShown, returnFocus}
+let view = null; // {target, tab, slot, shown, promptShown, promptPinned, returnFocus}
 
 function scenesInOrder(project) {
   return [...(project?.scenes || [])].sort((left, right) => (left?.order || 0) - (right?.order || 0));
@@ -51,13 +55,16 @@ function sceneOf(project, id) {
 function headline(project, target) {
   if (target.kind === "reference") {
     const reference = (project?.references || []).find((item) => item?.reference_id === target.id);
-    return { title: reference?.label || target.id, time: "" };
+    const own = reference?.local === true ? whereUsed(project, target.id)[0] : null;
+    return { title: reference?.label || target.id, time: own ? `только ${own.label.split(" · ")[0].toLowerCase()}` : "" };
   }
   if (target.kind === "layer") return { title: LAYER_TITLES[target.id] || target.id, time: "" };
   if (target.kind === "assembly") return { title: "Финальный ролик", time: "" };
+  if (target.id === "oneshot") return { title: "Ролик одним заходом", time: "" };
   const scenes = scenesInOrder(project);
   const index = scenes.findIndex((item) => item?.scene_id === target.id);
-  const scene = scenes[index] || {};
+  if (index < 0) return { title: target.id, time: "" };
+  const scene = scenes[index];
   const time = Number.isFinite(scene.start_ms) ? `${clock(scene.start_ms)}–${clock(scene.end_ms)}` : "";
   return { title: `Сцена ${index + 1} · ${scene.title || target.id}`, time };
 }
@@ -98,7 +105,33 @@ function keepLabel(target, tab) {
   return tab === "video" ? "Оставить этот клип" : "Оставить этот кадр";
 }
 
+/** Заголовок блока промпта справа — как в макете. */
+function promptTitle(target, tab) {
+  if (target.kind === "reference") return "Промпт";
+  if (target.kind === "assembly") return "Задание на сборку";
+  if (tab === "audio") return "Промпт звука";
+  return tab === "video" ? "Промпт движения" : "Промпт кадра";
+}
+
+/** Чем назвать материал в тосте после решения. */
+function nounFor(target, tab) {
+  if (target.kind === "reference") return "картинка";
+  if (tab === "audio") return "звук";
+  return tab === "video" ? "клип" : "кадр";
+}
+
+/** Картинка, клип или звук — видеореференс показывается роликом. */
+function mediaKindFor(project, target, tab) {
+  if (target.kind === "reference") {
+    const reference = (project?.references || []).find((item) => item?.reference_id === target.id);
+    if (reference?.kind === "video") return "video";
+  }
+  return MEDIA_KIND[tab] || "image";
+}
+
 function tabsFor(target) {
+  // Ролик одним заходом — один клип на весь проект, кадров у него нет.
+  if (target.kind === "scene" && target.id === "oneshot") return TABS.scene.filter(([id]) => id !== "frames");
   return TABS[target.kind] || TABS.scene;
 }
 
@@ -127,7 +160,10 @@ function busy() {
 function showVariant(index) {
   if (busy()) return;
   const total = view?.strip?.total || 0;
-  view.shown = Math.min(Math.max(index, 1), Math.max(total, 1));
+  const next = Math.min(Math.max(index, 1), Math.max(total, 1));
+  if (next === view.shown) return;
+  view.shown = next;
+  view.promptPinned = false;
   view.statusText = "";
   paint();
 }
@@ -136,6 +172,8 @@ function pickSlot(slot) {
   if (busy()) return;
   view.slot = slot;
   view.shown = 0;
+  view.promptShown = 0;
+  view.promptPinned = false;
   view.statusText = "";
   paint();
 }
@@ -145,21 +183,36 @@ function pickTab(tab) {
   view.tab = tab;
   view.shown = 0;
   view.promptShown = 0;
+  view.promptPinned = false;
   view.statusText = "";
   paint();
 }
 
 function leftColumn(snapshot, project) {
+  const own = view;
   const { target, tab, slot } = view;
   const column = el("div", "v2-viewer-left");
+  const missing = target.kind === "scene" && target.id !== "oneshot" && !sceneOf(project, target.id);
+  const noFrames = target.kind === "scene" && tab === "frames" && !missing
+    && !slotOptions(project, sceneOf(project, target.id)).length;
+  if (missing || noFrames) {
+    // Решать и просить здесь нечего: сцены нет (её убрали, пока окно
+    // было открыто) или кадры для неё не запланированы.
+    column.append(el("p", "v2-viewer-note", missing
+      ? "Этой сцены в проекте уже нет."
+      : "Для этой сцены кадры не запланированы — она оживает по референсам."));
+    view.strip = { items: [], total: 0, selectedIndex: 0 };
+    view.shown = 1;
+    const prompts = promptVersions(project, promptPlace(project, target, { tab, slot: view.slot }));
+    if (!view.promptPinned) view.promptShown = prompts.index || 0;
+    view.promptShown = Math.min(Math.max(view.promptShown, 1), Math.max(prompts.total, 1));
+    return { column, prompts, chat: { sceneId: target.id, slot: view.slot }, strip: view.strip };
+  }
   if (target.kind === "scene" && tab === "frames") {
     const options = slotOptions(project, sceneOf(project, target.id));
-    if (options.length) {
-      if (!options.some((item) => item.slot === view.slot)) view.slot = options[0].slot;
-      column.append(renderSlotSwitch(options, view.slot, pickSlot));
-    } else {
-      column.append(el("p", "v2-viewer-empty-line", "Кадров у этой сцены нет — она оживает по референсам."));
-    }
+    if (!options.some((item) => item.slot === view.slot)) view.slot = options[0].slot;
+    // Даже один слот показывается пилюлей: она называет, какой это кадр.
+    column.append(renderSlotSwitch(options, view.slot, pickSlot));
   }
   const counts = target.kind === "assembly"
     ? { versions: [], total: 0, selected: null }
@@ -172,10 +225,12 @@ function leftColumn(snapshot, project) {
 
   const place = promptPlace(project, target, { tab, slot: view.slot });
   const prompts = promptVersions(project, place);
-  if (!view.promptShown) view.promptShown = prompts.index || 0;
-  view.promptShown = Math.min(Math.max(view.promptShown, 1), Math.max(prompts.total, 1));
   const byPrompt = shown ? promptOfVariant(shown.version, prompts.versions) : null;
   const byPromptIndex = byPrompt ? prompts.versions.indexOf(byPrompt) + 1 : 0;
+  // Пока человек сам не листал промпт, справа — версия, по которой сделан
+  // показанный вариант; связи в данных нет — действующая версия места.
+  if (!view.promptPinned) view.promptShown = byPromptIndex || prompts.index || 0;
+  view.promptShown = Math.min(Math.max(view.promptShown, 1), Math.max(prompts.total, 1));
 
   const chat = {
     sceneId: target.kind === "scene" ? target.id : undefined,
@@ -186,17 +241,23 @@ function leftColumn(snapshot, project) {
   column.append(renderCanvas({
     strip,
     shownIndex: view.shown,
-    mediaKind: MEDIA_KIND[tab] || "image",
+    mediaKind: mediaKindFor(project, target, tab),
     caption: canvasCaption({
       index: view.shown,
       total: strip.total,
-      mark: shown?.mark,
+      mark: strip.solo ? shown?.mark : captionMark(shown?.state),
       solo: strip.solo === true,
       promptLabel: byPromptIndex ? `v${byPromptIndex}` : "",
     }),
+    emptyText: target.kind === "assembly" ? "Ролик ещё не собран — попросите агента собрать его." : undefined,
+    stageMark: shown && !strip.solo ? tileMark(shown) : "",
+    addRequest: target.kind === "assembly" || strip.solo
+      ? null
+      : moreVariants({ ...chat, project, revision: snapshot.revision, promptVersion: prompts.versions[view.promptShown - 1] || null, selectedVariant: shown?.version || null }),
     onShow: showVariant,
   }));
   const final = target.kind === "assembly";
+  const ownFile = strip.solo === true && !final;
   // Черновик отказа принадлежит варианту, а не показу: пока вариант есть
   // в плёнке, его текст переживает и перелистывание, и перерисовку.
   view.draftKeys = strip.items.flatMap((item) => decideDraftKeys(project.id, item.version));
@@ -211,30 +272,40 @@ function leftColumn(snapshot, project) {
     mark: shown?.mark,
     keepLabel: keepLabel(target, tab),
     statusText: view.statusText,
-    onStatus: (text) => { view.statusText = text; },
-    chatMenu: !final,
+    // Исход пишется в тот показ, который отправил запрос: окно могли
+    // закрыть или открыть на другом месте, пока запрос в полёте, — тогда
+    // модульный `view` уже чужой или `null`.
+    onStatus: (text) => { if (view === own) own.statusText = text; },
+    noun: nounFor(target, tab),
+    onOutcome: showToast,
+    // Свой файл референса вариантов не имеет: его можно только заменить.
+    chatMenu: !final && !ownFile,
     secondary: final
       ? {
         label: strip.total ? "Пересобрать → чат" : "Собрать → чат",
         request: assembleFinal(project, snapshot.revision, { ready: strip.total > 0 }),
       }
-      : null,
+      : ownFile
+        ? { label: "Заменить файл → чат", request: uploadFrame({ ...chat, project, revision: snapshot.revision }) }
+        : null,
     promptVersion: prompts.versions[view.promptShown - 1] || null,
     editWhat: target.kind === "reference" ? `референса «${target.id}»` : undefined,
   }));
-  return { column, prompts, chat };
+  return { column, prompts, chat, strip };
 }
 
-function rightColumn(snapshot, project, prompts, chat) {
+function rightColumn(snapshot, project, prompts, chat, strip) {
   const column = el("aside", "v2-viewer-right");
   // У сборки промпта своего нет: её собирает агент из готовых клипов.
-  // Вместо пустой листалки показываем, из чего она собрана.
+  // Вместо пустой листалки показываем, что собрано и из чего.
   if (view.target.kind === "assembly" && !prompts.total) {
     const about = el("section", "v2-viewer-prompt");
     about.append(el("h3", "v2-viewer-subtitle", "Что собрано"));
     about.append(el("p", "v2-viewer-prompt-text",
       project?.assembly?.summary || "Описания сборки агент не оставил."));
     column.append(about);
+    const parts = renderAssemblyParts(project);
+    if (parts) column.append(parts);
     return column;
   }
   column.append(renderPromptPanel({
@@ -242,15 +313,23 @@ function rightColumn(snapshot, project, prompts, chat) {
     revision: snapshot.revision,
     state: prompts,
     shownIndex: view.promptShown,
-    title: view.tab === "video" ? "Промпт движения" : view.tab === "audio" ? "Промпт звука" : "Промпт кадра",
+    title: promptTitle(view.target, view.tab),
     chat,
     editWhat: view.target.kind === "reference" ? `референса «${view.target.id}»` : undefined,
-    onShow: (index) => { if (!busy()) { view.promptShown = index; paint(); } },
+    madeBy: variantsByPrompt(prompts.versions[view.promptShown - 1] || null, strip.solo ? [] : strip.items),
+    onShow: (index) => {
+      if (busy()) return;
+      view.promptShown = index;
+      view.promptPinned = true;
+      paint();
+    },
   }));
-  const zones = view.target.kind === "scene"
+  const extra = view.target.kind === "scene"
     ? renderViewerZones(project, snapshot.revision, sceneOf(project, view.target.id))
-    : null;
-  if (zones) column.append(zones);
+    : view.target.kind === "reference"
+      ? renderReferenceUsage(project, view.target.id)
+      : view.target.kind === "assembly" ? renderAssemblyParts(project) : null;
+  if (extra) column.append(extra);
   return column;
 }
 
@@ -286,7 +365,8 @@ function paint() {
   const close = el("button", "v2-viewer-close", "✕");
   close.type = "button";
   close.setAttribute("aria-label", "Закрыть просмотрщик");
-  close.addEventListener("click", closeViewer);
+  close.title = "Закрыть (Esc)";
+  close.addEventListener("click", () => closeViewer());
   bar.append(heading, tabs, close);
 
   const body = el("div", "v2-viewer-body");
@@ -294,8 +374,8 @@ function paint() {
     body.append(historyPane(snapshot, view.target));
   } else {
     view.draftKeys = [];
-    const { column, prompts, chat } = leftColumn(snapshot, project);
-    body.append(column, rightColumn(snapshot, project, prompts, chat));
+    const { column, prompts, chat, strip } = leftColumn(snapshot, project);
+    body.append(column, rightColumn(snapshot, project, prompts, chat, strip));
     dropStaleDrafts(project.id, view.draftKeys);
   }
   card.append(bar, body);
@@ -346,12 +426,18 @@ function focusable() {
 }
 
 function onKeyDown(event) {
+  // Поверх просмотрщика открыт `<dialog>` «Запрос агенту»: `Esc` и
+  // стрелки принадлежат ему, окно под ним не закрывается и не листается.
+  if (document.querySelector("dialog[open]")) return;
   if (event.key === "Escape") {
     // Слушатель висит на `document` в capture — то есть раньше «···» и
     // формы комментария внутри него. Если нажали внутри меню, `Esc`
     // принадлежит меню: оно закроет себя само (`ui/more-menu.js`), и
     // просмотрщик остаётся открытым вместе с набранным текстом.
-    if (event.target instanceof Element && event.target.closest('[data-hook="more-menu"]')) return;
+    // Закрытое меню `Esc` не держит: фокус на «···» после закрытия меню
+    // или формы отказа — и следующий `Esc` закрывает уже окно.
+    const menuHere = event.target instanceof Element ? event.target.closest('[data-hook="more-menu"]') : null;
+    if (menuHere?.dataset.open === "true") return;
     // Лист «···» закрывается и тогда, когда фокус ушёл из него: нижний
     // лист занимает пол-экрана, и `Esc` при нём означает «убрать лист», а
     // не «закрыть весь просмотрщик».
@@ -361,6 +447,16 @@ function onKeyDown(event) {
       const trigger = openMenu.querySelector('[data-more-hook="trigger"]');
       trigger?.click();
       trigger?.focus();
+      return;
+    }
+    // Открытая форма отказа закрывается раньше окна. Закрывает её свой же
+    // пункт меню: он прячет форму и сохраняет набранный текст в черновик,
+    // а «Отмена» стёрла бы его.
+    const rejectForm = root?.querySelector('[data-hook="v2-viewer-reject"]:not([hidden])');
+    if (rejectForm) {
+      event.preventDefault();
+      root.querySelector(".v2-viewer-menu-danger")?.click();
+      root.querySelector('[data-more-hook="trigger"]')?.focus();
       return;
     }
     event.preventDefault();
@@ -388,23 +484,8 @@ function onKeyDown(event) {
   showVariant(view.shown + (event.key === "ArrowRight" ? 1 : -1));
 }
 
-let swipeFrom = null;
-
-function onTouchStart(event) {
-  swipeFrom = event.changedTouches?.[0]?.clientX ?? null;
-}
-
-function onTouchEnd(event) {
-  const to = event.changedTouches?.[0]?.clientX;
-  if (swipeFrom === null || typeof to !== "number" || view?.tab === "history") return;
-  const shift = to - swipeFrom;
-  swipeFrom = null;
-  if (Math.abs(shift) < 48) return;
-  showVariant(view.shown + (shift < 0 ? 1 : -1));
-}
-
 /** Закрыть просмотрщик и вернуть фокус туда, откуда его открыли. */
-export function closeViewer() {
+export function closeViewer({ restoreFocus = true } = {}) {
   if (!root) return;
   const back = view?.returnFocus;
   root.remove();
@@ -412,7 +493,22 @@ export function closeViewer() {
   view = null;
   document.body.classList.remove("v2-viewer-open");
   document.removeEventListener("keydown", onKeyDown, true);
-  if (back?.isConnected) back.focus();
+  if (restoreFocus && back?.isConnected) back.focus();
+}
+
+/**
+ * Пока решение в полёте, переходы внутри окна закрыты: вкладки, слоты,
+ * плёнка, пилюли «Где используется» / «Из чего собран» и чипсы зон.
+ * Иначе окно открылось бы на другом месте посреди запроса.
+ */
+function blockWhileBusy(event) {
+  if (!busy() || !(event.target instanceof Element)) return;
+  const control = event.target.closest(
+    ".v2-viewer-right button, .v2-viewer-tab, .v2-viewer-slot, .v2-viewer-tile, .v2-viewer-tile-add",
+  );
+  if (!control) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
 }
 
 function openViewer(detail) {
@@ -420,24 +516,29 @@ function openViewer(detail) {
   if (!target || typeof target.id !== "string" || !target.id) return;
   const tabs = tabsFor(target).map(([id]) => id);
   const tab = tabs.includes(detail.tab) ? detail.tab : tabs[0];
-  if (root) closeViewer();
+  // Переход изнутри окна (пилюля, чипса зоны): фокус вернётся туда,
+  // откуда окно открыли впервые, — нажатая пилюля исчезнет вместе с окном.
+  const trigger = detail.trigger instanceof HTMLElement ? detail.trigger : null;
+  const inherited = root && trigger && root.contains(trigger) ? view?.returnFocus || null : null;
+  const fromInside = Boolean(root && trigger && root.contains(trigger));
+  if (root) closeViewer({ restoreFocus: false });
   view = {
     target,
     tab,
     slot: typeof detail.slot === "string" && detail.slot !== "video" ? detail.slot : "first",
     shown: 0,
     promptShown: 0,
+    promptPinned: false,
     statusText: "",
     draftKeys: [],
-    returnFocus: detail.trigger instanceof HTMLElement ? detail.trigger : null,
+    returnFocus: fromInside ? inherited : trigger,
   };
   root = el("div", "v2-viewer");
   root.dataset.hook = "v2-viewer";
   root.setAttribute("role", "dialog");
   root.setAttribute("aria-modal", "true");
+  root.addEventListener("click", blockWhileBusy, true);
   root.addEventListener("click", (event) => { if (event.target === root) closeViewer(); });
-  root.addEventListener("touchstart", onTouchStart, { passive: true });
-  root.addEventListener("touchend", onTouchEnd, { passive: true });
   document.addEventListener("keydown", onKeyDown, true);
   document.body.append(root);
   document.body.classList.add("v2-viewer-open");

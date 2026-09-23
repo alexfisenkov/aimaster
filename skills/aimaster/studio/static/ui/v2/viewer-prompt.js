@@ -8,7 +8,7 @@
 // Чистые функции: `promptPlace`, `promptVersions`, `splitTags`,
 // `promptMeta`. Они же покрыты тестами.
 
-import { promptGroups } from "./variants.js";
+import { promptGroups, versionsMadeBy } from "./variants.js";
 import { chatButton, el } from "./dom.js";
 import { editPrompt } from "./chat-prompts.js";
 
@@ -130,6 +130,28 @@ export function promptMeta(version, index) {
   return parts.join(" · ");
 }
 
+/**
+ * Хвост меты «по нему варианты 1, 3» — какие варианты плёнки сделаны по
+ * этой версии промпта. Связь берётся только из данных (`versionsMadeBy`);
+ * нет её ни у одного варианта — хвоста нет вовсе, чтобы не соврать
+ * «вариантов по нему нет» там, где проекция связь просто не отдаёт.
+ *
+ * @param {object|null} prompt версия промпта
+ * @param {{version: object, index: number}[]} items плёнка из `filmstrip`
+ * @returns {string}
+ */
+export function variantsByPrompt(prompt, items) {
+  const list = Array.isArray(items) ? items : [];
+  const linked = list.some((item) => Object.keys(item?.version?.links || item?.version || {}).some(
+    (key) => key.endsWith("prompt_version_id") || key === "prompt_version_ids",
+  ));
+  if (!prompt || !linked) return "";
+  const made = list
+    .filter((item) => versionsMadeBy(prompt.version_id, [item.version]).length > 0)
+    .map((item) => item.index);
+  return made.length ? `по нему варианты ${made.join(", ")}` : "вариантов по нему нет";
+}
+
 function versionNav(state, shownIndex, onShow) {
   const nav = el("div", "v2-viewer-ver");
   const back = el("button", "v2-viewer-ver-step", "‹");
@@ -150,11 +172,12 @@ function versionNav(state, shownIndex, onShow) {
  * Блок промпта целиком.
  *
  * @param {{project: object, revision: number, state: object, shownIndex: number,
- *          title: string, chat: object, editWhat?: string,
+ *          title: string, chat: object, editWhat?: string, madeBy?: string,
  *          onShow: (index: number) => void}} context
+ *   `madeBy` — хвост меты из `variantsByPrompt`.
  * @returns {HTMLElement}
  */
-export function renderPromptPanel({ project, revision, state, shownIndex, title, chat, editWhat, onShow }) {
+export function renderPromptPanel({ project, revision, state, shownIndex, title, chat, editWhat, madeBy, onShow }) {
   const block = el("section", "v2-viewer-prompt");
   block.dataset.hook = "v2-viewer-prompt";
   const head = el("h3", "v2-viewer-subtitle", title);
@@ -169,10 +192,11 @@ export function renderPromptPanel({ project, revision, state, shownIndex, title,
   for (const part of splitTags(shown.text)) {
     text.append(part.tag ? el("mark", "v2-viewer-tag", part.text) : document.createTextNode(part.text));
   }
-  const meta = el("p", "v2-viewer-prompt-meta", promptMeta(shown, shownIndex));
+  const meta = el("p", "v2-viewer-prompt-meta",
+    [promptMeta(shown, shownIndex), madeBy].filter(Boolean).join(" · "));
   meta.dataset.hook = "v2-viewer-prompt-meta";
   block.append(text, meta, chatButton(
-    "Изменить → чат",
+    "Изменить промпт → чат",
     editPrompt({ ...chat, project, revision, promptVersion: shown, what: editWhat }),
     "v2-viewer-link",
   ));

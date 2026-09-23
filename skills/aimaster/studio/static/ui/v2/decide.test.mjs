@@ -124,3 +124,29 @@ test("подвал: пройденный шаг и шаг без прямого 
   const blocked = { ...snapshot, view_stage: { ...snapshot.view_stage, allowed_actions: ["continue-in-chat"] } };
   assert.equal(footerMode(blocked, { screen: "video", stage: "motion" }), "chat");
 });
+
+test("текст тоста по действию и материалу", async () => {
+  const { outcomeToast } = await import("./decide.js");
+  assert.equal(outcomeToast("approve", "кадр"), "Кадр принят");
+  assert.equal(outcomeToast("approve", "картинка"), "Картинка принята");
+  assert.equal(outcomeToast("approve", "клип"), "Клип принят");
+  assert.equal(outcomeToast("approve", "звук"), "Звук принят");
+  assert.equal(outcomeToast("reject"), "Вариант отклонён");
+  assert.equal(outcomeToast("hide"), "Вариант скрыт");
+  assert.equal(outcomeToast(""), "");
+});
+
+test("строка «в полёте» — одна на ряд и card-forms", async () => {
+  const forms = await import("../card-forms.js");
+  assert.equal(SUBMITTING_TEXT, forms.SUBMITTING_TEXT);
+  assert.equal(forms.isConfirmedSuccess({ ok: true, confirmed: true }), true);
+  assert.equal(forms.isConfirmedSuccess({ ok: true, confirmed: false }), false);
+  assert.equal(forms.isConfirmedSuccess({ ok: false, code: "action_failed" }), false);
+});
+
+test("подвал: ключ одобрения — проект и стадия; без запроса в полёте — свободно", async () => {
+  const { footerFlightKey, footerInFlight } = await import("./footer.js");
+  assert.equal(footerFlightKey("p", "motion"), "p::motion");
+  assert.notEqual(footerFlightKey("p", "motion"), footerFlightKey("q", "motion"));
+  assert.equal(footerInFlight(footerFlightKey("p", "motion")), false);
+});

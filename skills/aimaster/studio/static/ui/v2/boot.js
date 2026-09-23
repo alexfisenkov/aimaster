@@ -154,6 +154,12 @@ export function bootV2() {
   document.addEventListener("studio:screen-viewed", (event) => {
     setViewedScreen(event?.detail?.screen);
     renderShellV2(shellRoot, store.getState());
+    window.scrollTo(0, 0);
+    // Шаг степпера оболочка возвращает в фокус сама; кнопка подвала
+    // («Вернуться к шагу …») исчезает — тогда фокус идёт на заголовок.
+    if (!document.activeElement || document.activeElement === document.body) {
+      document.querySelector("#main .v2-screen-title")?.focus();
+    }
   });
   document.addEventListener("studio:refresh-snapshot", (event) => {
     controller.requestRefresh(event?.detail?.projectId);

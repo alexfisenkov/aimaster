@@ -7,11 +7,14 @@ import {
   SCREENS,
   pathState,
   primaryAction,
+  projectFinished,
+  projectStatus,
   screenForStage,
+  screenHeading,
   screensFor,
   stagesForScreen,
 } from "./screen-map.js";
-import { unresolvedItems } from "./unresolved.js";
+import { unresolvedEntries, unresolvedItems } from "./unresolved.js";
 import { PROJECT, projectWith } from "./snapshot.fixture.mjs";
 
 test("пять экранов в порядке спецификации", () => {
@@ -160,4 +163,52 @@ test("пустой проект не роняет ни путь, ни кнопк
   assert.equal(action.enabled, false);
   assert.equal(action.stage, null);
   assert.deepEqual(unresolvedItems(null), []);
+});
+
+test("пункт «осталось решить» ведёт в просмотрщик на клип сцены", () => {
+  const [first] = unresolvedEntries(PROJECT, "motion");
+  assert.equal(first.label, "Сцена 5 «Бесплатно»: клип");
+  assert.equal(first.target.kind, "scene");
+  assert.equal(typeof first.target.id, "string");
+  assert.equal(first.tab, "video");
+  assert.equal(first.slot, "video");
+  assert.deepEqual(primaryAction(PROJECT).items.map((item) => item.label), primaryAction(PROJECT).remaining);
+});
+
+test("причина от сервера — пункт без адреса", () => {
+  const project = projectWith({ stage: "assembly", stage_readiness: { can_approve: false, reason: "missing_final_material" } });
+  const [item] = primaryAction(project).items;
+  assert.equal(item.label, "нет финального материала");
+  assert.equal(item.target, null);
+});
+
+test("статус-пилюля: янтарная с числом, зелёная когда можно и когда всё принято", () => {
+  assert.deepEqual(projectStatus({ active_project: PROJECT }), { text: "Видео · осталось 2", tone: "warn", count: 2 });
+  const ready = projectWith({ stage: "scenario", stage_readiness: { can_approve: true } });
+  assert.equal(projectStatus({ active_project: ready }).text, "Сценарий · можно одобрять");
+  const done = { active_project: projectWith({ stage: "assembly" }), view_stage: { gate_status: "approved" } };
+  assert.equal(projectFinished(done), true);
+  assert.deepEqual(projectStatus(done), { text: "Проект завершён", tone: "ok", count: 0 });
+  assert.equal(projectStatus({}), null);
+});
+
+test("заголовок экрана: номер шага и отметка об одобрении", () => {
+  assert.deepEqual(screenHeading(PROJECT, "frames"), {
+    kicker: "Шаг 2 из 5 · одобрен",
+    title: "Кадры",
+    hint: "Кто и что в кадре: референсы, промпты и картинки сцен.",
+  });
+  assert.equal(screenHeading(PROJECT, "video").kicker, "Шаг 3 из 5");
+  assert.equal(screenHeading(projectWith({ type: "photo", stage: "image_results" }), "assembly").kicker, "Шаг 3 из 3");
+});
+
+test("пункт без строкового id — надпись, а не адрес просмотрщика", () => {
+  const project = projectWith({
+    stage: "motion",
+    positions: [{ position_id: "pos:odd", kind: "video", scene_id: 7, prompt_group_id: "prompt:odd" }],
+    motion_prompts: [{ prompt_id: "prompt:odd", version_id: "prompt:odd-v1", stale: true }],
+  });
+  const odd = unresolvedEntries(project, "motion").find((item) => item.label.includes("устарел"));
+  assert.ok(odd, "устаревший промпт попадает в список");
+  assert.deepEqual([odd.target, odd.tab, odd.slot], [null, null, null]);
 });

@@ -84,3 +84,18 @@ test("мета версии: номер, статус, устарел", () => {
   assert.equal(promptMeta({ status: "что-то своё" }, 1), "v1", "неизвестный статус не показывается сырым");
   assert.equal(promptMeta(null, 0), "промпта пока нет");
 });
+
+test("«по нему варианты …» — только когда связь есть в данных", async () => {
+  const { variantsByPrompt } = await import("./viewer-prompt.js");
+  const prompt = { version_id: "p-v2" };
+  const items = [
+    { index: 1, version: { version_id: "r-v1", links: { prompt_version_id: "p-v1" } } },
+    { index: 2, version: { version_id: "r-v2", links: { prompt_version_id: "p-v2" } } },
+    { index: 3, version: { version_id: "r-v3", links: { prompt_version_id: "p-v2" } } },
+  ];
+  assert.equal(variantsByPrompt(prompt, items), "по нему варианты 2, 3");
+  assert.equal(variantsByPrompt({ version_id: "p-v9" }, items), "вариантов по нему нет");
+  assert.equal(variantsByPrompt(prompt, [{ index: 1, version: { version_id: "r-v1" } }]), "",
+    "проекция связь не отдала — хвоста нет, а не «вариантов нет»");
+  assert.equal(variantsByPrompt(null, items), "");
+});
