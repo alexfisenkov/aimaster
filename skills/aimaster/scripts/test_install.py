@@ -213,6 +213,9 @@ class InstallTests(unittest.TestCase):
             marker = json.loads((self.target() / install.MARKER).read_text(encoding="utf-8"))
             self.assertEqual(marker["method"], "copy")
             self.assertFalse(os.path.islink(self.target()))
+            copied = str(self.target() / "scripts" / "install.py")
+            with mock.patch.object(install, "__file__", copied):
+                self.assertEqual(install.default_repo(), self.repo.resolve())
 
             code, report = self.run_install("--agent", "claude")
             self.assertEqual(report["targets"][0]["status"], "already")
@@ -238,6 +241,15 @@ class InstallTests(unittest.TestCase):
                 mock.patch.object(install.shutil, "which", side_effect=which.get), \
                 mock.patch.object(install, "_probe_python", side_effect=lambda a: versions[a[0]]):
             self.assertEqual(install.python_cmd(), "python")
+
+
+    def test_print_python_cmd_installs_nothing(self):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            code = install.main(["--print-python-cmd", "--json", "--home", str(self.home)])
+        self.assertEqual(code, 0)
+        self.assertEqual(set(json.loads(buffer.getvalue())), {"python_cmd"})
+        self.assertEqual(list(self.home.iterdir()), [])
 
 
 class DepsTests(unittest.TestCase):

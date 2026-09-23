@@ -425,6 +425,18 @@ def too_old_python(kind, as_json):
     return 2
 
 
+def default_repo():
+    """Клон, из которого запущен файл; для установленной копии — из её пометки."""
+    skill = Path(__file__).resolve().parents[1]
+    marker = skill / MARKER
+    if marker.is_file():
+        try:
+            return Path(json.loads(marker.read_text(encoding="utf-8"))["source"]).parents[1]
+        except (OSError, ValueError, KeyError, IndexError):
+            pass
+    return skill.parents[1]
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="Установить навык aimaster для агентов.")
     parser.add_argument("--repo", help="папка клона aimaster (по умолчанию — та, где лежит этот файл)")
@@ -438,6 +450,8 @@ def build_parser():
                         help="поставить недостающие ffmpeg, cloudflared, git (winget/brew)")
     parser.add_argument("--skip-self-check", action="store_true", help="не запускать самопроверку")
     parser.add_argument("--json", action="store_true", help="вывод JSON для агента")
+    parser.add_argument("--print-python-cmd", action="store_true",
+                        help="только напечатать python_cmd, ничего не устанавливать")
     parser.add_argument("--home", help=argparse.SUPPRESS)
     return parser
 
@@ -448,7 +462,11 @@ def main(argv=None):
     kind = platform_kind()
     if _version_info() < MIN_PYTHON:
         return too_old_python(kind, args.json)
-    repo = Path(args.repo).expanduser() if args.repo else Path(__file__).resolve().parents[3]
+    if args.print_python_cmd:
+        command = python_cmd()
+        print(json.dumps({"python_cmd": command}, ensure_ascii=False) if args.json else command)
+        return 0
+    repo = Path(args.repo).expanduser() if args.repo else default_repo()
     repo = repo.resolve()
     source = repo / "skills" / "aimaster"
     if not _looks_like_aimaster(source):
