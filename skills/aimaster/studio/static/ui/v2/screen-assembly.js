@@ -12,7 +12,7 @@ import { chatButton, clock, el, openViewer } from "./dom.js";
 import { footerMode, renderFooter } from "./footer.js";
 import { assembleFinal } from "./screen-prompts.js";
 import { selectedResultVersion } from "./variants.js";
-import { videoThumb } from "./video-thumb.js";
+import { renderPreview } from "./preview.js";
 
 const MODE_WORDS = Object.freeze({ per_scene: "кадр за кадром", one_shot: "одним заходом" });
 
@@ -46,7 +46,7 @@ function preview(project, { ready, finished }) {
   button.dataset.ready = String(ready);
   button.setAttribute("aria-label", ready ? "Открыть финальный ролик" : "Финального ролика пока нет");
   button.disabled = !ready;
-  button.append(videoThumb(ready ? assembly.asset_url : null, "Финальный ролик"));
+  button.append(renderPreview(ready ? assembly : null, { kind: ready ? "video" : "none", label: "Финальный ролик", emptyText: "ролик ещё не собран" }));
   if (ready) button.append(playMark("v2-play v2-play-big"));
   const status = el("span", "v2-final-status", finished ? "принят" : ready ? "ждёт вашего решения" : "ещё не собран");
   button.append(status);

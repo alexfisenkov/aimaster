@@ -6,7 +6,7 @@
 import { playMark, statusLine } from "./board-bits.js";
 import { clock, el, openViewer } from "./dom.js";
 import { clipStatus, continuationLine } from "./video-model.js";
-import { videoThumb } from "./video-thumb.js";
+import { renderPreview } from "./preview.js";
 
 /**
  * Превью клипа сцены: первый кадр выбранного варианта, «▶» и статус.
@@ -20,7 +20,7 @@ export function clipZone(project, scene, position) {
   button.type = "button";
   button.dataset.hook = "v2-clip-slot";
   button.setAttribute("aria-label", `Клип сцены: ${status.text}`);
-  button.append(videoThumb(status.selected?.asset_url || null, "Клип сцены"));
+  button.append(renderPreview(status.selected, { kind: status.selected ? "video" : "none", label: "Клип сцены", emptyText: "клипа нет" }));
   if (status.selected) button.append(playMark());
   // На телефоне превью во всю ширину карточки, и сцена подписывается прямо
   // на нём: «Сцена 2 · 00:03–00:06».

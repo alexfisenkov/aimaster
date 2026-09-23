@@ -13,7 +13,8 @@ import { requestAgentPrompt } from "../chat-prompt-dialog.js";
 import { addReference, toggleSceneReference, uploadFrame } from "./chat-prompts.js";
 import { statusLine } from "./board-bits.js";
 import { variantCounts, variantStatus } from "./counts.js";
-import { chatButton, el, openViewer, thumb } from "./dom.js";
+import { chatButton, el, openViewer } from "./dom.js";
+import { renderPreview } from "./preview.js";
 import { statusTone } from "./status-tone.js";
 
 const USAGE_WORDS = Object.freeze({
@@ -53,10 +54,11 @@ export function plannedSlots(scene) {
   return ["first", "last"].filter((slot) => scene?.[slot === "first" ? "need_first" : "need_last"] === true);
 }
 
-/** Картинка референса: свой файл, а если его нет — выбранный вариант. */
-function referenceAsset(project, reference) {
-  if (typeof reference.asset_url === "string" && reference.asset_url) return reference.asset_url;
-  return variantCounts(project, { referenceId: reference.reference_id }).selected?.asset_url || null;
+/** Файл референса: свой, а если его нет — выбранный вариант генерации. */
+function referenceFile(project, reference) {
+  if (typeof reference.asset_url === "string" && reference.asset_url) return reference;
+  const selected = variantCounts(project, { referenceId: reference.reference_id }).selected;
+  return selected ? { ...selected, media_type: selected.media_type || reference.media_type, kind: reference.kind } : null;
 }
 
 function avatar(project, reference, included, onClick) {
@@ -67,8 +69,10 @@ function avatar(project, reference, included, onClick) {
   node.dataset.included = String(included);
   node.title = `${name}: ${included ? "в кадре — нажмите, чтобы убрать" : "не в кадре — нажмите, чтобы добавить"}`;
   node.setAttribute("aria-label", `${name}: ${included ? "в кадре" : "не в кадре"}`);
-  const asset = referenceAsset(project, reference);
-  if (asset) node.append(thumb(asset, name));
+  const file = referenceFile(project, reference);
+  // Нет файла — первая буква имени на тёмном квадрате: подпись «нет
+  // картинки» в 34px не влезает, а буква говорит, кто это.
+  if (file) node.append(renderPreview(file, { label: name, small: true }));
   else node.append(el("span", "v2-avatar-initial", String(name).trim().charAt(0).toUpperCase() || "?"));
   node.append(el("span", "v2-avatar-name", name));
   node.addEventListener("click", () => onClick(node));
@@ -83,7 +87,7 @@ function localChip(project, reference) {
   node.dataset.kind = reference.kind;
   node.setAttribute("aria-label", `${name}: только в этой сцене`);
   const picture = el("span", "v2-ref-chip-picture");
-  picture.append(thumb(referenceAsset(project, reference), name));
+  picture.append(renderPreview(referenceFile(project, reference), { label: name, small: true }));
   node.append(picture, el("span", "v2-ref-chip-name", name));
   node.addEventListener("click", () => openViewer(
     { kind: "reference", id: reference.reference_id }, { tab: "frames", trigger: node },
@@ -133,11 +137,22 @@ export function videoReferenceZone(project, revision, scene) {
   markEmpty(row, !videos.length);
   if (!videos.length) items.append(el("span", "v2-zone-none", "нет"));
   for (const reference of videos) {
-    const chip = el("span", "v2-ref-chip v2-ref-chip-video");
+    const name = reference.label || reference.reference_id;
+    const chip = el("button", "v2-ref-chip v2-ref-chip-video");
+    chip.type = "button";
+    chip.dataset.hook = "v2-video-reference";
+    chip.setAttribute("aria-label", `Видеореференс «${name}»: ${USAGE_WORDS[reference.usage] || "пример"}`);
+    const picture = el("span", "v2-ref-chip-picture");
+    picture.append(renderPreview(reference, { fallback: "video", label: name, small: true }));
     chip.append(
+      picture,
       el("span", "v2-usage", USAGE_WORDS[reference.usage] || "пример"),
-      el("span", "v2-ref-chip-name", reference.label || reference.reference_id),
+      el("span", "v2-ref-chip-name", name),
     );
+    chip.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openViewer({ kind: "reference", id: reference.reference_id }, { tab: "frames", trigger: chip });
+    });
     items.append(chip);
   }
   items.append(plus("Добавить видеореференс", addReference("video", project, revision)));
@@ -158,7 +173,7 @@ export function framesZone(project, revision, scene) {
     button.dataset.slot = slot;
     button.dataset.hook = "v2-frame-slot";
     button.setAttribute("aria-label", `${SLOT_WORDS[slot]} кадр: ${status}`);
-    button.append(thumb(counts.selected?.asset_url || null, `${SLOT_WORDS[slot]} кадр`));
+    button.append(renderPreview(counts.selected, { label: `${SLOT_WORDS[slot]} кадр`, emptyText: "нет кадра" }));
     const label = el("span", "v2-slot-label", SLOT_WORDS[slot]);
     label.append(el("span", "v2-phone-only", " кадр"));
     button.append(label, statusLine(status, statusTone(counts), "v2-status v2-slot-status"));

@@ -8,7 +8,7 @@ import { el, openViewer } from "./dom.js";
 import { renderFooter } from "./footer.js";
 import { renderSceneRow, scenesInOrder } from "./scene-row.js";
 import { clipStatus } from "./video-model.js";
-import { videoThumb } from "./video-thumb.js";
+import { renderPreview } from "./preview.js";
 
 /** Плитка одного клипа на весь ролик — режим «одним заходом». */
 function oneShotClip(project) {
@@ -23,7 +23,7 @@ function oneShotClip(project) {
   button.dataset.hook = "v2-oneclip-slot";
   button.setAttribute("aria-label", `Клип всего ролика: ${status.text}`);
   button.append(
-    videoThumb(status.selected?.asset_url || null, "Клип всего ролика"),
+    renderPreview(status.selected, { kind: status.selected ? "video" : "none", label: "Клип всего ролика", emptyText: "клипа нет" }),
     ...(status.selected ? [playMark("v2-play v2-play-big")] : []),
     statusLine(status.text, status.tone, "v2-status v2-big-preview-status"),
   );

@@ -13,8 +13,8 @@
 
 /* Полупрозрачные подложки поверх превью и мелкие оттенки, которых нет
    среди токенов редизайна: заведены один раз здесь, а не литералами по
-   правилам ниже. */
-.v2-screen {
+   правилам ниже. На :root — их читают и зоны сцены внутри просмотрщика. */
+:root {
   --v2b-seg: #e9ebed;
   --v2b-scrim: rgba(16, 18, 21, 0.72);
   --v2b-scrim-strong: rgba(16, 18, 21, 0.78);
@@ -23,7 +23,9 @@
   --v2b-sunken: var(--color-surface-sunken);
   --v2b-subtle: var(--color-text-subtle);
   --v2b-strong-line: var(--color-border-soft);
+}
 
+.v2-screen {
   color: var(--v2-ink);
   font-size: var(--v2-fs-14);
   line-height: 1.5;
@@ -55,7 +57,25 @@
 
 .v2-thumb img, .v2-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .v2-thumb video { pointer-events: none; background: var(--v2-placeholder); }
-.v2-thumb-broken { background: var(--color-danger-bg); }
+/* Файла нет или он не открылся: штриховка и подпись по центру. */
+.v2-thumb-empty { display: grid; place-items: center; }
+
+.v2-thumb-note {
+  max-width: calc(100% - 8px);
+  padding: 1px 7px;
+  border-radius: var(--v2-r-pill);
+  background: var(--v2b-play);
+  color: var(--v2-muted);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-thumb-broken .v2-thumb-note { color: var(--v2-danger); }
+.v2-thumb-audio { color: var(--v2-muted); font-size: 18px; }
 
 /* В превью с aspect-ratio картинка лежит слоем под подписями: процентная
    высота внутри такой кнопки иначе схлопывает её до нуля. */
@@ -520,7 +540,6 @@
   font-size: var(--v2-fs-12);
 }
 
-.v2-ref-chip-video { padding-left: 10px; }
 .v2-ref-chip-picture { flex: none; width: 26px; height: 26px; border-radius: 7px; overflow: hidden; }
 .v2-ref-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

@@ -5,7 +5,8 @@
 import { addReference } from "./chat-prompts.js";
 import { variantCounts, variantStatus } from "./counts.js";
 import { statusLine } from "./board-bits.js";
-import { chatButton, el, openViewer, thumb } from "./dom.js";
+import { chatButton, el, openViewer } from "./dom.js";
+import { renderPreview } from "./preview.js";
 import { statusTone } from "./status-tone.js";
 
 export const SHELF_GROUPS = Object.freeze([
@@ -43,7 +44,11 @@ function referenceTile(project, revision, reference) {
   tile.dataset.referenceId = reference.reference_id;
   tile.setAttribute("aria-label", `${name}: ${status}`);
   const picture = el("span", "v2-tile-picture");
-  picture.append(thumb(counts.selected?.asset_url || reference.asset_url || null, name));
+  // Свой файл — картинка референса, иначе выбранный вариант генерации.
+  const shown = reference.asset_url ? reference : counts.selected;
+  picture.append(renderPreview(shown ? { ...shown, media_type: shown.media_type || reference.media_type, kind: reference.kind } : null, {
+    label: name, emptyText: "нет картинки",
+  }));
   if (counts.total > 1) picture.append(el("span", "v2-tile-badge", String(counts.total)));
   if (reference.kind === "character" && reference.voice?.enabled === true) {
     picture.append(el("span", "v2-tile-voice", "🎙"));
