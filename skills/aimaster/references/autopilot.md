@@ -33,6 +33,11 @@ When autopilot is switched on (`project create --mode autopilot`,
 returns a `notice`. Show it to the user once, verbatim: «Автопилот тратит
 кредиты без подтверждения». Do not repeat it and do not turn it into a question.
 
+Switching back to `guided` stops spending at once: the engine voids unused
+autopilot grants and moves autopilot-queued actions to `needs_chat` with
+reason `autopilot_off` (listed as `cancelled_actions` in the CLI output). Do
+not re-queue them under `guided` without that mode's approval.
+
 Autopilot mode is the owner's standing authorization, for this project, to
 **spend** on paid actions (no limit) and to **upload** the project's own assets
 (references, frames, voices, previous clips) to the selected verified route
@@ -41,7 +46,13 @@ no publishing, no uploads of files outside the project or library.
 
 - Do not run `grant` and do not ask for spending approval. Queue each paid
   action with
-  `creator_studio.py action enqueue <ws> <project> --type generate|vary|regenerate --target <T> --expected-revision N [--payload JSON] [--idempotency-key K]`.
+  `creator_studio.py action enqueue <ws> <project> --type generate|vary|regenerate --target <T> --expected-revision N --idempotency-key K [--payload JSON]`.
+  The idempotency key is required: one key per intended generation, e.g.
+  `<project>:<type>:<target>:<attempt>`. Repeat a lost or uncertain call with
+  the **same** key — it returns the existing action and never charges twice.
+  While an action of the same type on the same target is `queued` or
+  `running`, a different key is refused with that action's id; use a new key
+  only for a new generation after the previous one finished.
   In autopilot it returns `status: queued, issued_by: autopilot` and writes an
   `autopilot-grant` history entry. That entry raises the revision by one: take
   the fresh revision for the next `--expected-revision`. Then `claim`, execute,

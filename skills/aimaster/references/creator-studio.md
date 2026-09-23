@@ -348,7 +348,7 @@ The eight job types serviced by chat are `generate`, `vary`, `regenerate`,
 ```bash
 creator_studio.py grant WS P {generate,vary,regenerate,generation} --expires-at ISO
 creator_studio.py action enqueue WS P --type {generate,vary,regenerate} --target T \
-  --expected-revision N [--payload JSON] [--idempotency-key K]
+  --expected-revision N --idempotency-key K [--payload JSON]
 creator_studio.py claim WS --worker ID [--profile PATH]
 creator_studio.py finish WS ACTION --status \
   {succeeded,failed,needs_chat,needs_chat_setup,outcome_unknown} \
