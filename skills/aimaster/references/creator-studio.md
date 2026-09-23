@@ -118,9 +118,13 @@ creator_studio.py reference attach WS P --reference IMG_NN --from-library VOICE_
 `library add` copies the file into `library/<kind>/` and skips sha256
 duplicates. A `voice` entry accepts MP3/WAV only; `--voice-of` links it to a
 character entry. For an existing workspace, run `library import
---from-projects` once: it collects references that already have files, takes
-the label as the part of the reference name before « — », and stores voices as
-separate `kind=voice` entries with `voice_of`. `library match` returns entries
+--from-projects` once (re-running is safe): it collects uploaded references,
+generated references through their selected result (else the approved one,
+else `skipped: no_selected_result`), and scene-local images; scene-local video
+references are project clips and are skipped (`project_clip`). A character or
+voice is labelled with its name before « — »; any other kind keeps the full
+reference name; the full original name is always kept in `aliases`. Voices are
+stored as separate `kind=voice` entries with `voice_of`. `library match` returns entries
 whose label or alias occurs in the text; a character's voice is returned with it
 and marked `matched_via: "voice_of"`.
 
