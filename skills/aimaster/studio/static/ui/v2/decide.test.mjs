@@ -125,15 +125,21 @@ test("подвал: пройденный шаг и шаг без прямого 
   assert.equal(footerMode(blocked, { screen: "video", stage: "motion" }), "chat");
 });
 
-test("тост — только после подтверждённого успеха", async () => {
+test("текст тоста по действию и материалу", async () => {
   const { outcomeToast } = await import("./decide.js");
-  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Решение отправлено.", "кадр"), "Кадр принят");
-  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Решение отправлено.", "картинка"), "Картинка принята");
-  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Решение отправлено.", "клип"), "Клип принят");
-  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Решение отправлено.", "звук"), "Звук принят");
-  assert.equal(outcomeToast("reject", SUBMITTING_TEXT, ""), "Вариант отклонён");
-  assert.equal(outcomeToast("hide", SUBMITTING_TEXT, "Отправлено."), "Вариант скрыт");
-  assert.equal(outcomeToast("approve", SUBMITTING_TEXT, "Исход не подтверждён. Обновите страницу."), "");
-  assert.equal(outcomeToast("approve", "", "Решение отправлено."), "", "без запроса в полёте — не тост");
-  assert.equal(outcomeToast("", SUBMITTING_TEXT, "Отправлено."), "");
+  assert.equal(outcomeToast("approve", "кадр"), "Кадр принят");
+  assert.equal(outcomeToast("approve", "картинка"), "Картинка принята");
+  assert.equal(outcomeToast("approve", "клип"), "Клип принят");
+  assert.equal(outcomeToast("approve", "звук"), "Звук принят");
+  assert.equal(outcomeToast("reject"), "Вариант отклонён");
+  assert.equal(outcomeToast("hide"), "Вариант скрыт");
+  assert.equal(outcomeToast(""), "");
+});
+
+test("строка «в полёте» — одна на ряд и card-forms", async () => {
+  const forms = await import("../card-forms.js");
+  assert.equal(SUBMITTING_TEXT, forms.SUBMITTING_TEXT);
+  assert.equal(forms.isConfirmedSuccess({ ok: true, confirmed: true }), true);
+  assert.equal(forms.isConfirmedSuccess({ ok: true, confirmed: false }), false);
+  assert.equal(forms.isConfirmedSuccess({ ok: false, code: "action_failed" }), false);
 });

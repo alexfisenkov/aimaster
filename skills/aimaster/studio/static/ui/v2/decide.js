@@ -10,7 +10,7 @@
 // Чистые функции (`resultTargetId`, `directActionsFor`,
 // `directActionRequest`) DOM не трогают — их и покрывают тесты.
 
-import { buildCommentForm, buildSimpleButton, buildStatusLine } from "../card-forms.js";
+import { SUBMITTING_TEXT, buildCommentForm, buildSimpleButton, buildStatusLine } from "../card-forms.js";
 import { draftKey } from "../card-drafts.js";
 import { resolveCardActions } from "../card-model.js";
 import { buildMoreMenu } from "../more-menu.js";
@@ -35,10 +35,6 @@ export const MENU_LABELS = Object.freeze({
   restore: "Вернуть в работу",
 });
 
-/** Что пишет строка исхода при подтверждённом успехе (`card-forms.js`):
- * `approve` — свой текст, остальные кнопки — общий, отказ — пусто. */
-const SUCCESS_TEXTS = new Set(["", "Отправлено.", "Решение отправлено."]);
-
 /** Тост после подтверждённого прямого решения — по действию и по тому,
  * что это за материал (кадр, клип, картинка, звук). */
 export const OUTCOME_TOASTS = Object.freeze({
@@ -53,16 +49,15 @@ export const OUTCOME_TOASTS = Object.freeze({
 });
 
 /**
- * Текст тоста после успешного прямого действия, или `""`, если тост не
- * нужен (исход не подтверждён, ошибка, неизвестное действие).
+ * Текст тоста после подтверждённого успеха прямого действия, или `""`
+ * для неизвестного действия. Когда его показывать, решает не строка
+ * исхода, а сам запрос: `onSettled` из `card-forms.js` с подтверждением
+ * по статусу своего `action_id` (`requireActionSuccess`).
  *
  * @param {string} actionType какое действие ушло
- * @param {string} previous текст строки исхода до смены
- * @param {string} next текст после смены
  * @param {string} [noun] «кадр», «клип», «картинка», «звук»
  */
-export function outcomeToast(actionType, previous, next, noun = "вариант") {
-  if (previous !== SUBMITTING_TEXT || !SUCCESS_TEXTS.has(next)) return "";
+export function outcomeToast(actionType, noun = "вариант") {
   const make = OUTCOME_TOASTS[actionType];
   return make ? make(noun) : "";
 }
@@ -70,7 +65,7 @@ export function outcomeToast(actionType, previous, next, noun = "вариант"
 const MENU_ORDER = Object.freeze(["reject", "hide", "unhide", "retire", "restore"]);
 
 /** Что `ui/card-forms.js` пишет в строку исхода, пока запрос в полёте. */
-export const SUBMITTING_TEXT = "Отправляется…";
+export { SUBMITTING_TEXT };
 
 /**
  * Идёт ли прямо сейчас запрос — по тексту строки исхода. Пока идёт,
@@ -123,7 +118,16 @@ export function directActionRequest(actionType, version, revision, { comment } =
   return { actionType, targetId: resultTargetId(version), payload, expectedRevision: revision };
 }
 
-function mainButton({ actions, version, revision, projectId, label, row, status, mark }) {
+/** Колбэк исхода для кнопок ряда: тост — только при подтверждённом успехе. */
+function settledWith(actionType, context) {
+  return (result, confirmed) => {
+    if (!confirmed || typeof context.onOutcome !== "function") return;
+    const toast = outcomeToast(actionType, context.noun);
+    if (toast) context.onOutcome(toast);
+  };
+}
+
+function mainButton({ actions, version, revision, projectId, label, row, status, mark, context }) {
   if (!actions.includes("approve")) return null;
   // Решение уже принято — кнопке нечего делать. Подпись повторяет
   // пометку той же версии на плёнке, чтобы «выбран» на плитке и
@@ -138,6 +142,8 @@ function mainButton({ actions, version, revision, projectId, label, row, status,
     status,
     label: chosen ? (mark === "принят" ? "✓ Принят" : "✓ Выбран") : label,
     successText: "Решение отправлено.",
+    requireActionSuccess: true,
+    onSettled: settledWith("approve", context),
   });
   button.classList.add("v2-viewer-primary");
   button.dataset.chosen = String(chosen);
@@ -194,7 +200,8 @@ function splitRejectForm(wrap) {
  *   `secondary` заменяет «＋ Ещё вариант» (сборке нужен «Пересобрать»),
  *   `chatMenu: false` убирает из «···» пункты про файл и промпт,
  *   `statusText`/`onStatus` — текст исхода, переживающий перерисовку,
- *   `onOutcome` — текст тоста после подтверждённого решения,
+ *   `onOutcome` — текст тоста после подтверждённого решения (успех
+ *   проверяется по статусу своего `action_id`, не по ревизии проекта),
  *   `noun` — «кадр», «клип», «картинка», «звук» для этого тоста.
  *   Без `version` и `secondary` кнопки «＋ Ещё вариант» нет: просьба о
  *   первом варианте — на пустой сцене (`viewer-canvas.renderCanvas`).
@@ -213,7 +220,7 @@ export function renderDecideRow(context) {
   const actions = directActionsFor({ allowedActions, currentStage, collection, version });
 
   const main = mainButton({
-    actions, version, revision, projectId, label: keepLabel, row: buttons, status, mark: context.mark,
+    actions, version, revision, projectId, label: keepLabel, row: buttons, status, mark: context.mark, context,
   });
   if (main) buttons.append(main);
 
@@ -251,6 +258,8 @@ export function renderDecideRow(context) {
         row: buttons,
         status,
         toggleLabel: MENU_LABELS.reject,
+        requireActionSuccess: true,
+        onSettled: settledWith("reject", context),
       }));
       rejectForm = form;
       wrap.append(toggle);
@@ -263,6 +272,8 @@ export function renderDecideRow(context) {
         row: buttons,
         status,
         label: MENU_LABELS[actionType],
+        requireActionSuccess: true,
+        onSettled: settledWith(actionType, context),
       }));
     }
     items.push({ id: actionType, content: wrap });
@@ -302,13 +313,6 @@ export function renderDecideRow(context) {
     buttons.append(menu);
   }
 
-  // Какое действие ушло — чтобы после подтверждения сказать тостом, что
-  // именно произошло. Отказ уходит `submit` формы, остальные — кликом.
-  let sent = "";
-  buttons.addEventListener("click", (event) => {
-    const control = event.target instanceof Element ? event.target.closest("[data-action]") : null;
-    if (control && MENU_ORDER.concat("approve").includes(control.dataset.action)) sent = control.dataset.action;
-  }, true);
   // Форма стоит вне `buttons`, и `submitAction` её кнопки не гасит: второй
   // «Отклонить вариант» посреди запроса ушёл бы с тем же
   // `expected_revision`. Поэтому пока запрос в полёте, отправка глушится
@@ -317,9 +321,7 @@ export function renderDecideRow(context) {
     if (isSubmitting(status.textContent)) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      return;
     }
-    sent = "reject";
   }, true);
 
   // Текст исхода ставится последним: `buildCommentForm` при сборке
@@ -328,14 +330,10 @@ export function renderDecideRow(context) {
   // просмотрщика, а не в узле, — узел отвалится на первой же перерисовке,
   // а фоновый опрос приходит каждые 8 секунд.
   status.textContent = typeof context.statusText === "string" ? context.statusText : "";
-  let previous = status.textContent;
   new MutationObserver(() => {
     const next = status.textContent;
     if (typeof context.onStatus === "function") context.onStatus(next);
     for (const control of rejectForm?.querySelectorAll("button") || []) control.disabled = isSubmitting(next);
-    const toast = outcomeToast(sent, previous, next, context.noun);
-    previous = next;
-    if (toast && typeof context.onOutcome === "function") context.onOutcome(toast);
   }).observe(status, { childList: true, characterData: true, subtree: true });
 
   if (rejectForm) row.append(buttons, rejectForm, status);

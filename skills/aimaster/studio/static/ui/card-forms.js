@@ -14,6 +14,15 @@ import { resolveCardActionLabel } from "./card-model.js";
 import { draftKey, getDraft, setDraft, clearDraft } from "./card-drafts.js";
 
 export const OUTCOME_UNCONFIRMED_TEXT = "Исход не подтверждён. Обновите страницу.";
+/** Строка исхода, пока запрос в полёте. */
+export const SUBMITTING_TEXT = "Отправляется…";
+/** Строка исхода после подтверждённого успеха кнопки без своего текста. */
+export const SENT_TEXT = "Отправлено.";
+
+/** Подтверждённый ли это успех — тот же критерий, что у лестницы исхода. */
+export function isConfirmedSuccess(result) {
+  return Boolean(result?.ok) && result.confirmed !== false;
+}
 
 export function buildStatusLine() {
   const status = document.createElement("p");
@@ -144,7 +153,9 @@ export function buildSimpleButton({
   label,
   hookAction,
   awaitUpdate = true,
-  successText = "Отправлено.",
+  successText = SENT_TEXT,
+  requireActionSuccess = false,
+  onSettled,
 }) {
   const button = document.createElement("button");
   button.type = "button";
@@ -169,7 +180,7 @@ export function buildSimpleButton({
     // that does not exist, so a stage decision's own focus never came
     // back.
     noteCardFocusPending(hookTargetId, hookAction || actionType);
-    status.textContent = "Отправляется…";
+    status.textContent = SUBMITTING_TEXT;
     const siblingButtons = Array.from(row.querySelectorAll("button"));
     const result = await submitAction({
       actionType,
@@ -178,8 +189,10 @@ export function buildSimpleButton({
       expectedRevision,
       controls: siblingButtons,
       awaitUpdate,
+      requireActionSuccess,
     });
     finishFreeActionSubmit({ result, status, projectId, successText });
+    if (typeof onSettled === "function") onSettled(result, isConfirmedSuccess(result));
   });
   return button;
 }
@@ -206,6 +219,8 @@ export function buildCommentForm({
   status,
   focusHookAction,
   toggleLabel,
+  requireActionSuccess = false,
+  onSettled,
 }) {
   const draft = getDraft(key);
 
@@ -281,7 +296,7 @@ export function buildCommentForm({
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     noteCardFocusPending(hookTargetId, focusHookAction || actionType);
-    status.textContent = "Отправляется…";
+    status.textContent = SUBMITTING_TEXT;
     saveDraft();
     const siblingButtons = Array.from(row.querySelectorAll("button"));
     const result = await submitAction({
@@ -290,8 +305,10 @@ export function buildCommentForm({
       payload: { comment: textarea.value.trim() },
       expectedRevision,
       controls: siblingButtons,
+      requireActionSuccess,
     });
     finishFreeActionSubmit({ result, status, projectId, saveDraft, clearDraftKey: key });
+    if (typeof onSettled === "function") onSettled(result, isConfirmedSuccess(result));
   });
 
   const wrap = document.createElement("div");
