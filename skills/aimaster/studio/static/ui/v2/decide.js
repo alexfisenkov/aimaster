@@ -32,8 +32,38 @@ export const MENU_LABELS = Object.freeze({
   hide: "Скрыть",
   unhide: "Показать",
   retire: "Убрать из работы",
-  restore: "Вернуть",
+  restore: "Вернуть в работу",
 });
+
+/** Что пишет строка исхода при подтверждённом успехе (`card-forms.js`):
+ * `approve` — свой текст, остальные кнопки — общий, отказ — пусто. */
+const SUCCESS_TEXTS = new Set(["", "Отправлено.", "Решение отправлено."]);
+
+/** Тост после подтверждённого прямого решения — по действию и по тому,
+ * что это за материал (кадр, клип, картинка, звук). */
+export const OUTCOME_TOASTS = Object.freeze({
+  approve: (noun) => `${noun.charAt(0).toUpperCase()}${noun.slice(1)} выбран${noun.endsWith("а") ? "а" : ""}`,
+  reject: () => "Вариант отклонён",
+  hide: () => "Вариант скрыт",
+  unhide: () => "Вариант снова виден",
+  retire: () => "Вариант убран из работы",
+  restore: () => "Вариант возвращён в работу",
+});
+
+/**
+ * Текст тоста после успешного прямого действия, или `""`, если тост не
+ * нужен (исход не подтверждён, ошибка, неизвестное действие).
+ *
+ * @param {string} actionType какое действие ушло
+ * @param {string} previous текст строки исхода до смены
+ * @param {string} next текст после смены
+ * @param {string} [noun] «кадр», «клип», «картинка», «звук»
+ */
+export function outcomeToast(actionType, previous, next, noun = "вариант") {
+  if (previous !== SUBMITTING_TEXT || !SUCCESS_TEXTS.has(next)) return "";
+  const make = OUTCOME_TOASTS[actionType];
+  return make ? make(noun) : "";
+}
 
 const MENU_ORDER = Object.freeze(["reject", "hide", "unhide", "retire", "restore"]);
 
@@ -104,10 +134,11 @@ function mainButton({ actions, version, revision, projectId, label, row, status,
     projectId,
     row,
     status,
-    label: chosen ? (mark === "принят" ? "Принят" : "Выбран") : label,
+    label: chosen ? (mark === "принят" ? "✓ Принят" : "✓ Выбран") : label,
     successText: "Решение отправлено.",
   });
   button.classList.add("v2-viewer-primary");
+  button.dataset.chosen = String(chosen);
   button.disabled = chosen;
   return button;
 }
@@ -120,6 +151,34 @@ export function decideDraftKeys(projectId, version) {
 }
 
 /**
+ * Форма отказа из общего `buildCommentForm`, разнесённая на два места:
+ * пункт «Отклонить с комментарием…» живёт в «···», а сама форма — под
+ * рядом кнопок (хэндофф: textarea и красная «Отклонить вариант»). Узлы
+ * те же, поэтому черновик, фокус после перерисовки и один запрос в
+ * полёте работают как в v1.
+ */
+function splitRejectForm(wrap) {
+  const toggle = wrap.querySelector(":scope > button");
+  const form = wrap.querySelector(":scope > form");
+  if (!toggle || !form) return { toggle: wrap, form: null };
+  form.classList.add("v2-viewer-reject");
+  form.dataset.hook = "v2-viewer-reject";
+  const caption = form.querySelector(".card-comment-label > span");
+  if (caption) caption.textContent = "Что не так с этим вариантом? Комментарий увидит агент.";
+  const actions = form.querySelector(".card-comment-actions");
+  const submit = actions?.querySelector('button[type="submit"]');
+  const cancel = actions?.querySelector('button[type="button"]');
+  if (submit) {
+    submit.textContent = "Отклонить вариант";
+    submit.classList.add("v2-viewer-danger");
+  }
+  // Сначала «Отмена», потом необратимое — как в макете.
+  if (actions && submit && cancel) actions.append(cancel, submit);
+  toggle.classList.add("v2-viewer-menu-danger");
+  return { toggle, form };
+}
+
+/**
  * Ряд под холстом: «Оставить этот …», «＋ Ещё вариант» и «···».
  *
  * @param {{project: object, revision: number, allowedActions: string[],
@@ -127,11 +186,14 @@ export function decideDraftKeys(projectId, version) {
  *          keepLabel?: string, mark?: string, sceneId?: string, slot?: string,
  *          layer?: string, referenceId?: string, promptVersion?: object,
  *          editWhat?: string, secondary?: {label: string, request: object},
- *          chatMenu?: boolean, statusText?: string,
- *          onStatus?: (text: string) => void}} context
+ *          chatMenu?: boolean, statusText?: string, noun?: string,
+ *          onStatus?: (text: string) => void,
+ *          onOutcome?: (toast: string) => void}} context
  *   `secondary` заменяет «＋ Ещё вариант» (сборке нужен «Пересобрать»),
  *   `chatMenu: false` убирает из «···» пункты про файл и промпт,
- *   `statusText`/`onStatus` — текст исхода, переживающий перерисовку.
+ *   `statusText`/`onStatus` — текст исхода, переживающий перерисовку,
+ *   `onOutcome` — текст тоста после подтверждённого решения,
+ *   `noun` — «кадр», «клип», «картинка», «звук» для этого тоста.
  * @returns {HTMLElement} `<div class="v2-viewer-actions">`
  */
 export function renderDecideRow(context) {
@@ -168,12 +230,13 @@ export function renderDecideRow(context) {
     ));
 
   const items = [];
+  let rejectForm = null;
   for (const actionType of MENU_ORDER) {
     if (!actions.includes(actionType)) continue;
     const wrap = document.createElement("div");
     wrap.className = "more-menu-control";
-    wrap.append(actionType === "reject"
-      ? buildCommentForm({
+    if (actionType === "reject") {
+      const { toggle, form } = splitRejectForm(buildCommentForm({
         actionType: "reject",
         targetId: resultTargetId(version),
         expectedRevision: revision,
@@ -182,8 +245,11 @@ export function renderDecideRow(context) {
         row: buttons,
         status,
         toggleLabel: MENU_LABELS.reject,
-      })
-      : buildSimpleButton({
+      }));
+      rejectForm = form;
+      wrap.append(toggle);
+    } else {
+      wrap.append(buildSimpleButton({
         actionType,
         targetId: resultTargetId(version),
         expectedRevision: revision,
@@ -192,13 +258,13 @@ export function renderDecideRow(context) {
         status,
         label: MENU_LABELS[actionType],
       }));
+    }
     items.push({ id: actionType, content: wrap });
   }
   if (context.chatMenu !== false) {
-    items.push({
-      id: "upload",
-      content: chatButton("Загрузить свой файл → чат", uploadFrame(chat), "more-menu-item"),
-    });
+    const upload = chatButton("Загрузить свой файл → чат", uploadFrame(chat), "more-menu-item");
+    if (items.length) upload.classList.add("v2-viewer-menu-split");
+    items.push({ id: "upload", content: upload });
     items.push({
       id: "edit-prompt",
       content: chatButton(
@@ -210,12 +276,45 @@ export function renderDecideRow(context) {
   }
   // Пустое «···» не рисуем вовсе: `buildMoreMenu` на пустом списке кидает.
   if (items.length) {
-    buttons.append(buildMoreMenu({
+    const menu = buildMoreMenu({
       projectId: projectId || "project",
       targetId: `v2-viewer:${resultTargetId(version) || "none"}`,
       items,
-    }));
+    });
+    const trigger = menu.querySelector('[data-more-hook="trigger"]');
+    if (trigger) {
+      trigger.textContent = "···";
+      trigger.setAttribute("aria-label", "Ещё действия");
+      trigger.title = "Ещё действия";
+    }
+    // Пункт отказа открывает форму под рядом — меню при этом закрывается,
+    // иначе на телефоне шторка закрывала бы саму форму.
+    const rejectToggle = menu.querySelector(".v2-viewer-menu-danger");
+    rejectToggle?.addEventListener("click", () => {
+      if (menu.dataset.open === "true") trigger?.click();
+    });
+    buttons.append(menu);
   }
+
+  // Какое действие ушло — чтобы после подтверждения сказать тостом, что
+  // именно произошло. Отказ уходит `submit` формы, остальные — кликом.
+  let sent = "";
+  buttons.addEventListener("click", (event) => {
+    const control = event.target instanceof Element ? event.target.closest("[data-action]") : null;
+    if (control && MENU_ORDER.concat("approve").includes(control.dataset.action)) sent = control.dataset.action;
+  }, true);
+  // Форма стоит вне `buttons`, и `submitAction` её кнопки не гасит: второй
+  // «Отклонить вариант» посреди запроса ушёл бы с тем же
+  // `expected_revision`. Поэтому пока запрос в полёте, отправка глушится
+  // здесь, раньше обработчика самой формы.
+  rejectForm?.addEventListener("submit", (event) => {
+    if (isSubmitting(status.textContent)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    sent = "reject";
+  }, true);
 
   // Текст исхода ставится последним: `buildCommentForm` при сборке
   // затирает строку исхода своим черновиком (у него она общая с кнопками),
@@ -223,14 +322,17 @@ export function renderDecideRow(context) {
   // просмотрщика, а не в узле, — узел отвалится на первой же перерисовке,
   // а фоновый опрос приходит каждые 8 секунд.
   status.textContent = typeof context.statusText === "string" ? context.statusText : "";
-  if (typeof context.onStatus === "function") {
-    new MutationObserver(() => context.onStatus(status.textContent)).observe(status, {
-      childList: true,
-      characterData: true,
-      subtree: true,
-    });
-  }
+  let previous = status.textContent;
+  new MutationObserver(() => {
+    const next = status.textContent;
+    if (typeof context.onStatus === "function") context.onStatus(next);
+    for (const control of rejectForm?.querySelectorAll("button") || []) control.disabled = isSubmitting(next);
+    const toast = outcomeToast(sent, previous, next, context.noun);
+    previous = next;
+    if (toast && typeof context.onOutcome === "function") context.onOutcome(toast);
+  }).observe(status, { childList: true, characterData: true, subtree: true });
 
-  row.append(buttons, status);
+  if (rejectForm) row.append(buttons, rejectForm, status);
+  else row.append(buttons, status);
   return row;
 }

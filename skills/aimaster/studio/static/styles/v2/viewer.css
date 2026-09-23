@@ -1,24 +1,27 @@
 /*
- * Тёмный просмотрщик v2 — вариант C одобренного макета
- * scene-viewer-dark.html из .superpowers/brainstorm (звёздочку со слешем
- * в этом файле не писать: она закрывает комментарий и съедает правила).
+ * Тёмный просмотрщик v2 — редизайн по хэндоффу
+ * docs/design/2026-09-23-redesign/README.md, раздел «Просмотрщик» и
+ * мобильная часть (звёздочку со слешем в этом файле не писать: она
+ * закрывает комментарий и съедает правила).
  * Подключается из `ui/v2/boot.js` тегом <link>: inline-стилей на странице
  * нет нигде, их запрещает CSP.
  *
- * Телефон с 360px: правая колонка уходит под холст, боковые поля не
- * меньше 16px, горизонтальной прокрутки нет.
- *
- * Тёмные значения заданы здесь, а не в tokens-v2.css: доска светлая,
- * и общая палитра не должна темнеть из-за одного оверлея.
+ * Цвета — токены `--v2-viewer*` из tokens-v2.css; здесь только оттенки
+ * текста, которых в общем списке нет. Телефон (< 760px): окно на весь
+ * экран без радиуса, вкладки отдельным рядом, стрелок нет — листание
+ * свайпом, правая колонка под основной, «···» — нижней шторкой.
  */
 
 .v2-viewer {
-  --vw-bg: #141414;
-  --vw-panel: #1e1e1e;
-  --vw-line: #2a2a2a;
-  --vw-line-strong: #3a3a3a;
   --vw-text: #e8e8e8;
   --vw-muted: #9a9a9a;
+  --vw-faint: #7c7c7c;
+  --vw-panel: #1c1c1c;
+  --vw-panel-line: #2e2e2e;
+  --vw-sep: #242424;
+  --vw-chosen: #a5e0b4;
+  --vw-chosen-bg: #2e4a3a;
+  --vw-link: #9ecbff;
 
   position: fixed;
   inset: 0;
@@ -26,9 +29,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
-  background: rgba(0, 0, 0, 0.78);
+  padding: 24px;
+  background: rgba(6, 7, 8, 0.8);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   color: var(--vw-text);
+  font-size: var(--v2-fs-14, 14px);
   overflow: auto;
 }
 
@@ -37,305 +43,468 @@ body.v2-viewer-open {
 }
 
 .v2-viewer-card {
-  width: min(1040px, 100%);
+  width: min(var(--v2-content-max, 1180px), 100%);
   max-height: 100%;
   overflow: auto;
-  background: var(--vw-bg);
-  border: 1px solid var(--vw-line-strong);
-  border-radius: 12px;
+  background: var(--v2-viewer, #141414);
+  border: 1px solid var(--v2-viewer-line, #2a2a2a);
+  border-radius: var(--v2-r-modal, 18px);
+  box-shadow: var(--v2-sh-modal, 0 30px 80px rgba(0, 0, 0, 0.5));
 }
+
+.v2-viewer button { font: inherit; }
+
+.v2-viewer button:focus-visible,
+.v2-viewer textarea:focus-visible { outline: 2px solid var(--vw-link); outline-offset: 2px; }
 
 /* --- Шапка ----------------------------------------------------------- */
 
 .v2-viewer-bar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--vw-line);
+  gap: 10px 14px;
+  padding: 10px 12px 10px 18px;
+  border-bottom: 1px solid var(--vw-sep);
+  background: var(--v2-viewer, #141414);
 }
 
-/* Заголовок ужимается первым: вкладки и ✕ на строку не переносятся
-   даже на 360px, иначе крестик уезжает под название. */
 .v2-viewer-title {
-  margin: 0;
-  font-size: 0.9375rem;
-  color: #fff;
-  flex: 1 1 auto;
+  flex: 1 1 160px;
   min-width: 0;
+  margin: 0;
+  font-size: var(--v2-fs-15, 15px);
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.v2-viewer-time { color: var(--vw-muted); font-weight: 400; }
+.v2-viewer-time { color: #8a8a8a; font-weight: 400; }
 
-.v2-viewer-tabs { display: flex; gap: 4px; flex: none; }
+.v2-viewer-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  padding: 3px;
+  border-radius: var(--v2-r-pill, 999px);
+  background: var(--v2-viewer-2, #1f1f1f);
+}
 
 .v2-viewer-tab {
+  flex: 1;
+  height: 30px;
+  padding: 0 14px;
   border: 0;
-  background: none;
+  border-radius: var(--v2-r-pill, 999px);
+  background: transparent;
   color: var(--vw-muted);
-  font: inherit;
-  font-size: 0.8125rem;
-  padding: 4px 8px;
-  border-bottom: 2px solid transparent;
+  font-size: var(--v2-fs-13, 13px);
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
-  min-height: 32px;
 }
 
-.v2-viewer-tab[aria-selected="true"] { color: #fff; border-bottom-color: #fff; }
-.v2-viewer-tab:focus-visible,
-.v2-viewer-close:focus-visible,
-.v2-viewer .v2-viewer-arrow:focus-visible,
-.v2-viewer button:focus-visible { outline: 2px solid #9ecbff; outline-offset: 2px; }
+.v2-viewer-tab:hover { color: #fff; }
+.v2-viewer-tab[aria-selected="true"] { background: #fff; color: #111; }
 
 .v2-viewer-close {
   flex: none;
+  width: 44px;
+  height: 44px;
   border: 0;
-  background: none;
+  border-radius: 50%;
+  background: transparent;
   color: var(--vw-muted);
-  font: inherit;
-  font-size: 1rem;
-  min-width: 36px;
-  min-height: 36px;
+  font-size: var(--v2-fs-15, 15px);
   cursor: pointer;
 }
+
+.v2-viewer-close:hover { background: var(--vw-sep); color: #fff; }
 
 /* --- Две колонки ----------------------------------------------------- */
 
 .v2-viewer-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 330px;
+  grid-template-columns: minmax(0, 1fr) 340px;
 }
 
 .v2-viewer-left {
-  padding: 14px 16px 16px;
-  border-right: 1px solid var(--vw-line);
   min-width: 0;
+  padding: 16px 20px 20px;
+  border-right: 1px solid var(--vw-sep);
 }
 
 .v2-viewer-right {
-  padding: 14px 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
   min-width: 0;
+  padding: 16px 20px 20px;
 }
 
-@media (max-width: 860px) {
-  .v2-viewer { padding: 0; }
-  .v2-viewer-card { border-radius: 0; border: 0; min-height: 100%; }
-  .v2-viewer-body { grid-template-columns: minmax(0, 1fr); }
-  .v2-viewer-left { border-right: 0; border-bottom: 1px solid var(--vw-line); }
-}
+/* --- Слоты ----------------------------------------------------------- */
 
-/* --- Слоты, холст, плёнка -------------------------------------------- */
-
-.v2-viewer-slots { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.v2-viewer-slots { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 
 .v2-viewer-slot {
-  border: 1px solid var(--vw-line-strong);
-  border-radius: 14px;
-  background: none;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--v2-viewer-line-2, #3a3a3a);
+  border-radius: var(--v2-r-pill, 999px);
+  background: transparent;
   color: var(--vw-muted);
-  font: inherit;
-  font-size: 0.75rem;
-  padding: 6px 12px;
-  min-height: 32px;
+  font-size: var(--v2-fs-12, 12px);
+  font-weight: 600;
   cursor: pointer;
 }
 
 .v2-viewer-slot[aria-selected="true"] { background: #fff; color: #111; border-color: #fff; }
 
+/* --- Сцена ----------------------------------------------------------- */
+
 .v2-viewer-canvas {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 220px;
-  padding: 8px;
-  border-radius: 10px;
-  background: #0d0d0d;
+  justify-content: center;
+  gap: 12px;
+  min-height: 300px;
+  padding: 14px;
+  border-radius: var(--v2-r-group, 14px);
+  background: var(--v2-viewer-stage, #0b0b0b);
+}
+
+.v2-viewer-frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  max-width: 720px;
+}
+
+.v2-viewer-frame[data-dim="true"] .v2-viewer-media { opacity: 0.45; }
+
+.v2-viewer-frame[data-empty="true"] {
+  flex-direction: column;
+  gap: 12px;
+  aspect-ratio: 16 / 9;
+  padding: 20px;
+  border: 1px dashed var(--v2-viewer-line-2, #3a3a3a);
+  border-radius: var(--v2-r-md, 10px);
+  text-align: center;
 }
 
 .v2-viewer-media {
+  display: block;
   max-width: 100%;
   max-height: 58vh;
   min-width: 0;
-  border-radius: 6px;
+  border-radius: var(--v2-r-md, 10px);
   object-fit: contain;
 }
 
+.v2-viewer-frame[data-media="audio"] { align-self: stretch; }
 audio.v2-viewer-media { width: 100%; max-height: none; }
+
+.v2-viewer-stage-mark {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  padding: 2px 9px;
+  border-radius: var(--v2-r-pill, 999px);
+  background: rgba(0, 0, 0, 0.55);
+  font-size: var(--v2-fs-11, 11px);
+  color: #fff;
+  pointer-events: none;
+}
+
+.v2-viewer-frame[data-media="audio"] .v2-viewer-stage-mark { display: none; }
 
 .v2-viewer-arrow {
   flex: none;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   border: 0;
   border-radius: 50%;
   background: #fff;
   color: #111;
-  font: inherit;
-  font-size: 1rem;
+  font-size: 17px;
   cursor: pointer;
 }
 
-.v2-viewer-arrow[disabled] { opacity: 0.3; cursor: default; }
+.v2-viewer-arrow[disabled] { opacity: 0.25; cursor: default; }
+
+.v2-viewer .v2-viewer-ask {
+  height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--v2-r-md, 10px);
+  background: #fff;
+  color: #111;
+  font-size: var(--v2-fs-13, 13px);
+  font-weight: 600;
+  cursor: pointer;
+}
 
 .v2-viewer-caption {
-  margin: 8px 0 0;
-  font-size: 0.75rem;
+  margin: 10px 0 0;
+  font-size: var(--v2-fs-12, 12px);
   color: var(--vw-muted);
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
+
+/* --- Плёнка ---------------------------------------------------------- */
 
 .v2-viewer-film {
   display: flex;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 2px 2px 4px;
   overflow-x: auto;
-  padding-bottom: 4px;
 }
 
 .v2-viewer-tile {
   position: relative;
   flex: none;
-  width: 74px;
-  height: 50px;
+  width: 84px;
+  height: 54px;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--v2-r-sm, 8px);
   background: #2b3338;
   color: #fff;
-  font: inherit;
-  font-size: 0.5625rem;
   overflow: hidden;
   cursor: pointer;
 }
 
-.v2-viewer-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.v2-viewer-tile[data-dim="true"] { opacity: 0.35; filter: grayscale(1); }
-.v2-viewer-tile[aria-current="true"] { outline: 2px solid #fff; outline-offset: -2px; }
+.v2-viewer-tile img,
+.v2-viewer-tile video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.v2-viewer-tile[data-dim="true"] { opacity: 0.35; }
+.v2-viewer-tile[aria-current="true"] { box-shadow: 0 0 0 2px #fff; }
 
 .v2-viewer-tile-mark {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 1px 3px;
-  background: rgba(0, 0, 0, 0.66);
+  padding: 1px 5px;
+  background: rgba(0, 0, 0, 0.62);
+  font-size: 9px;
+  color: #fff;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.v2-viewer .v2-viewer-tile-add {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  border: 1px dashed #4a4a4a;
+  border-radius: var(--v2-r-sm, 8px);
+  background: transparent;
+  color: var(--vw-muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.v2-viewer .v2-viewer-tile-add:hover { border-color: #fff; color: #fff; }
+
 /* --- Кнопки ---------------------------------------------------------- */
 
-.v2-viewer-actions { margin-top: 14px; }
+.v2-viewer-actions { margin-top: 16px; }
 
 .v2-viewer-buttons {
   display: flex;
   gap: 8px;
-  align-items: flex-start;
+  align-items: stretch;
   flex-wrap: wrap;
 }
 
-.v2-viewer .card-action-button,
-.v2-viewer .v2-chat-button,
-.v2-viewer .more-menu-trigger,
-.v2-viewer .more-menu-item,
-.v2-viewer .card-comment-actions button {
-  border: 1px solid var(--vw-line-strong);
-  border-radius: 9px;
-  background: #222;
+.v2-viewer .v2-viewer-buttons > .card-action-button,
+.v2-viewer .v2-viewer-secondary,
+.v2-viewer .more-menu-trigger {
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--v2-viewer-line-2, #3a3a3a);
+  border-radius: 11px;
+  background: var(--v2-viewer-2, #1f1f1f);
   color: var(--vw-text);
-  font: inherit;
-  font-size: 0.8125rem;
-  padding: 9px 14px;
-  min-height: 40px;
+  font-size: var(--v2-fs-14, 14px);
   cursor: pointer;
 }
 
-.v2-viewer .v2-viewer-primary,
-.v2-viewer .v2-viewer-secondary { flex: 1 1 160px; text-align: center; }
+.v2-viewer .v2-viewer-secondary:hover,
+.v2-viewer .more-menu-trigger:hover { background: #262626; }
 
-.v2-viewer .v2-viewer-primary {
+.v2-viewer .v2-viewer-primary { flex: 1 1 180px; }
+.v2-viewer .v2-viewer-secondary { flex: 1 1 160px; }
+
+.v2-viewer .v2-viewer-buttons > .v2-viewer-primary {
   background: #fff;
   color: #111;
   border-color: #fff;
   font-weight: 600;
 }
 
-.v2-viewer .v2-viewer-primary[disabled] { background: #3a3a3a; color: var(--vw-muted); border-color: #3a3a3a; }
-.v2-viewer .more-menu-item { width: 100%; text-align: left; border: 0; border-radius: 0; }
+/* Вариант уже выбран: кнопке нечего делать, она говорит, что сделано. */
+.v2-viewer .v2-viewer-buttons > .v2-viewer-primary[data-chosen="true"] {
+  background: transparent;
+  color: var(--vw-chosen);
+  border-color: var(--vw-chosen-bg);
+  cursor: default;
+}
 
-/* «···» — нижний лист, а не выпадашка.
-   Разметку меню строит v1 (`ui/more-menu.js`), и там список раскрывается
-   `position: absolute` вниз от кнопки. Кнопка стоит у нижнего края окна,
-   поэтому список уезжал за экран целиком и выглядел мёртвым. Здесь он
-   прижат к низу окна и всегда виден полностью. */
+/* Погашена на время запроса или решать нечего (убран из работы). */
+.v2-viewer .v2-viewer-buttons > .v2-viewer-primary[disabled]:not([data-chosen="true"]) {
+  background: var(--v2-viewer-line-2, #3a3a3a);
+  color: var(--vw-muted);
+  border-color: var(--v2-viewer-line-2, #3a3a3a);
+}
 
-/* Прижимается вправо именно `.more-menu` — она и есть элемент строки;
-   на кнопке внутри неё `margin-left: auto` не работает после переноса. */
-.v2-viewer .more-menu { position: static; margin-left: auto; }
+.v2-viewer .v2-viewer-buttons button[disabled] { cursor: default; }
 
-/* Затемнение под листом. `pointer-events: none` обязателен: иначе клик по
-   затемнению считался бы кликом внутри меню, и общий обработчик
-   `ui/more-menu.js` не закрыл бы его. */
-.v2-viewer .more-menu[data-open="true"]::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-  background: rgba(0, 0, 0, 0.55);
-  pointer-events: none;
+.v2-viewer .card-action-status {
+  margin: 8px 0 0;
+  color: var(--vw-muted);
+  font-size: var(--v2-fs-12, 12px);
+}
+
+.v2-viewer .card-action-status:empty { display: none; }
+
+/* --- «···» ----------------------------------------------------------- */
+/* Разметку меню строит v1 (`ui/more-menu.js`). На широком экране —
+   поповер вверх от кнопки: кнопка стоит у нижнего края окна, вниз
+   список уезжал бы за экран. */
+
+.v2-viewer .more-menu { position: relative; }
+
+.v2-viewer .more-menu-trigger {
+  width: 52px;
+  padding: 0;
+  font-size: 16px;
+  letter-spacing: 1px;
 }
 
 .v2-viewer .more-menu-popup {
-  position: fixed;
-  z-index: 71;
-  inset: auto 0 0 0;
-  width: auto;
-  max-width: none;
-  max-height: 70vh;
+  position: absolute;
+  inset: auto 0 calc(100% + 8px) auto;
+  z-index: 5;
+  width: 280px;
+  max-width: min(280px, 80vw);
+  max-height: 60vh;
   overflow-y: auto;
-  padding: 10px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  padding: 6px;
+  background: #1e1e1e;
+  border: 1px solid var(--v2-viewer-line-2, #3a3a3a);
+  border-radius: var(--v2-r-btn, 12px);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+
+.v2-viewer .more-menu-popup[hidden] { display: none; }
+
+.v2-viewer .more-menu-control { display: block; }
+
+.v2-viewer .more-menu-popup .card-action-button,
+.v2-viewer .more-menu-item {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 12px;
   border: 0;
-  border-top: 1px solid var(--vw-line-strong);
-  border-radius: 14px 14px 0 0;
-  background: var(--vw-panel);
-  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.55);
+  border-radius: var(--v2-r-sm, 8px);
+  background: transparent;
+  color: var(--vw-text);
+  font-size: var(--v2-fs-13, 13px);
+  text-align: left;
+  cursor: pointer;
 }
 
-/* На широком экране места хватает — обычный поповер, но вверх от кнопки. */
-@media (min-width: 861px) {
-  .v2-viewer .more-menu { position: relative; }
-  .v2-viewer .more-menu[data-open="true"]::before { content: none; }
-  .v2-viewer .more-menu-popup {
-    position: absolute;
-    inset: auto 0 calc(100% + 6px) auto;
-    width: 280px;
-    max-width: min(280px, 80vw);
-    max-height: 60vh;
-    padding: 6px;
-    border: 1px solid var(--vw-line-strong);
-    border-radius: 10px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
-  }
+.v2-viewer .more-menu-popup .card-action-button:hover,
+.v2-viewer .more-menu-item:hover { background: var(--v2-viewer-line, #2a2a2a); }
+
+.v2-viewer .more-menu-popup .v2-viewer-menu-danger { color: #ff8a80; }
+
+.v2-viewer .v2-viewer-menu-split {
+  margin-top: 4px;
+  border-top: 1px solid var(--vw-panel-line);
+  border-radius: 0 0 var(--v2-r-sm, 8px) var(--v2-r-sm, 8px);
 }
 
-.v2-viewer .card-action-status { color: var(--vw-muted); font-size: 0.75rem; margin: 8px 0 0; }
+/* --- Отказ с комментарием ------------------------------------------- */
+
+.v2-viewer-reject {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--v2-viewer-line-2, #3a3a3a);
+  border-radius: var(--v2-r-btn, 12px);
+  background: #1a1a1a;
+}
+
+.v2-viewer-reject[hidden] { display: none; }
+
+.v2-viewer-reject .card-comment-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--v2-fs-12, 12px);
+  color: var(--vw-muted);
+}
+
 .v2-viewer .card-comment-textarea {
   width: 100%;
+  min-height: 72px;
+  padding: 9px 10px;
+  border: 1px solid var(--v2-viewer-line-2, #3a3a3a);
+  border-radius: var(--v2-r-sm, 8px);
   background: #111;
   color: var(--vw-text);
-  border: 1px solid var(--vw-line-strong);
-  border-radius: 6px;
+  font: inherit;
+  font-size: var(--v2-fs-13, 13px);
+  resize: vertical;
 }
+
+.v2-viewer-reject .card-comment-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.v2-viewer-reject .card-comment-actions button {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--v2-viewer-line-2, #3a3a3a);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--vw-text);
+  font-size: var(--v2-fs-13, 13px);
+  cursor: pointer;
+}
+
+.v2-viewer-reject .card-comment-actions .v2-viewer-danger {
+  border-color: var(--v2-danger, #b42318);
+  background: var(--v2-danger, #b42318);
+  color: #fff;
+  font-weight: 600;
+}
+
+.v2-viewer-reject .card-comment-actions button[disabled] { opacity: 0.5; cursor: default; }
 
 /* --- Промпт ---------------------------------------------------------- */
 
@@ -344,24 +513,33 @@ audio.v2-viewer-media { width: 100%; max-height: none; }
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  margin: 0 0 6px;
-  font-size: 0.6875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--vw-muted);
+  margin: 0 0 8px;
+  font-size: var(--v2-fs-11, 11px);
   font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vw-muted);
 }
 
-.v2-viewer-ver { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: #ccc; text-transform: none; letter-spacing: 0; }
+.v2-viewer-ver {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--v2-fs-12, 12px);
+  font-weight: 400;
+  color: #ccc;
+  text-transform: none;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
 
 .v2-viewer-ver-step {
   width: 26px;
   height: 26px;
   border: 0;
   border-radius: 50%;
-  background: #2a2a2a;
+  background: var(--v2-viewer-line, #2a2a2a);
   color: var(--vw-text);
-  font: inherit;
   cursor: pointer;
 }
 
@@ -369,94 +547,284 @@ audio.v2-viewer-media { width: 100%; max-height: none; }
 
 .v2-viewer-prompt-text {
   margin: 0;
-  padding: 9px 10px;
+  padding: 11px 12px;
   background: var(--vw-panel);
-  border: 1px solid #333;
-  border-radius: 8px;
-  font-size: 0.75rem;
-  line-height: 1.45;
+  border: 1px solid var(--vw-panel-line);
+  border-radius: var(--v2-r-md, 10px);
+  font-size: 12.5px;
+  line-height: 1.55;
   color: #ddd;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .v2-viewer-tag {
-  background: #2e4a3a;
-  color: #a5e0b4;
-  border-radius: 4px;
   padding: 0 4px;
+  border-radius: 4px;
+  background: var(--vw-chosen-bg);
+  color: var(--vw-chosen);
 }
 
-.v2-viewer-prompt-meta { margin: 5px 0 0; font-size: 0.6875rem; color: #777; }
+.v2-viewer-prompt-meta { margin: 6px 0 0; font-size: var(--v2-fs-11, 11px); color: var(--vw-faint); }
 
 .v2-viewer .v2-viewer-link {
+  margin-top: 4px;
+  padding: 6px 0;
   border: 0;
   background: none;
-  color: #9ecbff;
-  font: inherit;
-  font-size: 0.75rem;
-  padding: 6px 0;
-  min-height: 32px;
+  color: var(--vw-link);
+  font-size: var(--v2-fs-12, 12px);
   cursor: pointer;
 }
 
 .v2-viewer-empty,
-.v2-viewer-empty-line { color: var(--vw-muted); font-size: 0.8125rem; margin: 0; }
+.v2-viewer-empty-line { margin: 0; color: var(--vw-muted); font-size: var(--v2-fs-13, 13px); }
 
-/* --- Зоны референсов (разметка из scene-zones.js) --------------------- */
+/* --- Зоны сцены (разметка из scene-zones.js) ------------------------- */
+/* Разметку строит тот же модуль, что строку сцены на доске; здесь она
+   перекрашивается в тёмное и раскладывается колонкой. Аватар на доске —
+   квадрат с именем только для диктора, в колонке просмотрщика имя видно
+   (макет: картинка 24px и подпись). */
 
-.v2-viewer-zones { display: flex; flex-direction: column; gap: 12px; }
+.v2-viewer-zones { display: flex; flex-direction: column; gap: 16px; }
 
 .v2-viewer .v2-zone {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
   text-align: left;
 }
 
 .v2-viewer .v2-zone-title {
-  font-size: 0.6875rem;
+  font-size: var(--v2-fs-11, 11px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--vw-muted);
 }
 
-.v2-viewer .v2-zone-items { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.v2-viewer .v2-zone-none { color: #6e6e6e; font-size: 0.75rem; }
+.v2-viewer .v2-zone .v2-zone-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  overflow: visible;
+  margin: 0;
+  padding: 0;
+}
+
+.v2-viewer .v2-zone-none { color: #6e6e6e; font-size: var(--v2-fs-12, 12px); }
 
 .v2-viewer .v2-avatar,
+.v2-viewer .v2-ref-chip,
 .v2-viewer .v2-slot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 10px 0 3px;
+  border: 1px solid #333;
+  border-radius: 9px;
   background: var(--vw-panel);
-  border: 1px solid var(--vw-line-strong);
-  border-radius: 7px;
   color: var(--vw-text);
-  font: inherit;
-  font-size: 0.6875rem;
-  padding: 4px;
-  cursor: pointer;
+  font-size: var(--v2-fs-12, 12px);
+  overflow: hidden;
+  transform: none;
 }
 
-.v2-viewer .v2-avatar[data-included="false"] { opacity: 0.35; }
+.v2-viewer .v2-avatar { cursor: pointer; }
+.v2-viewer .v2-avatar:hover { border-color: #777; transform: none; }
+.v2-viewer .v2-ref-chip-video,
+.v2-viewer .v2-slot { padding-left: 10px; }
+
+.v2-viewer .v2-avatar .v2-thumb,
+.v2-viewer .v2-avatar .v2-avatar-initial,
+.v2-viewer .v2-ref-chip-picture {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #2b3338;
+  color: #fff;
+  font-size: 11px;
+}
+
+.v2-viewer .v2-avatar img,
+.v2-viewer .v2-ref-chip-picture img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+.v2-viewer .v2-avatar[data-included="false"] { opacity: 0.4; outline: 0; }
+
 .v2-viewer .v2-avatar-name,
-.v2-viewer .v2-slot-caption { color: var(--vw-muted); }
+.v2-viewer .v2-ref-chip-name,
+.v2-viewer .v2-slot-caption {
+  position: static;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  max-width: 200px;
+  overflow: hidden;
+  clip-path: none;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--vw-text);
+}
+
+.v2-viewer .v2-usage,
+.v2-viewer .v2-slot-label {
+  position: static;
+  flex: none;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: #fff;
+  color: #111;
+  font-size: 10px;
+  line-height: 17px;
+}
 
 .v2-viewer .v2-plus {
-  width: 34px;
-  height: 34px;
+  flex: none;
+  width: 32px;
+  height: 32px;
   border: 1px dashed #555;
-  border-radius: 7px;
+  border-radius: 9px;
   background: none;
   color: var(--vw-muted);
-  font: inherit;
   cursor: pointer;
 }
+
+.v2-viewer .v2-plus:hover { border-color: #fff; color: #fff; }
+
+/* --- «Где используется» / «Из чего собран» --------------------------- */
+
+.v2-viewer-used-items { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.v2-viewer-used-item {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid #333;
+  border-radius: var(--v2-r-pill, 999px);
+  background: var(--vw-panel);
+  color: var(--vw-text);
+  font-size: var(--v2-fs-12, 12px);
+  cursor: pointer;
+}
+
+.v2-viewer-used-item:hover { border-color: #777; }
 
 /* --- История --------------------------------------------------------- */
 
-.v2-viewer-history { padding: 14px 16px 18px; min-width: 0; }
+.v2-viewer-history { min-width: 0; padding: 20px 24px 26px; }
 .v2-viewer-history h3,
-.v2-viewer-history h4 { color: #fff; font-size: 0.8125rem; }
-.v2-viewer-history ul { margin: 6px 0 12px; padding-left: 18px; font-size: 0.8125rem; color: var(--vw-text); }
+.v2-viewer-history h4 { margin: 0 0 10px; color: #fff; font-size: var(--v2-fs-13, 13px); }
+.v2-viewer-history ul { margin: 6px 0 12px; padding-left: 18px; font-size: var(--v2-fs-13, 13px); color: var(--vw-text); }
 .v2-viewer-history .decision-history-stage { color: var(--vw-muted); }
-.v2-viewer-history .decision-history-comment { color: #bbb; margin: 2px 0 0; }
+.v2-viewer-history .decision-history-comment { margin: 2px 0 0; color: #bbb; }
 .v2-viewer-history-list li { margin-bottom: 4px; }
+
+/* --- Телефон --------------------------------------------------------- */
+
+@media (max-width: 759px) {
+  .v2-viewer { padding: 0; align-items: stretch; }
+
+  .v2-viewer-card {
+    height: 100%;
+    max-height: 100%;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .v2-viewer-bar { padding: 8px 8px 10px 14px; gap: 8px 10px; }
+
+  /* Вкладки — отдельным рядом на всю ширину под заголовком и ✕. */
+  .v2-viewer-tabs { order: 3; flex: 1 1 100%; }
+  .v2-viewer-tab { height: 44px; }
+
+  .v2-viewer-body { grid-template-columns: minmax(0, 1fr); }
+  .v2-viewer-left,
+  .v2-viewer-right { padding: 12px 14px 16px; }
+  .v2-viewer-left { border-right: 0; }
+  .v2-viewer-right { border-top: 1px solid var(--vw-sep); padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+
+  /* Стрелок нет: варианты листаются свайпом по сцене. */
+  .v2-viewer-canvas { gap: 0; min-height: 0; padding: 8px; touch-action: pan-y; }
+  .v2-viewer-arrow { display: none; }
+  .v2-viewer-media { max-height: 52vh; }
+
+  .v2-viewer .v2-viewer-primary { flex: 1 1 100%; }
+  .v2-viewer-slot { height: 44px; }
+  .v2-viewer-tile-add { width: 54px; }
+  .v2-viewer .v2-viewer-link,
+  .v2-viewer .v2-viewer-ask,
+  .v2-viewer-ver-step { min-height: 44px; }
+  .v2-viewer-ver-step { width: 44px; }
+  .v2-viewer .v2-avatar,
+  .v2-viewer .v2-plus,
+  .v2-viewer-used-item { height: 44px; }
+  .v2-viewer .v2-ref-chip,
+  .v2-viewer .v2-slot { height: 36px; }
+  .v2-viewer .v2-plus { width: 44px; }
+  .v2-viewer-reject .card-comment-actions button { height: 44px; }
+
+  /* «···» — нижняя шторка (хэндофф «Шторки»: радиус 20 20 0 0, хэндл
+     40×4, пункты по 50px). Затемнение — `::before` у корня меню;
+     `pointer-events: none` обязателен, иначе клик по нему считался бы
+     кликом внутри меню и общий обработчик `ui/more-menu.js` не закрыл бы
+     его. */
+  .v2-viewer .more-menu { position: static; }
+
+  .v2-viewer .more-menu[data-open="true"]::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: rgba(0, 0, 0, 0.55);
+    pointer-events: none;
+  }
+
+  .v2-viewer .more-menu-popup {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 71;
+    width: auto;
+    max-width: none;
+    max-height: 80vh;
+    padding: 8px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+    border: 0;
+    border-top: 1px solid var(--v2-viewer-line-2, #3a3a3a);
+    border-radius: 20px 20px 0 0;
+    background: #1e1e1e;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.55);
+  }
+
+  .v2-viewer .more-menu-popup::before {
+    content: "";
+    display: block;
+    width: 40px;
+    height: 4px;
+    margin: 0 auto 12px;
+    border-radius: 2px;
+    background: var(--v2-viewer-line-2, #3a3a3a);
+  }
+
+  .v2-viewer .more-menu-popup .card-action-button,
+  .v2-viewer .more-menu-item {
+    min-height: 50px;
+    margin-top: 6px;
+    padding: 0 14px;
+    border: 1px solid var(--v2-viewer-line, #2a2a2a);
+    border-radius: var(--v2-r-btn, 12px);
+    font-size: var(--v2-fs-14, 14px);
+  }
+
+  .v2-viewer .v2-viewer-menu-split { margin-top: 12px; }
+}
