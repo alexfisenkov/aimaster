@@ -5,10 +5,16 @@ import argparse
 import json
 import os
 import re
+import sys
 import tempfile
 from pathlib import Path
 
-from validate_config import validate_config
+_SKILL_ROOT = Path(__file__).resolve().parent.parent
+if str(_SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SKILL_ROOT))
+
+from studio.platform_compat import ensure_utf8_stdio, fsync_directory, replace_file  # noqa: E402
+from validate_config import validate_config  # noqa: E402
 
 
 STAGE_SEQUENCE = ("intake", "storyboard", "images", "motion", "assembly", "complete")
@@ -37,12 +43,8 @@ def atomic_write(path, data):
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary_path, path)
-        directory_descriptor = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_descriptor)
-        finally:
-            os.close(directory_descriptor)
+        replace_file(temporary_path, path)
+        fsync_directory(path.parent)
     finally:
         temporary_path.unlink(missing_ok=True)
 
@@ -632,6 +634,7 @@ def build_parser():
 
 
 def main():
+    ensure_utf8_stdio()
     parser = build_parser()
     args = parser.parse_args()
     try:

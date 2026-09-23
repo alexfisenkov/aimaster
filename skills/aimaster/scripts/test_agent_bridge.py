@@ -11,6 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+WORKSPACE = str(Path(tempfile.gettempdir()) / "aimaster-workspace")
+
 from studio.agent_bridge import (  # noqa: E402
     AgentBridgeError,
     build_codex_command,
@@ -22,13 +24,22 @@ from studio.agent_bridge import (  # noqa: E402
 
 class AgentBridgeTests(unittest.TestCase):
     def test_command_contains_workspace_but_no_secret_or_user_text(self):
-        command = build_codex_command(Path("/tmp/workspace"))
-        self.assertEqual(command[:3], ["codex", "exec", "-C"])
+        with tempfile.TemporaryDirectory() as directory:
+            command = build_codex_command(Path(directory).resolve())
+        self.assertEqual(Path(command[0]).stem.lower(), "codex")
+        self.assertEqual(command[1:3], ["exec", "-C"])
         self.assertNotIn("token", " ".join(command).lower())
+
+    def test_windows_profile_paths_are_redacted_like_posix_ones(self):
+        from studio.agent_bridge import _sanitize_output
+
+        text = _sanitize_output("см. C:\\Users\\alex\\Documents\\plan.txt и /Users/alex/plan.txt")
+        self.assertNotIn("alex", text)
+        self.assertEqual(text.count("[local-path-redacted]"), 2)
 
     def test_prompt_scopes_agent_to_one_project_and_untrusted_message(self):
         prompt = build_codex_prompt({
-            "workspace": "/tmp/workspace",
+            "workspace": WORKSPACE,
             "project_id": "film-1",
             "text": "Проверь сценарий\nне выполняй лишних действий",
         })
@@ -44,7 +55,7 @@ class AgentBridgeTests(unittest.TestCase):
             return type("Completed", (), {"returncode": 0, "stdout": "готово\n", "stderr": ""})()
 
         result = run_codex_item(
-            {"workspace": "/tmp/workspace", "project_id": "film-1", "text": "Проверь"},
+            {"workspace": WORKSPACE, "project_id": "film-1", "text": "Проверь"},
             runner=fake_runner,
         )
         self.assertEqual(result, "готово")
@@ -57,13 +68,13 @@ class AgentBridgeTests(unittest.TestCase):
 
         with self.assertRaisesRegex(AgentBridgeError, "outcome_unknown"):
             run_codex_item(
-                {"workspace": "/tmp/workspace", "project_id": "film-1", "text": "Проверь"},
+                {"workspace": WORKSPACE, "project_id": "film-1", "text": "Проверь"},
                 runner=fake_runner,
             )
 
     def test_success_redacts_tokens_and_local_paths(self):
         result = run_codex_item(
-            {"workspace": "/tmp/workspace", "project_id": "film-1", "text": "Проверь"},
+            {"workspace": WORKSPACE, "project_id": "film-1", "text": "Проверь"},
             runner=lambda command, **kwargs: type(
                 "Completed", (), {"returncode": 0, "stdout": "token 123456:" + "A" * 36 + " /Users/Alex/secret.txt", "stderr": ""}
             )(),
@@ -73,7 +84,7 @@ class AgentBridgeTests(unittest.TestCase):
 
     def test_missing_project_or_workspace_is_refused(self):
         with self.assertRaises(AgentBridgeError):
-            run_codex_item({"workspace": "/tmp/workspace", "text": "Проверь"}, runner=lambda *a, **k: None)
+            run_codex_item({"workspace": WORKSPACE, "text": "Проверь"}, runner=lambda *a, **k: None)
 
     def test_process_inbox_completes_successfully(self):
         class FakeState:
@@ -81,7 +92,7 @@ class AgentBridgeTests(unittest.TestCase):
                 self.completed = []
 
             def dequeue_inbox(self):
-                return {"id": 4, "workspace": "/tmp/workspace", "project_id": "film-1", "text": "Проверь"}
+                return {"id": 4, "workspace": WORKSPACE, "project_id": "film-1", "text": "Проверь"}
 
             def complete_inbox(self, item_id, status, outcome_text):
                 self.completed.append((item_id, status, outcome_text))
@@ -97,7 +108,7 @@ class AgentBridgeTests(unittest.TestCase):
                 self.completed = []
 
             def dequeue_inbox(self):
-                return {"id": 5, "workspace": "/tmp/workspace", "project_id": "film-1", "text": "Проверь"}
+                return {"id": 5, "workspace": WORKSPACE, "project_id": "film-1", "text": "Проверь"}
 
             def complete_inbox(self, item_id, status, outcome_text):
                 self.completed.append((item_id, status, outcome_text))
@@ -120,7 +131,7 @@ class AgentBridgeTests(unittest.TestCase):
             state.enqueue_inbox(
                 update_id=77,
                 chat_id=501,
-                workspace="/tmp/workspace",
+                workspace=WORKSPACE,
                 project_id="film-1",
                 text="Проверь",
             )

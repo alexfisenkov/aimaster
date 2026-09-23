@@ -66,10 +66,14 @@ def _resolve_static(relative_path: str) -> Path | None:
     Returns ``None`` (never raises) for anything that is not an existing
     regular file strictly inside the static root: absolute paths, empty or
     ``.``/``..`` segments (which also rejects ``//`` and a trailing slash),
-    and any symlink that would resolve outside the root.
+    and any symlink that would resolve outside the root.  Backslashes,
+    drive colons and NUL are refused outright so Windows separators
+    (``..\\``, ``C:\\``) and alternate data streams never reach the resolver.
     """
 
     if not isinstance(relative_path, str) or not relative_path or relative_path.startswith("/"):
+        return None
+    if any(character in relative_path for character in ("\\", ":", "\x00")):
         return None
     segments = relative_path.split("/")
     if any(segment in ("", ".", "..") for segment in segments):

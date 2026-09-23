@@ -2,7 +2,7 @@
 
 Spec 2026-09-23 §3. `<workspace>/library/index.json` lists every entry;
 files live in `library/<kind folder>/`. The index is rewritten atomically
-(temp file + fsync + `os.replace`) under an exclusive `flock` on
+(temp file + fsync + `os.replace`) under an exclusive file lock on
 `library/.library.lock`, the same pattern `scripts/guide_registry.py` uses
 for `.guides.lock`. Every stored path is relative to `library/` and must
 resolve (symlinks followed) inside it.
@@ -13,7 +13,6 @@ voice_of?, source?: {project_id, reference_id}, added_at}`.
 
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import json
 import os
@@ -24,6 +23,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .platform_compat import file_lock, fsync_directory, replace_file
 from .workspace import MAX_ASSET_BYTES
 
 LIBRARY_DIR_NAME = "library"
@@ -88,7 +88,7 @@ def library_file(library: Path, relative) -> Path:
     if not isinstance(relative, str) or not relative or "\x00" in relative or "\\" in relative:
         raise LibraryError("library path must be a relative POSIX path")
     candidate = Path(relative)
-    if candidate.is_absolute() or ".." in candidate.parts:
+    if candidate.anchor or ".." in candidate.parts:  # anchor: also `C:x`, `\x`
         raise LibraryError("library path must stay inside library/")
     try:
         resolved = (library / candidate).resolve(strict=True)
@@ -127,7 +127,7 @@ def _validate_entry(entry, position):
         if not isinstance(item, dict) or set(item) != {"path", "sha256", "media"}:
             raise LibraryError(f"entries[{position}].files items need path, sha256, media")
         path = Path(item["path"]) if isinstance(item["path"], str) else None
-        if path is None or path.is_absolute() or ".." in path.parts:
+        if path is None or path.anchor or ".." in path.parts:
             raise LibraryError(f"entries[{position}].files path must stay inside library/")
 
 
@@ -158,12 +158,8 @@ def write_index_atomic(library: Path, value: dict) -> None:
             handle.write(serialized)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
-        directory = os.open(library, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+        replace_file(temporary, path)
+        fsync_directory(library)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -173,17 +169,13 @@ def locked_index(library: Path):
     """Hold the library lock; yield the index; write it back if it changed."""
 
     descriptor = os.open(library / LOCK_NAME, os.O_CREAT | os.O_RDWR, 0o600)
-    with os.fdopen(descriptor, "a+b") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            index = read_index(library)
-            before = json.dumps(index, sort_keys=True, ensure_ascii=False)
-            yield index
-            if json.dumps(index, sort_keys=True, ensure_ascii=False) != before:
-                index["revision"] = int(index.get("revision", 0)) + 1
-                write_index_atomic(library, index)
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    with os.fdopen(descriptor, "a+b") as handle, file_lock(handle):
+        index = read_index(library)
+        before = json.dumps(index, sort_keys=True, ensure_ascii=False)
+        yield index
+        if json.dumps(index, sort_keys=True, ensure_ascii=False) != before:
+            index["revision"] = int(index.get("revision", 0)) + 1
+            write_index_atomic(library, index)
 
 
 def media_of(path: Path) -> str:
@@ -226,7 +218,7 @@ def _copy_into(library: Path, kind: str, source: Path, digest: str) -> str:
             shutil.copyfile(source, temporary_name)
             if sha256_of(Path(temporary_name)) != digest:
                 raise LibraryError("source file changed while it was copied")
-            os.replace(temporary_name, target)
+            replace_file(temporary_name, target)
         finally:
             Path(temporary_name).unlink(missing_ok=True)
     return target.relative_to(library).as_posix()

@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .platform_compat import IS_WINDOWS, ensure_private
 from .store import RevisionConflict
 
 
@@ -99,6 +100,15 @@ def secure_sqlite_path(db_path, *, error=QuestionError) -> None:
     is unaffected.
     """
 
+    if IS_WINDOWS:
+        # Windows has no mode bits: the private directory gets an ACL for the
+        # current user only, so the `-wal`/`-shm` files SQLite keeps
+        # recreating inherit it instead of costing an `icacls` run each.
+        try:
+            if not ensure_private(Path(db_path).parent, directory=True):
+                raise error("private SQLite directory must be accessible only to the current user")
+        except OSError as os_error:
+            raise error("cannot secure the private SQLite directory") from os_error
     for suffix in ("", "-wal", "-shm"):
         path = Path(f"{db_path}{suffix}")
         try:
@@ -110,14 +120,17 @@ def secure_sqlite_path(db_path, *, error=QuestionError) -> None:
         if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
             raise error("private SQLite paths must be regular files")
         try:
-            path.chmod(0o600)
-            secured_mode = stat.S_IMODE(path.lstat().st_mode)
+            if IS_WINDOWS:
+                secured = ensure_private(path)
+            else:
+                path.chmod(0o600)
+                secured = stat.S_IMODE(path.lstat().st_mode) == 0o600
         except FileNotFoundError:
             continue
         except OSError as os_error:
             raise error("cannot secure private SQLite files") from os_error
-        if secured_mode != 0o600:
-            raise error("private SQLite files require mode 0600")
+        if not secured:
+            raise error("private SQLite files require mode 0600 (owner-only access)")
 
 
 def _now() -> datetime:

@@ -31,6 +31,7 @@ from creator_studio_telegram import (  # noqa: E402
     render_setup_html,
     validate_bot_token,
 )
+from studio.platform_compat import is_private  # noqa: E402
 from studio.telegram_bot import (  # noqa: E402
     TelegramBotController,
     TelegramBotError,
@@ -39,6 +40,9 @@ from studio.telegram_bot import (  # noqa: E402
     project_navigation_markup,
     project_menu_payloads,
 )
+
+
+WORKSPACE = str(Path(tempfile.gettempdir()) / "studio")
 
 
 class TelegramTransportStateTests(unittest.TestCase):
@@ -107,7 +111,7 @@ class TelegramTransportStateTests(unittest.TestCase):
         queued = state.enqueue_inbox(
             update_id=91,
             chat_id=501,
-            workspace="/tmp/studio",
+            workspace=WORKSPACE,
             project_id="clip-91",
             text="Сделай короче финал",
         )
@@ -124,7 +128,7 @@ class TelegramTransportStateTests(unittest.TestCase):
         kwargs = {
             "update_id": 92,
             "chat_id": 501,
-            "workspace": "/tmp/studio",
+            "workspace": WORKSPACE,
             "project_id": "clip-92",
             "text": "Проверь сценарий",
         }
@@ -165,7 +169,10 @@ class TelegramTransportSetupTests(unittest.TestCase):
             self.assertEqual(
                 store.load(), token
             )
-            self.assertEqual(stat.S_IMODE(token_path.stat().st_mode), 0o600)
+            # Mode 0600 on POSIX, a current-user-only ACL on Windows.
+            self.assertTrue(is_private(token_path))
+            if os.name != "nt":
+                self.assertEqual(stat.S_IMODE(token_path.stat().st_mode), 0o600)
 
     def test_keychain_timeout_becomes_recoverable_runtime_error(self):
         import creator_studio_telegram as transport

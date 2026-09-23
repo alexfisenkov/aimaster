@@ -12,6 +12,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+_SKILL_ROOT = Path(__file__).resolve().parent.parent
+if str(_SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SKILL_ROOT))
+
+from studio.platform_compat import ensure_utf8_stdio  # noqa: E402
+
 
 ROOT_FIELDS = {
     "schema_version",
@@ -258,6 +264,7 @@ def validate_claimed_context(manifest: dict, package: Any) -> None:
 
 
 def main() -> int:
+    ensure_utf8_stdio()
     parser = argparse.ArgumentParser(
         description="Validate an operation-scoped reference binding before generation."
     )

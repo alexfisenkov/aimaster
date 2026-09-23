@@ -6,11 +6,18 @@ from __future__ import annotations
 import datetime as _datetime
 import http.client
 import json
-import os
 from pathlib import Path
+import queue
 import re
-import signal
+import sys
+import threading
 from typing import Any
+
+_SKILL_ROOT = Path(__file__).resolve().parent.parent
+if str(_SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SKILL_ROOT))
+
+from studio.platform_compat import ensure_utf8_stdio  # noqa: E402
 
 
 _HOST = "api.github.com"
@@ -47,20 +54,9 @@ def _read_installed() -> tuple[str, tuple[int, int, int, int]] | None:
     return (value, key) if key is not None else None
 
 
-def _alarm_handler(_signum: int, _frame: Any) -> None:
-    raise _WallTimeout
-
-
-def _fetch_releases() -> Any:
-    if os.name != "posix":
-        raise OSError("unsupported platform")
-
-    previous_handler = signal.getsignal(signal.SIGALRM)
-    connection: http.client.HTTPSConnection | None = None
+def _request_releases() -> Any:
+    connection = http.client.HTTPSConnection(_HOST, timeout=_WALL_TIMEOUT_SECONDS)
     try:
-        signal.signal(signal.SIGALRM, _alarm_handler)
-        signal.setitimer(signal.ITIMER_REAL, _WALL_TIMEOUT_SECONDS)
-        connection = http.client.HTTPSConnection(_HOST, timeout=_WALL_TIMEOUT_SECONDS)
         connection.request(
             "GET",
             _PATH,
@@ -78,12 +74,34 @@ def _fetch_releases() -> Any:
             raise ValueError("release response too large")
         return json.loads(payload)
     finally:
+        connection.close()
+
+
+def _fetch_releases(request=_request_releases, wall_timeout=_WALL_TIMEOUT_SECONDS) -> Any:
+    """Run the lookup on a daemon thread and give up after ``wall_timeout``.
+
+    The socket timeout bounds each read, not the whole exchange; the wall
+    clock is enforced here instead of with ``SIGALRM``, which Windows lacks.
+    A lookup still running at the deadline is abandoned: the thread is a
+    daemon and dies with the process.
+    """
+
+    outcome: queue.Queue = queue.Queue(maxsize=1)
+
+    def worker() -> None:
         try:
-            if connection is not None:
-                connection.close()
-        finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)
-            signal.signal(signal.SIGALRM, previous_handler)
+            outcome.put((True, request()))
+        except BaseException as error:  # noqa: BLE001 - re-raised in the caller
+            outcome.put((False, error))
+
+    threading.Thread(target=worker, name="aimaster-update-check", daemon=True).start()
+    try:
+        succeeded, value = outcome.get(timeout=wall_timeout)
+    except queue.Empty:
+        raise _WallTimeout from None
+    if not succeeded:
+        raise value
+    return value
 
 
 def _latest_release(releases: Any) -> tuple[str, tuple[int, int, int, int]] | None:
@@ -120,6 +138,7 @@ def _check() -> dict[str, str] | None:
 
 
 def main() -> int:
+    ensure_utf8_stdio()
     try:
         update = _check()
     except Exception:

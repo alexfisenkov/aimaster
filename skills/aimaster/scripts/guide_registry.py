@@ -9,14 +9,25 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
-import fcntl
 import hashlib
 import json
 import os
 import re
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+_SKILL_ROOT = Path(__file__).resolve().parent.parent
+if str(_SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SKILL_ROOT))
+
+from studio.platform_compat import (  # noqa: E402
+    ensure_utf8_stdio,
+    file_lock,
+    fsync_directory,
+    replace_file,
+)
 
 
 SCHEMA_VERSION = 1
@@ -195,12 +206,8 @@ def _registry_lock(registry_path: Path):
     registry_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = registry_path.parent / ".guides.lock"
     descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
-    with os.fdopen(descriptor, "a+b") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    with os.fdopen(descriptor, "a+b") as handle, file_lock(handle):
+        yield
 
 
 def _read_registry(path: Path) -> tuple[dict[str, Any], bytes | None]:
@@ -232,12 +239,8 @@ def _atomic_write(path: Path, value: dict[str, Any], baseline: bytes | None) -> 
             handle.write(serialized)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
-        directory = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+        replace_file(temporary, path)
+        fsync_directory(path.parent)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -433,6 +436,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    ensure_utf8_stdio()
     try:
         args = build_parser().parse_args(argv)
         payload = args.handler(args)

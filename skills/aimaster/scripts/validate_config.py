@@ -4,8 +4,15 @@
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
+
+_SKILL_ROOT = Path(__file__).resolve().parent.parent
+if str(_SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SKILL_ROOT))
+
+from studio.platform_compat import ensure_utf8_stdio  # noqa: E402
 
 
 IDENTIFIER = re.compile(r"[a-z][a-z0-9_-]*")
@@ -173,6 +180,7 @@ def validate_config(config, base_dir=None, check_required_files=False):
 
 
 def main():
+    ensure_utf8_stdio()
     parser = argparse.ArgumentParser()
     parser.add_argument("config", type=Path)
     parser.add_argument("--check-required-files", action="store_true")

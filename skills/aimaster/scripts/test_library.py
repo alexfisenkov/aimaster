@@ -28,6 +28,22 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 import creator_studio  # noqa: E402
 from studio import authoring  # noqa: E402
 from studio.library import LibraryError, library_file, library_root, read_index  # noqa: E402
+
+
+def can_symlink() -> bool:
+    """Windows creates symlinks only with Developer Mode or elevation."""
+
+    if not hasattr(os, "symlink"):
+        return False
+    with tempfile.TemporaryDirectory() as directory:
+        try:
+            os.symlink(directory, Path(directory) / "probe", target_is_directory=True)
+        except (OSError, NotImplementedError):
+            return False
+    return True
+
+
+CAN_SYMLINK = can_symlink()
 from studio.library_match import stems  # noqa: E402
 
 
@@ -161,6 +177,14 @@ class LibraryPathTests(Base):
         with self.assertRaises(LibraryError):
             cli("library", "list", self.ws)
 
+    def test_relative_traversal_and_foreign_roots_are_rejected(self):
+        library = library_root(self.ws)
+        for relative in ("../README.md", "/etc/passwd", "C:/Windows/win.ini", "C:x.png",
+                         "other\\..\\..\\x.png", "..\\README.md"):
+            with self.subTest(relative=relative), self.assertRaises(LibraryError):
+                library_file(library, relative)
+
+    @unittest.skipUnless(CAN_SYMLINK, "this account cannot create symlinks")
     def test_symlink_escapes_are_rejected(self):
         outside = self.root / "outside"
         outside.mkdir()
@@ -172,16 +196,17 @@ class LibraryPathTests(Base):
         with self.assertRaises(LibraryError):
             library_file(library, "../README.md")
         (library / "styles").rmdir()
-        os.symlink(outside, library / "styles")
+        os.symlink(outside, library / "styles", target_is_directory=True)
         with self.assertRaises(LibraryError):
             cli("library", "add", self.ws, "--kind", "style", "--label", "s",
                 "--file", self.file("s.png", png_bytes(33)))
 
+    @unittest.skipUnless(CAN_SYMLINK, "this account cannot create symlinks")
     def test_library_symlink_to_outside_is_rejected(self):
         other = self.root / "other-ws"
         cli("workspace", "init", other)
         (other / "library").rename(self.root / "moved")
-        os.symlink(self.root / "moved", other / "library")
+        os.symlink(self.root / "moved", other / "library", target_is_directory=True)
         with self.assertRaises(LibraryError):
             cli("library", "list", other)
 

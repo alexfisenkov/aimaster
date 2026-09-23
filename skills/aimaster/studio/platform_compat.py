@@ -1,0 +1,183 @@
+"""The one place where Aimaster differs between macOS, Linux and Windows.
+
+Everything here is standard library only.  POSIX behaviour is exactly what
+the callers did inline before (``flock``, ``chmod`` 0600/0700, directory
+``fsync``, ``O_NOFOLLOW``); Windows gets the closest native equivalent.
+The ctypes calls into the Windows security API live in ``_windows_security``
+and are imported only on Windows.
+"""
+
+from __future__ import annotations
+
+import os
+import stat
+import sys
+import time
+from contextlib import contextmanager
+from pathlib import Path
+
+IS_WINDOWS = os.name == "nt"
+IS_MACOS = sys.platform == "darwin"
+_LOCK_POLL_SECONDS = 0.05
+
+
+def _descriptor(target) -> int:
+    return target if isinstance(target, int) else target.fileno()
+
+
+@contextmanager
+def file_lock(target):
+    """Hold an exclusive, blocking lock on an open file (or descriptor)."""
+
+    descriptor = _descriptor(target)
+    if IS_WINDOWS:
+        import msvcrt
+
+        # msvcrt locks from the current position: always byte 0, which may
+        # lie past the end of an empty lock file (Windows allows that).
+        while True:
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            try:
+                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                break
+            except OSError:
+                time.sleep(_LOCK_POLL_SECONDS)
+        try:
+            yield
+        finally:
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+        return
+    import fcntl
+
+    fcntl.flock(descriptor, fcntl.LOCK_EX)
+    try:
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+
+
+def is_private(path, *, directory=False) -> bool:
+    """True when only the current user (and the OS itself) can open ``path``.
+
+    POSIX: the mode is exactly 0600 (0700 for a directory).  Windows: every
+    allow entry of the DACL names the current user, SYSTEM, Administrators
+    or the owner-rights SIDs -- checked by SID, so it does not depend on the
+    language of the Windows installation.
+    """
+
+    if IS_WINDOWS:
+        from . import _windows_security
+
+        return _windows_security.is_private(Path(path))
+    expected = 0o700 if directory else 0o600
+    return stat.S_IMODE(os.stat(path).st_mode) == expected
+
+
+def make_private(path, *, directory=False) -> None:
+    """Restrict ``path`` to the current user; raise ``OSError`` on failure."""
+
+    if IS_WINDOWS:
+        from . import _windows_security
+
+        _windows_security.make_private(Path(path), directory=directory)
+        return
+    os.chmod(path, 0o700 if directory else 0o600)
+
+
+def ensure_private(path, *, directory=False) -> bool:
+    """Make ``path`` private and report whether it now is.
+
+    On Windows the (slow) ``icacls`` call is skipped when the ACL is already
+    private, so this is cheap to call on every SQLite connection.
+    """
+
+    if IS_WINDOWS and is_private(path, directory=directory):
+        return True
+    make_private(path, directory=directory)
+    return is_private(path, directory=directory)
+
+
+def fsync_directory(path) -> None:
+    """Persist a rename in ``path``.  Windows cannot open a directory: no-op."""
+
+    if IS_WINDOWS:
+        return
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def replace_file(source, target, *, attempts=20, delay=0.05) -> None:
+    """``os.replace`` that tolerates a reader briefly holding ``target`` on Windows."""
+
+    for attempt in range(attempts):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if not IS_WINDOWS or attempt + 1 == attempts:
+                raise
+            time.sleep(delay)
+
+
+def open_nofollow_flags() -> int:
+    """``O_NOFOLLOW`` where the OS has it, else 0 (pair with ``open_nofollow``)."""
+
+    return getattr(os, "O_NOFOLLOW", 0)
+
+
+def open_nofollow(path, flags, mode=0o600) -> int:
+    """``os.open`` that refuses a symlink at ``path`` on every OS."""
+
+    extra = open_nofollow_flags()
+    if not extra and Path(path).is_symlink():
+        raise OSError(f"refusing to open a symlink: {Path(path).name}")
+    return os.open(path, flags | extra | getattr(os, "O_BINARY", 0), mode)
+
+
+def _home(home=None) -> Path:
+    return Path(home) if home is not None else Path.home()
+
+
+def _env_dir(environ, name, fallback: Path) -> Path:
+    value = (environ or {}).get(name)
+    return Path(value) if value and Path(value).is_absolute() else fallback
+
+
+def user_data_dir(*, home=None, environ=None) -> Path:
+    """Per-user application data (Telegram token, tunnel config)."""
+
+    home = _home(home)
+    environ = os.environ if environ is None else environ
+    if IS_MACOS:
+        return home / "Library" / "Application Support" / "AI Мастерская"
+    if IS_WINDOWS:
+        base = _env_dir(environ, "LOCALAPPDATA", home / "AppData" / "Local")
+        return base / "AI Мастерская"
+    return _env_dir(environ, "XDG_DATA_HOME", home / ".local" / "share") / "aimaster"
+
+
+def user_config_dir(*, home=None, environ=None) -> Path:
+    """Per-user preferences: ``~/.config/aimaster``, ``%APPDATA%\\aimaster``."""
+
+    home = _home(home)
+    environ = os.environ if environ is None else environ
+    if IS_WINDOWS:
+        return _env_dir(environ, "APPDATA", home / "AppData" / "Roaming") / "aimaster"
+    return _env_dir(environ, "XDG_CONFIG_HOME", home / ".config") / "aimaster"
+
+
+def ensure_utf8_stdio() -> None:
+    """Print Cyrillic safely on a cp866/cp1251 Windows console."""
+
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").replace("-", "").lower()
+        reconfigure = getattr(stream, "reconfigure", None)
+        if encoding != "utf8" and reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import copy
-import fcntl
 import json
 import os
 import tempfile
 import threading
 from pathlib import Path
+
+from .platform_compat import file_lock, fsync_directory, replace_file
 
 
 class StoreError(RuntimeError):
@@ -142,12 +143,8 @@ class ProjectStore:
                 handle.write(serialized)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(temporary, path)
-            directory_descriptor = os.open(path.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory_descriptor)
-            finally:
-                os.close(directory_descriptor)
+            replace_file(temporary, path)
+            fsync_directory(path.parent)
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -164,23 +161,19 @@ class ProjectStore:
         state_path = project_path / "state.json"
         lock_path = project_path / ".state.lock"
         with _thread_lock(project_path):
-            with lock_path.open("a+", encoding="utf-8") as lock_handle:
-                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-                try:
-                    current = self._read(project_path)
-                    current_revision = current.get("revision")
-                    if (
-                        isinstance(current_revision, bool)
-                        or not isinstance(current_revision, int)
-                        or current_revision < 0
-                    ):
-                        raise StoreError("stored revision must be a non-negative integer")
-                    if current_revision != expected_revision:
-                        raise RevisionConflict(expected_revision, current_revision)
-                    candidate = copy.deepcopy(current)
-                    mutation(candidate)
-                    candidate["revision"] = current_revision + 1
-                    self._atomic_replace(state_path, candidate)
-                    return copy.deepcopy(candidate)
-                finally:
-                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+            with lock_path.open("a+", encoding="utf-8") as lock_handle, file_lock(lock_handle):
+                current = self._read(project_path)
+                current_revision = current.get("revision")
+                if (
+                    isinstance(current_revision, bool)
+                    or not isinstance(current_revision, int)
+                    or current_revision < 0
+                ):
+                    raise StoreError("stored revision must be a non-negative integer")
+                if current_revision != expected_revision:
+                    raise RevisionConflict(expected_revision, current_revision)
+                candidate = copy.deepcopy(current)
+                mutation(candidate)
+                candidate["revision"] = current_revision + 1
+                self._atomic_replace(state_path, candidate)
+                return copy.deepcopy(candidate)

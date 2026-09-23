@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local setup and launch entrypoint for the macOS Studio Telegram transport.
+"""Local setup and launch entrypoint for the Studio Telegram transport.
 
 Importing this module and rendering ``--help`` are deliberately offline.  The
 Bot API is only constructed by the existing polling entrypoint after ``run``
@@ -12,13 +12,12 @@ import argparse
 import getpass
 import html
 import os
+import queue
 import re
 import secrets
 import shutil
-import select
 import socket
 import ssl
-import stat
 import subprocess
 import sys
 import threading
@@ -36,6 +35,15 @@ if str(_SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(_SKILL_ROOT))
 
 from creator_studio_bot import TelegramApiError, TelegramBotApi, build_ssl_context  # noqa: E402
+from studio.platform_compat import (  # noqa: E402
+    IS_MACOS,
+    IS_WINDOWS,
+    ensure_utf8_stdio,
+    is_private,
+    make_private,
+    open_nofollow,
+    user_data_dir,
+)
 from studio.telegram_bot import TelegramBotState, TelegramBotError  # noqa: E402
 from studio.workspace import PRIVATE_DIR_NAME, resolve_workspace_paths  # noqa: E402
 
@@ -66,9 +74,20 @@ MINI_APP_PORT_VARIABLE = "AIMASTER_MINI_APP_PORT"
 
 
 def _default_fallback_path() -> Path:
-    """Keep the fallback outside project state when setup has no workspace."""
+    """Keep the fallback outside project state when setup has no workspace.
 
-    return Path.home() / "Library" / "Application Support" / "AI Мастерская" / "telegram-bot-token"
+    macOS keeps ``~/Library/Application Support/AI Мастерская`` exactly as
+    before; Windows uses ``%LOCALAPPDATA%\\AI Мастерская`` and Linux the XDG
+    data directory.  A Linux install that already stored its token under the
+    old macOS-style path keeps using it.
+    """
+
+    path = user_data_dir() / "telegram-bot-token"
+    if not IS_MACOS and not IS_WINDOWS and not path.exists():
+        legacy = Path.home() / "Library" / "Application Support" / "AI Мастерская" / "telegram-bot-token"
+        if legacy.exists():
+            return legacy
+    return path
 
 
 def validate_bot_token(token: str) -> str:
@@ -169,11 +188,7 @@ def empty_cloudflared_config(path=None) -> Path:
 
     target = Path(path) if path is not None else _default_cloudflared_config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(
-        target,
-        os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
-        0o600,
-    )
+    descriptor = open_nofollow(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     os.close(descriptor)
     return target
 
@@ -200,30 +215,53 @@ def cloudflared_command(local_url: str, *, config_path=None) -> list[str]:
     ]
 
 
+def _read_until_url(stream, lines):
+    """Hand cloudflared's first lines over until the one carrying the URL.
+
+    A thread instead of ``select`` on the pipe: Windows can only ``select``
+    sockets.  The thread stops right after the URL line, so the supervisor's
+    own drain is then the only reader of the pipe.
+    """
+
+    try:
+        for line in stream:
+            lines.put(line)
+            if _TUNNEL_URL.search(line):
+                return
+    except (OSError, ValueError):
+        pass
+    lines.put(None)
+
+
 def start_cloudflared(local_url: str, *, popen=subprocess.Popen, timeout=12, config_path=None):
     process = popen(
         cloudflared_command(local_url, config_path=config_path),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
     )
-    lines = []
+    lines = queue.Queue()
+    reader = threading.Thread(
+        target=_read_until_url, args=(process.stdout, lines),
+        name="aimaster-tunnel-start", daemon=True,
+    )
+    reader.start()
     deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        ready, _, _ = select.select([process.stdout], [], [], 0.25)
-        if not ready:
-            if process.poll() is not None:
-                break
+    while (remaining := deadline - time.monotonic()) > 0:
+        try:
+            line = lines.get(timeout=min(0.25, remaining))
+        except queue.Empty:
             continue
-        line = process.stdout.readline()
-        if not line:
+        if line is None:
             break
-        lines.append(line)
         match = _TUNNEL_URL.search(line)
         if match:
             # The caller must keep reading this pipe: cloudflared logs for as
             # long as it runs and blocks on a full pipe buffer if nobody does.
+            reader.join()
             return process, match.group(0)
     process.terminate()
     raise RuntimeError("cloudflared did not provide an HTTPS URL")
@@ -595,8 +633,11 @@ class TunnelSupervisor:
                 pass
 
 
+_BINARY = getattr(os, "O_BINARY", 0)
+
+
 class FileSecretStore:
-    """Mode-0600 local fallback for test environments without macOS Keychain."""
+    """Owner-only local fallback: mode 0600 on POSIX, a user-only ACL on Windows."""
 
     def __init__(self, path):
         self.path = Path(path)
@@ -604,28 +645,32 @@ class FileSecretStore:
     def store(self, value: str):
         value = validate_bot_token(value)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        os.chmod(self.path.parent, 0o700)
+        make_private(self.path.parent, directory=True)
         descriptor = os.open(
             self.path,
-            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _BINARY,
             0o600,
         )
         try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(value)
                 handle.write("\n")
         finally:
             # fdopen closes on normal and exceptional writes.  The explicit
             # permission repair also protects an existing file with old mode.
-            os.chmod(self.path, 0o600)
+            make_private(self.path)
 
     def load(self) -> str:
         try:
-            mode = stat.S_IMODE(self.path.stat().st_mode)
+            private = is_private(self.path)
         except FileNotFoundError:
             raise RuntimeError("Telegram token is not configured") from None
-        if mode != 0o600:
-            raise RuntimeError("Telegram token fallback file must have mode 0600")
+        except OSError:
+            if not self.path.exists():
+                raise RuntimeError("Telegram token is not configured") from None
+            raise RuntimeError("Telegram token fallback file cannot be read") from None
+        if not private:
+            raise RuntimeError("Telegram token fallback file must have mode 0600 (owner-only access)")
         try:
             value = self.path.read_text(encoding="utf-8").rstrip("\n")
         except OSError:
@@ -657,6 +702,8 @@ class KeychainSecretStore:
                 ],
                 input=f"{value}\n",
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
@@ -680,6 +727,8 @@ class KeychainSecretStore:
                     "-w",
                 ],
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 check=False,
@@ -692,10 +741,67 @@ class KeychainSecretStore:
         return validate_bot_token(result.stdout.rstrip("\n"))
 
 
-class LocalSecretStore:
-    """Prefer Keychain, then use the private workspace fallback if unavailable."""
+class DpapiSecretStore:
+    """Windows: the token encrypted with DPAPI for the current user only.
 
-    def __init__(self, fallback_path, *, keychain_factory=KeychainSecretStore):
+    Only this Windows account on this computer can decrypt the file; the
+    owner-only ACL on it is a second, best-effort layer.
+    """
+
+    _ENTROPY = b"aimaster-telegram-bot-token"
+
+    def __init__(self, path=None):
+        if not IS_WINDOWS:
+            raise RuntimeError("Windows DPAPI is unavailable")
+        self.path = Path(path) if path is not None else (
+            _default_fallback_path().with_name("telegram-bot-token.dpapi")
+        )
+
+    def store(self, value: str):
+        from studio import _windows_security
+
+        value = validate_bot_token(value)
+        try:
+            sealed = _windows_security.protect(value.encode("utf-8"), self._ENTROPY)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            descriptor = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _BINARY, 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(sealed)
+        except OSError:
+            raise RuntimeError("Windows DPAPI could not store the Telegram token") from None
+        try:
+            make_private(self.path)
+        except OSError:
+            pass
+
+    def load(self) -> str:
+        from studio import _windows_security
+
+        try:
+            sealed = self.path.read_bytes()
+        except FileNotFoundError:
+            raise RuntimeError("Telegram token is not configured") from None
+        except OSError:
+            raise RuntimeError("Telegram token file cannot be read") from None
+        try:
+            value = _windows_security.unprotect(sealed, self._ENTROPY).decode("utf-8")
+        except (OSError, UnicodeError):
+            raise RuntimeError("Windows DPAPI could not decrypt the Telegram token") from None
+        return validate_bot_token(value)
+
+
+def _platform_secret_store():
+    """macOS Keychain, Windows DPAPI; Linux raises and the file store is used."""
+
+    if IS_WINDOWS:
+        return DpapiSecretStore()
+    return KeychainSecretStore()
+
+
+class LocalSecretStore:
+    """Prefer the OS secret store, then the private file fallback if unavailable."""
+
+    def __init__(self, fallback_path, *, keychain_factory=_platform_secret_store):
         self.fallback = FileSecretStore(fallback_path)
         try:
             self.keychain = keychain_factory()
@@ -726,12 +832,12 @@ class PairingCodeStore(FileSecretStore):
     def store_new(self) -> str:
         code = secrets.token_urlsafe(18)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        descriptor = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _BINARY, 0o600)
         try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(code + "\n")
         finally:
-            os.chmod(self.path, 0o600)
+            make_private(self.path)
         return code
 
 
@@ -751,6 +857,7 @@ def build_parser():
 
 
 def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
+    ensure_utf8_stdio()
     args = build_parser().parse_args(argv)
     try:
         if args.command == "setup":

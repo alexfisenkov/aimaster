@@ -8,7 +8,7 @@ import sqlite3
 import stat
 import struct
 import zlib
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from .questions import secure_sqlite_path
 from .workspace import ASSETS_DB_NAME, PRIVATE_DIR_NAME
@@ -924,11 +924,14 @@ class AssetIndex:
     def _resolve_candidate(self, path) -> Path:
         if not isinstance(path, (str, os.PathLike)):
             raise AssetValidationError("path must be relative to the project root")
-        raw = os.fspath(path)
+        # A stored `relative_path` is POSIX text; on Windows `Path()` of it
+        # would turn every `/` into the `\\` refused just below.
+        raw = path.as_posix() if isinstance(path, PurePath) else os.fspath(path)
         if not raw or "\x00" in raw or "\\" in raw:
             raise AssetValidationError("path must be a portable relative path")
         candidate = Path(raw)
-        if candidate.is_absolute() or ".." in candidate.parts:
+        # `anchor` also catches Windows' rooted `\x` and drive-relative `C:x`.
+        if candidate.anchor or ".." in candidate.parts:
             raise AssetValidationError("absolute paths and traversal are forbidden")
         try:
             resolved = (self.root / candidate).resolve(strict=True)

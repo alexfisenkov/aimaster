@@ -20,6 +20,12 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
+_SKILL_ROOT = Path(__file__).resolve().parent.parent
+if str(_SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SKILL_ROOT))
+
+from studio.platform_compat import IS_WINDOWS, ensure_utf8_stdio, user_config_dir  # noqa: E402
+
 try:
     import tomllib
 except ModuleNotFoundError:  # Python < 3.11
@@ -87,7 +93,7 @@ def safe_host(url: object) -> str | None:
 
 def short(path: Path, home: Path) -> str:
     try:
-        return "~/" + str(path.relative_to(home))
+        return "~/" + path.relative_to(home).as_posix()
     except ValueError:
         return str(path)
 
@@ -300,9 +306,14 @@ def collect(home: Path, cwd: Path, env_vars: dict[str, str]) -> dict:
 
 
 def read_preferences(home: Path, env_vars: dict[str, str]) -> dict:
-    xdg = env_vars.get("XDG_CONFIG_HOME")
-    base = Path(xdg) if xdg and Path(xdg).is_absolute() else home / ".config"
-    path = base / "aimaster" / "preferences.json"
+    # ~/.config/aimaster (or $XDG_CONFIG_HOME) on macOS/Linux,
+    # %APPDATA%\aimaster on Windows, where ~/.config/aimaster still counts.
+    path = user_config_dir(home=home, environ=env_vars) / "preferences.json"
+    if IS_WINDOWS and not path.exists():
+        xdg = env_vars.get("XDG_CONFIG_HOME")
+        base = Path(xdg) if xdg and Path(xdg).is_absolute() else home / ".config"
+        if (base / "aimaster" / "preferences.json").exists():
+            path = base / "aimaster" / "preferences.json"
     data, error = read_file(path, "json")
     result: dict = {"file": short(path, home)}
     if error:
@@ -384,6 +395,7 @@ def render_text(report: dict) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description="List configured MCP servers without secrets.")
     parser.add_argument("--json", action="store_true", help="print JSON instead of Russian text")
     parser.add_argument("--cwd", default=os.getcwd(), help="folder whose project configs to read")

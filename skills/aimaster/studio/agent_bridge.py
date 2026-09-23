@@ -7,8 +7,9 @@ for questions, grants, collection and provider-specific work.
 
 from __future__ import annotations
 
-import subprocess
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -29,10 +30,12 @@ def _required_text(item: dict, key: str) -> str:
 
 def build_codex_command(workspace: Path | str) -> list[str]:
     root = Path(workspace)
-    if not root.is_absolute() or root == Path("/"):
+    if not root.is_absolute() or root == Path(root.anchor):
         raise AgentBridgeError("bridge workspace must be an absolute non-root path")
+    # `which` also finds `codex.cmd`/`codex.exe` on Windows, which a bare
+    # name passed to CreateProcess would miss.
     return [
-        "codex",
+        shutil.which("codex") or "codex",
         "exec",
         "-C",
         str(root),
@@ -71,6 +74,8 @@ def run_codex_item(item: dict, *, runner=subprocess.run, timeout=DEFAULT_TIMEOUT
             build_codex_command(Path(workspace)),
             input=prompt,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             timeout=timeout,
             check=False,
@@ -96,6 +101,8 @@ def _sanitize_output(text: str) -> str:
     text = re.sub(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b", "[api-key-redacted]", text)
     text = re.sub(r"(?i)authorization\s*:\s*bearer\s+[^\s]+", "Authorization: Bearer [redacted]", text)
     text = re.sub(r"/(?:Users|private|var/folders|tmp)/[^\s`\"']+", "[local-path-redacted]", text)
+    text = re.sub(r"(?i)\b[A-Z]:[\\/](?:Users|Documents and Settings)[\\/][^\s`\"']+",
+                  "[local-path-redacted]", text)
     text = re.sub(r"(?i)(api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+", r"\1=[redacted]", text)
     return text
 

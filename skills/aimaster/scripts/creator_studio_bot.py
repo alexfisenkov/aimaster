@@ -26,6 +26,7 @@ _SKILL_ROOT = Path(__file__).resolve().parent.parent
 if str(_SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(_SKILL_ROOT))
 
+from studio.platform_compat import ensure_utf8_stdio  # noqa: E402
 from studio.telegram_bot import TelegramBotController, TelegramBotError  # noqa: E402
 
 
@@ -115,7 +116,8 @@ def _macos_system_roots() -> str:
     try:
         completed = subprocess.run(
             ["security", "find-certificate", "-a", "-p", keychain],
-            capture_output=True, text=True, timeout=15, check=False,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=15, check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return ""
@@ -360,6 +362,7 @@ def main(
     storage, so it does not need to recreate a credential-bearing environment.
     """
 
+    ensure_utf8_stdio()
     args = build_parser().parse_args(argv)
     environment = os.environ if environ is None else environ
     if credential is None:

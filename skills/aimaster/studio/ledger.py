@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .platform_compat import make_private
 from .status_messages import STATUS_MESSAGE_RU
 from .store import RevisionConflict
 
@@ -385,7 +386,7 @@ class ActionLedger:
         finally:
             connection.close()
         try:
-            os.chmod(self.db_path, 0o600)
+            make_private(self.db_path)
         except OSError:
             pass
 

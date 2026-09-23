@@ -50,6 +50,7 @@ from studio.domain import derive_view_stage  # noqa: E402
 from studio.ledger import GRANT_REQUIRED_ACTIONS, TERMINAL_STATUSES, LedgerError  # noqa: E402
 from studio.questions import QUESTION_KINDS, QuestionError, QuestionNotFound  # noqa: E402
 from studio.runner import open_ledger, open_runner  # noqa: E402
+from studio.platform_compat import ensure_utf8_stdio  # noqa: E402
 from studio.server import serve  # noqa: E402
 from studio.store import StoreError  # noqa: E402
 from studio.workspace import WorkspaceError  # noqa: E402
@@ -1212,6 +1213,7 @@ DOMAIN_ERROR_EXIT_CODE = 3
 
 
 def main():
+    ensure_utf8_stdio()
     parser = build_parser()
     args = parser.parse_args()
     try:

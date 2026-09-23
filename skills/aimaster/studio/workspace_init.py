@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .platform_compat import IS_WINDOWS, make_private
 from .library import INDEX_NAME, KIND_FOLDERS, LIBRARY_DIR_NAME, SCHEMA_VERSION, write_index_atomic
 from .workspace import PRIVATE_DIR_NAME
 
@@ -48,6 +49,9 @@ def _ensure_dir(path: Path, root: Path, created: list, *, mode=0o755) -> None:
             raise ValueError(f"{path.relative_to(root)} exists and is not a directory")
         return
     path.mkdir(mode=mode)
+    if IS_WINDOWS and mode == 0o700:
+        # `mkdir(mode=)` is ignored on Windows; an owner-only ACL stands in.
+        make_private(path, directory=True)
     created.append(path.relative_to(root).as_posix() + "/")
 
 
