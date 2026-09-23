@@ -57,7 +57,7 @@ const READINESS_REASONS = Object.freeze({
   blocked: "сначала ответьте агенту в чате",
   already_approved: "шаг уже одобрен",
   incomplete_storyboard: "не закончена раскадровка",
-  missing_prompts: "не у всех позиций есть промпт",
+  missing_prompts: "не для всего написаны промпты",
   unaccepted_positions: "не приняты обязательные результаты",
   missing_final_material: "нет финального материала",
 });
