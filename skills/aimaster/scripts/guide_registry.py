@@ -107,7 +107,8 @@ def _require_relative_path(value: Any, label: str = "path") -> Path:
     if not isinstance(value, str) or not value or "\x00" in value:
         raise RegistryError(f"{label} must be a non-empty relative path")
     path = Path(value)
-    if path.is_absolute() or value.startswith("~") or ".." in path.parts or "." in path.parts:
+    # `anchor` is also set for Windows' rooted `\x` and drive-relative `C:x`.
+    if path.anchor or value.startswith("~") or ".." in path.parts or "." in path.parts:
         raise RegistryError(f"{label} must stay below the instructions directory")
     return path
 

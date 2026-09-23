@@ -43,6 +43,7 @@ from creator_studio_bot import (  # noqa: E402
     build_ssl_context,
     resolve_api_origin,
 )
+from studio.platform_compat import user_data_dir  # noqa: E402
 from studio.telegram_bot import TelegramBotState  # noqa: E402
 from studio.workspace import resolve_workspace_paths  # noqa: E402
 
@@ -434,6 +435,8 @@ class TelegramTransportEndToEndTests(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=60,
         )
@@ -446,9 +449,11 @@ class TelegramTransportEndToEndTests(unittest.TestCase):
     def _store_synthetic_token(cls):
         from creator_studio_telegram import FileSecretStore
 
-        token_path = (
-            cls.home / "Library" / "Application Support" / "AI Мастерская" / "telegram-bot-token"
-        )
+        # Wherever the transport itself will look under this synthetic home:
+        # Application Support on macOS, %LOCALAPPDATA% on Windows, XDG on Linux.
+        token_path = user_data_dir(
+            home=cls.home, environ=cls._transport_environment()
+        ) / "telegram-bot-token"
         FileSecretStore(token_path).store(SYNTHETIC_TOKEN)
         cls.token_path = token_path
 
@@ -458,15 +463,33 @@ class TelegramTransportEndToEndTests(unittest.TestCase):
         TelegramBotState(private_root / "telegram_bot.sqlite3").pair_owner(OWNER_ID)
 
     @classmethod
-    def _start_transport(cls):
+    def _transport_environment(cls):
         environment = {
             "HOME": str(cls.home),
             "PATH": str(cls.empty_path),
             "LANG": "en_US.UTF-8",
             "PYTHONIOENCODING": "utf-8",
             "PYTHONPATH": str(_SKILL_ROOT),
-            API_ORIGIN_VARIABLE: cls.api.origin,
         }
+        api = getattr(cls, "api", None)
+        if api is not None:
+            environment[API_ORIGIN_VARIABLE] = api.origin
+        if os.name == "nt":
+            # Windows finds the profile through USERPROFILE, not HOME, and
+            # Python itself needs the system root to start.
+            environment.update(
+                USERPROFILE=str(cls.home),
+                LOCALAPPDATA=str(cls.home / "AppData" / "Local"),
+                APPDATA=str(cls.home / "AppData" / "Roaming"),
+            )
+            for name in ("SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "TEMP", "TMP"):
+                if name in os.environ:
+                    environment[name] = os.environ[name]
+        return environment
+
+    @classmethod
+    def _start_transport(cls):
+        environment = cls._transport_environment()
         cls.api.note("api_origin", cls.api.origin)
         cls.process = subprocess.Popen(
             [
@@ -480,6 +503,8 @@ class TelegramTransportEndToEndTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             env=environment,
         )
 

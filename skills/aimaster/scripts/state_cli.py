@@ -222,7 +222,8 @@ def require_portable_relative_path(value, label="artifact"):
         or any(not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", part) for part in path.parts)
     ):
         raise ValueError(f"{label} must be a portable relative path")
-    return str(path)
+    # Forward slashes on every OS: the state file travels between machines.
+    return path.as_posix()
 
 
 def require_existing_project_file(project_dir, value, label="artifact"):

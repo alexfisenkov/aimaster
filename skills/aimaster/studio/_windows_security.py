@@ -6,6 +6,7 @@ Imported lazily and only on Windows; nothing here runs on macOS or Linux.
 from __future__ import annotations
 
 import ctypes
+import os
 import subprocess
 from ctypes import wintypes
 from functools import lru_cache
@@ -130,8 +131,10 @@ def is_private(path: Path) -> bool:
 
 def make_private(path: Path, *, directory: bool = False) -> None:
     rights = "(OI)(CI)(F)" if directory else "(F)"
+    # The system copy, not whatever `icacls` comes first on PATH.
+    system_copy = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "icacls.exe")
     command = [
-        "icacls", str(path), "/inheritance:r",
+        system_copy if os.path.isfile(system_copy) else "icacls", str(path), "/inheritance:r",
         "/grant:r", f"*{current_user_sid()}:{rights}",
     ]
     try:
