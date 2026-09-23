@@ -1,3 +1,9 @@
+// Окно «запрос агенту» (редизайн 2026-09-23): белое, радиус 18, не шире
+// 560px; на телефоне выезжает шторкой снизу (это CSS). Текст промпта
+// строит вызывающий — здесь он только показывается и копируется.
+
+import { showToast } from "./v2/toast.js";
+
 let dialogRefs = null;
 let returnFocus = null;
 
@@ -49,7 +55,8 @@ function buildDialog() {
   const close = document.createElement("button");
   close.type = "submit";
   close.textContent = "Закрыть";
-  controls.append(copy, close);
+  close.className = "chat-prompt-close";
+  controls.append(close, copy);
   form.append(heading, description, attachment, textarea, status, controls);
   dialog.append(form);
   dialog.setAttribute("aria-labelledby", heading.id);
@@ -59,8 +66,11 @@ function buildDialog() {
   copy.addEventListener("click", async () => {
     try {
       await copyText(textarea);
+      status.dataset.tone = "ok";
       status.textContent = "Скопировано. Вернитесь в чат и отправьте запрос агенту.";
+      showToast("Запрос скопирован");
     } catch {
+      status.dataset.tone = "warn";
       status.textContent = "Не удалось скопировать автоматически. Выделите текст и скопируйте вручную.";
       textarea.focus();
       textarea.select();
@@ -85,6 +95,7 @@ export function openAgentPrompt({ title, prompt, attachmentHint = "", trigger = 
   dialogRefs.attachment.textContent = attachmentHint;
   dialogRefs.attachment.hidden = !attachmentHint;
   dialogRefs.status.textContent = "";
+  delete dialogRefs.status.dataset.tone;
   dialogRefs.dialog.showModal();
   dialogRefs.textarea.focus();
 }

@@ -6,8 +6,10 @@
 
 import { buildSimpleButton, buildStatusLine } from "../card-forms.js";
 import { agentControl, exactTarget } from "../agent-control.js";
-import { primaryAction, screenForStage } from "./screen-map.js";
-import { el } from "./dom.js";
+import { SCREEN_LABELS, primaryAction, projectFinished, screenForStage } from "./screen-map.js";
+import { el, openViewer } from "./dom.js";
+import { requestScreen } from "./path-nav.js";
+import { openSheet } from "./sheet.js";
 
 /**
  * Чем одобряется каждая стадия. Пять стадий-вех сервер принимает общим
@@ -26,8 +28,9 @@ const DIRECT_STAGES = Object.freeze({
 
 /** Готовые тексты подвала, когда решать здесь нечего. */
 export const FOOTER_NOTICES = Object.freeze({
-  past: "Этот шаг уже пройден — здесь он открыт только на просмотр.",
-  done: "Ролик принят — проект завершён.",
+  past: "Шаг одобрен. Вы смотрите пройденный экран.",
+  done: "Проект завершён. Все шаги одобрены.",
+  ready: "Всё решено — можно одобрять.",
 });
 
 /**
@@ -57,32 +60,113 @@ export function footerMode(snapshot, { screen, stage } = {}) {
   return direct ? "decide" : "chat";
 }
 
+function note(text, hook) {
+  const line = el("p", "v2-footer-note", text);
+  if (hook) line.dataset.hook = hook;
+  return line;
+}
+
+/** Открыть просмотрщик на месте пункта; у причины от сервера места нет. */
+function goTo(item, trigger) {
+  if (!item?.target) return;
+  openViewer(item.target, { tab: item.tab || undefined, slot: item.slot || undefined, trigger });
+}
+
+/** Десктоп: «Осталось решить:» и янтарные чипсы, каждый — в просмотрщик. */
+function remainingChips(items) {
+  const box = el("div", "v2-footer-remaining");
+  box.dataset.hook = "v2-remaining";
+  box.append(el("span", "v2-footer-remaining-label", "Осталось решить:"));
+  const list = el("ul", "v2-footer-chips");
+  for (const item of items) {
+    const li = el("li");
+    let chip;
+    if (item.target) {
+      chip = el("button", "v2-footer-chip", item.label);
+      chip.type = "button";
+      chip.dataset.hook = "v2-remaining-item";
+      chip.title = "Открыть это место";
+      chip.addEventListener("click", () => goTo(item, chip));
+    } else {
+      chip = el("span", "v2-footer-chip", item.label);
+    }
+    li.append(chip);
+    list.append(li);
+  }
+  box.append(list);
+  return box;
+}
+
+/** Телефон: одна плашка «Осталось решить: N · показать ›» → шторка. */
+function remainingPlate(items) {
+  const plate = el("button", "v2-footer-plate");
+  plate.type = "button";
+  plate.dataset.hook = "v2-remaining-plate";
+  plate.append(
+    el("span", "", `Осталось решить: ${items.length}`),
+    el("span", "v2-footer-plate-more", "показать ›"),
+  );
+  plate.addEventListener("click", () => openSheet({
+    title: "Осталось решить",
+    returnFocus: plate,
+    items: items.map((item) => ({
+      label: item.label,
+      hint: item.target ? "" : "подробности — у агента в чате",
+      onSelect: () => goTo(item, plate),
+    })),
+  }));
+  return plate;
+}
+
+/** «Вернуться к шагу …» с пройденного экрана на текущий шаг проекта. */
+function backButton(project, finished) {
+  const screen = screenForStage(project?.stage);
+  if (!screen) return null;
+  const label = `Вернуться к шагу «${finished ? SCREEN_LABELS.assembly : SCREEN_LABELS[screen]}»`;
+  const button = el("button", "v2-primary v2-primary-back", label);
+  button.type = "button";
+  button.dataset.hook = "v2-back-to-stage";
+  button.addEventListener("click", () => requestScreen(screen, button));
+  return button;
+}
+
 /**
  * @param {object} snapshot весь snapshot (нужны `revision` и `view_stage`)
  * @param {{screen?: string}} [options] какой экран открыт: на пройденном
- *   шаге кнопки нет вовсе — путь открывает его только на просмотр.
- * @returns {HTMLElement} `<footer>` экрана
+ *   шаге вместо одобрения — возврат к текущему шагу проекта.
+ * @returns {HTMLElement} `<footer>` экрана; оболочка переносит его в
+ *   липкую полосу внизу страницы (`shell.js`).
  */
 export function renderFooter(snapshot, { screen } = {}) {
   const project = snapshot?.active_project;
   const action = primaryAction(project);
   const mode = footerMode(snapshot, { screen, stage: action.stage });
-  if (mode === "past" || mode === "done") {
-    const notice = el("footer", "v2-footer");
-    notice.dataset.hook = "v2-footer";
-    notice.append(el("p", "v2-footer-summary", FOOTER_NOTICES[mode]));
-    return notice;
-  }
-
   const footer = el("footer", "v2-footer");
   footer.dataset.hook = "v2-footer";
-  const summary = el("p", "v2-footer-summary");
-  summary.dataset.hook = "v2-remaining";
-  summary.textContent = action.remaining.length
-    ? `Осталось решить: ${action.remaining.join("; ")}.`
-    : "Всё решено — можно одобрять.";
-  const status = buildStatusLine();
+  footer.dataset.mode = mode;
+  const inner = el("div", "v2-footer-inner");
+  const left = el("div", "v2-footer-left");
   const row = el("div", "v2-footer-buttons");
+  footer.append(inner);
+  inner.append(left, row);
+
+  if (mode === "past" || mode === "done") {
+    const finished = projectFinished(snapshot);
+    left.append(note(finished ? FOOTER_NOTICES.done : FOOTER_NOTICES.past, "v2-footer-summary"));
+    if (mode === "past") {
+      const back = backButton(project, finished);
+      if (back) row.append(back);
+    }
+    return footer;
+  }
+
+  if (action.items.length) {
+    left.append(remainingChips(action.items), remainingPlate(action.items));
+  } else {
+    left.append(note(FOOTER_NOTICES.ready, "v2-remaining"));
+  }
+  const status = buildStatusLine();
+  status.classList.add("v2-footer-status");
 
   const actionType = DIRECT_STAGES[action.stage];
   if (mode === "decide") {
@@ -105,13 +189,13 @@ export function renderFooter(snapshot, { screen } = {}) {
       title: action.label,
       targetId: action.stage,
       action: "approve-stage-chat",
-      className: "v2-chat-button v2-primary",
+      className: "v2-primary",
       prompt: `Открой ${exactTarget({ projectId: project?.id, targetId: action.stage, revision: snapshot?.revision })}. `
         + `Проверь готовность этого шага и обязательные результаты. Если что-то не решено — перечисли и ничего не меняй; `
         + `иначе одобри шаг штатной командой Creator Studio и скажи, что стало дальше.`,
     }));
   }
 
-  footer.append(summary, row, status);
+  inner.append(status);
   return footer;
 }

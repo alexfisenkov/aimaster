@@ -54,7 +54,27 @@ function buildSkeleton(root) {
   brand.className = "rail-brand";
   const name = document.createElement("span");
   name.textContent = "AI Мастерская";
-  brand.append(name);
+  // Свернуть панель (v2): «‹» на десктопе, «✕» на телефоне — какой знак
+  // виден, решает CSS; слушает `ui/v2/rail-drawer.js`. В v1 кнопки нет.
+  const hide = document.createElement("button");
+  hide.type = "button";
+  hide.className = "rail-hide";
+  hide.dataset.hook = "rail-hide";
+  hide.setAttribute("aria-label", "Скрыть панель проектов");
+  hide.title = "Скрыть панель проектов";
+  const wide = document.createElement("span");
+  wide.className = "rail-hide-wide";
+  wide.setAttribute("aria-hidden", "true");
+  wide.textContent = "‹";
+  const narrow = document.createElement("span");
+  narrow.className = "rail-hide-narrow";
+  narrow.setAttribute("aria-hidden", "true");
+  narrow.textContent = "✕";
+  hide.append(wide, narrow);
+  hide.addEventListener("click", () => {
+    document.dispatchEvent(new CustomEvent("studio:rail-hide", { bubbles: true }));
+  });
+  brand.append(name, hide);
 
   const searchWrap = document.createElement("div");
   searchWrap.className = "rail-search";

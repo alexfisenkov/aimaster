@@ -1,7 +1,8 @@
 // «Осталось решить: …» — собственный подсчёт нерешённого, который
 // дашборд делает поверх серверного `stage_readiness` (спецификация §3).
 // Сервер отвечает одним кодом причины; здесь мы называем человеку
-// конкретные места, где ещё нет выбора. Чистые функции, без DOM.
+// конкретные места, где ещё нет выбора, и куда за ним идти: каждый пункт
+// несёт адрес для просмотрщика (`studio:open-viewer`). Чистые функции.
 
 import { AUDIO_LAYERS } from "./audio-model.js";
 import { selectedResultVersion } from "./variants.js";
@@ -17,12 +18,27 @@ function sceneName(scene, position) {
   return title ? `Сцена ${position} «${title}»` : `Сцена ${position}`;
 }
 
+/**
+ * Один пункт «осталось решить».
+ * @param {string} label что сказать человеку
+ * @param {{kind: string, id: string}|null} target что открыть в просмотрщике
+ * @param {string} [tab] вкладка просмотрщика
+ * @param {string} [slot] слот кадра (`first`/`last`/`video`)
+ */
+function entry(label, target = null, tab = null, slot = null) {
+  return { label, target, tab, slot };
+}
+
 /** Референсы, которые решено генерировать, но вариант ещё не выбран. */
 function referencesWithoutChoice(project) {
   return (project?.references || [])
     .filter((item) => item?.source === "generate" && item.kind !== "video")
     .filter((item) => !selectedResultVersion(project, { referenceId: item.reference_id }))
-    .map((item) => `референс «${item.label || item.reference_id}»`);
+    .map((item) => entry(
+      `референс «${item.label || item.reference_id}»`,
+      { kind: "reference", id: item.reference_id },
+      "frames",
+    ));
 }
 
 /** Слоты кадров, отмеченные в плане (`need_first`/`need_last`) и пустые. */
@@ -32,7 +48,12 @@ function framesWithoutChoice(project) {
     for (const [slot, need, word] of [["first", "need_first", "первый кадр"], ["last", "need_last", "последний кадр"]]) {
       if (scene?.[need] !== true) continue;
       if (selectedResultVersion(project, { sceneId: scene.scene_id, slot })) continue;
-      out.push(`${sceneName(scene, index + 1)}: ${word}`);
+      out.push(entry(
+        `${sceneName(scene, index + 1)}: ${word}`,
+        { kind: "scene", id: scene.scene_id },
+        "frames",
+        slot,
+      ));
     }
   });
   return out;
@@ -41,12 +62,43 @@ function framesWithoutChoice(project) {
 /** Сцены без выбранного клипа — только при «кадр за кадром». */
 function clipsWithoutChoice(project) {
   if (project?.gen_mode === "one_shot") {
-    return selectedResultVersion(project, { sceneId: "oneshot" }) ? [] : ["клип всего ролика"];
+    return selectedResultVersion(project, { sceneId: "oneshot" })
+      ? []
+      : [entry("клип всего ролика", { kind: "scene", id: "oneshot" }, "video", "video")];
   }
   return scenesInOrder(project)
     .map((scene, index) => [scene, index + 1])
     .filter(([scene]) => !selectedResultVersion(project, { sceneId: scene.scene_id, slot: "video" }))
-    .map(([scene, position]) => `${sceneName(scene, position)}: клип`);
+    .map(([scene, position]) => entry(
+      `${sceneName(scene, position)}: клип`,
+      { kind: "scene", id: scene.scene_id },
+      "video",
+      "video",
+    ));
+}
+
+const PROMPT_TABS = Object.freeze({
+  image_prompts: "frames",
+  motion_prompts: "video",
+  audio_prompts: "audio",
+});
+
+/** Куда вести за устаревшим промптом: владелец позиции в просмотрщике. */
+function promptOwnerTarget(position, collection) {
+  if (position.kind === "reference" && position.tag) {
+    return { target: { kind: "reference", id: position.tag }, tab: "frames" };
+  }
+  if (position.kind === "audio" && position.layer) {
+    return { target: { kind: "layer", id: position.layer }, tab: "audio" };
+  }
+  if (position.kind === "oneshot") {
+    return { target: { kind: "scene", id: "oneshot" }, tab: "video", slot: "video" };
+  }
+  if (position.scene_id) {
+    const slot = position.kind === "last_frame" ? "last" : position.kind === "video" ? "video" : "first";
+    return { target: { kind: "scene", id: position.scene_id }, tab: PROMPT_TABS[collection] || "frames", slot };
+  }
+  return { target: null };
 }
 
 /** Чей это промпт — словами, по позиции активного плана. */
@@ -82,20 +134,23 @@ function stalePrompts(project, collections) {
       if (prompt?.stale !== true) continue;
       const position = positions.find((item) => item.prompt_group_id === prompt.prompt_id);
       if (!position) continue;
-      out.push(`промпт ${promptOwnerName(project, position)} устарел`);
+      const place = promptOwnerTarget(position, collection);
+      out.push(entry(`промпт ${promptOwnerName(project, position)} устарел`, place.target, place.tab, place.slot));
     }
   }
   return out;
 }
 
 /**
- * Что ещё не решено на этой стадии — готовыми строками для человека.
+ * Что ещё не решено на этой стадии — с адресом для просмотрщика.
  *
  * @param {object} project `snapshot.active_project`
  * @param {string} [stage] стадия; по умолчанию `project.stage`
- * @returns {string[]} пустой список означает «решать нечего»
+ * @returns {{label: string, target: {kind: string, id: string}|null,
+ *            tab: string|null, slot: string|null}[]}
+ *   пустой список означает «решать нечего»
  */
-export function unresolvedItems(project, stage = project?.stage) {
+export function unresolvedEntries(project, stage = project?.stage) {
   if (!project || typeof project !== "object") return [];
   if (stage === "image_plan") {
     return [...referencesWithoutChoice(project), ...stalePrompts(project, ["image_prompts"])];
@@ -117,4 +172,12 @@ export function unresolvedItems(project, stage = project?.stage) {
     return [];
   }
   return stalePrompts(project, PROMPT_COLLECTIONS);
+}
+
+/**
+ * Те же пункты готовыми строками — для счёта и старых потребителей.
+ * @returns {string[]}
+ */
+export function unresolvedItems(project, stage = project?.stage) {
+  return unresolvedEntries(project, stage).map((item) => item.label);
 }

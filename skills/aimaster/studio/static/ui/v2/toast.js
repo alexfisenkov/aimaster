@@ -24,6 +24,10 @@ export function showToast(text) {
   const value = typeof text === "string" ? text.trim() : "";
   if (!value) return;
   const toast = ensureNode();
+  // Модальный `<dialog>` лежит в верхнем слое, и никакой z-index его не
+  // перекроет: пока такой открыт, тост живёт внутри него.
+  const host = document.querySelector("dialog[open]") || document.body;
+  if (toast.parentNode !== host) host.append(toast);
   toast.textContent = value;
   toast.hidden = false;
   clearTimeout(timer);
