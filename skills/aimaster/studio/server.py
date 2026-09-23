@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 import threading
 from dataclasses import dataclass, field
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 from .assets import AssetIndex
@@ -14,6 +14,7 @@ from .decisions import DecisionWorker
 from .events import LedgerEventSource
 from .http_app import MAX_BODY_BYTES, StudioApplication
 from .ledger import ActionLedger
+from .loopback_http import LoopbackThreadingHTTPServer
 from .questions import QuestionStore
 from .store import ProjectStore
 from .workspace import (
@@ -25,7 +26,7 @@ from .workspace import (
 )
 
 
-class _LoopbackHTTPServer(ThreadingHTTPServer):
+class _LoopbackHTTPServer(LoopbackThreadingHTTPServer):
     daemon_threads = True
 
     def handle_error(self, request, client_address):

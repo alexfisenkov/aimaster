@@ -363,5 +363,30 @@ class MiniAppBrowserAdapterTests(unittest.TestCase):
         self.assertEqual(result["notices"], [])
 
 
+class LoopbackBindTests(unittest.TestCase):
+    """Binding 127.0.0.1 must not wait on a reverse DNS lookup (slow resolvers)."""
+
+    def test_servers_start_without_getfqdn(self):
+        from unittest import mock
+
+        from studio.server import serve
+
+        def refuse(*args, **kwargs):
+            raise AssertionError("server_bind must not resolve 127.0.0.1")
+
+        with mock.patch("socket.getfqdn", side_effect=refuse), \
+                tempfile.TemporaryDirectory() as workspace:
+            running = serve_mini_app(_StubInner(), "123456:" + "a" * 32, 501)
+            try:
+                self.assertEqual(running._server.server_name, "127.0.0.1")
+            finally:
+                running.close()
+            studio = serve(Path(workspace))
+            try:
+                self.assertTrue(studio.base_url.startswith("http://127.0.0.1:"))
+            finally:
+                studio.close()
+
+
 if __name__ == "__main__":
     unittest.main()

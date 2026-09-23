@@ -9,10 +9,11 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qsl, urlsplit
 
 from .http_app import Response
+from .loopback_http import LoopbackThreadingHTTPServer
 
 
 def validate_init_data(raw: str, bot_token: str, owner_id: int, *, now=None, max_age=86400) -> dict:
@@ -165,7 +166,7 @@ class MiniAppGateway:
 @dataclass(slots=True)
 class RunningMiniApp:
     base_url: str
-    _server: ThreadingHTTPServer
+    _server: LoopbackThreadingHTTPServer
     _thread: threading.Thread
 
     def close(self):
@@ -219,7 +220,7 @@ class _MiniAppHandler(BaseHTTPRequestHandler):
 def serve_mini_app(inner, bot_token: str, owner_id: int, *, host="127.0.0.1", port=0):
     if host != "127.0.0.1":
         raise ValueError("Mini App gateway may bind only to 127.0.0.1")
-    server = ThreadingHTTPServer((host, port), _MiniAppHandler)
+    server = LoopbackThreadingHTTPServer((host, port), _MiniAppHandler)
     server.gateway = MiniAppGateway(inner, bot_token, owner_id)
     assigned = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, name=f"aimaster-mini-app-{assigned}", daemon=True)

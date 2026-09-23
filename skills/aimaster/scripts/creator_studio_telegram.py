@@ -26,7 +26,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 
@@ -44,6 +44,7 @@ from studio.platform_compat import (  # noqa: E402
     open_nofollow,
     user_data_dir,
 )
+from studio.loopback_http import LoopbackThreadingHTTPServer  # noqa: E402
 from studio.telegram_bot import TelegramBotState, TelegramBotError  # noqa: E402
 from studio.workspace import PRIVATE_DIR_NAME, resolve_workspace_paths  # noqa: E402
 
@@ -158,7 +159,7 @@ def run_setup_ui(*, token_store=None, pairing_store=None, open_browser=True):
         def log_message(self, format, *args):
             return
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = LoopbackThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.setup_complete = False
     url = f"http://127.0.0.1:{server.server_address[1]}"
     if open_browser:
