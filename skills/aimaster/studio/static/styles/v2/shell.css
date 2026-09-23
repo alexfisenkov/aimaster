@@ -1,0 +1,93 @@
+/*
+ * Каркас дашборда v2 (редизайн 2026-09-23): страница, панель проектов,
+ * шапка со статусом и степпером, заголовок экрана, липкий подвал, шторка
+ * и тост. Экраны — board.css, просмотрщик — viewer.css. Подключается
+ * после board.css и потому перекрывает его старые правила каркаса.
+ * Inline-стилей нет: CSP страницы их запрещает.
+ */
+
+/* --- Тост ------------------------------------------------------------ */
+
+.v2-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  z-index: 90;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 10px 16px;
+  border-radius: var(--v2-r-pill);
+  background: var(--v2-primary);
+  color: #fff;
+  font-size: var(--v2-fs-13);
+  line-height: 1.4;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+.v2-toast[hidden] { display: none; }
+
+/* --- Шторка ---------------------------------------------------------- */
+
+.v2-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(14, 16, 19, 0.5);
+}
+
+.v2-sheet-panel {
+  width: min(480px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 8px 14px calc(16px + env(safe-area-inset-bottom));
+  border-radius: 20px 20px 0 0;
+  background: var(--v2-surface);
+  color: var(--v2-ink);
+  box-shadow: var(--v2-sh-menu);
+}
+
+.v2-sheet-panel:focus { outline: none; }
+
+.v2-sheet-handle {
+  display: block;
+  width: 40px;
+  height: 4px;
+  margin: 0 auto 12px;
+  border-radius: 2px;
+  background: var(--v2-line-2);
+}
+
+.v2-sheet-title { margin: 0 4px 10px; font-size: var(--v2-fs-17); letter-spacing: -0.01em; }
+
+.v2-sheet-items { display: flex; flex-direction: column; gap: 6px; }
+
+.v2-sheet-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 6px 14px;
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-btn);
+  background: var(--v2-surface);
+  color: var(--v2-ink);
+  font: inherit;
+  font-size: var(--v2-fs-14);
+  text-align: left;
+  cursor: pointer;
+}
+
+.v2-sheet-item:hover { border-color: var(--v2-line-2); background: var(--v2-soft); }
+.v2-sheet-item[data-tone="danger"] { color: var(--v2-danger); }
+.v2-sheet-item-label { display: flex; flex-direction: column; min-width: 0; }
+.v2-sheet-item-hint { font-size: var(--v2-fs-12); color: var(--v2-muted); }
+.v2-sheet-item-arrow { flex: none; color: #9aa1a8; }
+
+body.v2-sheet-open { overflow: hidden; }

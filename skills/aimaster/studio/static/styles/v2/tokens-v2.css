@@ -11,7 +11,6 @@
   /* Доска: плоская светлая поверхность с тонкими разделителями. */
   --v2-board-bg: var(--color-surface);
   --v2-board-sunken: var(--color-surface-sunken);
-  --v2-line: var(--color-border);
   --v2-line-soft: #eeeff1;
 
   /* Полоса пути. */
@@ -30,13 +29,89 @@
     45deg, #ececee, #ececee 6px, #f7f7f8 6px, #f7f7f8 12px
   );
 
-  /* Главная кнопка. */
-  --v2-primary-bg: #111315;
+  /* Главная кнопка. Старые имена — алиасы токенов редизайна ниже. */
+  --v2-primary-bg: var(--v2-primary);
   --v2-primary-fg: #ffffff;
-  --v2-primary-off: #c9ccd0;
 
   /* Размеры текста доски — на шаг мельче v1, как в макетах. */
   --v2-font-row: 0.8125rem;
   --v2-font-meta: 0.6875rem;
   --v2-gutter: 16px;
+}
+
+/*
+ * Токены редизайна 2026-09-23 (docs/design/2026-09-23-redesign/README.md,
+ * раздел «Токены»). Имена — общий контракт каркаса, экранов и
+ * просмотрщика: новые правила берут цвета, радиусы и тени только отсюда.
+ * Мобильный брейкпойнт один на всех — `@media (max-width: 759px)`,
+ * литералом: в медиазапросе переменную не прочитать.
+ */
+:root {
+  --v2-bg: #f5f6f7;
+  --v2-surface: #fff;
+  --v2-ink: #0e1013;
+  --v2-ink-2: #3b4149;
+  --v2-muted: #6e767f;
+  --v2-line: #e3e6e9;
+  --v2-line-2: #d5d8dc;
+  --v2-dashed: #c9ccd0;
+  --v2-soft: #f3f4f6;
+
+  --v2-ok: #15864a;
+  --v2-ok-bg: #eaf6ee;
+  --v2-ok-ink: #0f6b3c;
+  --v2-ok-ring: #bfe2cc;
+  --v2-warn: #d08a1c;
+  --v2-warn-bg: #fdf3e3;
+  --v2-warn-ink: #8a5a11;
+  --v2-warn-line: #f0dcb8;
+  --v2-danger: #b42318;
+  --v2-none: #b4b9bf;
+
+  --v2-rail: #101215;
+  --v2-rail-2: #191c20;
+  --v2-rail-line: #2f343a;
+  --v2-rail-active: #1e2226;
+
+  --v2-viewer: #141414;
+  --v2-viewer-stage: #0b0b0b;
+  --v2-viewer-2: #1f1f1f;
+  --v2-viewer-line: #2a2a2a;
+  --v2-viewer-line-2: #3a3a3a;
+
+  --v2-primary: #111315;
+  --v2-primary-off: #c9ccd0;
+  --v2-primary-off-ink: #3b4149;
+
+  --v2-r-sm: 8px;
+  --v2-r-md: 10px;
+  --v2-r-btn: 12px;
+  --v2-r-group: 14px;
+  --v2-r-card: 16px;
+  --v2-r-modal: 18px;
+  --v2-r-pill: 999px;
+
+  --v2-sh-hover: 0 6px 16px rgba(14, 16, 19, 0.10);
+  --v2-sh-menu: 0 12px 32px rgba(14, 16, 19, 0.12);
+  --v2-sh-modal: 0 30px 80px rgba(0, 0, 0, 0.5);
+  --v2-sh-seg: 0 1px 3px rgba(14, 16, 19, 0.14);
+
+  --v2-fs-11: 11px;
+  --v2-fs-12: 12px;
+  --v2-fs-13: 13px;
+  --v2-fs-14: 14px;
+  --v2-fs-15: 15px;
+  --v2-fs-17: 17px;
+  --v2-fs-20: 20px;
+  --v2-fs-24: 24px;
+  --v2-fs-28: 28px;
+
+  /* Ширина колонки контента и боковые поля каркаса. */
+  --v2-content-max: 1180px;
+  --v2-rail-width: 256px;
+  --v2-pad-x: 28px;
+}
+
+@media (max-width: 759px) {
+  :root { --v2-pad-x: 14px; }
 }
