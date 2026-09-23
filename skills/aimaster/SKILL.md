@@ -12,7 +12,9 @@ description: Use when turning a text or voice video idea into a script, storyboa
 удалось, не сообщай о проверке и продолжай обычную работу. Если новая версия
 найдена, сначала предложи обновиться. После успешного обновления попроси
 полностью перезапустить приложение и написать здесь «Продолжай»; до этого
-останови работу над проектом.
+останови работу над проектом. Исключение: если бриф проекта в режиме
+`autopilot` уже одобрен, включая одобрение в этом же запросе («делай» вместе с
+идеей), не спрашивай — упомяни новую версию только в финальном отчёте.
 
 ## Установка с нуля (первое обращение)
 
@@ -34,7 +36,9 @@ workspace известен или создан, при активации нав
 Работать только в чате тоже можно, если запуск страницы технически недоступен.
 
 - **Дашборд:** ничего устанавливать не нужно, если доступен Python 3.11+.
-  Используй общий workspace с `projects/` и `media/`, первый проект с
+  При первой активации в папке создай раскладку командой
+  `python3 scripts/creator_studio.py workspace init <workspace>` (идемпотентна:
+  `projects/`, `media/`, `instructions/`, `library/`), затем первый проект с
   конкретными `title`, `id`, `type` и `mode`, затем запусти `serve --port 0`.
   Это визуальный read-only обзор проекта с копируемыми промптами. Все решения,
   правки, вопросы и внешние действия принадлежат чату; остановить сервер —
@@ -53,8 +57,9 @@ workspace известен или создан, при активации нав
 
 Lead one continuous project from idea to reviewed production package. New
 projects use the Creator Studio state and `scripts/creator_studio.py`, whether
-or not the user wants the browser dashboard. Never infer approval or claim an
-external action happened.
+or not the user wants the browser dashboard. Never infer the user's approval or
+claim an external action happened; in `autopilot`, your own approvals are
+recorded as the agent's decisions.
 
 ## Start a new project
 
@@ -65,14 +70,15 @@ materials outside the installed package. Official updates are permitted;
 do not silently patch the engine during setup or troubleshooting.
 
 1. Accept a text or voice idea and ask for `guided` or `autopilot`. Guided asks
-   only material questions; autopilot records safe assumptions and continues
-   local preparation. Both obey approvals and external-action boundaries.
+   only material questions and obeys every approval below. Autopilot asks
+   nothing after the idea/brief is approved and follows
+   [autopilot](references/autopilot.md) instead of the ask/approve steps below.
    Transcribe voice only with an actually
    available speech-to-text capability and keep source provenance; never invent
    a transcript. If none is available, ask the user for text.
 2. Ask the output type, then create the project immediately in the persistent
-   workspace with `projects/` and
-   `media/`, then run:
+   workspace (run `workspace init <workspace>` first if the folder is new),
+   then run:
 
 ```bash
 python3 scripts/creator_studio.py project create <workspace> <project-id> \
@@ -83,19 +89,31 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
    keep the server session alive. If a live server for the same workspace is
    already known, reuse it instead of starting a duplicate.
 4. Continue the remaining intake in chat. For a video, before writing the
-   storyboard, обязательно спроси предполагаемую длительность и режим: один
-   цельный ролик (`one-shot`) или отдельные сцены (`per-scene`). Store the
-   accepted answer in the project question lifecycle. At `image_plan`, apply
-   `one-shot` as `one_shot` or `per-scene` as `per_scene` with
-   `project set-gen-mode`; never let the default choose on the user's behalf.
-5. Ask questioning depth (`сначала уточнить`
+   storyboard, в `guided` обязательно спроси предполагаемую длительность и
+   режим: один цельный ролик (`one-shot`) или отдельные сцены (`per-scene`).
+   Store the accepted answer in the project question lifecycle. In `autopilot`,
+   decide both yourself and put them into the brief the user approves. At
+   `image_plan`, apply `one-shot` as `one_shot` or `per-scene` as `per_scene`
+   with `project set-gen-mode`; never let the default choose silently.
+5. In `guided`, ask questioning depth (`сначала уточнить`
    / `уточнять по ходу` / `собрать автоматически`), audience, constraints and
    reference choices. Before authoring the scenario, run the mandatory
    [writing-guide gate](references/writing-guides.md). Only then author the
-   scenario. This question is required even in `autopilot` mode.
+   scenario. In `autopilot`, the gate is resolved without a question as
+   described in [autopilot](references/autopilot.md).
 6. Read [Creator Studio](references/creator-studio.md) for the current stage,
    positions and exact commands. Use the returned `revision` for the next
    write; never edit `state.json` or its histories by hand.
+
+## Autopilot
+
+In an `autopilot` project the only user decision is approval of the
+idea/brief. After it, ask no questions until the finished video: choose guides,
+generation method, model, references, variants and stage approvals yourself,
+queue paid actions with `action enqueue` without a `grant` (the engine issues
+it), and show the `notice` returned on enabling autopilot once. The full order, the allowed stops and the final
+report are in [autopilot](references/autopilot.md), which overrides every
+"ask", "offer" and "wait" rule in this file for such projects.
 
 ## Studio workflow
 
@@ -130,10 +148,19 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
 ## External actions and recovery
 
 - First load [saved provider preferences](references/provider-preferences.md),
-  then discover MCP/tools/routes exposed in this session. Offer the saved
-  preferred service first; keep an unavailable saved service as a declaration,
-  not as verified access. Persist user declarations/selections and read back.
-  Selection stays in chat and must be offered in each new session/project.
+  then discover MCP/tools/routes exposed in this session. Before treating a
+  route as unavailable, skipping it, or saying an MCP/tool is missing, run the
+  three-step check: (1) find it in your own tool list (Claude Code:
+  `ToolSearch` by server name; Codex/Gemini: re-read the list after a short
+  pause, servers may still be connecting), (2) run
+  `python3 scripts/detect_tools.py --json` from this skill folder, (3) if 1–2
+  found it, make a free probe call (balance, model list). A provider named in
+  the idea is never skipped silently. Configured but not exposed → say exactly
+  that. Offer
+  the saved preferred service first; keep an unavailable saved service as a
+  declaration, not as verified access. Persist user declarations/selections
+  and read back. In `guided`, selection stays in chat and must be offered in
+  each new session/project; in `autopilot`, pick the verified route yourself.
   Do not browse a provider site merely to discover a route. Live-probe the
   selected route, then present only models actually exposed by that verified
   route. A declared candidate is `needs_chat_setup` until the current session
@@ -147,17 +174,20 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
   scoped approval still govern external actions. Offer saved guides only from
   an exact `guide_registry.py match`; never carry an image guide into video,
   motion or another model/version from chat memory or title similarity.
-- For each character, location, product and style reference, ask: none,
-  upload or generate. Uploads are supplied through chat and registered after
-  inspection. Generation requires a verified route and a scoped authorization.
-- Ask also about existing video clips: should they guide appearance, transfer
+- For each character, location, product and style reference, ask in `guided`:
+  none, upload or generate. In `autopilot`, take matches from
+  `library match` via `reference add --from-library`, otherwise generate.
+  Uploads are supplied through chat and registered after inspection.
+  Generation requires a verified route and, in `guided`, a scoped authorization.
+- In `guided`, ask also about existing video clips: should they guide appearance, transfer
   motion, continue a scene, or be edited? Read [video inputs](references/video-inputs.md)
   before planning these operations. Store video references through the CLI as
   `kind=video`, `source=upload`, with the chosen `usage`; do not disguise video
   as an image reference or infer support from a model's brand/version.
 - For `per_scene`, before every scene after the first, run the mandatory
   [continuity choice](references/continuity-choice.md): previous accepted video,
-  previous last frame, or independent clip. Recommend video continuation when
+  previous last frame, or independent clip (in `autopilot`, take the
+  recommended one without asking). Recommend video continuation when
   scene state is substantially unchanged and the live model schema supports it.
 - Before **every** external generation, complete the mandatory
   [reference-binding procedure](references/reference-bindings.md). Canonical
@@ -167,14 +197,20 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
   mention chips, every intended reference must appear by its exact observed
   native token in the final outgoing prompt; prose names do not count. Run the
   bundled binding validator and stop before a paid call unless it passes.
-- Before spending or uploading, run the stage preflight in the
+- Before spending or uploading, in both modes, run the stage preflight in the
   [completion loop](references/completion-loop.md). Generate only when the
   target position's stage is the current Studio stage. Future-stage prompts
   may be prepared, but their media generation must wait for that stage.
-- `generate`, `vary`, and `regenerate` require a one-use grant (`generation`
-  covers all three). A verified route, a scoped grant and the user's explicit
-  approval in chat authorize that one action; do not ask for a second approval.
-  A new action or extra paid attempt needs its own authorization.
+- **Guided:** `generate`, `vary`, and `regenerate` require a one-use grant
+  (`generation` covers all three). A verified route, a scoped grant and the
+  user's explicit approval in chat authorize that one action; do not ask for a
+  second approval. A new action or extra paid attempt needs its own
+  authorization.
+- **Autopilot:** do not ask and do not run `grant`. Queue the paid action with
+  `action enqueue --type … --target … --expected-revision N`; it returns
+  `status: queued, issued_by: autopilot` and bumps the revision by one (history
+  `autopilot-grant`). Preflight, reference binding and collection still apply
+  (see [autopilot](references/autopilot.md)).
 - Fresh claim context is supplied only for `generate`, `prompts-generate`,
   `prompt-refresh`, and `assemble`. The legacy four (`vary`, `regenerate`,
   `revise-scenario`, `continue-in-chat`) may be payload-only; never pretend the
@@ -185,7 +221,8 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
   with the same `result_group_id`; never split IDs. Select and record the exact
   current prompt, included references, verified assets and observed revision.
   If that mapping is stale or ambiguous, make no external call: finish
-  `needs_chat` and explain the blocker.
+  `needs_chat` and explain the blocker (in `autopilot`: fix, re-read and queue
+  again, or stop with a report per the autopilot canon).
 - For a canonical write, use `context.state_revision` when present and still
   current; otherwise use the revision from the verified read. Never guess
   `N+1`, substitute a newer prompt after execution, or rebase an unknown result.
@@ -204,9 +241,11 @@ python3 scripts/creator_studio.py project create <workspace> <project-id> \
   version in Studio and use that exact version downstream; never leave the
   decision only in chat.
 - Before ending a stage or project, enumerate missing required materials,
-  uncollected results and unresolved choices; offer relevant optional
-  improvements once. When ready, explicitly offer stage approval, final
-  assembly and export/editor handoff in sequence.
+  uncollected results and unresolved choices. In `guided`, offer relevant
+  optional improvements once; when ready, explicitly offer stage approval,
+  final assembly and export/editor handoff in sequence. In `autopilot`, pick
+  variants with `decide approve`, approve the stage with `stage approve`
+  yourself once the checklist passes, and continue to assembly.
 
 ## Review before presentation
 
@@ -215,7 +254,8 @@ it: file/container integrity, reference identity, style, light/color,
 storyboard continuity and motion. Record what was technically checked,
 visually checked, user-approved, unavailable and unfinished. If no suitable
 viewer ran, say visual review was not performed. Finding a defect does not
-authorize another paid call.
+authorize another paid call (guided; in `autopilot`, see
+[autopilot](references/autopilot.md)).
 
 ## Legacy projects only
 

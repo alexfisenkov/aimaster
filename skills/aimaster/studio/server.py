@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .assets import AssetIndex
+from .autopilot import StoreAutopilotPolicy
 from .decisions import DecisionWorker
 from .events import LedgerEventSource
 from .http_app import MAX_BODY_BYTES, StudioApplication
@@ -164,6 +165,7 @@ def serve(workspace: Path, host: str = "127.0.0.1", port: int = 0) -> RunningSer
     ledger = ActionLedger(
         actions_db_path,
         revision_resolver=lambda project_id: store.load(project_id)["revision"],
+        autopilot=StoreAutopilotPolicy(store),
     )
     questions = QuestionStore(private_root / QUESTIONS_DB_NAME)
     # Ticket 12: `db_path` is explicit and shared with the authoring CLI

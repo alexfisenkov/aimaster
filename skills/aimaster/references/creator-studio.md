@@ -19,12 +19,18 @@ Accept text or voice. Use speech-to-text only when it is actually available;
 record which source was transcribed and never fabricate missing words. Without
 ASR, ask for a text version. Capture purpose, audience, format, duration,
 constraints, references and success criteria before authoring the scenario. Run
-the [writing-guide gate](writing-guides.md) before every new project's scenario,
-including in `autopilot` mode, and wait for the user's choice. For video, ask the intended duration and whether the output is one whole video
-(`one-shot`) or separate scenes (`per-scene`) before writing the storyboard.
-Store the accepted answer through the question lifecycle, then apply `one-shot`
-as `one_shot` or `per-scene` as `per_scene` at `image_plan` with
-`project set-gen-mode`; do not rely on the default value.
+the [writing-guide gate](writing-guides.md) before every new project's scenario;
+in `guided` wait for the user's choice, in `autopilot` resolve it without a
+question. For video, in `guided` ask the intended duration and whether the
+output is one whole video (`one-shot`) or separate scenes (`per-scene`) before
+writing the storyboard; in `autopilot` decide both and include them in the
+brief the user approves. Store the accepted answer through the question
+lifecycle, then apply `one-shot` as `one_shot` or `per-scene` as `per_scene` at
+`image_plan` with `project set-gen-mode`; do not rely on the default value.
+
+**Autopilot.** A project with `mode=autopilot` has one user decision, the
+idea/brief approval. After it, ask nothing until the finished video and follow
+[autopilot](autopilot.md) wherever this file says ask, offer or wait.
 
 At activation read [saved provider preferences](provider-preferences.md) across
 projects, then in chat discover the MCP/tools/routes exposed in this session. Do
@@ -32,12 +38,17 @@ not browse a provider website merely to discover one. Live-probe the selected
 route and present only models actually exposed by that verified route. For each
 newly selected model and relevant prompt task/stage, run the
 [writing-guide gate](writing-guides.md) before writing prompts. The gate names
-any matching saved guide, waits for the user's choice and makes an explicitly
-selected guide the creative specification only for that task.
+any matching saved guide, waits for the user's choice (`guided`) or takes the
+first exact match (`autopilot`) and makes the selected guide the creative
+specification only for that task. Before saying a route is unavailable, run
+the three-step tool check from [provider preferences](provider-preferences.md),
+including `scripts/detect_tools.py --json`.
 
-For every character, location, product and style reference, ask one of: none,
-upload, generate. Uploads come through chat. Generation requires a verified
-route and scoped authorization.
+For every character, location, product and style reference, in `guided` ask
+one of: none, upload, generate. In `autopilot`, run `library match` on the idea
+and add every hit with `reference add --from-library`; generate the rest.
+Uploads come through chat. Generation requires a verified route and, in
+`guided`, scoped authorization.
 
 Before every external generation, follow the mandatory
 [reference-binding procedure](reference-bindings.md). Studio's canonical
@@ -59,22 +70,69 @@ The per-scene add action must offer both upload and generation. A generated
 local reference keeps its scene link, receives its own prompt during
 `image_plan`, and is executed/collected only after `image_results` is current.
 
-Ask only material questions. Prefer the runtime's native choice tool when it is
-available; otherwise use numbered choices or concise free text in chat. Store
+Ask only material questions (`guided`; none after brief approval in
+`autopilot`). Prefer the runtime's native choice tool when it is available; otherwise use numbered choices or concise free text in chat. Store
 the accepted answer through the question lifecycle. The dashboard never shows
 question text or choices.
 
 ## Workspace and dashboard
 
-A workspace contains `projects/<id>/state.json`, `media/`, and private
-`.studio/` SQLite stores. Create `projects/` explicitly; otherwise the project
-store falls back to the workspace root. Never hand-edit state or private stores.
+A workspace contains `projects/<id>/state.json`, `media/`, `instructions/`,
+`library/` and private `.studio/` SQLite stores. Create the layout with
+`workspace init` on first activation in a folder (idempotent; safe on an
+existing workspace). Without `projects/` the project store falls back to the
+workspace root. Never hand-edit state, the library index or private stores.
 
 ```bash
-mkdir -p <workspace>/projects <workspace>/media
+python3 scripts/creator_studio.py workspace init <workspace>
 python3 scripts/creator_studio.py project create <workspace> <project-id> \
   --title "…" --type {photo,video,mixed} --mode {guided,autopilot}
 ```
+
+`workspace init` prints `{"workspace", "created": [...], "already_initialized"}`.
+It never overwrites existing files and writes `README.md` only when absent, so
+it is safe on an existing workspace.
+
+`project create --mode autopilot`, `mode set --mode autopilot` and
+`project set-mode --mode autopilot` return a `notice` field. Show it to the
+user once, verbatim.
+
+### Workspace library
+
+Characters, voices, locations, products and styles shared by all projects live
+in `<workspace>/library/` (`index.json` plus one folder per kind):
+
+```bash
+creator_studio.py library list WS [--kind {character,voice,location,product,style,other}]
+creator_studio.py library add WS --kind K --label "…" [--alias "…"]... --file PATH \
+  [--voice-of CHARACTER_LIBRARY_ID]
+creator_studio.py library import WS --from-projects
+creator_studio.py library match WS --text "идея"
+creator_studio.py reference add WS P --from-library LIBRARY_ID --expected-revision N \
+  [--kind …] [--name "…"] [--scene SCENE | --all-scenes]
+creator_studio.py reference attach WS P --reference IMG_NN --from-library VOICE_ID \
+  --expected-revision N
+```
+
+`library add` copies the file into `library/<kind>/` and skips sha256
+duplicates. A `voice` entry accepts MP3/WAV only; `--voice-of` links it to a
+character entry. For an existing workspace, run `library import
+--from-projects` once (re-running is safe): it collects uploaded references,
+generated references through their selected result (else the approved one,
+else `skipped: no_selected_result`), and scene-local images; scene-local video
+references are project clips and are skipped (`project_clip`). A character or
+voice is labelled with its name before « — »; any other kind keeps the full
+reference name; the full original name is always kept in `aliases`. Voices are
+stored as separate `kind=voice` entries with `voice_of`. `library match` returns entries
+whose label or alias occurs in the text; a character's voice is returned with it
+and marked `matched_via: "voice_of"`.
+
+`reference add --from-library` registers the library file as a project asset
+and creates a `source=upload` reference; `--expected-revision` is required and
+a voice entry is rejected there. Attach a voice to its character reference with
+`reference attach --reference IMG_NN --from-library <voice_id>` (enable
+`voice_enabled` first, as for any voice). Take the fresh revision from each
+command's output for the next write.
 
 Start the server as soon as the workspace is known or created:
 
@@ -138,8 +196,9 @@ doors and exact revisions.
 | `pos:oneshot` | one whole video | `motion` |
 | `pos:audio:atmos|fx|music|voice` | four sound layers | `audio` |
 
-All current positions are required. In particular, the four audio layers are a
-current product limitation; do not invent a skip or optional-layer flag.
+All current positions are required, except audio layers: an audio position is
+required only when its result group has at least one entry, so an untouched
+audio stage can be approved empty. Do not invent a skip or optional-layer flag.
 
 ## Authoring and direct chat decisions
 
@@ -163,6 +222,11 @@ video/mixed require duration and photo forbids it. Ranges are derived from
 duration and order.
 
 ### References, frame plan and generation mode
+
+`reference add`, `reference attach` and `reference edit` are accepted from
+`image_plan` through the last stage that uses references (`image_results` for
+photo, `audio` for video/mixed), and not after that stage is approved. At
+`scenario` you can only look up the library (`library match`).
 
 ```bash
 creator_studio.py asset register WS --path media/<file> \
@@ -283,6 +347,8 @@ The eight job types serviced by chat are `generate`, `vary`, `regenerate`,
 
 ```bash
 creator_studio.py grant WS P {generate,vary,regenerate,generation} --expires-at ISO
+creator_studio.py action enqueue WS P --type {generate,vary,regenerate} --target T \
+  --expected-revision N --idempotency-key K [--payload JSON]
 creator_studio.py claim WS --worker ID [--profile PATH]
 creator_studio.py finish WS ACTION --status \
   {succeeded,failed,needs_chat,needs_chat_setup,outcome_unknown} \
@@ -290,13 +356,24 @@ creator_studio.py finish WS ACTION --status \
 creator_studio.py recover WS
 ```
 
-`generate`, `vary`, and `regenerate` require a one-use grant; `generation`
-covers all three. Permission and route selection happen in chat. Once the route
+In `guided`, `generate`, `vary`, and `regenerate` require a one-use grant;
+`generation` covers all three. Permission and route selection happen in chat. Once the route
 is verified, the grant is issued and the user explicitly approves that scoped
 chat action; do not ask again for the same action. It does not authorize an
 extra variation, regeneration or retry.
 
-A chat action without a matching grant becomes terminal `needs_chat`. Issuing a
+A paid action from chat is queued with `action enqueue`. In `guided`, issue the
+`grant` first; an enqueue without a matching grant returns `status: needs_chat`
+and is terminal.
+
+In `autopilot`, do not run `grant` and do not ask: `action enqueue` returns
+`status: queued, issued_by: autopilot`, and the engine appends an
+`autopilot-grant` entry (action, target) to the project history. That history
+write raises the project revision by one, so read the fresh revision before the
+next `--expected-revision`. Then `claim` the action, execute it, collect the
+result and `finish`. See [autopilot](autopilot.md).
+
+In `guided`, a chat action without a matching grant becomes terminal `needs_chat`. Issuing a
 grant later does not revive it: the user must make a new explicit chat action. An active
 agent may watch the queue within the granted scope, but the dashboard itself
 does not start an operator.
@@ -324,7 +401,9 @@ infer IDs. Resolve the position's current prompt through its owner link, collect
 only currently included references, re-resolve their assets, and record those
 exact inputs plus the observed state revision before any external call. If the
 version is stale, the owner is ambiguous, or required inputs cannot be verified,
-make no external call: finish `needs_chat` and explain the blocker in chat.
+make no external call: finish `needs_chat` and explain the blocker in chat
+(`autopilot`: fix, re-read and queue again, or stop with a report per
+[autopilot](autopilot.md#allowed-stops)).
 
 ### Recording a generated result
 
@@ -358,7 +437,8 @@ There is no QA stage. Before showing material, the agent still checks container
 integrity and, when tools allow, reference identity, style, light/color,
 storyboard continuity and motion. Separate technical checks, visual checks and
 owner approval. State clearly when visual review did not run. A detected defect
-does not grant another paid call.
+does not grant another paid call (guided; in `autopilot`, see
+[autopilot](autopilot.md)).
 
 ## Common refusals
 
@@ -370,4 +450,6 @@ does not grant another paid call.
 - Reusing an asset path under a different role: register a distinct file path;
   role is immutable.
 - `outcome_unknown` or an evicted operation receipt: inspect external/canonical
-  state and ask for a decision; never rebase and replay automatically.
+  state and ask for a decision (`autopilot`: resolve it from the provider's
+  own history when possible, otherwise report it instead of asking);
+  never rebase and replay automatically.

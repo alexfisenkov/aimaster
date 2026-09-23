@@ -14,7 +14,8 @@ prompt or a visible future position does not bypass this gate.
 
 If the target belongs to a future stage, do **not** call the provider. Complete
 the current stage's prompts and writing-guide choices, show the plan, and obtain
-the normal stage decision first. A generated reference prompt is prepared at
+the normal stage decision first (in `autopilot`: finish the current stage's
+work, run `stage approve` yourself, then generate at the target stage). A generated reference prompt is prepared at
 `image_plan`, but its external image generation and result collection occur at
 `image_results`. Motion prompts may be prepared at `image_plan`; motion media is
 generated only at `motion`.
@@ -28,7 +29,9 @@ asset, external ID, prompt/model/bindings, source revision and required stage;
 write `unavailable` for facts that cannot be verified—never reconstruct or
 invent them. This is a durable **manual recovery record**, not a runtime
 queue or proof that the result is already in Studio. Do not auto-approve stages
-to force insertion. Resolve the current stage with the user; once the target
+to force insertion. Resolve the current stage with the user (in `autopilot`:
+continue the normal stage order yourself; approve each stage only when its own
+checklist passes, never just to reach the record's stage); once the target
 stage is reached, read that record, revalidate target/prompt/references and
 append the same asset through the normal result command. Mark the record
 collected only after snapshot read-back. A claimed job stops `needs_chat` until
@@ -62,10 +65,14 @@ generation task.
    in the dashboard, then finish the claimed job. Do not report the generation
    as done or `succeeded` before this read-back. If provider execution succeeded
    but collection cannot be completed, preserve the external evidence and stop
-   with an explicit `needs_chat`/collection blocker; never generate again.
-5. Show the result and offer the decisions supported for that material:
-   accept/reject, another variation, regenerate with stated changes, hide,
-   retire/restore, or continue. Do not auto-accept a creative result.
+   with an explicit `needs_chat`/collection blocker; never generate again. In
+   `autopilot`, fix the collection cause and retry the collection (not the
+   generation); only an unfixable blocker becomes a stop with a report.
+5. In `guided`, show the result and offer the decisions supported for that
+   material: accept/reject, another variation, regenerate with stated changes,
+   hide, retire/restore, or continue. Do not auto-accept a creative result.
+   In `autopilot`, review it yourself and record the choice with
+   `decide approve` (or vary/regenerate on a clear defect); see [autopilot](autopilot.md).
 
 Post-processing creates another version. For example, a video with added music
 is a new assembly/result while the original video and music stay preserved and
@@ -75,10 +82,12 @@ Words such as “этот нравится больше” identify a preference
 automatically approve/retire versions. Offer to record the preferred version as
 accepted and state what will happen to the others.
 
-Before a paid audio generation, show provider/model, exact prompt, source and
-generated duration, cost preview, which interval will be used in the project,
-and the intended beat/cue map. Obtain the scoped permission only after that
-preflight. A generic style description plus price is insufficient.
+Before a paid audio generation, prepare provider/model, exact prompt, source
+and generated duration, cost preview, which interval will be used in the
+project, and the intended beat/cue map. In `guided`, show them and obtain the
+scoped permission only after that preflight; a generic style description plus
+price is insufficient. In `autopilot`, record the same preflight in the
+operation record and proceed without asking.
 
 ## Before leaving a stage
 
@@ -89,12 +98,15 @@ Read the canonical state and explicitly check:
   frame, variation or correction was silently skipped;
 - unresolved questions, `needs_chat`, `outcome_unknown`, stale prompts and
   uncollected remote outputs are listed;
-- the user has seen the current materials and has the relevant decision paths.
+- in `guided`, the user has seen the current materials and has the relevant
+  decision paths; in `autopilot`, you reviewed them and recorded your choices.
 
 If something optional could materially improve the result, offer it once with
-its effect and cost boundary. If required work is missing, do not offer stage
+its effect and cost boundary (in `autopilot`, do it yourself when it serves the
+approved brief, otherwise list it in the final report). If required work is missing, do not offer stage
 approval as though the stage were complete. If all required material is ready,
-offer approval and state what the next stage will add.
+offer approval and state what the next stage will add (`guided`), or run
+`stage approve` yourself and continue (`autopilot`).
 Every result-turn ends with the concrete next decision or stage action. Do not
 leave a ready result at `draft` while merely listing that buttons exist.
 
@@ -102,7 +114,7 @@ leave a ready result at `draft` while merely listing that buttons exist.
 
 Audit all stages and variants. Ensure the selected image/video/audio versions
 are reflected in canonical state and the final assembly points to the intended
-files. Offer final assembly when it has not been produced; after assembly,
-offer review, export/delivery or an editor handoff with ordering, durations,
+files. Offer final assembly when it has not been produced (in `autopilot`,
+produce it); after assembly, offer review, export/delivery or an editor handoff with ordering, durations,
 script, prompts and comments. “Provider job finished,” “file exists locally,”
 and “link sent to the user” are not project completion by themselves.

@@ -13,7 +13,9 @@ generation waits for `image_results` under the completion-loop stage gate.
 ## Classify before writing
 
 Use the current question and user message to identify the intended target. If
-the target is ambiguous, ask one short question before changing state.
+the target is ambiguous, ask one short question before changing state
+(`guided`). In `autopilot` after brief approval, attach it to the most likely
+target, record why, and mention it in the final report.
 
 | Supplied material | Canonical destination |
 |---|---|

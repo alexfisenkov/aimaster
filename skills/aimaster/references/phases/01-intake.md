@@ -1,3 +1,3 @@
 # Intake
 
-Accept text or voice. If transcription is available, save transcript provenance. Capture goal, platform, format, duration, audience, constraints, references, and success criteria. Guided mode asks only material questions; autopilot records assumptions. Do not leave intake until brief approval is recorded.
+Accept text or voice. If transcription is available, save transcript provenance. Capture goal, platform, format, duration, audience, constraints, references, and success criteria. Guided mode asks only material questions; autopilot records assumptions. Do not leave intake until brief approval is recorded. In autopilot, that brief approval is the only user decision: after it, ask no questions (see [autopilot](../autopilot.md)).

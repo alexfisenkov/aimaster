@@ -53,6 +53,9 @@ from studio.runner import open_ledger, open_runner  # noqa: E402
 from studio.server import serve  # noqa: E402
 from studio.store import StoreError  # noqa: E402
 from studio.workspace import WorkspaceError  # noqa: E402
+from studio.autopilot import AUTOPILOT_NOTICE, stop_autopilot_spending  # noqa: E402
+from studio.library_projects import materialize as materialize_library_entry  # noqa: E402
+from creator_studio_workspace import add_workspace_subcommands  # noqa: E402
 
 
 def command_serve(args):
@@ -163,9 +166,30 @@ def _print(payload):
     print(json.dumps(payload, ensure_ascii=False))
 
 
+def _with_mode_notice(payload, mode):
+    """Spec 2026-09-23 §2: switching autopilot on warns once, in the output."""
+
+    if mode == "autopilot" and isinstance(payload, dict):
+        return {**payload, "notice": AUTOPILOT_NOTICE}
+    return payload
+
+
+def _after_mode_change(workspace, project_id, payload, mode):
+    """Critic finding 1: leaving autopilot cancels its queued paid actions;
+    `cancelled_actions` lists them (moved to `needs_chat`)."""
+
+    cancelled = stop_autopilot_spending(open_ledger(workspace), project_id, mode)
+    return _with_mode_notice({**payload, "cancelled_actions": cancelled}, mode)
+
+
 def command_project_create(args):
     store = authoring.open_store(args.workspace)
-    _print(authoring.create_project(store, args.project_id, args.title, args.type, args.mode))
+    _print(
+        _with_mode_notice(
+            authoring.create_project(store, args.project_id, args.title, args.type, args.mode),
+            args.mode,
+        )
+    )
 
 
 def command_script_add_version(args):
@@ -281,39 +305,67 @@ def command_result_add_version(args):
     )
 
 
+_LIBRARY_REFERENCE_KINDS = {"character", "product", "location", "style", "other"}
+
+
 def command_reference_add(args):
     store = authoring.open_store(args.workspace)
     assets = authoring.open_assets(args.workspace)
-    _print(
-        authoring.add_reference(
-            store,
-            assets,
-            args.project,
-            args.expected_revision,
-            kind=args.kind,
-            asset_id=args.asset_id,
-            name=args.name,
-            source=args.source,
-            usage=args.usage,
-            scene_id=args.scene,
-            all_scenes=args.all_scenes,
-        )
+    kind, asset_id, name, library_id = args.kind, args.asset_id, args.name, None
+    if args.from_library is not None:
+        # Spec 2026-09-23 §3: register the library file as a project asset
+        # and create an uploaded reference from it.
+        if asset_id is not None:
+            raise ValueError("--from-library and --asset-id are mutually exclusive")
+        materialized = materialize_library_entry(args.workspace, args.from_library)
+        entry, library_id = materialized["entry"], args.from_library
+        if entry["kind"] == "voice":
+            raise ValueError("a voice entry attaches to a character: use `reference attach --from-library`")
+        derived = "video" if materialized["media"] == "video" else entry["kind"]
+        if derived not in _LIBRARY_REFERENCE_KINDS | {"video"}:
+            derived = "other"
+        kind = kind or derived
+        asset_id = materialized["asset"]["asset_id"]
+        name = name or entry["label"]
+    if kind is None:
+        raise ValueError("reference add requires --kind (or --from-library)")
+    result = authoring.add_reference(
+        store,
+        assets,
+        args.project,
+        args.expected_revision,
+        kind=kind,
+        asset_id=asset_id,
+        name=name,
+        source="upload" if library_id else args.source,
+        usage=args.usage,
+        scene_id=args.scene,
+        all_scenes=args.all_scenes,
     )
+    if library_id is not None:
+        result = {**result, "library_id": library_id, "asset_id": asset_id, "kind": kind}
+    _print(result)
 
 
 def command_reference_attach(args):
     store = authoring.open_store(args.workspace)
     assets = authoring.open_assets(args.workspace)
-    _print(
-        authoring.attach_reference(
-            store,
-            assets,
-            args.project,
-            args.expected_revision,
-            reference_id=args.reference,
-            asset_id=args.asset_id,
-        )
+    asset_id = args.asset_id
+    if (asset_id is None) == (args.from_library is None):
+        raise ValueError("reference attach needs exactly one of --asset-id or --from-library")
+    if args.from_library is not None:
+        asset_id = materialize_library_entry(args.workspace, args.from_library)["asset"]["asset_id"]
+    result = authoring.attach_reference(
+        store,
+        assets,
+        args.project,
+        args.expected_revision,
+        reference_id=args.reference,
+        asset_id=asset_id,
     )
+    if args.from_library is not None:
+        result = {**result, "library_id": args.from_library, "asset_id": asset_id}
+    _print(result)
 
 
 def command_reference_edit(args):
@@ -386,8 +438,13 @@ def command_question_create(args):
 def command_project_set_mode(args):
     store = authoring.open_store(args.workspace)
     _print(
-        authoring.set_mode(
-            store, args.project, args.expected_revision, args.mode, operation_id=args.operation_id
+        _after_mode_change(
+            args.workspace,
+            args.project,
+            authoring.set_mode(
+                store, args.project, args.expected_revision, args.mode, operation_id=args.operation_id
+            ),
+            args.mode,
         )
     )
 
@@ -395,15 +452,20 @@ def command_project_set_mode(args):
 def command_mode_set(args):
     store = authoring.open_store(args.workspace)
     _print(
-        chat_decisions.apply(
-            store,
-            None,
+        _after_mode_change(
+            args.workspace,
             args.project,
-            args.expected_revision,
-            action_type="set-mode",
-            target_id="project",
-            payload={"mode": args.mode},
-            operation_id=args.operation_id,
+            chat_decisions.apply(
+                store,
+                None,
+                args.project,
+                args.expected_revision,
+                action_type="set-mode",
+                target_id="project",
+                payload={"mode": args.mode},
+                operation_id=args.operation_id,
+            ),
+            args.mode,
         )
     )
 
@@ -631,6 +693,7 @@ def build_parser():
     _add_authoring_subcommands(subparsers)
     _add_mode_subcommands(subparsers)
     _add_decision_subcommands(subparsers)
+    add_workspace_subcommands(subparsers)
 
     return parser
 
@@ -959,9 +1022,12 @@ def _add_reference_subcommands(subparsers) -> None:
     reference_add_cmd = reference_sub.add_parser("add", help="create a tagged project reference")
     reference_add_cmd.add_argument("workspace", type=Path)
     reference_add_cmd.add_argument("project")
-    reference_add_cmd.add_argument("--kind", required=True, choices=("character", "product", "location", "style", "other", "video"))
+    reference_add_cmd.add_argument("--kind", default=None, choices=("character", "product", "location", "style", "other", "video"),
+                                   help="required unless --from-library supplies it")
     reference_add_cmd.add_argument("--name", default=None)
     reference_add_cmd.add_argument("--asset-id", default=None, dest="asset_id")
+    reference_add_cmd.add_argument("--from-library", default=None, dest="from_library",
+                                   help="library_id: copy that library file into media/ and use it")
     reference_add_cmd.add_argument("--source", choices=("upload", "generate"), default="upload")
     reference_add_cmd.add_argument(
         "--usage",
@@ -979,7 +1045,9 @@ def _add_reference_subcommands(subparsers) -> None:
     reference_attach_cmd.add_argument("workspace", type=Path)
     reference_attach_cmd.add_argument("project")
     reference_attach_cmd.add_argument("--reference", required=True)
-    reference_attach_cmd.add_argument("--asset-id", required=True, dest="asset_id")
+    reference_attach_cmd.add_argument("--asset-id", default=None, dest="asset_id")
+    reference_attach_cmd.add_argument("--from-library", default=None, dest="from_library",
+                                      help="library_id (e.g. a voice entry) instead of --asset-id")
     reference_attach_cmd.add_argument("--expected-revision", required=True, type=int, dest="expected_revision")
     reference_attach_cmd.set_defaults(handler=command_reference_attach)
 

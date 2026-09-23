@@ -68,6 +68,9 @@ HISTORY_KINDS = {
     "gen-mode-set": frozenset({"mode"}),
     "video-mode-set": frozenset({"scene_id", "mode"}),
     "continuity-set": frozenset({"scene_id", "strategy"}),
+    # Spec 2026-09-23 §2: an autopilot project authorized one paid action
+    # by itself (`studio/autopilot.py`); `action` is the ledger action type.
+    "autopilot-grant": frozenset({"action", "target_id"}),
 }
 _HISTORY_ACTORS = frozenset({"you", "agent"})
 _HISTORY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
@@ -75,6 +78,9 @@ _HISTORY_FIELDS = frozenset({"text", "title", "duration"})
 _HISTORY_REFERENCE_FIELDS = frozenset({"name", "source", "usage", "voice_enabled"})
 _HISTORY_ATTACHMENT_FIELDS = frozenset({"asset", "voice_asset"})
 _HISTORY_MODES = frozenset({"guided", "autopilot"})
+# Mirrors `ledger.GRANT_REQUIRED_ACTIONS` (not imported: the ledger is a
+# lower-level store that must not depend on the domain module's imports).
+_HISTORY_PAID_ACTIONS = frozenset({"vary", "regenerate", "generate"})
 _GENERATION_MODES = frozenset({"per_scene", "one_shot"})
 _VIDEO_MODES = frozenset({"first", "firstlast", "references"})
 _CONTINUITY_STRATEGIES = frozenset({"previous_video", "previous_last_frame", "independent"})
@@ -975,6 +981,8 @@ def _validate_history_params(kind: str, params) -> dict:
         modes = _HISTORY_MODES if kind == "mode-set" else _GENERATION_MODES if kind == "gen-mode-set" else _VIDEO_MODES
         if not isinstance(params["mode"], str) or params["mode"] not in modes:
             raise DomainValidationError("history.params.mode is not supported")
+    if "action" in params and params["action"] not in _HISTORY_PAID_ACTIONS:
+        raise DomainValidationError("history.params.action is not supported")
     if "strategy" in params and params["strategy"] not in _CONTINUITY_STRATEGIES:
         raise DomainValidationError("history.params.strategy is not supported")
     for key in ("first", "last"):

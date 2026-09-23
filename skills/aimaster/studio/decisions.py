@@ -99,6 +99,7 @@ from __future__ import annotations
 
 import threading
 
+from .autopilot import stop_autopilot_spending
 from .adapters import validate_public_result
 from .decision_planners import _DEDICATED_MUTATION_TYPES, PLANNERS, plan_mutation
 from .decision_receipts import APPLIED_ACTION_IDS_WINDOW as _APPLIED_ACTION_IDS_WINDOW, append_applied_marker
@@ -227,6 +228,11 @@ class DecisionWorker:
 
             self.store.transact(action["project_id"], action["revision"], mutate_and_mark)
             status = "succeeded"
+            if action["action_type"] == "set-mode":
+                # Critic finding 1: switching the dashboard to guided stops
+                # every paid action autopilot had queued on its own grant.
+                stop_autopilot_spending(self.ledger, action["project_id"],
+                                        (action.get("payload") or {}).get("mode"))
         except Exception:
             # A decision never calls an external provider, so any failure
             # here is already fully known: bad input, an unknown or

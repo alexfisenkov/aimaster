@@ -46,8 +46,8 @@ machine paths to this file. The validator rejects unknown and sensitive fields.
    declaration alone never proves availability or authorization.
 
 During chat intake, before writing every new project's scenario, run the
-[writing-guide gate](writing-guides.md) and wait for the user's choice, even in
-autopilot mode. Discover the user's connected MCP/tools/routes before
+[writing-guide gate](writing-guides.md): in `guided` wait for the user's
+choice; in `autopilot` resolve it without a question as in [autopilot](autopilot.md). Discover the user's connected MCP/tools/routes before
 considering a provider. Do not browse provider sites merely to discover one.
 Live-probe the selected route and show only models it actually exposes. Before
 prompt writing for each new model and relevant task/stage, run that same gate.
@@ -55,9 +55,10 @@ It discovers an existing `model-prompt-instructions.md` compatibility file but
 must classify/register its exact scope before offering it; opt-in reusable
 guides live in the workspace catalogue.
 
-For each character, location, product and style reference, ask whether to use
-none, upload through chat, or generate. Generation requires a verified route and
-scoped authorization.
+For each character, location, product and style reference, in `guided` ask
+whether to use none, upload through chat, or generate. Generation requires a
+verified route and scoped authorization. In `autopilot`, reuse the workspace
+library and generate the rest without asking.
 
 The v1 CLI does not mutate configuration after initialization. Use a new state
 directory for a changed configuration; do not edit existing state or revision

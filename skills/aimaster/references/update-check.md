@@ -36,6 +36,11 @@ It neither updates files nor reads credentials.
   “Вышла новая версия AI Мастерской — {latest}. Рекомендую обновить перед работой.
   Обновим?” Link the verified official release URL if useful.
 
+Exception: for an `autopilot` project whose brief is already approved —
+including approval given in this same request (for example an idea sent with
+"делай" / "go") — do not ask; mention the new version only in the final report
+([autopilot](autopilot.md)).
+
 Wait for the choice. If declined, continue the original task on the installed
 version without repeating the offer. Detecting an update is not permission to
 install it. An explicit update request in this chat already supplies that choice.
