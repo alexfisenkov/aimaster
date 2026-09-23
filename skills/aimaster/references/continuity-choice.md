@@ -29,7 +29,8 @@ in `guided`. In `autopilot`, take the recommended strategy without asking and
 record it with `scene continuity`.
 Offer “use this preference for subsequent unchanged scenes” to reduce repeated
 questions; even then revalidate every previous result and model schema before
-each operation, and ask again when continuity conditions change.
+each operation, and ask again when continuity conditions change (guided; in
+`autopilot`, re-evaluate the strategy for every scene without asking).
 
 After the answer, record it through the question lifecycle and persist the
 same value through `scene continuity` as `previous_video`,

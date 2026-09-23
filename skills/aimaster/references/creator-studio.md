@@ -223,6 +223,11 @@ duration and order.
 
 ### References, frame plan and generation mode
 
+`reference add`, `reference attach` and `reference edit` are accepted from
+`image_plan` through the last stage that uses references (`image_results` for
+photo, `audio` for video/mixed), and not after that stage is approved. At
+`scenario` you can only look up the library (`library match`).
+
 ```bash
 creator_studio.py asset register WS --path media/<file> \
   --role {character,location,object,product,result,style,voice,video_reference}

@@ -46,10 +46,12 @@ no publishing, no uploads of files outside the project or library.
   `autopilot-grant` history entry. That entry raises the revision by one: take
   the fresh revision for the next `--expected-revision`. Then `claim`, execute,
   collect and `finish` as in [Creator Studio](creator-studio.md).
-- If **enqueue** returns `needs_chat`, the project is not in autopilot: re-read
-  `project.mode`; do not issue a grant on your own. This is different from a
-  `needs_chat` you write with **finish** — that one is a blocker (see Allowed
-  stops).
+- If **enqueue** returns `needs_chat`, re-read `project.mode`. If it is not
+  `autopilot`, the `guided` rules apply from here on (grant and approval in
+  chat). If it is `autopilot` and enqueue still returns `needs_chat`, stop with
+  a report (see Allowed stops); never issue a grant on your own. This is
+  different from a `needs_chat` you write with **finish**, which is a blocker
+  handled under Allowed stops.
 - Everything else still applies: stage preflight in the
   [completion loop](completion-loop.md), [reference binding](reference-bindings.md)
   and its validator, collection and read-back. A failed check is fixed and
@@ -59,16 +61,16 @@ no publishing, no uploads of files outside the project or library.
 
 ## Order after approval, stage by stage
 
-Before planning, run the **tool check** (below) and the **library** step:
-`creator_studio.py library match <ws> --text "<idea>"`. Every returned
-character, location, product or style becomes a project reference with
-`reference add <ws> <project> --from-library <library_id> --expected-revision N`
-(`source=upload`). A voice (returned with its character,
-`matched_via: "voice_of"`) is not a reference of its own: enable `voice_enabled`
-on the character reference, then
-`reference attach … --reference IMG_NN --from-library <voice_id>`. Do not
-generate what the library already has; every other needed reference is added
-with `--source generate`.
+**Before `scenario`:** run the **tool check** (below) and
+`creator_studio.py library match <ws> --text "<idea>"`. Remember the matches;
+references cannot be written yet (the engine accepts `reference add/attach/edit`
+only from `image_plan` on).
+
+Known limitation of `library match`: it compares word stems, so it cannot tell
+a female name from the genitive of a male one (Russian «Александра» — a woman,
+or «(у) Александра» — Alexander's). When the idea's heroine has a name whose
+stem matches a library character, check gender and role against the scenario
+before using that entry; never attach another person's face.
 
 Guide rule used below: run the exact `guide_registry.py match` from
 [writing guides](writing-guides.md), take the first entry in `matches`, else no
@@ -80,40 +82,61 @@ exposes it and it fits; otherwise apply "Выбрать за меня" from
 [model selection](model-selection.md), weighing the exact task, the number of
 image references and whether video references are used
 ([video inputs](video-inputs.md)). Record the reason. Re-select for each new
-task (image, motion, audio).
+task (image, scene motion, one-shot, audio).
 
 1. **`scenario`.** Scenario guide → `script add-version` → `scenes set` (with
    durations for video) → `stage approve --comment "autopilot"`.
 2. **`image_plan`.**
+   - **References first.** For each remembered library match:
+     `reference add <ws> <project> --from-library <library_id> --expected-revision N`
+     (`source=upload`). A voice (returned with its character,
+     `matched_via: "voice_of"`) is not a reference of its own: enable
+     `voice_enabled` on the character reference, then
+     `reference attach … --reference IMG_NN --from-library <voice_id>`. Every
+     other needed reference: `reference add … --source generate`. Do not
+     generate what the library already has.
    - `project set-gen-mode` (`one_shot` / `per_scene` from the approved brief).
    - Choose the image model (model rule), then the prompt guide for it.
-   - `scene plan` for every scene: plan first/last frames the motion mode will
-     need. For `per_scene`, plan a first frame on every scene after the first
-     whose likely continuity is `previous_last_frame`; planning it costs little
-     and keeps that option open at `motion`.
+   - `scene plan`: plan only frames that will really be used. Every planned
+     frame is a required, paid `image_results` position. For `per_scene`, plan
+     a first frame on a later scene only where `previous_last_frame` is truly
+     likely (a new composition over an unchanged state); plan first/last frames
+     where the chosen motion mode needs them.
    - `prompt add-version` for generated references, planned frames and scene
-     images; motion prompts may also be prepared here (motion model chosen by
-     the model rule).
+     images. Motion prompts may be drafted here; they are drafts and are
+     rewritten at `motion`.
    - `stage approve`.
-3. **`image_results`.** For every generated reference and planned frame:
-   `action enqueue` → claim → execute → collect (`result add-version`) →
-   finish. Review, pick with `decide approve --target <version> --comment
-   "autopilot: <reason>"`, vary/regenerate on a clear defect. Then
-   `stage approve`.
-4. **`motion`.** For each scene in order:
-   - for `per_scene` scenes after the first, `scene continuity` with the
-     strategy recommended in [continuity choice](continuity-choice.md). If that
-     strategy is not available now (for example `previous_last_frame` without
-     a first frame planned on `image_plan`, or the model rejects video
-     continuation), take the best available one (`previous_video` or
-     `independent`), record the reason, and **do not** go back to an earlier
-     stage. For `previous_video`, first copy the accepted previous clip to a new
-     media file, register it as `video_reference` and add it scene-locally with
-     `usage=continue`, as the preconditions there require;
-   - `scene video-mode` (`first`, `firstlast` or `references`) matching the
-     accepted frames and the model schema;
-   - enqueue → claim → execute → collect → finish → review → `decide approve`.
-   Then `stage approve`.
+3. **`image_results`.** For every generated reference, planned frame and scene
+   image (photo projects), references first: `action enqueue` → claim →
+   execute → collect (`result add-version`) → finish. Review, pick with
+   `decide approve --target <version> --comment "autopilot: <reason>"`,
+   vary/regenerate on a clear defect. Then `stage approve`.
+4. **`motion`.**
+   - **`per_scene`**, for each scene in order:
+     1. for scenes after the first, `scene continuity` with the strategy
+        recommended in [continuity choice](continuity-choice.md). If it is not
+        available now (for example `previous_last_frame` without a first frame
+        planned on `image_plan`, or the model rejects video continuation),
+        take the best available one (`previous_video` or `independent`), record
+        the reason, and **do not** go back to an earlier stage. For
+        `previous_video`, first copy the accepted previous clip to a new media
+        file, register it as `video_reference` and add it scene-locally with
+        `usage=continue`, as the preconditions there require;
+     2. `scene video-mode` (`first`, `firstlast` or `references`) matching the
+        accepted frames and the model schema;
+     3. model rule for this scene's task, then guide rule (task `continue` for
+        `previous_video`);
+     4. `prompt add-version --target pos:scene:<scene>:video` with the exact
+        `@IMG_NN` / `@VID_NN` / `@VOICE_NN` and frames this scene uses;
+     5. enqueue → claim → execute → collect → finish → review →
+        `decide approve`.
+   - **`one_shot`**: one position, `pos:oneshot`. No `scene continuity` or
+     `scene video-mode` is required for it (the runner checks those only for
+     per-scene video). Model rule for the whole-video task, guide rule, then
+     `prompt add-version --target pos:oneshot` covering all scenes with the
+     tags it uses; accepted frames may be used as inputs when the model schema
+     supports them. Then enqueue → … → `decide approve`.
+   - `stage approve`.
 5. **`audio`.** A layer is required only when its result group has an entry.
    If the brief needs no separate sound, create nothing and `stage approve`
    the empty stage. Otherwise, per layer: model rule, guide rule, prompt,
@@ -149,10 +172,17 @@ verified route of the same modality and continue; mention it in the report.
 
 ## Allowed stops
 
-A binding, collection or stale-revision blocker (a `needs_chat` you would write
-with `finish`, a validator failure, a revision conflict) is not a stop by
-itself: fix the cause, re-read the state, queue the action again. If it cannot
-be fixed, it becomes a stop.
+Blockers are handled by when they happen:
+
+- **Before the external call** (binding, validator failure, stale revision
+  while preparing): fix the cause, re-read the state, then queue the action
+  again. Nothing was spent yet.
+- **After execution** (collection failed, conflict on `result add-version`,
+  read-back mismatch): fix the cause and repeat **only the collection** of the
+  existing provider result, as in the [completion loop](completion-loop.md).
+  Never generate again: the result is already paid for.
+
+A blocker that cannot be fixed this way becomes a stop.
 
 Stop only when continuing is physically impossible:
 
@@ -160,7 +190,9 @@ Stop only when continuing is physically impossible:
 - the provider refused on payment or balance;
 - an `outcome_unknown` that the provider's own history cannot resolve (never
   retry it blindly);
-- a binding, collection or revision blocker that you could not fix.
+- a binding, collection or revision blocker that you could not fix;
+- `action enqueue` returned `needs_chat` although `project.mode` is
+  `autopilot`.
 
 Then write a report, not a question: what is done (with dashboard link), what
 blocked, which routes were checked, and the exact command or action that
