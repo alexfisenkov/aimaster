@@ -50,6 +50,13 @@ def png_bytes(red=200):
             + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
 
 
+def mp4_bytes():
+    def box(kind, payload):
+        return struct.pack(">I", 8 + len(payload)) + kind + payload
+
+    return box(b"ftyp", b"isom" + struct.pack(">I", 512) + b"isomiso2avc1mp41") + box(b"mdat", b"\x00" * 16)
+
+
 def wav_bytes():
     samples = b"\x00\x00" * 8000
     fmt = struct.pack("<4sIHHIIHH", b"fmt ", 16, 1, 1, 8000, 16000, 2, 16)
@@ -191,6 +198,11 @@ class LibraryImportMatchTests(Base):
         self.media_reference("two", "alex-again.png", self.alex, label="Александр — референс")
         self.media_reference("one", "artem.png", self.artem, label="Артём — второй персонаж")
         self.media_reference("two", "local.png", png_bytes(3), label="Локальный", scene="s1")
+        (self.ws / "media" / "clip.mp4").write_bytes(mp4_bytes())
+        clip = cli("asset", "register", self.ws, "--path", "media/clip.mp4", "--role", "video_reference")
+        self.clip = cli("reference", "add", self.ws, "two", "--kind", "video", "--name", "Продолжение",
+                        "--asset-id", clip["asset_id"], "--usage", "continue", "--scene", "s1",
+                        "--expected-revision", self.rev("two"))["reference_id"]
         artem = self.store.load("one")["references"][-1]["reference_id"]
         cli("reference", "edit", self.ws, "one", "--reference", artem, "--field", "voice_enabled",
             "--value", "true", "--expected-revision", self.rev("one"))
@@ -199,10 +211,12 @@ class LibraryImportMatchTests(Base):
         cli("reference", "attach", self.ws, "one", "--reference", artem,
             "--asset-id", voice_asset["asset_id"], "--expected-revision", self.rev("one"))
 
-    def test_import_dedupes_and_skips_local(self):
+    def test_import_takes_local_images_and_skips_project_clips(self):
         result = cli("library", "import", self.ws, "--from-projects")
-        self.assertEqual(len(result["created"]), 3)
-        self.assertIn("local", {item["reason"] for item in result["skipped"]})
+        self.assertEqual(len(result["created"]), 4)
+        self.assertEqual([(i["reference_id"], i["reason"]) for i in result["skipped"]],
+                         [(self.clip, "project_clip")])
+        self.assertIn("Локальный", [e["label"] for e in cli("library", "list", self.ws)["entries"]])
         entries = {entry["label"]: entry
                    for entry in cli("library", "list", self.ws, "--kind", "character")["entries"]}
         self.assertEqual(entries["Александр"]["aliases"], ["Alex"])
@@ -211,7 +225,7 @@ class LibraryImportMatchTests(Base):
         self.assertEqual(voices[0]["voice_of"], entries["Артём"]["library_id"])
         again = cli("library", "import", self.ws, "--from-projects")
         self.assertEqual(again["created"], [])
-        self.assertEqual(again["entries"], 3)
+        self.assertEqual(again["entries"], 4)
 
     def test_match_ignores_case_and_endings(self):
         cli("library", "import", self.ws, "--from-projects")

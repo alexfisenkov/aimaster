@@ -1,8 +1,8 @@
 """Library ⇄ projects: `library import --from-projects` and `--from-library`.
 
 Spec 2026-09-23 §3. Import walks every project's references that carry a
-registered file, skipping scene-local ones (`local`, or bound to one
-`scene_id`), and adds each file once (sha256). A generated reference
+registered file — scene-local image references included, scene-local
+video references (`project_clip`) skipped — and adds each file once (sha256). A generated reference
 (`source=generate`) contributes its selected result version, else its
 approved one (`generated_asset_id`). Labels are shortened to
 their name part («Артём — второй персонаж» → «Артём»); the most frequent
@@ -77,8 +77,12 @@ def _collect(workspace):
         for reference in state.get("references", []) or []:
             ref_id = reference.get("reference_id")
             where = {"project_id": project_id, "reference_id": ref_id}
-            if reference.get("local", "scene_id" in reference):
-                skipped.append({**where, "reason": "local"})
+            # `local` is a binding inside one project, not a property of the
+            # subject: a scene-local image reference is imported like any
+            # other. A scene-local video is a clip of that very film
+            # (continuation, edit) and stays in its project.
+            if reference.get("role") == "video" and reference.get("local", "scene_id" in reference):
+                skipped.append({**where, "reason": "project_clip"})
                 continue
             kind = _ROLE_TO_KIND.get(reference.get("role"))
             asset_id = reference.get("asset_id")
