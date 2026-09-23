@@ -50,7 +50,11 @@ install it. An explicit update request in this chat already supplies that choice
 Use the repository README's safe update procedure: resolve the actual install
 clone from the invoked skill; verify the official origin, `main` branch and
 clean worktree; use a fast-forward update; preserve local modifications,
-personal preferences, guides and projects. Do not reset/stash/overwrite to
+personal preferences, guides and projects. On every OS the bundled installer
+does exactly this: `python3 scripts/install.py --update --json` (Windows:
+`py -3 scripts/install.py --update --json`); read `update.status` and
+`update.tag`. It also refreshes installed copies (Windows fallback without
+links). Do not reset/stash/overwrite to
 force an update. A copied standalone skill without a verified clone needs the
 documented installation route; do not guess its repository or replace it blindly.
 

@@ -8,8 +8,12 @@
 решения и действия остаются в чате. Telegram можно подключить позже. Если запуск
 страницы технически недоступен, работа продолжается только в чате.
 
-Примеры команд подготовлены для macOS и оболочки zsh. Нужен Python 3.11 или
-новее. Для другой оболочки способ ввода пути может отличаться.
+Навык работает на macOS, Linux и Windows (без WSL). Нужен Python 3.11 или
+новее. Примеры команд даны для macOS/Linux (zsh) и отдельно для Windows
+(PowerShell). Везде, где написано `python3`, используй команду Python, которую
+напечатал установщик в строке `python_cmd`: на Windows это обычно `py -3`.
+Переменная `$CREATOR_WORKSPACE` в PowerShell записывается как
+`$env:CREATOR_WORKSPACE`.
 
 ## 1. Проверь среду
 
@@ -22,6 +26,14 @@ cd "/путь/к/skills/aimaster"
 python3 --version
 python3 scripts/creator_studio.py --help
 python3 scripts/creator_studio_bot.py --help
+```
+
+Windows (PowerShell):
+
+```powershell
+cd "C:\путь\к\skills\aimaster"
+py -3 --version
+py -3 scripts\creator_studio.py --help
 ```
 
 В новом окне терминала снова укажи папку проекта: введённые значения
@@ -87,6 +99,18 @@ else:
 PY
 ```
 
+Windows (PowerShell):
+
+```powershell
+$env:CREATOR_WORKSPACE = Read-Host "Введите постоянный абсолютный путь workspace"
+if (-not [System.IO.Path]::IsPathRooted($env:CREATOR_WORKSPACE)) { throw "Нужен абсолютный путь" }
+py -3 scripts\creator_studio.py workspace init "$env:CREATOR_WORKSPACE"
+if (-not (Test-Path (Join-Path $env:CREATOR_WORKSPACE "projects\first-video\state.json"))) {
+  py -3 scripts\creator_studio.py project create "$env:CREATOR_WORKSPACE" first-video `
+    --title "Первый ролик" --type video --mode guided
+}
+```
+
 Если команда завершилась ошибкой, не переходи к следующим шагам: сначала исправь
 путь или окружение и запусти этот блок снова.
 
@@ -99,6 +123,8 @@ PY
 ```zsh
 python3 scripts/creator_studio.py library import "$CREATOR_WORKSPACE" --from-projects
 ```
+
+В PowerShell: `py -3 scripts\creator_studio.py library import "$env:CREATOR_WORKSPACE" --from-projects`.
 
 Дубликаты не создаются. После этого агент сам подхватывает нужных персонажей и
 голоса, когда они упомянуты в идее ролика.
@@ -122,6 +148,8 @@ Telegram или совместить эти варианты. Для стран�
 python3 scripts/creator_studio.py serve "$CREATOR_WORKSPACE" --port 0
 ```
 
+В PowerShell: `py -3 scripts\creator_studio.py serve "$env:CREATOR_WORKSPACE" --port 0`.
+
 К единственному напечатанному адресу добавь ID проекта и открой полный адрес:
 `http://127.0.0.1:<номер-порта>/?project=first-video`. Для другого проекта
 замени `first-video` на его ID. Страница работает, пока открыт этот процесс;
@@ -129,7 +157,7 @@ python3 scripts/creator_studio.py serve "$CREATOR_WORKSPACE" --port 0
 копировать промпты. Вопросы, решения, правки и создание новых материалов идут
 через работающего агента в чате.
 
-## 5. Подключи Telegram (необязательно, только для владельца macOS)
+## 5. Подключи Telegram (необязательно; живой запуск проверен на macOS)
 
 Для подключения запусти локальный мастер:
 
@@ -187,6 +215,14 @@ export AIMASTER_MINI_APP_PORT="8788"
 python3 scripts/creator_studio_telegram.py run --workspace "$CREATOR_WORKSPACE"
 ```
 
+То же в PowerShell:
+
+```powershell
+$env:AIMASTER_MINI_APP_PUBLIC_URL = "https://studio.example.com"
+$env:AIMASTER_MINI_APP_PORT = "8788"
+py -3 scripts\creator_studio_telegram.py run --workspace "$env:CREATOR_WORKSPACE"
+```
+
 - `AIMASTER_MINI_APP_PUBLIC_URL` — только `https://`, без query, фрагмента
   и логина с паролем. Адрес публикуется один раз после привязки владельца.
 - `AIMASTER_MINI_APP_PORT` — фиксированный порт локального шлюза,
@@ -196,8 +232,9 @@ python3 scripts/creator_studio_telegram.py run --workspace "$CREATOR_WORKSPACE"
   не перезапускает и не гасит. Если адрес не ответил с этого компьютера,
   он всё равно публикуется — с предупреждением в консоли.
 
-На macOS агент должен быть установлен и авторизован заранее. Windows в этом
-выпуске не поддерживается.
+Агент должен быть установлен и авторизован заранее. Живой запуск Telegram
+проверен на macOS; на Windows и Linux он пока не проверялся — если что-то не
+заработает, продолжай в чате и на странице проекта.
 
 Программа читает значения, переданные текущему процессу. Файл `.env` сам по
 себе не загружается. Используй терминал или уже настроенное безопасное хранилище.
