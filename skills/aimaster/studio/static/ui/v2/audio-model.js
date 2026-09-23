@@ -4,6 +4,7 @@
 // Чистые функции, без DOM.
 
 import { variantCounts, variantStatus } from "./counts.js";
+import { statusTone } from "./status-tone.js";
 
 export const AUDIO_LAYERS = Object.freeze([
   Object.freeze({ layer: "voice", name: "Голос", hint: "реплики героев" }),
@@ -18,11 +19,11 @@ export const AUDIO_LAYERS = Object.freeze([
  * @param {object} project `snapshot.active_project`
  * @returns {{layer: string, name: string, hint: string, total: number,
  *            index: number, selected: object|null, status: string,
- *            hasPrompt: boolean}[]}
+ *            tone: "ok"|"warn"|"none", wave: number[], hasPrompt: boolean}[]}
  */
 export function audioTiles(project) {
   const layers = project?.audio_layers || [];
-  return AUDIO_LAYERS.map((meta) => {
+  return AUDIO_LAYERS.map((meta, order) => {
     const counts = variantCounts(project, { layer: meta.layer });
     const owner = layers.find((item) => item?.layer === meta.layer);
     return {
@@ -35,8 +36,26 @@ export function audioTiles(project) {
       // (`domain_positions._position_required`). Так и подписываем —
       // человек должен видеть, что звук можно просто пропустить.
       status: counts.total === 0 && !counts.selected ? "не нужен — можно пропустить" : variantStatus(counts),
+      tone: statusTone(counts),
+      wave: waveHeights(order, counts.total > 0 || Boolean(counts.selected)),
       hasPrompt: typeof owner?.links?.audio_prompt_version_id === "string"
         && Boolean(owner.links.audio_prompt_version_id),
     };
   });
+}
+
+/**
+ * Высоты столбиков волны на плитке слоя — рисунок, а не звук: настоящей
+ * огибающей у снимка нет. Детерминированно от номера слоя, чтобы плитка
+ * не «дышала» при каждой перерисовке. Пустой слой — ровная низкая черта.
+ *
+ * @param {number} seed номер слоя
+ * @param {boolean} filled есть ли у слоя варианты
+ * @param {number} [count] сколько столбиков
+ * @returns {number[]} доли высоты 0..1
+ */
+export function waveHeights(seed, filled, count = 28) {
+  return Array.from({ length: count }, (_, index) => (filled
+    ? 0.18 + Math.round(70 * Math.abs(Math.sin(index * 0.9 + seed) * Math.cos(index * 0.31))) / 100
+    : 0.08));
 }

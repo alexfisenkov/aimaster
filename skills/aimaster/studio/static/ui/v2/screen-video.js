@@ -1,7 +1,9 @@
-// Экран «Видео» (спецификация §3.3): те же строки сцен, что и на
-// «Кадрах», но справа три зоны про клип. При «одним заходом» сцена одна
-// на весь ролик, поэтому вместо списка — одна плитка финального клипа.
+// Экран «Видео» (спецификация §3.3, хэндофф 2026-09-23): те же карточки
+// сцен, что и на «Кадрах», но справа превью клипа и «Продолжение». При
+// «одним заходом» сцена одна на весь ролик, поэтому сверху — одна
+// крупная плитка клипа всего ролика. Заголовок экрана рисует оболочка.
 
+import { playMark, statusLine } from "./board-bits.js";
 import { el, openViewer } from "./dom.js";
 import { renderFooter } from "./footer.js";
 import { renderSceneRow, scenesInOrder } from "./scene-row.js";
@@ -13,18 +15,23 @@ function oneShotClip(project) {
   const status = clipStatus(project, { scene_id: "oneshot" });
   const box = el("section", "v2-oneclip");
   box.dataset.hook = "v2-oneclip";
-  box.append(el("h2", "v2-section-title", "Клип всего ролика"));
-  const button = el("button", "v2-big-slot");
+  const head = el("div", "v2-section-head");
+  head.append(el("h2", "v2-section-title", "Клип всего ролика"));
+  box.append(head);
+  const button = el("button", "v2-big-preview");
   button.type = "button";
   button.dataset.hook = "v2-oneclip-slot";
   button.setAttribute("aria-label", `Клип всего ролика: ${status.text}`);
-  button.append(videoThumb(status.selected?.asset_url || null, "Клип всего ролика"));
+  button.append(
+    videoThumb(status.selected?.asset_url || null, "Клип всего ролика"),
+    ...(status.selected ? [playMark("v2-play v2-play-big")] : []),
+    statusLine(status.text, status.tone, "v2-status v2-big-preview-status"),
+  );
   button.addEventListener("click", () => openViewer(
     { kind: "scene", id: "oneshot" }, { tab: "video", slot: "video", trigger: button },
   ));
-  box.append(button, el("p", "v2-section-hint", status.total === 0
-    ? "Клипов пока нет — попросите агента сгенерировать вариант."
-    : status.text));
+  box.append(button);
+  if (status.total === 0) box.append(el("p", "v2-section-hint", "Клипов пока нет — попросите агента сгенерировать вариант."));
   return box;
 }
 
@@ -52,13 +59,16 @@ export function renderVideoScreen(root, { state, screen = "video" } = {}) {
   const scenes = scenesInOrder(project);
   const list = el("section", "v2-scenes");
   list.dataset.hook = "v2-scenes";
-  list.append(
-    el("h2", "v2-section-title", `Сцены · ${scenes.length}`),
-    el("p", "v2-section-hint", project.gen_mode === "one_shot"
-      ? "Ролик делается целиком, поэтому у сцен свои клипы могут и не появиться."
-      : "У каждой сцены свой клип. Нажмите на клип, чтобы посмотреть варианты и выбрать."),
+  const head = el("div", "v2-section-head");
+  head.append(
+    el("h2", "v2-section-title", "Сцены"),
+    el("span", "v2-section-note", !scenes.length
+      ? "Сцен пока нет — они появятся после раскадровки."
+      : project.gen_mode === "one_shot"
+        ? `${scenes.length} · ролик делается целиком, своих клипов у сцен может и не быть`
+        : `${scenes.length} · нажмите на клип, чтобы посмотреть варианты и выбрать`),
   );
-  if (!scenes.length) list.append(el("p", "v2-section-hint", "Сцен пока нет — они появятся после раскадровки."));
+  list.append(head);
   scenes.forEach((scene, index) => list.append(
     renderSceneRow(project, snapshot.revision, scene, index + 1, { mode: "video" }),
   ));

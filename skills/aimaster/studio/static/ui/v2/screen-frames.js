@@ -1,10 +1,12 @@
-// Экран «Кадры» (спецификация §3.2) — один экран поверх двух серверных
-// стадий, `image_plan` и `image_results`: переключатель способа генерации,
-// общий промпт при «одним заходом», полка референсов, сцены списком и
-// низ с одной главной кнопкой.
+// Экран «Кадры» (спецификация §3.2, хэндофф 2026-09-23) — один экран
+// поверх двух серверных стадий, `image_plan` и `image_results`:
+// переключатель способа генерации, общий промпт при «одним заходом»,
+// полка референсов, сцены карточками и низ с одной главной кнопкой.
+// Заголовок экрана рисует оболочка.
 
 import { requestAgentPrompt } from "../chat-prompt-dialog.js";
 import { editPrompt } from "./chat-prompts.js";
+import { placeScreenTools } from "./board-bits.js";
 import { chatButton, el } from "./dom.js";
 import { renderFooter } from "./footer.js";
 import { renderShelf } from "./reference-shelf.js";
@@ -28,12 +30,12 @@ function genModeRow(project, revision) {
   const section = el("section", "v2-mode");
   section.dataset.hook = "v2-mode";
   const row = el("div", "v2-mode-row");
-  row.append(el("span", "v2-mode-label", "Как делаем ролик:"));
-  const group = el("div", "v2-switch");
+  row.append(el("span", "v2-mode-label", "Как делаем ролик"));
+  const group = el("div", "v2-seg");
   group.setAttribute("role", "group");
   group.setAttribute("aria-label", "Как делаем ролик");
   for (const mode of MODES) {
-    const button = el("button", "v2-switch-option", mode.label);
+    const button = el("button", "v2-seg-option", mode.label);
     button.type = "button";
     button.dataset.hook = "v2-mode-option";
     button.dataset.mode = mode.id;
@@ -55,21 +57,23 @@ function oneShotPrompt(project, revision) {
   const versionId = project?.oneshot?.links?.motion_prompt_version_id;
   const collection = project?.motion_prompts || [];
   const current = collection.find((item) => item?.version_id === versionId);
-  const section = el("section", "v2-oneshot");
+  const section = el("section", "v2-card v2-oneshot");
   section.dataset.hook = "v2-oneshot";
-  section.append(el("h2", "v2-section-title", "Промпт на весь ролик"));
+  const head = el("div", "v2-card-head");
+  head.append(el("h2", "v2-card-title", "Промпт на весь ролик"));
+  section.append(head);
   if (!current) {
     section.append(el("p", "v2-section-hint", "Промпта пока нет — попросите агента его написать."));
     return section;
   }
   const versions = promptGroups(collection).get(current.prompt_id) || [current];
   const number = versions.findIndex((item) => item.version_id === versionId) + 1;
+  head.append(el("span", "v2-card-meta", `v${number || 1} из ${versions.length}`));
   section.append(
-    el("p", "v2-oneshot-meta", `v${number || 1} из ${versions.length}`),
     el("p", "v2-oneshot-text", current.text || ""),
     chatButton("Изменить → чат", editPrompt({
       project, revision, promptVersion: current, what: "всего ролика",
-    })),
+    }), "v2-chat-button v2-card-button"),
   );
   return section;
 }
@@ -92,7 +96,6 @@ export function renderFramesScreen(root, { state, readOnly = false, screen = "fr
   }
 
   const genMode = genModeRow(project, snapshot.revision);
-  if (genMode) surface.append(genMode);
   if (project.gen_mode === "one_shot") surface.append(oneShotPrompt(project, snapshot.revision));
 
   surface.append(renderShelf(project, snapshot.revision));
@@ -100,11 +103,16 @@ export function renderFramesScreen(root, { state, readOnly = false, screen = "fr
   const scenes = scenesInOrder(project);
   const list = el("section", "v2-scenes");
   list.dataset.hook = "v2-scenes";
-  list.append(el("h2", "v2-section-title", `Сцены · ${scenes.length}`));
-  if (!scenes.length) {
-    list.append(el("p", "v2-section-hint", "Сцен пока нет — они появятся после раскадровки."));
-  }
+  const head = el("div", "v2-section-head");
+  head.append(
+    el("h2", "v2-section-title", "Сцены"),
+    el("span", "v2-section-note", scenes.length
+      ? `${scenes.length} · нажмите на кадр, чтобы выбрать вариант`
+      : "Сцен пока нет — они появятся после раскадровки."),
+  );
+  list.append(head);
   scenes.forEach((scene, index) => list.append(renderSceneRow(project, snapshot.revision, scene, index + 1)));
   surface.append(list, renderFooter(snapshot, { screen }));
+  if (genMode) placeScreenTools(root, surface, genMode);
   root.append(surface);
 }

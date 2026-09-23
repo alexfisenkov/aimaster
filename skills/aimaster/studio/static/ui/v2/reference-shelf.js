@@ -4,7 +4,9 @@
 
 import { addReference } from "./chat-prompts.js";
 import { variantCounts, variantStatus } from "./counts.js";
+import { statusLine } from "./board-bits.js";
 import { chatButton, el, openViewer, thumb } from "./dom.js";
+import { statusTone } from "./status-tone.js";
 
 export const SHELF_GROUPS = Object.freeze([
   Object.freeze({ kind: "character", title: "Персонажи", subtitle: "люди и герои; у каждого может быть голос" }),
@@ -32,10 +34,8 @@ export function shelfGroups(project) {
 
 function referenceTile(project, revision, reference) {
   const counts = variantCounts(project, { referenceId: reference.reference_id });
-  const status = variantStatus(counts, {
-    source: reference.source,
-    hasAsset: reference.has_asset === true,
-  });
+  const own = { source: reference.source, hasAsset: reference.has_asset === true };
+  const status = variantStatus(counts, own);
   const name = reference.label || reference.reference_id;
   const tile = el("button", "v2-tile");
   tile.type = "button";
@@ -49,7 +49,7 @@ function referenceTile(project, revision, reference) {
     picture.append(el("span", "v2-tile-voice", "🎙"));
   }
   const caption = el("span", "v2-tile-caption");
-  caption.append(el("b", "", name), el("span", "", status));
+  caption.append(el("b", "v2-tile-name", name), statusLine(status, statusTone(counts, own), "v2-status v2-tile-status"));
   tile.append(picture, caption);
   tile.addEventListener("click", () => openViewer(
     { kind: "reference", id: reference.reference_id },
@@ -66,22 +66,26 @@ function referenceTile(project, revision, reference) {
 export function renderShelf(project, revision) {
   const section = el("section", "v2-shelf");
   section.dataset.hook = "v2-shelf";
-  section.append(
+  const head = el("div", "v2-section-head");
+  head.append(
     el("h2", "v2-section-title", "Референсы"),
-    el("p", "v2-section-hint", "Постоянные для всего ролика: кто в кадре, где, с чем и в каком стиле."),
+    el("span", "v2-section-note", "Постоянные для всего ролика: кто в кадре, где, с чем и в каком стиле."),
   );
+  section.append(head);
   const groups = el("div", "v2-shelf-groups");
   for (const group of shelfGroups(project)) {
     const block = el("section", "v2-shelf-group");
     block.dataset.kind = group.kind;
-    block.append(el("h3", "", group.title), el("p", "v2-shelf-group-hint", group.subtitle));
+    const top = el("div", "v2-shelf-group-head");
+    top.append(el("h3", "v2-shelf-group-title", group.title));
+    top.append(el("span", "v2-shelf-group-count", group.items.length ? String(group.items.length) : ""));
+    top.append(el("span", "v2-shelf-group-hint", group.subtitle));
+    block.append(top);
     const items = el("div", "v2-shelf-items");
     for (const reference of group.items) items.append(referenceTile(project, revision, reference));
-    items.append(chatButton(
-      "＋",
-      addReference(group.kind, project, revision),
-      "v2-tile v2-tile-add",
-    ));
+    const add = chatButton("＋", addReference(group.kind, project, revision), "v2-tile-add");
+    add.setAttribute("aria-label", `Добавить: ${group.title.toLowerCase()}`);
+    items.append(add);
     block.append(items);
     groups.append(block);
   }
