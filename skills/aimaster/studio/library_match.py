@@ -1,7 +1,8 @@
 """`library match`: which library entries an idea text names.
 
 Spec 2026-09-23 §3: an entry matches when its `label` or one of its
-`aliases` occurs in the text, ignoring case and Russian endings by a simple
+`aliases` occurs in the text (for a character or voice only the name
+before « — » is needed; any other kind needs its whole caption), ignoring case and Russian endings by a simple
 stem rule. A word longer than 4 letters also stands for itself minus its
 last one or two letters, never shorter than 4 letters: «Артёмом» and
 «Артём» share «артем», «Александром» and «Александр» share «александр»,
@@ -39,8 +40,14 @@ def name_part(label: str) -> str:
     return _NAME_SPLIT.split(label.strip(), maxsplit=1)[0].strip()
 
 
-def _name_matches(name: str, text_stems: list[frozenset[str]]) -> bool:
-    words = _words(name_part(name))
+_NAME_KINDS = frozenset({"character", "voice"})
+
+
+def _name_matches(name: str, kind: str, text_stems: list[frozenset[str]]) -> bool:
+    # A person is named by the part before « — »; any other entry must be
+    # named by its whole caption (critic finding 2: «AI Мастерская — dark
+    # boho riding look» is a look, and the brand alone must not find it).
+    words = _words(name_part(name) if kind in _NAME_KINDS else name)
     if not words:
         return False
     return all(any(stems(word) & candidate for candidate in text_stems) for word in words)
@@ -54,7 +61,7 @@ def match(workspace, text: str) -> dict:
     matched: dict[str, dict] = {}
     for entry in entries:
         for name in (entry["label"], *entry["aliases"]):
-            if _name_matches(name, text_stems):
+            if _name_matches(name, entry["kind"], text_stems):
                 matched[entry["library_id"]] = {**entry, "matched_name": name}
                 break
     for entry in entries:

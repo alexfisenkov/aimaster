@@ -87,9 +87,19 @@ def generated_asset_id(state, reference) -> tuple[str | None, str | None]:
 def _collect(workspace):
     store, assets = open_store(workspace), open_assets(workspace)
     found, skipped = {}, []
-    for summary in store.list_projects():
-        project_id = summary["id"]
-        state = store.load(project_id)
+    # Read each project folder on its own (not `store.list_projects()`,
+    # which refuses the whole workspace over one broken `state.json`):
+    # critic finding 7 -- a broken project is reported, never fatal.
+    for folder in store._project_paths():
+        try:
+            state = store._read(folder)
+            project_id = state["project"]["id"]
+            if not isinstance(project_id, str) or not isinstance(state.get("references", []), list):
+                raise TypeError("unexpected project shape")
+        except Exception as error:  # noqa: BLE001 - one broken project must not stop the import
+            skipped.append({"project_id": folder.name, "reference_id": None,
+                            "reason": "project_unreadable", "error": type(error).__name__})
+            continue
         for reference in state.get("references", []) or []:
             ref_id = reference.get("reference_id")
             where = {"project_id": project_id, "reference_id": ref_id}
@@ -118,10 +128,10 @@ def _collect(workspace):
             for job_kind, asset_id in jobs:
                 try:
                     path, _ = assets.resolve(asset_id)
-                except (AssetError, ValueError):
+                    digest = sha256_of(path)
+                except (AssetError, ValueError, OSError):
                     skipped.append({**where, "reason": "asset_missing"})
                     break
-                digest = sha256_of(path)
                 slot = found.setdefault(digest, {"kind": job_kind, "path": path, "names": Counter(),
                                                  "fulls": [], "source": where,
                                                  "owner_digest": owner_digest})
@@ -144,16 +154,27 @@ def import_from_projects(workspace) -> dict:
             voice_of = character_ids.get(slot["owner_digest"]) if slot["kind"] == "voice" else None
             before = find_by_sha(index, digest)
             before = None if before is None else (before["label"], list(before["aliases"]))
-            entry, is_new, _ = add_file(index, library, kind=slot["kind"], label=label,
-                                        aliases=aliases, source_file=slot["path"],
-                                        voice_of=voice_of, source=slot["source"])
+            try:
+                entry, is_new, _ = add_file(index, library, kind=slot["kind"], label=label,
+                                            aliases=aliases, source_file=slot["path"],
+                                            voice_of=voice_of, source=slot["source"],
+                                            strict_kind=False)
+            except (LibraryError, OSError) as error:
+                # Critic finding 7: one bad file never stops the others.
+                skipped.append({**slot["source"], "reason": "add_failed",
+                                "error": type(error).__name__})
+                continue
             (created if is_new else reused).append(entry["library_id"])
             if not is_new and "source" in entry and entry["kind"] == slot["kind"]:
                 # Derived by an earlier import: bring its caption up to the
                 # current naming rule. Entries from `library add` (no
                 # `source`) are the user's own wording and stay untouched.
-                entry["label"], entry["aliases"] = label, aliases
-                if before != (label, aliases):
+                # Critic finding 6: merge, never drop, aliases someone added
+                # by hand; only the previous automatic label is let go.
+                kept = [a for a in entry["aliases"]
+                        if a not in aliases and a != label and a != (before or ("",))[0]]
+                entry["label"], entry["aliases"] = label, [*aliases, *kept]
+                if before != (entry["label"], entry["aliases"]):
                     relabeled.append(entry["library_id"])
             if entry["kind"] == "character":
                 character_ids[digest] = entry["library_id"]

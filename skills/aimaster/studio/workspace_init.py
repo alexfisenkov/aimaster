@@ -56,8 +56,18 @@ def init_workspace(workspace) -> dict:
     root.mkdir(parents=True, exist_ok=True)
     root = root.resolve(strict=True)
     created: list[str] = []
-    for name in ("projects", "media", "instructions", LIBRARY_DIR_NAME):
+    # Critic finding 5: an old workspace keeps projects directly in its root
+    # (`<ws>/<id>/state.json`, no `projects/`). `resolve_workspace_paths`
+    # only falls back to the root while `projects/` is absent, so creating
+    # an empty one would hide every existing project. Leave it absent.
+    legacy = [] if (root / "projects").exists() else sorted(
+        child.name for child in root.iterdir()
+        if child.is_dir() and not child.name.startswith(".") and (child / "state.json").is_file()
+    )
+    for name in ("media", "instructions", LIBRARY_DIR_NAME):
         _ensure_dir(root / name, root, created)
+    if not legacy:
+        _ensure_dir(root / "projects", root, created)
     _ensure_dir(root / PRIVATE_DIR_NAME, root, created, mode=0o700)
     library = root / LIBRARY_DIR_NAME
     for folder in KIND_FOLDERS.values():
@@ -72,4 +82,9 @@ def init_workspace(workspace) -> dict:
     if not readme.exists():
         readme.write_text(README_TEXT, encoding="utf-8")
         created.append("README.md")
-    return {"workspace": str(root), "created": created, "already_initialized": not created}
+    result = {"workspace": str(root), "created": created, "already_initialized": not created}
+    if legacy:
+        result["legacy_projects_in_root"] = legacy
+        result["note"] = ("projects/ not created: projects live in the workspace root "
+                          "(old layout) and stay visible there")
+    return result

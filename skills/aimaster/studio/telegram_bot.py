@@ -918,8 +918,8 @@ class TelegramBotController:
                     f"telegram-{update_id}",
                 ),
             )
-            issuer = getattr(self.ledger, "grant_issuer", None)
-            if action["status"] == "queued" and issuer and issuer(action["grant_id"]) == "autopilot":
+            mode = (self.store.load(request["project_id"]).get("project") or {}).get("mode")
+            if action["status"] == "queued" and mode == "autopilot":
                 text = "Платное действие поставлено в очередь: в автопилоте разрешение выдаётся само."
             elif action["status"] == "queued":
                 text = "Платное действие поставлено в очередь по ранее выданному разрешению."

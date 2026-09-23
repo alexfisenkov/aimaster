@@ -244,7 +244,22 @@ def _merge_aliases(entry: dict, names) -> bool:
     return changed
 
 
-def add_file(index, library, *, kind, label, aliases=(), source_file, voice_of=None, source=None):
+def _check_signature(path: Path, media: str) -> None:
+    """Critic finding 11: refuse a file `assets.register` would refuse later,
+    at `library add` time -- same detector, same extension/signature rule."""
+
+    from .assets import _EXTENSION_MIME, AssetValidationError, _inspect_media
+
+    try:
+        mime_type, _, _ = _inspect_media(path.read_bytes())
+    except (AssetValidationError, OSError) as error:
+        raise LibraryError(f"file is not a valid {media} file: {error}") from error
+    if _EXTENSION_MIME.get(path.suffix.casefold()) != mime_type:
+        raise LibraryError("file extension does not match its content")
+
+
+def add_file(index, library, *, kind, label, aliases=(), source_file, voice_of=None, source=None,
+             strict_kind=True):
     """Add one file to an already-locked index; reuse an entry with the same sha256."""
 
     if kind not in KIND_FOLDERS:
@@ -270,8 +285,14 @@ def add_file(index, library, *, kind, label, aliases=(), source_file, voice_of=N
         owner = find_entry(index, voice_of)
         if owner is None or owner["kind"] != "character":
             raise LibraryError("voice_of must name a character library entry")
+    _check_signature(resolved, media)
     digest = sha256_of(resolved)
     existing = find_by_sha(index, digest)
+    if existing is not None and existing["kind"] != kind and strict_kind:
+        raise LibraryError(
+            f"this file is already in the library as {existing['kind']} "
+            f"{existing['library_id']} ({existing['label']})"
+        )
     if existing is not None:
         merged = existing["kind"] == kind and _merge_aliases(existing, [label, *aliases])
         return existing, False, merged

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .authoring_support import mutate
+from .autopilot import stop_autopilot_spending
 from .decision_planners import plan_mutation
 from .decision_receipts import append_applied_marker, operation_receipt, receipt_status
 from .decision_support import DecisionError
@@ -88,4 +89,8 @@ def apply(
         if existing == "conflict":
             raise OperationConflict("operation_id belongs to a different request")
         raise
-    return {"project_id": project_id, "revision": state["revision"], "replayed": False}
+    result = {"project_id": project_id, "revision": state["revision"], "replayed": False}
+    if action_type == "set-mode" and ledger is not None:
+        # Critic finding 1: leaving autopilot stops its queued paid actions.
+        result["cancelled_actions"] = stop_autopilot_spending(ledger, project_id, payload.get("mode"))
+    return result

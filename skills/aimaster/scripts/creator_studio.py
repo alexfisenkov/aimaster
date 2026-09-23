@@ -53,7 +53,7 @@ from studio.runner import open_ledger, open_runner  # noqa: E402
 from studio.server import serve  # noqa: E402
 from studio.store import StoreError  # noqa: E402
 from studio.workspace import WorkspaceError  # noqa: E402
-from studio.autopilot import AUTOPILOT_NOTICE  # noqa: E402
+from studio.autopilot import AUTOPILOT_NOTICE, stop_autopilot_spending  # noqa: E402
 from studio.library_projects import materialize as materialize_library_entry  # noqa: E402
 from creator_studio_workspace import add_workspace_subcommands  # noqa: E402
 
@@ -172,6 +172,14 @@ def _with_mode_notice(payload, mode):
     if mode == "autopilot" and isinstance(payload, dict):
         return {**payload, "notice": AUTOPILOT_NOTICE}
     return payload
+
+
+def _after_mode_change(workspace, project_id, payload, mode):
+    """Critic finding 1: leaving autopilot cancels its queued paid actions;
+    `cancelled_actions` lists them (moved to `needs_chat`)."""
+
+    cancelled = stop_autopilot_spending(open_ledger(workspace), project_id, mode)
+    return _with_mode_notice({**payload, "cancelled_actions": cancelled}, mode)
 
 
 def command_project_create(args):
@@ -430,7 +438,9 @@ def command_question_create(args):
 def command_project_set_mode(args):
     store = authoring.open_store(args.workspace)
     _print(
-        _with_mode_notice(
+        _after_mode_change(
+            args.workspace,
+            args.project,
             authoring.set_mode(
                 store, args.project, args.expected_revision, args.mode, operation_id=args.operation_id
             ),
@@ -442,7 +452,9 @@ def command_project_set_mode(args):
 def command_mode_set(args):
     store = authoring.open_store(args.workspace)
     _print(
-        _with_mode_notice(
+        _after_mode_change(
+            args.workspace,
+            args.project,
             chat_decisions.apply(
                 store,
                 None,

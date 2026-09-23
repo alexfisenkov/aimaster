@@ -108,7 +108,7 @@ def read_file(path: Path, kind: str):
                 return None, "tomllib unavailable (Python 3.11+ required)"
             return tomllib.loads(raw.decode("utf-8")), None
         return json.loads(raw.decode("utf-8")), None
-    except (ValueError, UnicodeDecodeError) as exc:
+    except (ValueError, UnicodeDecodeError, RecursionError) as exc:
         return None, "invalid " + kind.upper() + " (" + type(exc).__name__ + ")"
 
 
@@ -124,7 +124,11 @@ def server_type(cfg: dict) -> str:
         return "http"
     url = cfg.get("url") or cfg.get("serverUrl")
     if isinstance(url, str):
-        return "sse" if urlsplit(url).path.rstrip("/").endswith("/sse") else "http"
+        try:
+            path = urlsplit(url).path
+        except ValueError:  # malformed URL; never echo it (it may carry userinfo)
+            return "http"
+        return "sse" if path.rstrip("/").endswith("/sse") else "http"
     return "unknown"
 
 
@@ -316,7 +320,8 @@ def read_preferences(home: Path, env_vars: dict[str, str]) -> dict:
     preferred = data.get("preferred_provider_id")
     result["preferred_provider_id"] = preferred if isinstance(preferred, str) else None
     providers = []
-    for item in data.get("providers") or []:
+    raw_providers = data.get("providers")
+    for item in raw_providers if isinstance(raw_providers, list) else []:
         if not isinstance(item, dict):
             continue
         caps = item.get("declared_capabilities")
@@ -386,7 +391,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     home = Path(args.home) if args.home else Path.home()
     env_vars = {} if args.home else dict(os.environ)
-    report = collect(home.absolute(), Path(args.cwd), env_vars)
+    try:
+        report = collect(home.absolute(), Path(args.cwd), env_vars)
+    except Exception as exc:  # noqa: BLE001 - never print a message or traceback: they may hold secrets
+        print(f"detect_tools: internal error ({type(exc).__name__})", file=sys.stderr)
+        return 2
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:

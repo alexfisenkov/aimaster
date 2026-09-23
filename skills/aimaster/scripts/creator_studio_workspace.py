@@ -8,7 +8,6 @@ No command here calls a provider or the network.
 from __future__ import annotations
 
 import json
-import uuid
 from pathlib import Path
 
 from studio import library, library_match, library_projects
@@ -43,14 +42,31 @@ def command_library_match(args):
 
 
 def command_action_enqueue(args):
+    """Queue one paid action. Critic finding 3: every call is a potential
+    charge, so the caller must name the request with `--idempotency-key`
+    (the same key replays the same action instead of paying twice), and a
+    second pending action of the same type on the same target is refused."""
+
+    if not args.idempotency_key:
+        raise ValueError(
+            "--idempotency-key is required for a paid action: pick one key per intended "
+            "generation and reuse it on every retry of that same request"
+        )
     payload = json.loads(args.payload) if args.payload else {}
     ledger = open_ledger(args.workspace)
+    if ledger.action_by_key(args.project, args.idempotency_key) is None:
+        for pending in ledger.pending_actions(args.project):
+            if pending["action_type"] == args.type and pending["target_id"] == args.target:
+                raise ValueError(
+                    f"{args.type} for {args.target} is already {pending['status']} "
+                    f"({pending['action_id']}); wait for it to finish or retry with its own key"
+                )
     action = ledger.enqueue(args.project, ActionRequest(
         action_type=args.type,
         target_id=args.target,
         payload=payload,
         expected_revision=args.expected_revision,
-        idempotency_key=args.idempotency_key or f"cli-{uuid.uuid4().hex}",
+        idempotency_key=args.idempotency_key,
     ))
     grant_id = action["grant_id"]
     _print({
@@ -109,5 +125,6 @@ def add_workspace_subcommands(subparsers) -> None:
     enqueue_cmd.add_argument("--target", required=True)
     enqueue_cmd.add_argument("--expected-revision", required=True, type=int, dest="expected_revision")
     enqueue_cmd.add_argument("--payload", default=None, help="JSON object (default {})")
-    enqueue_cmd.add_argument("--idempotency-key", default=None, dest="idempotency_key")
+    enqueue_cmd.add_argument("--idempotency-key", default=None, dest="idempotency_key",
+                             help="required: one key per intended generation; reuse it to retry")
     enqueue_cmd.set_defaults(handler=command_action_enqueue)

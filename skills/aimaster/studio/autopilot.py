@@ -42,6 +42,25 @@ def _history_stage(state, action_type, target_id):
     return derive_view_stage(state)["current_stage"]
 
 
+def autopilot_grant_still_valid(ledger, action, state) -> bool:
+    """False when `action` rides a self-issued autopilot grant but the
+    project is no longer in autopilot (checked at claim time)."""
+
+    grant_id = action.get("grant_id")
+    if not grant_id or ledger.grant_issuer(grant_id) != AUTOPILOT_ISSUER:
+        return True
+    project = state.get("project")
+    return isinstance(project, dict) and project.get("mode") == "autopilot"
+
+
+def stop_autopilot_spending(ledger, project_id, mode) -> list[str]:
+    """After a mode change: leaving autopilot cancels its queued paid actions."""
+
+    if mode == "autopilot" or ledger is None:
+        return []
+    return ledger.cancel_autopilot_queued(project_id)
+
+
 class StoreAutopilotPolicy:
     """Reads the project mode and records `autopilot-grant` in its history."""
 

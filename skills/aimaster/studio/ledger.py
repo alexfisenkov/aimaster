@@ -372,19 +372,26 @@ class ActionLedger:
             # Spec 2026-09-23 §2: a ledger created before `issued_by`
             # existed gains the column in place; its old rows were all
             # issued by the `grant` command.
-            grant_columns = {
-                row["name"] for row in connection.execute("PRAGMA table_info(grants)")
-            }
-            if "issued_by" not in grant_columns:
-                connection.execute(
-                    "ALTER TABLE grants ADD COLUMN issued_by TEXT NOT NULL DEFAULT 'chat'"
-                )
+            if "issued_by" not in self._grant_columns(connection):
+                try:
+                    connection.execute(
+                        "ALTER TABLE grants ADD COLUMN issued_by TEXT NOT NULL DEFAULT 'chat'"
+                    )
+                except sqlite3.OperationalError as error:
+                    # Another process migrated between our read and our
+                    # ALTER (critic finding 10): the column now exists.
+                    if "duplicate column name" not in str(error).casefold():
+                        raise
         finally:
             connection.close()
         try:
             os.chmod(self.db_path, 0o600)
         except OSError:
             pass
+
+    @staticmethod
+    def _grant_columns(connection) -> set[str]:
+        return {row["name"] for row in connection.execute("PRAGMA table_info(grants)")}
 
     @contextmanager
     def _transaction(self):
@@ -539,6 +546,7 @@ class ActionLedger:
                     "SELECT grant_id FROM grants "
                     "WHERE project_id = ? AND action_class IN (?, ?) "
                     "AND reserved_action_id IS NULL AND expires_epoch > ? "
+                    "AND issued_by = 'chat' "
                     "ORDER BY CASE action_class WHEN ? THEN 0 ELSE 1 END, "
                     "expires_epoch, issued_at, grant_id LIMIT 1",
                     (
@@ -628,6 +636,49 @@ class ActionLedger:
             ),
         )
         return grant_id
+
+    def cancel_autopilot_queued(self, project_id) -> list[str]:
+        """Stop spending when a project leaves autopilot (critic finding 1).
+
+        Every still-`queued` action of `project_id` backed by a self-issued
+        autopilot grant moves to `needs_chat` (reason `autopilot_off`); its
+        grant stays reserved by that action, i.e. voided. `running` actions
+        are already with chat and are left to finish.
+        """
+
+        project_id = _non_empty_string(project_id, "project_id")
+        with self._transaction() as connection:
+            rows = connection.execute(
+                "SELECT a.action_id FROM actions a JOIN grants g ON g.grant_id = a.grant_id "
+                "WHERE a.project_id = ? AND a.status = 'queued' AND g.issued_by = ? "
+                "ORDER BY a.created_at, a.action_id",
+                (project_id, _AUTOPILOT_ISSUER),
+            ).fetchall()
+            cancelled = []
+            for row in rows:
+                changed = connection.execute(
+                    "UPDATE actions SET status = 'needs_chat', updated_at = ? "
+                    "WHERE action_id = ? AND status = 'queued'",
+                    (_timestamp(), row["action_id"]),
+                )
+                if changed.rowcount == 1:
+                    self._event(connection, row["action_id"], "queued", "needs_chat",
+                                {"reason": "autopilot_off", "grant_voided": True})
+                    cancelled.append(row["action_id"])
+            return cancelled
+
+    def action_by_key(self, project_id, idempotency_key) -> dict | None:
+        """The action already recorded under this idempotency key, if any."""
+
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT * FROM actions WHERE project_id = ? AND idempotency_key = ?",
+                (project_id, idempotency_key),
+            ).fetchone()
+        finally:
+            connection.close()
+        return self._action(row)
 
     def grant_issuer(self, grant_id) -> str | None:
         """Who issued `grant_id` (`chat` or `autopilot`), or `None` if unknown."""
@@ -805,9 +856,14 @@ class ActionLedger:
             if release_grant:
                 grant_released = False
                 if row["grant_id"] is not None:
+                    # Critic 2026-09-23 (finding 1): only a chat-issued grant
+                    # returns to circulation. A self-issued autopilot grant
+                    # is voided with its refused action -- released, it
+                    # could back a paid action after the project left
+                    # autopilot, without anyone in chat approving it.
                     released = connection.execute(
                         "UPDATE grants SET reserved_action_id = NULL, reserved_at = NULL "
-                        "WHERE grant_id = ? AND reserved_action_id = ?",
+                        "WHERE grant_id = ? AND reserved_action_id = ? AND issued_by = 'chat'",
                         (row["grant_id"], action_id),
                     )
                     grant_released = released.rowcount == 1
@@ -834,6 +890,8 @@ class ActionLedger:
                             (action_id,),
                         )
                 detail["grant_released"] = grant_released
+                if row["grant_id"] is not None and not grant_released:
+                    detail["grant_voided"] = True
             self._event(connection, action_id, "running", status, detail)
             return self._action(self._fetch_action(connection, action_id))
 

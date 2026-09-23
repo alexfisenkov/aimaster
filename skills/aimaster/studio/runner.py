@@ -47,7 +47,7 @@ from .adapters import (
     load_capability_candidates,
     validate_public_result,
 )
-from .autopilot import StoreAutopilotPolicy
+from .autopilot import StoreAutopilotPolicy, autopilot_grant_still_valid
 from .domain import DomainValidationError, _stage_sequence, derive_view_stage
 from .ledger import GRANT_REQUIRED_ACTIONS, ActionLedger, normalize_recovery_decision
 from .projection import ProjectionError, action_target_stage
@@ -194,6 +194,11 @@ class Runner:
                 state = self.store.load(action["project_id"])
                 state["actions"] = self.ledger.pending_actions(action["project_id"], exclude_action_id=action["action_id"])
                 current = self._claim_is_current(action, state=state)
+                if current and not autopilot_grant_still_valid(self.ledger, action, state):
+                    # Critic finding 1: a self-issued autopilot grant is only
+                    # good while the project is still in autopilot. Refused
+                    # here, the grant is voided, never released.
+                    current = False
                 from .runner_context import (
                     CONTEXT_ACTION_TYPES,
                     build_action_context,
