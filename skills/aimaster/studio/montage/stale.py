@@ -26,7 +26,7 @@
 from __future__ import annotations
 
 from . import AUDIO_LAYER_NAMES
-from .draft_plan import audio_sources, video_sources
+from .accepted_sources import audio_sources, video_sources
 from .html_doc import ROOT_ID, element_attrs
 
 

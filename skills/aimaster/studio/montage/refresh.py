@@ -10,7 +10,8 @@ from typing import Callable
 
 from . import MontageError
 from .draft import media_prober
-from .draft_plan import TRANSITION, VIDEO_VOLUME, audio_sources
+from .accepted_sources import audio_sources
+from .draft_plan import TRANSITION, VIDEO_VOLUME
 from .html_doc import element_attrs, fmt_number, set_attr
 from .index_io import read_index, write_index
 from .media_sync import sync_media

@@ -16,7 +16,8 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 from montage_testkit import video_state  # noqa: E402
 from studio.domain import DomainValidationError  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
-from studio.montage.draft_plan import audio_sources, plan_draft, video_sources  # noqa: E402
+from studio.montage.accepted_sources import audio_sources, video_sources  # noqa: E402
+from studio.montage.draft_plan import plan_draft  # noqa: E402
 from studio.montage.probe import MediaInfo  # noqa: E402
 from studio.projection import validate_state  # noqa: E402
 
