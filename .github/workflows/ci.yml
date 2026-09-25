@@ -103,13 +103,22 @@ jobs:
         # self-heal самого HyperFrames) кладёт пустую версийную папку —
         # антивирус исключён отдельной проверкой (путь-исключение и полное
         # отключение реал-тайм защиты Defender не изменили ничего, run
-        # 36137776762 — тот шаг снят, находка не в нём). HYPERFRAMES_BROWSER_PATH
-        # ниже — задокументированный самим HyperFrames способ обойти
-        # скачивание совсем (see browserPathHint в его CLI): системный Chrome
-        # без HeadlessExperimental.beginFrame чуть медленнее (скриншотный
-        # режим захвата), но для 3-секундного тестового ролика это неважно.
+        # 36137776762). HYPERFRAMES_BROWSER_PATH ниже — задокументированный
+        # самим HyperFrames способ обойти скачивание совсем (browserPathHint
+        # в его CLI). Свежепоставленный choco googlechrome сам не завёлся
+        # (chrome.exe --version зависал до SIGKILL, run 36138863227) — образы
+        # windows-latest уже несут Chrome/Edge/Firefox преднастроенными для
+        # автоматизации (GitHub runner-images), ставим choco-копию только
+        # если её почему-то нет, а не поверх рабочей.
         if: runner.os == 'Windows'
-        run: choco install googlechrome -y --no-progress
+        shell: pwsh
+        run: |
+          $chrome = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+          if (Test-Path $chrome) {
+            Write-Host "Chrome уже стоит на раннере: $chrome"
+          } else {
+            choco install googlechrome -y --no-progress
+          }
 
       - name: Install pinned HyperFrames, render browser and skills
         shell: bash
