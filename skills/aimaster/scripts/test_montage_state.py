@@ -35,8 +35,8 @@ class StateTests(unittest.TestCase):
         self.store = open_store(self.seed.workspace)
         self.assets = open_assets(self.seed.workspace)
 
-    def meta(self, version, file, based_on=None):
-        return VersionMeta(version=version, created_at="2026-09-25T10:00:00+00:00", by="agent",
+    def meta(self, version, file, based_on=None, by="agent"):
+        return VersionMeta(version=version, created_at="2026-09-25T10:00:00+00:00", by=by,
                            based_on=based_on, summary=f"Сборка {version}", changes=(),
                            asset_id=self.seed.ids[file], model_hash="h")
 
@@ -75,6 +75,34 @@ class StateTests(unittest.TestCase):
         self.assertEqual(state["assembly"]["asset_id"], self.seed.ids["v1.mp4"])
         self.assertEqual((state["history"][-1]["kind"], state["history"][-1]["actor"]),
                          ("montage-restored", "you"))
+
+    def test_history_actor_follows_who_made_the_version(self):
+        # Round-fix-1/5, item 9: history actor раньше был всегда "agent",
+        # даже когда версию сделал владелец (VersionMeta.by="owner"); domain
+        # знает только "you"/"agent" — owner пишется в историю как "you".
+        record_draft(self.store, "p", 0, canvas=Canvas(108, 192))
+        record_version(self.store, self.assets, "p", 1, meta=self.meta("v001", "v1.mp4", by="owner"))
+        self.assertEqual(self.load()["history"][-1]["actor"], "you")
+        record_version(self.store, self.assets, "p", 2, meta=self.meta("v002", "v2.mp4", by="autopilot"))
+        self.assertEqual(self.load()["history"][-1]["actor"], "agent")
+
+    def test_missing_asset_is_refused_in_russian(self):
+        # Round-fix-1/5, item 10: и запись версии, и возврат к ней читают
+        # актив монтажа (до 2 ГиБ, полный файл + sha256) до входа в
+        # транзакцию, а не под файловой блокировкой state.
+        record_draft(self.store, "p", 0, canvas=Canvas(108, 192))
+        missing = VersionMeta(version="v001", created_at="2026-09-25T10:00:00+00:00", by="agent",
+                              based_on=None, summary="Сборка", changes=(),
+                              asset_id="asset-not-registered", model_hash="h")
+        with self.assertRaises(MontageError) as caught:
+            record_version(self.store, self.assets, "p", 1, meta=missing)
+        self.assertIn("недоступен", str(caught.exception))
+
+        record_version(self.store, self.assets, "p", 1, meta=self.meta("v001", "v1.mp4"))
+        (self.seed.media / "v1.mp4").write_bytes(b"changed after registration")
+        with self.assertRaises(MontageError) as caught:
+            record_restore(self.store, self.assets, "p", 2, version_id="v001")
+        self.assertIn("недоступен", str(caught.exception))
 
     def test_refusals(self):
         record_draft(self.store, "p", 0, canvas=Canvas(108, 192))

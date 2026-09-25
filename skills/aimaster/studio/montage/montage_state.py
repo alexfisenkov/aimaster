@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from .. import domain
-from ..assets import AssetIndex
+from ..assets import AssetError, AssetIndex
 from ..authoring_qa import apply_assembly
 from ..authoring_support import (mutate, require_project, require_result_asset_role,
                                  require_stage_not_approved)
@@ -16,6 +16,30 @@ from ..store import ProjectStore
 from . import MontageError
 from .canvas import DEFAULT_HEIGHT, DEFAULT_WIDTH, Canvas
 from .versions import VersionMeta
+
+# domain.append_history принимает только эти два (ACTOR_LABELS дашборда:
+# «Вы»/«Агент»); владелец версии монтажа (VersionMeta.by) шире —
+# owner пишет её как человек («Вы»), agent/autopilot — как агент.
+_HISTORY_ACTOR_FOR_BY = {"agent": "agent", "autopilot": "agent", "owner": "you"}
+
+
+def _history_actor(by: str) -> str:
+    return _HISTORY_ACTOR_FOR_BY.get(by, "agent")
+
+
+def _resolved_mime(assets: AssetIndex, asset_id: str) -> str:
+    try:
+        _, mime_type = assets.resolve(asset_id)
+    except AssetError as error:
+        raise MontageError(f"актив монтажа {asset_id} недоступен: {error}") from error
+    return mime_type
+
+
+def _resolved_role(assets: AssetIndex, asset_id: str) -> str:
+    try:
+        return assets.role_of(asset_id)
+    except AssetError as error:
+        raise MontageError(f"актив монтажа {asset_id} недоступен: {error}") from error
 
 
 def montage_section(state: dict) -> dict:
@@ -48,8 +72,12 @@ def record_draft(store: ProjectStore, project_id: str, expected_revision: int, *
 
 def record_version(store: ProjectStore, assets: AssetIndex, project_id: str,
                    expected_revision: int, *, meta: VersionMeta) -> dict:
-    _, mime_type = assets.resolve(meta.asset_id)
-    require_result_asset_role(assets.role_of(meta.asset_id), "a montage version")
+    # Полное чтение файла + sha256 (до 2 ГиБ у результата монтажа) — до
+    # транзакции: под файловой блокировкой store.transact держать эту работу
+    # незачем (round-fix-1/5, item 10).
+    mime_type = _resolved_mime(assets, meta.asset_id)
+    require_result_asset_role(_resolved_role(assets, meta.asset_id), "a montage version")
+    actor = _history_actor(meta.by)
 
     def mutator(state):
         check_writable(state)
@@ -62,7 +90,7 @@ def record_version(store: ProjectStore, assets: AssetIndex, project_id: str,
         section["current_version"] = meta.version
         state["montage"] = section
         apply_assembly(state, mime_type, meta.asset_id, meta.summary or None)
-        domain.append_history(state, "agent", "montage-built", "assembly", target_id=meta.version)
+        domain.append_history(state, actor, "montage-built", "assembly", target_id=meta.version)
 
     _, new_state = mutate(store, project_id, expected_revision, mutator)
     return {"project_id": project_id, "revision": new_state["revision"]}
@@ -70,13 +98,28 @@ def record_version(store: ProjectStore, assets: AssetIndex, project_id: str,
 
 def record_restore(store: ProjectStore, assets: AssetIndex, project_id: str,
                    expected_revision: int, *, version_id: str, actor: str = "agent") -> dict:
+    # Тот же порядок, что в record_version: сначала найти версию и прочитать
+    # её актив (полное чтение файла — вне блокировки state), потом — короткая
+    # транзакция. store.transact сам отклонит устаревший expected_revision,
+    # если state успел измениться между этим чтением и записью; повторная
+    # проверка внутри mutator — на случай, если сама запись о версии за это
+    # время исчезла или указывает на другой актив.
+    current_state = store.load(project_id)
+    check_writable(current_state)
+    section = montage_section(current_state)
+    entry = next((item for item in section["versions"] if item["id"] == version_id), None)
+    if entry is None:
+        raise MontageError(f"нет версии {version_id}")
+    mime_type = _resolved_mime(assets, entry["asset_id"])
+
     def mutator(state):
         check_writable(state)
         section = montage_section(state)
-        entry = next((item for item in section["versions"] if item["id"] == version_id), None)
-        if entry is None:
+        current_entry = next((item for item in section["versions"] if item["id"] == version_id), None)
+        if current_entry is None:
             raise MontageError(f"нет версии {version_id}")
-        _, mime_type = assets.resolve(entry["asset_id"])
+        if current_entry["asset_id"] != entry["asset_id"]:
+            raise MontageError(f"версия {version_id} изменилась — повторите")
         section["current_version"] = version_id
         state["montage"] = section
         apply_assembly(state, mime_type, entry["asset_id"], entry.get("summary") or None)
