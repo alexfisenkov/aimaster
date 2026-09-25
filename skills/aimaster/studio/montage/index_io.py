@@ -12,11 +12,35 @@
 from __future__ import annotations
 
 import os
+import stat
 import tempfile
 from pathlib import Path
 
 from ..platform_compat import replace_file
 from . import MontageError
+
+
+def _read_umask() -> int:
+    # Узнать umask можно только установив новый; читаем один раз при импорте
+    # (однопоточный момент), а не на каждой записи из потоков дашборда.
+    current = os.umask(0o022)
+    os.umask(current)
+    return current
+
+
+_UMASK = _read_umask()
+
+
+def _target_mode(path: Path) -> int:
+    """Права файла после замены: как у заменяемого (владелец мог их задать),
+    у нового — 0644 минус umask. mkstemp создаёт временный файл 0600, и без
+    этого index.html/hyperframes.json после записи не читал бы никто, кроме
+    владельца процесса."""
+
+    try:
+        return stat.S_IMODE(path.stat().st_mode)
+    except FileNotFoundError:
+        return 0o644 & ~_UMASK
 
 
 def write_text_atomic(path: Path, text: str) -> None:
@@ -28,10 +52,11 @@ def write_text_atomic(path: Path, text: str) -> None:
 
     Временное имя — через `mkstemp` в той же папке: не голое «.name.tmp»
     (параллельная запись того же файла из двух мест иначе коллизирует на
-    одном временном имени). Сбой чтения/записи на любом шаге (нет прав,
-    диск занят другим процессом на Windows, диск полон) — MontageError с
-    понятным текстом, а не голый traceback; попытка убрать недописанный
-    временный файл не должна подменить исходную ошибку своей."""
+    одном временном имени); права — как у заменяемого файла (`_target_mode`).
+    Сбой чтения/записи на любом шаге (нет прав, диск занят другим процессом
+    на Windows, диск полон) — MontageError с понятным текстом, а не голый
+    traceback; попытка убрать недописанный временный файл не должна
+    подменить исходную ошибку своей."""
 
     path = Path(path)
     try:
@@ -42,6 +67,7 @@ def write_text_atomic(path: Path, text: str) -> None:
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
                 handle.write(text)
+            os.chmod(temporary, _target_mode(path))
             replace_file(temporary, path)
         except OSError:
             try:

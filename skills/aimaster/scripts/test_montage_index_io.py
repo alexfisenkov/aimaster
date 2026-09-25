@@ -9,6 +9,8 @@ index_io.py (module split) — заодно чинит критическую н
 
 from __future__ import annotations
 
+import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -72,6 +74,34 @@ class IndexIoTests(unittest.TestCase):
                 write_index(path, "текст")
             spy.assert_called_once()
             self.assertEqual(spy.call_args.kwargs.get("dir"), path.parent)
+
+
+@unittest.skipIf(os.name == "nt", "права файла POSIX; на Windows chmod меняет только «только чтение»")
+class IndexIoModeTests(unittest.TestCase):
+    """Задача 10b: mkstemp создаёт временный файл с правами 0600, и после
+    замены index.html/hyperframes.json становились недоступны на чтение
+    остальным (Studio другого пользователя, резервная копия) — права цели
+    сохраняются, у нового файла — 0644 с учётом umask."""
+
+    def _mode(self, path: Path) -> int:
+        return stat.S_IMODE(path.stat().st_mode)
+
+    def test_new_file_gets_0644_minus_umask(self):
+        umask = os.umask(0)
+        os.umask(umask)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "index.html"
+            write_index(path, "текст")
+            self.assertEqual(self._mode(path), 0o644 & ~umask)
+
+    def test_existing_file_keeps_its_mode(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for mode in (0o600, 0o664):
+                path = Path(temp) / f"index-{mode:o}.html"
+                path.write_text("старое", encoding="utf-8")
+                path.chmod(mode)
+                write_index(path, "новое")
+                self.assertEqual((self._mode(path), read_index(path)), (mode, "новое"))
 
 
 if __name__ == "__main__":

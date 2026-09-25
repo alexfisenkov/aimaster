@@ -57,12 +57,22 @@ class StudioSavedFormTests(unittest.TestCase):
         self.assertIn('<meta charset="UTF-8">', AFTER_MOVE)
 
     def test_stale_clips_reads_markers_from_a_studio_saved_draft(self):
-        # data-am-layers ещё нет в этом (реальном, доround3) файле —
+        # data-am-layers ещё нет в этом (реальном, до раунда 3) файле —
         # восстанавливается из самих клипов (item 4/5); ничего в проекте не
         # поменялось — ничего не должно быть стейл.
         self.assertNotIn("data-am-layers", AFTER_MOVE)
         state = video_state(SCENES, audio={"music": "asset-m"})
         self.assertEqual(stale_clips(AFTER_MOVE, state), [])
+
+    def test_studio_save_does_not_change_what_is_stale(self):
+        # Тот же черновик до и после сохранения в Studio (DOCTYPE, meta,
+        # data-hf-id, сдвиг v-2) — одинаковый ответ stale_clips и при
+        # неизменном проекте, и при заменённом результате сцены.
+        for state in (video_state(SCENES, audio={"music": "asset-m"}),
+                      video_state([SCENES[0], ("s2", "Клубок", "Находит клубок", 2000, "asset-b2"),
+                                   SCENES[2]], audio={"music": "asset-m"})):
+            self.assertEqual(stale_clips(BEFORE, state), stale_clips(AFTER_MOVE, state))
+        self.assertEqual(element_attrs(BEFORE)["v-2"]["data-start"], "3")
 
     def test_set_attr_edits_a_clip_and_preserves_studio_attributes(self):
         changed = set_attr(AFTER_MOVE, "v-2", "data-start", "5")
@@ -110,6 +120,8 @@ class StudioSavedFormTests(unittest.TestCase):
             after_attrs = element_attrs(after)
             self.assertEqual((after_attrs["v-2"]["data-am-asset"], after_attrs["v-2"]["src"]),
                              ("asset-b2", "assets/asset-b2.mp4"))
+            # Сдвиг, сделанный владельцем в Studio, пережил замену исходника.
+            self.assertEqual(after_attrs["v-2"]["data-start"], "4")
             # Studio-разметка не размылась точечной правкой.
             self.assertIn("<!DOCTYPE html>", after)
             self.assertEqual(after.count("data-hf-id"), AFTER_MOVE.count("data-hf-id"))

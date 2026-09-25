@@ -178,8 +178,9 @@ class AcceptedOnlyTests(unittest.TestCase):
         state["audio_results"].append(duplicate)
         with self.assertRaises(MontageError) as caught:
             audio_sources(state)
-        # Fix round 3/5, item 11: по-русски название слоя, а не сырой ключ.
-        self.assertIn("звукового слоя голос", str(caught.exception))
+        # Fix round 3/5, item 11: по-русски название слоя, а не сырой ключ;
+        # задача 10b: название — в кавычках, как на экране («Голос»).
+        self.assertIn("звукового слоя «Голос»", str(caught.exception))
 
     def test_malformed_scene_is_a_montage_error_not_a_key_error(self):
         # Fix round 3/5, item 11: position_specs() читает scene["scene_id"]
@@ -189,7 +190,8 @@ class AcceptedOnlyTests(unittest.TestCase):
         del state["scenes"][0]["scene_id"]
         with self.assertRaises(MontageError) as caught:
             video_sources(state, strict=False)
-        self.assertIn("проект повреждён", str(caught.exception))
+        # Задача 10b: человеку — что именно сломано, а не repr ключа ('scene_id').
+        self.assertEqual(str(caught.exception), "проект повреждён: у сцены нет scene_id")
 
 
 if __name__ == "__main__":

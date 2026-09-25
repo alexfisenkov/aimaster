@@ -227,6 +227,27 @@ class DraftTests(unittest.TestCase):
                           for item in stale],
                          [(None, "s2", "scene_removed", "нужен --rebuild")])
 
+    def test_stale_clips_one_shot_without_markers_is_not_every_scene_added(self):
+        # Задача 10b (перенос из батча 4): one_shot-черновик без слепка на
+        # корне — видео-клип без сцены не говорит, какие сцены знал черновик;
+        # сцены тогда неизвестны и разность сцен не считается (раньше каждая
+        # сцена проекта выходила scene_added при неизменном проекте).
+        state = video_state([("s1", "Сад", "Барсик в саду", 2000, None),
+                             ("s2", "Клубок", "Клубок", 2000, None)],
+                            gen_mode="one_shot", oneshot_asset="asset-c")
+        self.draft(state)
+        stripped = self.paths.index.read_text(encoding="utf-8")
+        for name in ("data-am-scenes", "data-am-gen-mode", "data-am-layers"):
+            stripped = set_attr(stripped, "root", name, None)
+        self.assertEqual(stale_clips(stripped, state), [])
+        # Замена общего видео при этом по-прежнему видна.
+        newer = video_state([("s1", "Сад", "Барсик в саду", 2000, None),
+                             ("s2", "Клубок", "Клубок", 2000, None)],
+                            gen_mode="one_shot", oneshot_asset="asset-a")
+        self.assertEqual([(item["clip"], item["current_asset_id"], item["cause"])
+                          for item in stale_clips(stripped, newer)],
+                         [("v-1", "asset-a", None)])
+
     def test_stale_clips_scene_added_in_one_shot_needs_rebuild(self):
         # Fix round 3/5, item 6: в one_shot один клип покрывает всю историю
         # (story_end считается по всем сценам) — добавление сцены меняет

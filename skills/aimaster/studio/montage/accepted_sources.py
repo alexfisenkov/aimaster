@@ -19,7 +19,7 @@ def _ordered(state) -> list[dict]:
 
 def _position_label(state, spec) -> str:
     """Человеку — не голый position_id: «сцены Клубок», «звукового слоя
-    голос», «общего видео»."""
+    «Голос»» (название — как на экране), «общего видео»."""
 
     scene_id = spec.get("scene_id")
     if scene_id:
@@ -27,7 +27,7 @@ def _position_label(state, spec) -> str:
         return f"сцены {(scene or {}).get('title') or scene_id}"
     layer = spec.get("layer")
     if layer:
-        return f"звукового слоя {LAYER_LABELS.get(layer, layer).lower()}"
+        return f"звукового слоя «{LAYER_LABELS.get(layer, layer)}»"
     if spec.get("kind") == "oneshot":
         return "общего видео"
     return str(spec.get("position_id", "?"))
@@ -39,7 +39,13 @@ def _position_specs(state) -> dict:
 
     try:
         return {spec["position_id"]: spec for spec in position_specs(state)}
-    except (DomainValidationError, KeyError) as error:
+    except KeyError as error:
+        # str(KeyError) — repr ключа ("'scene_id'"): человеку это ничего не
+        # говорит; position_specs читает scene["scene_id"] без .get().
+        key = error.args[0] if error.args else "?"
+        what = "у сцены нет scene_id" if key == "scene_id" else f"нет поля «{key}»"
+        raise MontageError(f"проект повреждён: {what}") from error
+    except DomainValidationError as error:
         raise MontageError(f"проект повреждён: {error}") from error
 
 

@@ -43,12 +43,14 @@ def _refresh_target(clip_id, layer, scene, asset, current) -> dict:
             "current_asset_id": current, "reason": None, "cause": None}
 
 
-def _recorded_structure(root_attrs: dict, clips_attrs: dict) -> tuple[set, str, set]:
+def _recorded_structure(root_attrs: dict, clips_attrs: dict) -> tuple[set | None, str, set]:
     """(recorded_scenes, recorded_gen_mode, recorded_layers) — со корня, если
     там есть слепок; иначе восстановлены из самих клипов: recorded_scenes =
     data-am-scene видео-клипов, recorded_gen_mode = one_shot, если у
     видео-клипа нет сцены, иначе per_scene, recorded_layers = слои,
-    встретившиеся на клипах. Черновик с частичным слепком (data-am-scenes/
+    встретившиеся на клипах. У one_shot общий клип сцен не несёт — какие
+    сцены знал такой черновик, из клипов не узнать: recorded_scenes = None
+    (неизвестно), и разность сцен stale_clips не считает. Черновик с частичным слепком (data-am-scenes/
     data-am-gen-mode раунда 2, ещё без data-am-layers раунда 3) —
     сцены/gen_mode со корня, слои — восстановлены отдельно: не всё сразу
     легаси только потому, что не хватает одного нового поля."""
@@ -68,6 +70,8 @@ def _recorded_structure(root_attrs: dict, clips_attrs: dict) -> tuple[set, str, 
             else:
                 has_sceneless_video = True
         gen_mode = "one_shot" if has_sceneless_video else "per_scene"
+        if has_sceneless_video:
+            scenes = None
 
     if "data-am-layers" in root_attrs:
         layers = set((root_attrs.get("data-am-layers") or "").split())
@@ -122,10 +126,14 @@ def stale_clips(html_text: str, state: dict) -> list[dict]:
     # Сцена меняет раскладку в обоих режимах: у one_shot один клип покрывает
     # всю историю (story_end по всем сценам), так что добавление/удаление
     # сцены требует --rebuild и там, не только в per_scene.
-    for scene_id in sorted(scene_ids_now - recorded_scenes):
-        stale.append(_structural(clip=None, layer="video", scene_id=scene_id, cause="scene_added"))
-    for scene_id in sorted(recorded_scenes - scene_ids_now):
-        stale.append(_structural(clip=None, layer="video", scene_id=scene_id, cause="scene_removed"))
+    # recorded_scenes None — one_shot-черновик без слепка: сцены неизвестны.
+    if recorded_scenes is not None:
+        for scene_id in sorted(scene_ids_now - recorded_scenes):
+            stale.append(_structural(clip=None, layer="video", scene_id=scene_id,
+                                     cause="scene_added"))
+        for scene_id in sorted(recorded_scenes - scene_ids_now):
+            stale.append(_structural(clip=None, layer="video", scene_id=scene_id,
+                                     cause="scene_removed"))
     for layer in wanted_audio:
         if layer not in recorded_layers:
             stale.append(_structural(clip=None, layer=layer, scene_id=None, cause="layer_added"))
