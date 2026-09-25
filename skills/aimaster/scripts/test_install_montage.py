@@ -496,6 +496,38 @@ class ReportTests(unittest.TestCase):
         self.assertIn("GSAP", report["hyperframes"]["message"])
         self.assertNotIn("сначала нужен HyperFrames", report["browser"]["message"])
 
+    def test_node_not_ready_never_starts_the_browser_download(self):
+        """Разбор 4/5, находка 1: Node.js нет или он старый, HyperFrames
+        закреплённой версии уже на диске, браузер не скачан, флаг действия
+        есть. Раньше browser_install(None, …) печатал «Качаю…» и падал
+        TypeError в Popen; install.py прятал это в английскую ошибку, и
+        next_steps терял настоящий затор — Node.js."""
+
+        package = self.base / "hf" / "node_modules" / "hyperframes"
+        touch(package / "bin" / "hyperframes.mjs")
+        (package / "package.json").write_text(json.dumps({"version": PIN["version"]}), encoding="utf-8")
+        nodes = (("нет Node.js", None, None), ("Node.js 20", "/usr/bin/node", 20))
+        flags = ((True, False), (False, True))  # --install-deps; --update один
+        for label, found, major in nodes:
+            for install_deps, update in flags:
+                stderr = io.StringIO()
+                with self.subTest(label, install_deps=install_deps, update=update), \
+                        mock.patch.object(engine, "find_node", return_value=found), \
+                        mock.patch.object(engine, "node_major", return_value=major), \
+                        mock.patch.object(install_montage_browser, "run_engine",
+                                          side_effect=AssertionError("без Node браузер не качаем")), \
+                        redirect_stderr(stderr):
+                    # через настоящий предохранитель install.py, не в обход него
+                    report = install._montage_report("linux", install_deps, update, self.base)
+                    self.assertNotIn("error", report)
+                    self.assertEqual(report["browser"]["status"], "missing")
+                    self.assertEqual(report["browser"]["message"],
+                                     f"сначала нужен Node.js {PIN['node_min_major']}+")
+                    self.assertNotIn("Качаю", stderr.getvalue())
+                    step = install._montage_next_step(report)
+                    self.assertEqual(step, "Монтаж не готов: " + report["node"]["message"])
+                    self.assertIn(install_montage_node.NODE_INSTALL["linux"], step)
+
     def test_update_alone_does_not_install_a_fresh_engine(self):
         """Разбор 1/5, находка 2, на уровне отчёта целиком."""
 

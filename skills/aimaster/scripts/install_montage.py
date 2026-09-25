@@ -62,23 +62,31 @@ def montage_report(kind: str, *, install_missing: bool, update: bool, install_no
                                                install_missing=install_missing, update=update)
     else:
         report["hyperframes"] = check_package(prefix, pin)
-    if engine.installed_version(prefix) != pin["version"]:
-        # именно версия HyperFrames, не report["hyperframes"]["status"] целиком:
-        # тот мог стать "missing" из-за одного лишь несовпавшего GSAP (см.
-        # check_package/engine_install) — тогда сам HyperFrames уже на месте,
-        # и «сначала нужен HyperFrames» было бы неверно.
-        report["browser"] = item("missing", f"сначала нужен HyperFrames {pin['version']}")
-    elif act:
-        report["browser"] = browser_install(node, prefix, pin, install_missing=install_missing,
-                                            update=update)
-    else:
-        report["browser"] = check_browser(prefix, pin)
+    report["browser"] = _browser_step(node, prefix, pin, install_missing=install_missing,
+                                      update=update)
     if skills:
         report["skills"] = install_montage_skills.skills_report(install_missing=install_missing,
                                                                  update=update, home=home)
     # ok — готовность движка; статус скиллов виден в report["skills"], сборку он не блокирует
     report["ok"] = all(report[key]["status"] in READY for key in ("node", "hyperframes", "browser"))
     return report
+
+
+def _browser_step(node, prefix: Path, pin: dict, *, install_missing: bool, update: bool) -> dict:
+    """Браузер качает сам HyperFrames, запущенный этим Node, — без Node.js 22+
+    браузер не проверяем и не качаем (разбор 4/5, находка 1: иначе
+    browser_install получал node=None и падал TypeError, а настоящий затор —
+    Node.js — терялся из next_steps). Дальше важна именно версия HyperFrames,
+    не report["hyperframes"]["status"] целиком: тот бывает "missing" из-за
+    одного несовпавшего GSAP, а GSAP браузеру не нужен."""
+
+    if node is None:
+        return item("missing", f"сначала нужен Node.js {pin['node_min_major']}+")
+    if engine.installed_version(prefix) != pin["version"]:
+        return item("missing", f"сначала нужен HyperFrames {pin['version']}")
+    if install_missing or update:
+        return browser_install(node, prefix, pin, install_missing=install_missing, update=update)
+    return check_browser(prefix, pin)
 
 
 def render_montage_lines(report: dict) -> list[str]:
