@@ -47,12 +47,21 @@ class ParseTests(unittest.TestCase):
         info = probe.parse_probe(payload)
         self.assertEqual((info.width, info.height), (1080, 1920))
 
-    def test_legacy_rotate_tag_is_case_insensitive(self):
-        # Старый способ — тег rotate; у Matroska он приходит как ROTATE.
+    def test_legacy_rotate_tag_lowercase_mp4_form_swaps(self):
+        # Старый способ хранить поворот в mp4 — тег rotate, ровно в нижнем
+        # регистре: так его пишет сам mp4/mov.
+        payload = {"streams": [{"codec_type": "video", "width": 1920, "height": 1080,
+                                "tags": {"rotate": "270"}}]}
+        info = probe.parse_probe(payload)
+        self.assertEqual((info.width, info.height), (1080, 1920))
+
+    def test_matroska_uppercase_rotate_tag_is_not_honoured(self):
+        # ROTATE в верхнем регистре — собственная условность Matroska, а не
+        # общий формат; угадывать её не стоит (реальный источник — mp4).
         payload = {"streams": [{"codec_type": "video", "width": 1920, "height": 1080,
                                 "tags": {"ROTATE": "270"}}]}
-        self.assertEqual((probe.parse_probe(payload).width, probe.parse_probe(payload).height),
-                         (1080, 1920))
+        info = probe.parse_probe(payload)
+        self.assertEqual((info.width, info.height), (1920, 1080))
 
     def test_180_degrees_does_not_swap(self):
         payload = {"streams": [{"codec_type": "video", "width": 1920, "height": 1080,
@@ -107,12 +116,13 @@ class ProbeTests(unittest.TestCase):
                          (108, 192, True, True))
 
     def test_real_rotated_clip_reports_display_dimensions(self):
-        # Клип реально закодирован лёжа боком (192x108) с тегом rotate=90 —
-        # probe_media должен вернуть то, что покажет плеер (108x192), а не
-        # то, что физически лежит в потоке.
+        # Клип реально закодирован лёжа боком (192x108) и реально несёт
+        # матрицу поворота в mp4 (ffmpeg -display_rotation + -c copy — см.
+        # montage_testkit.make_rotated_clip) — probe_media должен вернуть
+        # то, что покажет плеер (108x192), а не то, что физически в потоке.
         montage_testkit.ffmpeg_or_skip()
         with tempfile.TemporaryDirectory() as temp:
-            clip = montage_testkit.make_rotated_clip(Path(temp) / "поворот.mkv", 1.0,
+            clip = montage_testkit.make_rotated_clip(Path(temp) / "поворот.mp4", 1.0,
                                                       size=(192, 108), rotation=90)
             info = probe.probe_media(clip)
         self.assertAlmostEqual(info.duration, 1.0, delta=0.2)

@@ -30,8 +30,11 @@ def _rotation(video: dict) -> int:
     """Поворот экрана в градусах: 0/90/180/270.
 
     Два способа его хранить: современный — displaymatrix в side_data_list
-    (может быть отрицательным, например -90), старый — тег rotate (ключ
-    попадается и в верхнем регистре, например у Matroska: ROTATE)."""
+    (может быть отрицательным, например -90; так реально пишет mp4 при
+    `ffmpeg -display_rotation N -i src -c copy`), старый — тег `rotate` в
+    его буквальном mp4-написании (нижний регистр). Не расширяем поиск тега
+    на любой регистр: Matroska сам заполняет ROTATE по-своему, и это его
+    собственная условность, а не общий формат, который стоит угадывать."""
 
     for entry in video.get("side_data_list") or []:
         if "rotation" in entry:
@@ -39,12 +42,12 @@ def _rotation(video: dict) -> int:
                 return int(entry["rotation"]) % 360
             except (TypeError, ValueError):
                 pass
-    for key, value in (video.get("tags") or {}).items():
-        if key.lower() == "rotate":
-            try:
-                return int(value) % 360
-            except (TypeError, ValueError):
-                pass
+    tag = (video.get("tags") or {}).get("rotate")
+    if tag is not None:
+        try:
+            return int(tag) % 360
+        except (TypeError, ValueError):
+            pass
     return 0
 
 

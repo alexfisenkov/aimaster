@@ -56,16 +56,22 @@ def make_tone(path: Path, seconds: float = 3.0, *, freq=220) -> Path:
 
 def make_rotated_clip(path: Path, seconds: float = 1.0, *, size=(192, 108),
                       rotation=90) -> Path:
-    """Клип, физически закодированный лёжа боком, с тегом rotate в метаданных —
-    как отдаёт вертикальную съёмку телефон. mp4 у этой сборки ffmpeg тег молча
-    роняет, поэтому контейнер — mkv (Matroska его сохраняет, хоть и в верхнем
-    регистре: ROTATE; `probe._rotation` читает тег без учёта регистра)."""
+    """mp4-клип, физически закодированный лёжа боком (по умолчанию 192x108 —
+    landscape), с записанной в контейнер матрицей поворота — как показывает
+    портретную съёмку телефон.
+
+    Кодируем обычный landscape-клип, затем ремуксуем с -display_rotation и
+    -c copy: именно эта комбинация реально пишет side_data_list[0].rotation
+    в mp4 на этой сборке ffmpeg (8.1) — проверено вручную перед тем, как
+    полагаться на неё в тесте. Прямое кодирование с -metadata:s:v:0 rotate=N
+    эту метадату на mp4-выходе теряет (тег остаётся только в логе ffmpeg,
+    в сам файл не попадает) — этим способом клип раньше и собирался, отсюда
+    и правка."""
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    width, height = size
-    args = ["-f", "lavfi", "-i", f"color=c=red:s={width}x{height}:r=30:d={seconds}",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30",
-            "-metadata:s:v:0", f"rotate={rotation}"]
-    _ffmpeg(args + [path])
+    plain = path.parent / (path.stem + ".плоский" + path.suffix)
+    make_clip(plain, seconds, size=size, audio=False)
+    _ffmpeg(["-display_rotation", str(rotation), "-i", plain, "-c", "copy", path])
+    plain.unlink(missing_ok=True)
     return path
