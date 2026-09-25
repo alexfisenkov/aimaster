@@ -50,31 +50,8 @@ class CiCheckTests(unittest.TestCase):
         self.assertNotIn("gsap", montage_ci_check.COMPOSITION.lower())
         self.assertIn("data-no-timeline", montage_ci_check.COMPOSITION)
 
-    def test_external_urls_also_catch_poster_srcset_and_bare_import(self):
-        html = ('<video poster="https://cdn.example/poster.jpg"></video>'
-                '<img srcset="https://cdn.example/x2.png 2x">'
-                '<style>@import "https://fonts.googleapis.com/css2?family=Inter";</style>'
-                '<img poster="assets/local.jpg" srcset="assets/local2.jpg 1x">')
-        self.assertEqual(montage_ci_check.external_urls(html),
-                         ["https://cdn.example/poster.jpg", "https://cdn.example/x2.png",
-                          "https://fonts.googleapis.com/css2?family=Inter"])
-
-    def test_external_urls_every_srcset_candidate(self):
-        """round 3/5: несколько кандидатов через запятую — каждый внешний
-        учитывается, дескриптор плотности/ширины (1x/480w) отбрасывается."""
-
-        html = ('<img srcset="assets/local.jpg 1x, https://cdn.example/a.png 2x, '
-                '//cdn.example/b.png 3x">')
-        self.assertEqual(montage_ci_check.external_urls(html),
-                         ["https://cdn.example/a.png", "//cdn.example/b.png"])
-
-    def test_external_urls_unquoted_attribute(self):
-        html = '<img src=https://cdn.example/unquoted.png>'
-        self.assertEqual(montage_ci_check.external_urls(html), ["https://cdn.example/unquoted.png"])
-
-    def test_external_urls_image_set(self):
-        html = '<div style="background-image: image-set(https://cdn.example/img.png)"></div>'
-        self.assertEqual(montage_ci_check.external_urls(html), ["https://cdn.example/img.png"])
+    # Все формы ссылок (srcset, image-set, @import, …) — test_montage_external_urls.py:
+    # round 4/5 вынес поиск в studio/montage/external_urls.py, общий с media_sync.
 
 
 def _touch(path, *_args, **_kwargs) -> Path:

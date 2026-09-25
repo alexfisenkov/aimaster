@@ -358,96 +358,79 @@ class BrowserInstallTests(unittest.TestCase):
         self.assertEqual(argv[2:4], ["browser", "ensure"])
         self.assertEqual(kwargs["env"]["HOME"], str(self.prefix / "home"))
 
-    # --- HYPERFRAMES_BROWSER_PATH: явное переопределение (round 1/5 → 3/5) ---
+    # --- HYPERFRAMES_BROWSER_PATH: не поддерживается (round 4/5) ---
 
-    def test_env_override_skips_download_entirely(self):
-        """HYPERFRAMES_BROWSER_PATH — штатный способ HyperFrames обойти
-        скачивание: указывает на реальный файл → browser_install принимает
-        его без единого вызова `ensure`/`path`. round 3/5: путь НЕ пишется в
-        aimaster-engine.json — исчезнувшая переменная не должна оставить
-        устаревшую запись «найден» (Minor 7)."""
+    def install_engine_files(self):
+        """Минимальный движок в префиксе — чтобы engine.locate() дошёл до браузера."""
 
-        override = touch(self.base / "override" / "chrome-headless-shell.exe")
-        item = self.call("/usr/bin/node", self.prefix, PIN,
-                         install_missing=True, update=False,
-                         runner=self.runner("не должно понадобиться"),
-                         environ={"HYPERFRAMES_BROWSER_PATH": str(override)})
-        self.assertEqual(item["status"], "found")
-        self.assertEqual(item["path"], str(override))
-        self.assertEqual(self.calls, [])
-        self.assertEqual(engine.read_record(self.prefix), {})
+        touch(engine.entry_script(self.prefix))
+        manifest = self.prefix / "node_modules" / "hyperframes" / "package.json"
+        manifest.write_text(json.dumps({"version": PIN["version"]}), encoding="utf-8")
 
-    def test_env_override_wins_over_a_stale_different_record(self):
-        stale = touch(self.base / "старый-выбор" / "chrome-headless-shell.exe")
-        engine.write_record(self.prefix, {"browser": str(stale), "version": "0.8.70"})
-        override = touch(self.base / "override" / "chrome-headless-shell.exe")
-        item = self.call("/usr/bin/node", self.prefix, PIN,
-                         install_missing=True, update=False,
-                         runner=self.runner("не должно понадобиться"),
-                         environ={"HYPERFRAMES_BROWSER_PATH": str(override)})
-        self.assertEqual(item["status"], "found")
-        self.assertEqual(item["path"], str(override))
-        self.assertEqual(engine.read_record(self.prefix)["browser"], str(stale))  # не тронута
+    def locate(self):
+        env = {engine.PREFIX_ENV: str(self.prefix), "PATH": ""}
+        with mock.patch.object(engine, "find_node", return_value="/usr/bin/node"), \
+                mock.patch.object(engine, "node_major", return_value=PIN["node_min_major"]):
+            return engine.locate(environ=env)
 
-    def test_env_override_to_a_missing_file_is_ignored(self):
-        """Переменная задана, но файла по этому пути нет — не «нашли», а
-        обычный путь установки (не должен тихо принять несуществующий файл)."""
+    def test_browser_path_variable_changes_nothing_and_install_agrees_with_locate(self):
+        """round 4/5: запись установщика — единственный источник правды.
+        Переменная указывает на реальный файл, но ни check_browser, ни
+        browser_install её не читают, в запуски `ensure`/`path` она не
+        уходит, а итог установки совпадает с engine.locate() до и после."""
 
-        item = self.call("/usr/bin/node", self.prefix, PIN,
-                         install_missing=True, update=False,
-                         runner=self.runner(str(self.browser)),
-                         environ={"HYPERFRAMES_BROWSER_PATH": str(self.base / "нет-такого.exe")})
-        self.assertEqual(item["status"], "installed")
-        self.assertEqual(item["path"], str(self.browser))
-        self.assertGreater(len(self.calls), 0)  # обычный ensure/path всё же вызывались
+        self.install_engine_files()
+        user_choice = touch(self.base / "свой браузер" / "chrome-headless-shell.exe")
+        with mock.patch.dict(os.environ, {"HYPERFRAMES_BROWSER_PATH": str(user_choice)}), \
+                mock.patch.object(install_montage_browser, "IS_WINDOWS", False):
+            self.assertEqual(install_montage_browser.check_browser(self.prefix, PIN)["status"], "missing")
+            found, reason = self.locate()
+            self.assertIsNone(found)
+            self.assertIn("не скачан браузер", reason)
 
-    def test_check_browser_honours_the_env_override(self):
-        override = touch(self.base / "override" / "chrome-headless-shell.exe")
-        item = install_montage_browser.check_browser(
-            self.prefix, PIN, environ={"HYPERFRAMES_BROWSER_PATH": str(override)})
-        self.assertEqual(item, {"status": "found", "message": "", "path": str(override)})
+            item = self.call("/usr/bin/node", self.prefix, PIN, install_missing=True, update=False,
+                             runner=self.runner(str(self.browser)))
+            self.assertEqual(item["status"], "installed")
+            self.assertEqual(item["path"], str(self.browser))
+            for _argv, kwargs in self.calls:
+                self.assertNotIn("HYPERFRAMES_BROWSER_PATH", kwargs["env"])
 
-    def test_windows_rejects_a_regular_browser_override(self):
-        """round 3/5, H2 (run 36141827389): на Windows `chrome.exe --version`
-        не отвечает и не завершается — обычный браузер для рендера непригоден
-        в принципе. Отказываем ДО вызова ensure/path, понятным сообщением."""
+            self.assertEqual(install_montage_browser.check_browser(self.prefix, PIN),
+                             {"status": "found", "message": "", "path": str(self.browser)})
+            found, reason = self.locate()
+            self.assertEqual(reason, "")
+            self.assertEqual(found.browser, str(self.browser))
 
-        regular = touch(self.base / "chrome.exe")
-        with mock.patch.object(install_montage_browser, "IS_WINDOWS", True):
-            item = self.call("/usr/bin/node", self.prefix, PIN,
-                             install_missing=True, update=False,
-                             runner=self.runner("не должно понадобиться"),
-                             environ={"HYPERFRAMES_BROWSER_PATH": str(regular)})
-        self.assertEqual(item["status"], "failed")
-        self.assertIn("chrome-headless-shell.exe", item["message"])
-        self.assertEqual(self.calls, [])
+    def test_record_for_another_version_is_missing_for_both_check_and_locate(self):
+        """round 4/5: check_browser и engine.locate() зовут одну проверку —
+        браузер, записанный для другой версии HyperFrames, не готов ни там, ни там."""
 
-    def test_windows_accepts_a_headless_shell_override(self):
-        headless = touch(self.base / "chrome-headless-shell.exe")
-        with mock.patch.object(install_montage_browser, "IS_WINDOWS", True):
-            item = self.call("/usr/bin/node", self.prefix, PIN,
-                             install_missing=True, update=False,
-                             runner=self.runner("не должно понадобиться"),
-                             environ={"HYPERFRAMES_BROWSER_PATH": str(headless)})
-        self.assertEqual(item["status"], "found")
-        self.assertEqual(item["path"], str(headless))
+        self.install_engine_files()
+        touch(self.browser)
+        engine.write_record(self.prefix, {"browser": str(self.browser), "version": "0.8.70"})
+        self.assertEqual(install_montage_browser.check_browser(self.prefix, PIN)["status"], "missing")
+        found, _reason = self.locate()
+        self.assertIsNone(found)
 
-    def test_non_windows_accepts_a_regular_browser_override(self):
-        """Ограничение по имени бинарника доказано только для Windows (H2) —
-        на POSIX системный Chrome не отклоняем по имени. IS_WINDOWS зашит
-        явно (не полагаемся на платформу, где реально идёт тест) — этот
-        самый тест сначала тихо проходил на macOS-машине разработки и
-        по-настоящему падал на windows-latest в CI, где IS_WINDOWS истинный
-        (round 3/5: без явного mock.patch.object тест проверяет платформу
-        своей CI-машины, а не заявленное поведение)."""
+    def test_hyperframes_hint_is_replaced_by_our_command_on_every_platform(self):
+        hint = install_montage_browser._MISLEADING_HINT
 
-        regular = touch(self.base / "Google Chrome")
-        with mock.patch.object(install_montage_browser, "IS_WINDOWS", False):
-            item = self.call("/usr/bin/node", self.prefix, PIN,
-                             install_missing=True, update=False,
-                             runner=self.runner("не должно понадобиться"),
-                             environ={"HYPERFRAMES_BROWSER_PATH": str(regular)})
-        self.assertEqual(item["status"], "found")
+        def runner(argv, **kwargs):
+            self.calls.append((argv, kwargs))
+            if argv[2:4] == ["browser", "path"]:
+                return subprocess.CompletedProcess(argv, 1, b"", b"")
+            return subprocess.CompletedProcess(argv, 1, b"", ("Chrome cannot start. " + hint).encode())
+
+        for windows in (False, True):
+            with self.subTest(windows=windows), \
+                    mock.patch.object(install_montage_browser, "IS_WINDOWS", windows), \
+                    mock.patch.object(install_montage_browser_win, "preseed",
+                                      return_value=install_montage_browser_win.PreseedResult(True)):
+                item = self.call("/usr/bin/node", self.prefix, PIN,
+                                 install_missing=True, update=False, runner=runner)
+                self.assertEqual(item["status"], "failed")
+                self.assertNotIn("HYPERFRAMES_BROWSER_PATH", item["message"])
+                self.assertIn("install.py --install-deps", item["message"])
 
     def test_stale_recorded_browser_outside_home_is_not_found(self):
         """round 3/5, Minor 7: устаревшая запись (от прошлого override или
@@ -465,15 +448,18 @@ class BrowserInstallTests(unittest.TestCase):
 
     # --- Windows: install_montage_browser_win.preseed перед ensure ---
 
-    def test_windows_calls_preseed_with_the_browser_timeout_before_ensure(self):
+    def test_windows_calls_preseed_with_the_download_deadline_before_ensure(self):
+        """round 4/5: бюджет timeouts.browser общий — preseed получает срок
+        скачивания download_deadline(B), `ensure` — остаток, не больше B."""
+
         order = []
 
-        def fake_preseed(prefix, *, timeout):
-            order.append(("preseed", timeout))
+        def fake_preseed(prefix, *, deadline):
+            order.append(("preseed", deadline))
             return install_montage_browser_win.PreseedResult(True)
 
         def runner(argv, **kwargs):
-            order.append(("ensure" if argv[2:4] == ["browser", "ensure"] else "path", None))
+            order.append(("ensure" if argv[2:4] == ["browser", "ensure"] else "path", kwargs["timeout"]))
             self.calls.append((argv, kwargs))
             if argv[2:4] == ["browser", "path"]:
                 return subprocess.CompletedProcess(argv, 0, (str(self.browser) + "\n").encode(), b"")
@@ -484,9 +470,12 @@ class BrowserInstallTests(unittest.TestCase):
                 mock.patch.object(install_montage_browser_win, "preseed", side_effect=fake_preseed):
             item = self.call("/usr/bin/node", self.prefix, PIN,
                              install_missing=True, update=False, runner=runner)
+        budget = PIN["timeouts"]["browser"]
         self.assertEqual(item["status"], "installed")
-        self.assertEqual(order[0], ("preseed", PIN["timeouts"]["browser"]))
+        self.assertEqual(order[0], ("preseed", install_montage_browser_win.download_deadline(budget)))
         self.assertEqual(order[1][0], "ensure")
+        self.assertLessEqual(order[1][1], budget)
+        self.assertGreater(order[1][1], budget - 5)  # preseed-заглушка мгновенная — остаток почти весь B
 
     def test_posix_never_calls_preseed(self):
         with mock.patch.object(install_montage_browser, "IS_WINDOWS", False), \
@@ -494,6 +483,23 @@ class BrowserInstallTests(unittest.TestCase):
             self.call("/usr/bin/node", self.prefix, PIN,
                      install_missing=True, update=False, runner=self.runner(str(self.browser)))
         preseed_mock.assert_not_called()
+        self.assertEqual(self.calls[0][1]["timeout"], PIN["timeouts"]["browser"])
+
+    def test_windows_ensure_timeout_keeps_the_preseed_reason(self):
+        """round 4/5, пункт 5: `ensure` не уложился — причина отказа своего
+        скачивателя всё равно видна человеку (раньше терялась на этой ветке)."""
+
+        def runner(argv, **kwargs):
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+        with mock.patch.object(install_montage_browser, "IS_WINDOWS", True), \
+                mock.patch.object(install_montage_browser_win, "preseed",
+                                  return_value=install_montage_browser_win.PreseedResult(
+                                      False, "chrome-headless-shell напрямую не скачался за 660 с")):
+            item = self.call("/usr/bin/node", self.prefix, PIN,
+                             install_missing=True, update=False, runner=runner)
+        self.assertEqual(item["status"], "timeout")
+        self.assertIn("не скачался за 660 с", item["message"])
 
     def test_windows_preseed_failure_reason_appears_in_the_final_failure_message(self):
         outside = touch(self.base / "Google Chrome")  # ensure/path в итоге всё равно откажет

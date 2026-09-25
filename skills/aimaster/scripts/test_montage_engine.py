@@ -128,11 +128,10 @@ class LocateTests(_Prefix):
 
     def test_browser_outside_engine_home_is_not_accepted(self):
         """round 3/5, Minor 7: запись `browser` вне `<prefix>/home` (осевший
-        системный браузер от прошлого `HYPERFRAMES_BROWSER_PATH`, ручная
+        системный браузер из записи прошлых версий установщика, ручная
         правка файла) не должна тихо сходить за «готовый движок» —
-        `browser_inside_home()` в `engine.locate()` и в install_montage_
-        browser.check_browser()/browser_install() зовут одну и ту же
-        проверку."""
+        `engine.locate()` и install_montage_browser.check_browser()/
+        browser_install() зовут одну и ту же проверку (recorded_browser)."""
 
         self.install_package()
         outside = self.base / "не-в-home" / "chrome.exe"

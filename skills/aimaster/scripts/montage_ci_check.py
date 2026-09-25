@@ -7,14 +7,14 @@
 пробелами собирает композицию из двух клипов и голоса (без текста), прогоняет
 lint, рендер и ffprobe, ищет в композиции внешние ссылки, а в логе рендера —
 следы сетевых запросов (шрифты Google, CDN). --offline только помечает запуск:
-сеть отрезают снаружи (см. .github/workflows/ci.yml).
+сеть отрезают снаружи (см. .github/workflows/ci.yml). Поиск внешних ссылок —
+общий с проверкой черновика: studio/montage/external_urls.py.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 import tempfile
@@ -32,6 +32,7 @@ import montage_testkit  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
 from studio.montage.engine import require_engine  # noqa: E402
 from studio.montage.engine_cli import frames_cache, run_engine, run_engine_json  # noqa: E402
+from studio.montage.external_urls import external_urls  # noqa: E402 — montage_ci_check.external_urls (план)
 from studio.montage.probe import probe_media  # noqa: E402
 from studio.platform_compat import ensure_utf8_stdio  # noqa: E402
 
@@ -40,22 +41,6 @@ DURATION = 3.0
 # Любой след сети в логе рендера — ошибка: CDN-скрипт или шрифт с Google Fonts.
 NETWORK_MARKERS = ("Inlined CDN script", "Failed to download CDN script", "from Google Fonts",
                    "fonts.googleapis.com")
-# round 3/5: srcset разбирается по каждому кандидату отдельно (обычный
-# случай — несколько через запятую с дескриптором плотности/ширины, "1x"/
-# "480w"), src/href/poster ловятся и без кавычек, url()/image-set() — как
-# один и тот же случай «функция с адресом внутри».
-_EXTERNAL = re.compile(
-    r"""(?:src|href|poster)\s*=\s*(?:"(?P<dq>[^"]*)"|'(?P<sq>[^']*)'|(?P<uq>[^\s"'>]+))"""
-    r"""|srcset\s*=\s*(?:"(?P<srcset_dq>[^"]*)"|'(?P<srcset_sq>[^']*)')"""
-    r"""|(?:url|image-set)\(\s*["']?(?P<func>[^"')]*)["']?\s*\)"""
-    r"""|@import\s+["'](?P<imp>[^"']*)["']""",
-    re.IGNORECASE | re.VERBOSE)
-_SCHEME = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//)", re.I)
-
-
-def _is_external(url: str) -> bool:
-    return bool(url) and bool(_SCHEME.match(url)) and not url.lower().startswith("data:")
-
 
 COMPOSITION = """<!doctype html>
 <html lang="ru">
@@ -80,31 +65,6 @@ COMPOSITION = """<!doctype html>
   </body>
 </html>
 """
-
-
-def external_urls(html_text: str) -> list[str]:
-    found = []
-    for m in _EXTERNAL.finditer(html_text):
-        srcset = m.group("srcset_dq")
-        if srcset is None:
-            srcset = m.group("srcset_sq")
-        if srcset is not None:
-            for candidate in srcset.split(","):
-                candidate = candidate.strip()
-                url = candidate.split()[0] if candidate else ""
-                if _is_external(url):
-                    found.append(url)
-            continue
-        value = m.group("dq")
-        if value is None:
-            value = m.group("sq")
-        if value is None:
-            value = m.group("uq") or m.group("func") or m.group("imp")
-        if value is not None:
-            value = value.strip()
-            if _is_external(value):
-                found.append(value)
-    return found
 
 
 def _build(comp: Path) -> None:

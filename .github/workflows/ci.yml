@@ -72,6 +72,9 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     env:
       PYTHONUTF8: "1"
+      # round 4/5: браузер — только из записи установщика. Переменная указывает
+      # в никуда; зелёные установка и рендер доказывают, что её не читают.
+      HYPERFRAMES_BROWSER_PATH: /nonexistent/ignored-by-aimaster/chrome
     steps:
       - uses: actions/checkout@v4
 
@@ -107,7 +110,8 @@ jobs:
         # только сам факт. Исправлено в install_montage_browser_win.py::
         # preseed (качает и распаковывает chrome-headless-shell сами,
         # Unicode-safe). Системный Chrome (round 1/5) и HYPERFRAMES_BROWSER_
-        # PATH здесь больше не нужны — H2 тем же прогоном (шаг H2 experiment)
+        # PATH здесь не нужны (установщик переменную не читает, round 4/5) —
+        # H2 тем же прогоном (шаг H2 experiment)
         # показал, что `chrome.exe --version` на Windows не отвечает вовсе
         # (запускает полноценный браузер вместо короткого ответа) —
         # системный GUI-Chrome для CI непригоден в принципе, убран целиком.

@@ -67,6 +67,19 @@ class EnvTests(unittest.TestCase):
         self.assertEqual(env["USERPROFILE"], env["HOME"])
         self.assertNotIn("HYPERFRAMES_BROWSER_PATH", env)
 
+    def test_inherited_browser_variable_never_reaches_the_engine(self):
+        """round 4/5: браузер — только из записи установщика. Чужой
+        HYPERFRAMES_BROWSER_PATH из окружения человека не наследуется: без
+        записи его нет вовсе, с записью — перебит путём из записи."""
+
+        inherited = {"HYPERFRAMES_BROWSER_PATH": "/Applications/Google Chrome"}
+        base = Path("/tmp/hf")
+        with mock.patch.object(engine_cli, "IS_WINDOWS", False):
+            without = engine_cli.engine_env(make_engine(base, browser=False), inherited)
+            with_record = engine_cli.engine_env(make_engine(base), inherited)
+        self.assertNotIn("HYPERFRAMES_BROWSER_PATH", without)
+        self.assertEqual(with_record["HYPERFRAMES_BROWSER_PATH"], str(base / "chrome"))
+
     def test_windows_leaves_localappdata_and_appdata_alone(self):
         """round 3/5: пробная гипотеза (LOCALAPPDATA/APPDATA переносить вместе
         с HOME) не подтвердилась прямым CI-прогоном — H2 (системный Chrome

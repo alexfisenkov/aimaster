@@ -53,6 +53,8 @@ def engine_env(engine: Engine, base: Mapping[str, str] | None = None) -> dict[st
     if IS_WINDOWS:
         env["USERPROFILE"] = env["HOME"]
     env["HYPERFRAMES_EXTRACT_CACHE_DIR"] = str(frames_cache(engine))
+    # Браузер — только из записи установщика, чужой из окружения не наследуем (round 4/5).
+    env.pop("HYPERFRAMES_BROWSER_PATH", None)
     if engine.browser:
         env["HYPERFRAMES_BROWSER_PATH"] = engine.browser
     return env

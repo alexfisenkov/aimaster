@@ -2,7 +2,8 @@
 
 Движок ставит scripts/install_montage.py в <user_data_dir>/tools/hyperframes:
 `npm install --prefix`, свой HOME (home/) для кэшей и браузера и запись
-aimaster-engine.json с путём к скачанному браузеру. Переменная
+aimaster-engine.json с путём к скачанному браузеру (раскладка папки —
+prefix_layout.py, её имена доступны и отсюда). Переменная
 AIMASTER_HYPERFRAMES_DIR подменяет папку — для CI и смоука.
 """
 
@@ -19,10 +20,12 @@ from pathlib import Path
 
 from ..platform_compat import IS_WINDOWS, find_program, user_data_dir
 from . import MontageError
+from .prefix_layout import (  # noqa: F401 — прежние имена engine.* (интерфейс плана)
+    RECORD_NAME, browser_inside_home, entry_script, installed_version, package_version,
+    read_record, recorded_browser, write_record)
 
 PIN_FILE = Path(__file__).with_name("engine.json")
 INSTALL_PY = Path(__file__).resolve().parents[2] / "scripts" / "install.py"
-RECORD_NAME = "aimaster-engine.json"
 PREFIX_ENV = "AIMASTER_HYPERFRAMES_DIR"
 _VERSION = re.compile(r"v?(\d+)\.(\d+)\.(\d+)")
 
@@ -37,39 +40,6 @@ def tools_prefix(*, home=None, environ=None) -> Path:
     if override and Path(override).is_absolute():
         return Path(override)
     return user_data_dir(home=home, environ=environ) / "tools" / "hyperframes"
-
-
-def entry_script(prefix: Path) -> Path:
-    return Path(prefix) / "node_modules" / "hyperframes" / "bin" / "hyperframes.mjs"
-
-
-def browser_inside_home(browser, prefix) -> bool:
-    """`browser` реально лежит в HOME движка (`<prefix>/home`), а не осевший
-    в записи системный браузер (устаревший `HYPERFRAMES_BROWSER_PATH`,
-    ручная правка `aimaster-engine.json`) — round 3/5, Minor 7: `locate()`
-    ниже и `install_montage_browser.check_browser()`/`browser_install()`
-    зовут ровно эту функцию, чтобы не разойтись в том, что считается
-    «нашедшимся» браузером. `normcase`+`realpath` раскрывают регистр и
-    символьные ссылки там, где файловая система их поддерживает (APFS,
-    Windows), а не просто сравнивают текст пути."""
-
-    home = Path(prefix) / "home"
-    browser_norm = os.path.normcase(os.path.realpath(str(browser)))
-    home_norm = os.path.normcase(os.path.realpath(str(home)))
-    return browser_norm == home_norm or browser_norm.startswith(home_norm.rstrip(os.sep) + os.sep)
-
-
-def package_version(prefix: Path, name: str) -> str | None:
-    manifest = Path(prefix) / "node_modules" / name / "package.json"
-    try:
-        version = json.loads(manifest.read_text(encoding="utf-8")).get("version")
-    except (OSError, ValueError, AttributeError):
-        return None
-    return version if isinstance(version, str) else None
-
-
-def installed_version(prefix: Path) -> str | None:
-    return package_version(prefix, "hyperframes")
 
 
 def install_argv() -> list[str]:
@@ -120,20 +90,6 @@ def node_major(node: str, *, run=subprocess.run) -> int | None:
     return int(match.group(1)) if proc.returncode == 0 and match else None
 
 
-def read_record(prefix: Path) -> dict:
-    try:
-        data = json.loads((Path(prefix) / RECORD_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def write_record(prefix: Path, record: dict) -> None:
-    Path(prefix).mkdir(parents=True, exist_ok=True)
-    (Path(prefix) / RECORD_NAME).write_text(
-        json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
 @dataclass(frozen=True)
 class Engine:
     node: str
@@ -161,9 +117,10 @@ def locate(*, home=None, environ=None, run=subprocess.run) -> tuple[Engine | Non
         return None, f"HyperFrames не установлен в {prefix}"
     if version != pin["version"]:
         return None, f"стоит HyperFrames {version}, нужен {pin['version']}"
-    browser = read_record(prefix).get("browser")
-    if (not isinstance(browser, str) or not browser or not Path(browser).is_file()
-            or not browser_inside_home(browser, prefix)):
+    # Та же проверка, что у check_browser установщика (round 4/5): оба
+    # согласны, иначе автопилот крутил бы команду установки по кругу.
+    browser = recorded_browser(prefix, version=pin["version"])
+    if browser is None:
         return None, "не скачан браузер для сборки видео"
     return Engine(node=node, script=script, prefix=prefix, version=version, browser=browser), ""
 
