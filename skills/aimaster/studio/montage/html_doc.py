@@ -4,6 +4,10 @@
 закрывающим тегом корня. Правка меняет только нужный открывающий тег или
 текст: остальная разметка (в том числе то, что переписала Studio: data-hf-id,
 <!DOCTYPE html>, <meta …>) остаётся байт в байт.
+
+Чтение/запись `index.html` — здесь же (`read_index`/`write_index`): CRLF
+файла, который правила Studio на Windows, не должен превращаться в LF при
+точечной правке, поэтому оба всегда работают с `newline=""`.
 """
 
 from __future__ import annotations
@@ -11,7 +15,9 @@ from __future__ import annotations
 import html
 import re
 from html.parser import HTMLParser
+from pathlib import Path
 
+from ..platform_compat import replace_file
 from . import MontageError
 
 ROOT_ID = "root"
@@ -24,8 +30,15 @@ _SPAN_OPEN = re.compile(r"<span\b[^>]*>", re.I)
 _SPAN_TAG = re.compile(r"<(/?)span\b[^>]*>", re.I)
 # `montage gsap` (задача 14) допишет свой <script>: текст внутри него и внутри
 # <style>/<!-- --> — не разметка, а тег-сканер регэкспом об этом не знает сам.
-_COMMENT = re.compile(r"<!--.*?-->", re.S)
-_RAWTEXT = re.compile(r"<(script|style)\b[^>]*>.*?</\1\s*>", re.S | re.I)
+# ОДНА альтернация, не два отдельных прохода: раздельные regex независимо
+# находят "первое <!--" и "первое <script" где угодно в тексте, и если
+# внутри комментария лежит незакрытый <script> (или наоборот, внутри
+# скрипта — строка с "<!--"), они путают начало/конец друг друга и либо
+# проглатывают лишнее (в том числе настоящий элемент), либо расходятся не
+# там. `finditer` на одной альтернации сканирует слева направо и на каждой
+# позиции берёт ПЕРВУЮ подошедшую альтернативу — конструкция, что
+# начинается раньше, целиком поглощает то, что похоже на другую внутри неё.
+_EXCLUDED = re.compile(r"<!--.*?-->|<(script|style)\b[^>]*>.*?</\1\s*>", re.S | re.I)
 
 
 def fmt_number(value: float) -> str:
@@ -48,7 +61,7 @@ def _excluded_ranges(text: str) -> list[tuple[int, int]]:
     <script>/<style> (открывающий и закрывающий тег входят в диапазон целиком —
     у них в этом монтаже нет своего id, адресовать их незачем)."""
 
-    return [m.span() for m in _COMMENT.finditer(text)] + [m.span() for m in _RAWTEXT.finditer(text)]
+    return [m.span() for m in _EXCLUDED.finditer(text)]
 
 
 def _excluded(position: int, ranges: list[tuple[int, int]]) -> bool:
@@ -118,18 +131,21 @@ def _rendered_attr(name: str, value: str | bool) -> str:
 
 
 def set_attr(text: str, element_id: str, name: str, value: str | bool | None) -> str:
-    """Ставит, меняет или (value=None) убирает атрибут открывающего тега элемента."""
+    """Ставит, меняет или убирает атрибут открывающего тега элемента.
+    value=None и value=False — оба убирают: False — «атрибута нет», а не
+    буквальный текст "False", тот же смысл, что и у отсутствующего value."""
 
     match = _find_start(text, element_id)
     raw, start = match.group(2) or "", match.start(2)
+    remove = value is None or value is False
     for attr_name, _old, (begin, end) in _attrs(raw):
         if attr_name == name.lower():
-            if value is None:
+            if remove:
                 new_raw = raw[:begin].rstrip() + raw[end:]
             else:
                 new_raw = raw[:begin] + _rendered_attr(name, value) + raw[end:]
             return text[:start] + new_raw + text[start + len(raw):]
-    if value is None:
+    if remove:
         return text
     insert = start + len(raw)
     return text[:insert] + " " + _rendered_attr(name, value) + text[insert:]
@@ -191,3 +207,42 @@ def insert_before_root_end(text: str, fragment: str, root_id: str = ROOT_ID) -> 
 
 def root_duration(text: str) -> float:
     return float(element_attrs(text).get(ROOT_ID, {}).get("data-duration") or 0)
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    """Пишет текстовый файл через временный + атомарную замену, `newline=""`
+    — `text` уходит на диск как есть, без перевода строк: свежий текст,
+    собранный с `\\n`, получит `\\n`; текст, прочитанный `read_index` из
+    файла с CRLF и точечно правленный, вернёт CRLF, не перегонит весь файл
+    в LF ради пары атрибутов.
+
+    Сбой файловой системы на любом шаге (нет прав, диск занят другим
+    процессом на Windows, диск полон) — MontageError с понятным текстом, а
+    не голый traceback; временный файл за собой не оставляем."""
+
+    path = Path(path)
+    temporary = path.with_name(f".{path.name}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_text(text, encoding="utf-8", newline="")
+        replace_file(temporary, path)
+    except OSError as error:
+        temporary.unlink(missing_ok=True)
+        raise MontageError(f"не удалось записать {path.name}: {error}") from error
+
+
+def read_index(path: Path) -> str:
+    """Читает index.html с `newline=""` — CRLF файла Studio не превращается
+    в LF уже на чтении, до того как что-то в нём поправят."""
+
+    try:
+        return Path(path).read_text(encoding="utf-8", newline="")
+    except (OSError, UnicodeDecodeError) as error:
+        raise MontageError(f"не удалось прочитать черновик: {error}") from error
+
+
+def write_index(path: Path, text: str) -> None:
+    """index.html — тот же атомарный писатель, что и для прочих файлов
+    монтажа (`hyperframes.json`); имя отдельное — для читаемости вызова."""
+
+    write_text_atomic(path, text)

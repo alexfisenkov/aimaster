@@ -29,14 +29,22 @@ def load_manifest() -> dict:
 
 
 def _sha256(path: Path) -> str:
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    """Сбой чтения (нет прав, файл пропал между .is_file() и этим вызовом,
+    диск отвалился) — MontageError, не голый OSError: verify_bundle это
+    обещает и сам, и через sync_fonts (задача 4 раунда 2)."""
+
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError as error:
+        raise MontageError(f"не удалось прочитать {Path(path).name}: {error}") from error
 
 
 def verify_bundle(manifest=None) -> list[str]:
     """Файлы шрифта в навыке, которых нет или чей sha256 не совпал с
     манифестом — включая лицензию: OFL требует нести её текст рядом с
     файлами, а не просто сослаться на неё, так что она проверяется наравне
-    со шрифтами, а не отдельным особым случаем."""
+    со шрифтами, а не отдельным особым случаем. Сбой чтения файла (не
+    отсутствие, а именно ошибка ФС) — MontageError, не голый OSError."""
 
     manifest = manifest or load_manifest()
     broken = [item["file"] for item in manifest["files"]

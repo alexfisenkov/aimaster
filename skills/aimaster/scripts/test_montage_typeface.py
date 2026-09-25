@@ -74,6 +74,20 @@ class TypefaceTests(unittest.TestCase):
                 with self.assertRaises(MontageError):
                     typeface.sync_fonts(assets)
 
+    def test_verify_bundle_wraps_a_read_failure(self):
+        # Fix round 2/5, item 4: OSError на чтении файла бандла (не «его
+        # нет», а именно сбой чтения) — MontageError, как обещает докстрока.
+        with mock.patch.object(Path, "read_bytes", side_effect=OSError("denied")):
+            with self.assertRaises(MontageError):
+                typeface.verify_bundle()
+
+    def test_sync_fonts_wraps_a_verify_read_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            assets = Path(temp) / "assets"
+            with mock.patch.object(Path, "read_bytes", side_effect=OSError("denied")):
+                with self.assertRaises(MontageError):
+                    typeface.sync_fonts(assets)
+
 
 if __name__ == "__main__":
     unittest.main()

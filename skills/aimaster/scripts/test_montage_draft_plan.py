@@ -156,6 +156,29 @@ class AcceptedOnlyTests(unittest.TestCase):
         except MontageError:
             pass
 
+    def test_duplicate_link_error_names_the_scene(self):
+        # Fix round 2/5, item 6: текст по-русски называет сцену/слой, а не
+        # голое исключение domain.
+        state = video_state(SCENES)
+        duplicate = dict(self._video_result_for(state, "s2"))
+        duplicate["result_id"] = "result:scene:s2:video-dup"
+        duplicate["asset_id"] = "asset-c"
+        state["video_results"].append(duplicate)
+        with self.assertRaises(MontageError) as caught:
+            video_sources(state, strict=False)
+        self.assertIn("сломана ссылка на результат сцены Клубок", str(caught.exception))
+        self.assertIn("выберите вариант заново", str(caught.exception))
+
+    def test_duplicate_link_error_names_the_audio_layer(self):
+        state = video_state(SCENES, audio={"voice": "asset-v"})
+        duplicate = dict(self._audio_result_for(state, "voice"))
+        duplicate["result_id"] = "result:audio:voice-dup"
+        duplicate["asset_id"] = "asset-v2"
+        state["audio_results"].append(duplicate)
+        with self.assertRaises(MontageError) as caught:
+            audio_sources(state)
+        self.assertIn("звукового слоя «voice»", str(caught.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

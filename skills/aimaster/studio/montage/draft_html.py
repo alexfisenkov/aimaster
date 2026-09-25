@@ -81,7 +81,13 @@ def render_draft_html(plan: DraftPlan, canvas: Canvas, sources: Mapping[str, str
                           hpad=round(32 * scale), radius=round(16 * scale))
     root = _attrs([("id", "root"), ("data-composition-id", "main"), ("data-start", "0"),
                    ("data-duration", fmt(plan.duration)), ("data-width", canvas.width),
-                   ("data-height", canvas.height), ("data-no-timeline", True)])
+                   ("data-height", canvas.height), ("data-no-timeline", True),
+                   # Слепок структуры проекта на момент сборки: stale_clips
+                   # (refresh.py) сравнивает его с текущим проектом, чтобы
+                   # отличить добавленную/удалённую сцену и смену gen_mode от
+                   # сцены, чей клип владелец сам убрал со стола.
+                   ("data-am-scenes", " ".join(plan.scene_ids)),
+                   ("data-am-gen-mode", plan.gen_mode)])
     body = ["      " + _element(clip, sources) for clip in plan.clips]
     return "\n".join([
         "<!doctype html>", '<html lang="ru">', "  <head>", '    <meta charset="UTF-8" />',

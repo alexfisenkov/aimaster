@@ -19,17 +19,21 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 from montage_testkit import video_state  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
 from studio.montage.canvas import Canvas  # noqa: E402
-from studio.montage.draft import create_draft, rebuild_draft, refresh_draft, stale_clips  # noqa: E402
+from studio.montage.composition_refs import external_references, missing_sources  # noqa: E402
+from studio.montage.draft import create_draft, rebuild_draft  # noqa: E402
 from studio.montage.draft_html import title_fragment  # noqa: E402
-from studio.montage.html_doc import element_attrs  # noqa: E402
-from studio.montage.media_sync import external_references, missing_sources  # noqa: E402
+from studio.montage.html_doc import element_attrs, element_span  # noqa: E402
 from studio.montage.paths import montage_paths  # noqa: E402
 from studio.montage.probe import MediaInfo  # noqa: E402
+from studio.montage.refresh import refresh_draft, stale_clips  # noqa: E402
 
 SCENES = [("s1", "Сад", "Барсик идёт по саду", 2000, "asset-a"),
           ("s2", "Клубок", "Находит клубок", 2000, "asset-b")]
+# Fix round 2/5, item 3: data-am-scenes/data-am-gen-mode — слепок структуры
+# проекта на момент сборки, читает stale_clips (refresh.py).
 ROOT = ('<div id="root" data-composition-id="main" data-start="0" data-duration="3.5" '
-        'data-width="108" data-height="192" data-no-timeline>')
+        'data-width="108" data-height="192" data-no-timeline data-am-scenes="s1 s2" '
+        'data-am-gen-mode="per_scene">')
 V1 = ('<video id="v-1" class="am-video" src="assets/asset-a.mp4" data-media-start="0" '
       'data-start="0" data-duration="2" data-track-index="0" data-am-layer="video" '
       'data-am-scene="s1" data-am-asset="asset-a" data-has-audio="true" data-volume="0.3" '
@@ -154,27 +158,72 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(after["v-2"], before["v-2"])
 
     def test_stale_clips_removed_scene_needs_rebuild(self):
+        # Fix round 2/5, item 3: у структурных записей clip всегда None (даже
+        # если в разметке технически есть повисший "v-2") и есть cause.
         self.draft(video_state(SCENES))
         newer = video_state([SCENES[0]])
         stale = stale_clips(self.paths.index.read_text(encoding="utf-8"), newer)
-        self.assertEqual([(item["clip"], item["scene_id"], item["reason"]) for item in stale],
-                         [("v-2", "s2", "нужен --rebuild")])
+        self.assertEqual([(item["clip"], item["scene_id"], item["cause"], item["reason"])
+                          for item in stale],
+                         [(None, "s2", "scene_removed", "нужен --rebuild")])
 
     def test_stale_clips_added_scene_needs_rebuild(self):
         self.draft(video_state(SCENES))
         newer = video_state(SCENES + [("s3", "Финал", "Титры", 1000, "asset-c")])
         stale = stale_clips(self.paths.index.read_text(encoding="utf-8"), newer)
-        self.assertEqual([(item["clip"], item["scene_id"], item["reason"]) for item in stale],
-                         [(None, "s3", "нужен --rebuild")])
+        self.assertEqual([(item["clip"], item["scene_id"], item["cause"], item["reason"])
+                          for item in stale],
+                         [(None, "s3", "scene_added", "нужен --rebuild")])
 
-    def test_stale_clips_gen_mode_switch_needs_rebuild(self):
+    def test_stale_clips_gen_mode_switch_is_one_project_level_item(self):
+        # Fix round 2/5, item 3: ОДНА запись на весь проект, а не по клипу.
         self.draft(video_state(SCENES))
         newer = video_state([("s1", "Сад", "Барсик идёт по саду", 2000, None),
                              ("s2", "Клубок", "Находит клубок", 2000, None)],
                             gen_mode="one_shot", oneshot_asset="asset-c")
         stale = stale_clips(self.paths.index.read_text(encoding="utf-8"), newer)
-        self.assertEqual({item["clip"]: item["reason"] for item in stale},
-                         {"v-1": "нужен --rebuild", "v-2": "нужен --rebuild"})
+        self.assertEqual([(item["clip"], item["cause"], item["reason"]) for item in stale],
+                         [(None, "gen_mode", "нужен --rebuild")])
+
+    def test_stale_clips_newly_accepted_layer_without_a_clip_is_layer_added(self):
+        # Fix round 2/5, item 3: слой, ставший принятым уже после сборки
+        # черновика — своя причина, «нужен --rebuild», не «нет принятого».
+        self.draft(video_state(SCENES))
+        newer = video_state(SCENES, audio={"music": "asset-c"})
+        stale = stale_clips(self.paths.index.read_text(encoding="utf-8"), newer)
+        self.assertEqual([(item["clip"], item["layer"], item["cause"], item["reason"])
+                          for item in stale],
+                         [(None, "music", "layer_added", "нужен --rebuild")])
+
+    def test_stale_clips_scene_deleted_from_the_desk_is_not_stale(self):
+        # Fix round 2/5, item 3: сцена осталась в проекте и её знал черновик
+        # (data-am-scenes), но клипа для неё в разметке уже нет — владелец
+        # сам убрал её со стола; refresh это не его дело.
+        self.draft(video_state(SCENES))
+        text = self.paths.index.read_text(encoding="utf-8")
+        begin, end = element_span(text, "v-2")
+        without_v2 = text[:begin] + text[end:]
+        stale = stale_clips(without_v2, video_state(SCENES))
+        self.assertEqual(stale, [])
+
+    def test_stale_clips_falls_back_for_a_draft_without_markers(self):
+        # Fix round 2/5, item 3: черновик до раунда 2 (нет data-am-scenes/
+        # data-am-gen-mode на корне) — прежнее поведение: любая сцена
+        # проекта без клипа считается требующей --rebuild, без cause.
+        self.draft(video_state(SCENES))
+        text = self.paths.index.read_text(encoding="utf-8")
+        legacy = text.replace(' data-am-scenes="s1 s2" data-am-gen-mode="per_scene"', "")
+        self.assertNotIn("data-am-scenes", legacy)
+        newer = video_state([SCENES[0]])
+        stale = stale_clips(legacy, newer)
+        # Прежнее (раунд 1) поведение: у клипа со сценой, которой больше нет
+        # в проекте, clip — его настоящий id, cause не задан (различать
+        # причины могли только markers). У по-настоящему новых сцен (без
+        # клипа вовсе) clip уже был None и в раунде 1 — здесь такого случая
+        # нет, сцен меньше, не больше.
+        self.assertEqual([(item["clip"], item["scene_id"], item.get("cause"), item["reason"])
+                          for item in stale],
+                         [("v-2", "s2", None, "нужен --rebuild")])
 
     def test_refresh_preserves_crlf_of_an_existing_draft(self):
         self.draft(video_state(SCENES))
