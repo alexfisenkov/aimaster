@@ -43,6 +43,22 @@ def entry_script(prefix: Path) -> Path:
     return Path(prefix) / "node_modules" / "hyperframes" / "bin" / "hyperframes.mjs"
 
 
+def browser_inside_home(browser, prefix) -> bool:
+    """`browser` реально лежит в HOME движка (`<prefix>/home`), а не осевший
+    в записи системный браузер (устаревший `HYPERFRAMES_BROWSER_PATH`,
+    ручная правка `aimaster-engine.json`) — round 3/5, Minor 7: `locate()`
+    ниже и `install_montage_browser.check_browser()`/`browser_install()`
+    зовут ровно эту функцию, чтобы не разойтись в том, что считается
+    «нашедшимся» браузером. `normcase`+`realpath` раскрывают регистр и
+    символьные ссылки там, где файловая система их поддерживает (APFS,
+    Windows), а не просто сравнивают текст пути."""
+
+    home = Path(prefix) / "home"
+    browser_norm = os.path.normcase(os.path.realpath(str(browser)))
+    home_norm = os.path.normcase(os.path.realpath(str(home)))
+    return browser_norm == home_norm or browser_norm.startswith(home_norm.rstrip(os.sep) + os.sep)
+
+
 def package_version(prefix: Path, name: str) -> str | None:
     manifest = Path(prefix) / "node_modules" / name / "package.json"
     try:
@@ -146,7 +162,8 @@ def locate(*, home=None, environ=None, run=subprocess.run) -> tuple[Engine | Non
     if version != pin["version"]:
         return None, f"стоит HyperFrames {version}, нужен {pin['version']}"
     browser = read_record(prefix).get("browser")
-    if not isinstance(browser, str) or not browser or not Path(browser).is_file():
+    if (not isinstance(browser, str) or not browser or not Path(browser).is_file()
+            or not browser_inside_home(browser, prefix)):
         return None, "не скачан браузер для сборки видео"
     return Engine(node=node, script=script, prefix=prefix, version=version, browser=browser), ""
 

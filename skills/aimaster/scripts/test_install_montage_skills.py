@@ -165,6 +165,46 @@ class TreeTokenTests(unittest.TestCase):
             fetch.fetch_tree(PIN, opener=self.opener(captured))
         self.assertIsNone(captured[0].get_header("Authorization"))
 
+    def test_401_with_a_token_retries_once_anonymously(self):
+        """round 3/5: протухший/невалидный токен — один анонимный повтор
+        (лимит 60/ч на IP всё ещё может хватить) лучше, чем сразу падать."""
+
+        captured = []
+
+        def opener(request, timeout=None, context=None):
+            captured.append(request)
+            if request.get_header("Authorization"):
+                error = fetch.urllib.error.HTTPError(request.full_url, 401, "Bad credentials",
+                                                      {}, io.BytesIO())
+                try:
+                    raise error
+                finally:
+                    error.close()
+            return self.opener([])(request, timeout=timeout, context=context)
+
+        with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "протухший"}):
+            fetch.fetch_tree(PIN, opener=opener)
+        self.assertEqual(len(captured), 2)
+        self.assertEqual(captured[0].get_header("Authorization"), "Bearer протухший")
+        self.assertIsNone(captured[1].get_header("Authorization"))
+
+    def test_401_without_a_token_is_not_retried(self):
+        """Без токена запрос и так анонимный — второй заход тем же самым
+        ничего бы не изменил, отказ пробрасывается как есть."""
+
+        def opener(request, timeout=None, context=None):
+            error = fetch.urllib.error.HTTPError(request.full_url, 401, "Bad credentials",
+                                                  {}, io.BytesIO())
+            try:
+                raise error
+            finally:
+                error.close()
+
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("GITHUB_TOKEN", None)
+            with self.assertRaises(fetch.urllib.error.HTTPError):
+                fetch.fetch_tree(PIN, opener=opener)
+
 
 class SslTests(unittest.TestCase):
     def test_empty_python_store_falls_back_to_the_system_bundle(self):

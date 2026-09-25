@@ -52,18 +52,6 @@ def engine_env(engine: Engine, base: Mapping[str, str] | None = None) -> dict[st
     env["HOME"] = str(engine_home(engine))
     if IS_WINDOWS:
         env["USERPROFILE"] = env["HOME"]
-        # round 1/5, CI windows-latest: системный Chrome (через
-        # HYPERFRAMES_BROWSER_PATH в обход битой скачки chrome-headless-shell)
-        # зависал на простом `chrome.exe --version` до SIGKILL именно под этим
-        # HOME — USERPROFILE указывал в песочницу движка, а LOCALAPPDATA и
-        # APPDATA молча оставались настоящими папками человека (наследуются
-        # из os.environ выше). Windows-программы, которые ищут свой профиль
-        # через LOCALAPPDATA, а не USERPROFILE (Chrome — один из них), в таком
-        # рассинхроне «известных папок» ведут себя непредсказуемо. Приводим
-        # обе к тому же HOME — песочница движка целиком своя, а не наполовину
-        # настоящая.
-        env["LOCALAPPDATA"] = str(Path(env["HOME"]) / "AppData" / "Local")
-        env["APPDATA"] = str(Path(env["HOME"]) / "AppData" / "Roaming")
     env["HYPERFRAMES_EXTRACT_CACHE_DIR"] = str(frames_cache(engine))
     if engine.browser:
         env["HYPERFRAMES_BROWSER_PATH"] = engine.browser

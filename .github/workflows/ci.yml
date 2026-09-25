@@ -98,18 +98,19 @@ jobs:
         run: choco install ffmpeg -y --no-progress
 
       - name: Install pinned HyperFrames, render browser and skills
-        # round 2/5, владелец, 2026-09-25: H1 подтверждён CI-экспериментом
-        # (run 36141827389, джобы «H1 experiment · ascii/cyrillic») — не-
-        # ASCII путь движка ломает встроенную Windows-распаковку .zip в
-        # @puppeteer/browsers (fileUtil.js::extractZipWithCli — tar.exe/
-        # powershell.exe на неверной кодовой странице). Исправлено в
-        # install_montage_browser_win.py::preseed (качает и распаковывает
-        # chrome-headless-shell сами, Unicode-safe). Системный Chrome
-        # (round 1/5) и HYPERFRAMES_BROWSER_PATH здесь больше не нужны — H2
-        # подтвердил тем же прогоном (шаг H2 experiment), что `chrome.exe
-        # --version` на Windows не отвечает вовсе (запускает полноценный
-        # браузер вместо короткого ответа) — системный GUI-Chrome для CI
-        # непригоден в принципе, убран отсюда целиком.
+        # round 2/5, владелец, 2026-09-25 (H1, run 36141827389, джобы «H1
+        # experiment · ascii/cyrillic» в одном пуше): не-ASCII путь движка
+        # («AI Мастерская») даёт пустую версийную папку у встроенной Windows-
+        # распаковки .zip в @puppeteer/browsers — тот же .zip, ASCII-путь
+        # рядом отработал целиком. Причина внутри чужого распаковщика не
+        # установлена (закрытый бинарник tar.exe/powershell.exe) — доказан
+        # только сам факт. Исправлено в install_montage_browser_win.py::
+        # preseed (качает и распаковывает chrome-headless-shell сами,
+        # Unicode-safe). Системный Chrome (round 1/5) и HYPERFRAMES_BROWSER_
+        # PATH здесь больше не нужны — H2 тем же прогоном (шаг H2 experiment)
+        # показал, что `chrome.exe --version` на Windows не отвечает вовсе
+        # (запускает полноценный браузер вместо короткого ответа) —
+        # системный GUI-Chrome для CI непригоден в принципе, убран целиком.
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}

@@ -2,17 +2,14 @@
 """chrome-headless-shell для Windows в обход битой распаковки @puppeteer/browsers.
 
 round 2/5, H1 подтверждён прямым CI-экспериментом (владелец, 2026-09-25,
-run 36141827389): @puppeteer/browsers 3.2.3 на win32 распаковывает .zip
-через `%SystemRoot%\\System32\\tar.exe`, затем `powershell.exe Expand-Archive`
-(fileUtil.js::extractZipWithCli) — ДО Unicode-safe yauzl-фолбэка. Windows
-`tar.exe` — порт с узким `main()`: его argv идёт через ANSI-кодовую страницу
-процесса (не UTF-8 по умолчанию на EN-US образе windows-latest), поэтому
-путь назначения с кириллицей и пробелом («AI Мастерская» — реальный путь
-движка) молча не резолвится: Node создаёт папку версии (`mkdir` — Unicode-
-safe), а сам .zip внутрь не распаковывается, без исключения и без ненулевого
-кода. Прямая проверка: ASCII-префикс (`C:\\hf-ascii`) — качается и рендерит
-целиком; тот же кириллический путь рядом в том же прогоне — та же пустая
-папка (run 36141827389, джобы `H1 experiment · ascii` / `· cyrillic`).
+run 36141827389, джобы `H1 experiment · ascii` / `· cyrillic` в одном пуше):
+не-ASCII путь назначения («AI Мастерская» — реальный путь движка) даёт
+пустую версийную папку у штатного `@puppeteer/browsers`' `extractZipWithCli`
+на win32 (`%SystemRoot%\\System32\\tar.exe`, при неудаче `powershell.exe
+Expand-Archive`) — тот же .zip, тот же код, тот же ASCII-путь рядом отработал
+целиком. Причина внутри `tar.exe` не установлена (закрытый бинарник) — важен
+только доказанный факт: не-ASCII назначение → пустая папка у чужого
+распаковщика.
 
 Качаем и распаковываем chrome-headless-shell сами: URL и точная структура
 кэша — из исходников @puppeteer/browsers (`DefaultProvider.js`,
@@ -24,27 +21,57 @@ CPython обращается к широким (`W`) Win32-вызовам, а н
 `Cache.js::getInstalledBrowsers()` — чистое сканирование каталогов вида
 `<кэш>/<браузер>/<платформа>-<версия>/…`, файл `.metadata` не обязателен —
 штатный `browser ensure` находит уже готовый браузер и не перекачивает его
-заново."""
+заново.
+
+round 3/5: атомарность (распаковка — во временную папку рядом с целью,
+подтверждение .exe, затем `os.replace` на место) — HyperFrames и
+@puppeteer/browsers доверяют «папка есть + .exe внутри есть» без сверки
+контрольной суммы; наполовину распакованная папка на конечном пути не
+должна существовать никогда, иначе следующий `browser ensure` примет её за
+готовую. `preseed()` не бросает исключений ни при каких сетевых, файловых
+и архивных сбоях — возвращает причину отказа, а не проглатывает её в
+одном `print`."""
 
 from __future__ import annotations
 
-import io
+import http.client
+import os
 import re
+import shutil
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 import zipfile
+import zlib
+from dataclasses import dataclass
 from pathlib import Path
 
 _SCRIPTS = Path(__file__).resolve().parent
-if str(_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS))
+_SKILL_ROOT = _SCRIPTS.parent
+for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 from install_montage_fetch import ssl_context  # noqa: E402
+from studio.montage.temp_sweep import sweep_stale  # noqa: E402
 
 BASE_URL = "https://storage.googleapis.com/chrome-for-testing-public"
-DOWNLOAD_TIMEOUT = 180
-_CHROME_VERSION_RE = re.compile(r'CHROME_VERSION\s*=\s*"([0-9]+(?:\.[0-9]+){2,3})"')
+DEFAULT_DOWNLOAD_TIMEOUT = 180
+# общая уборка оборванных прошлых попыток с install_montage_fetch.py —
+# studio/montage/temp_sweep.py узнаёт свои папки по этому же виду имени.
+EXTRACT_TEMP_PREFIX = ".aimaster-tmp-extract-"
+# (?<!\w) — не часть более длинного идентификатора: без этого якоря
+# `MACOS_12_CHROME_VERSION = "150.…"` тоже совпадает (это подстрока), и
+# при другом порядке объявлений в минификации можно было бы прочитать не
+# ту версию (round 3/5, Minor).
+_CHROME_VERSION_RE = re.compile(r'(?<!\w)CHROME_VERSION\s*=\s*"([0-9]+(?:\.[0-9]+){2,3})"')
+
+
+@dataclass(frozen=True)
+class PreseedResult:
+    ok: bool
+    reason: str = ""
 
 
 def pinned_chrome_headless_shell_version(prefix: Path) -> str | None:
@@ -73,34 +100,67 @@ def executable_path(prefix: Path, version: str) -> Path:
     return cache_target(prefix, version) / "chrome-headless-shell-win64" / "chrome-headless-shell.exe"
 
 
-def preseed(prefix: Path, *, opener=urllib.request.urlopen) -> bool:
+def preseed(prefix: Path, *, opener=urllib.request.urlopen,
+           timeout: float = DEFAULT_DOWNLOAD_TIMEOUT) -> PreseedResult:
     """Качает и Unicode-safe распаковывает chrome-headless-shell в обход
-    битой на Windows встроенной распаковки. True — файл на месте (уже был
-    или свежескачан), False — не вышло (сеть, версия не прочиталась из
-    cli.js): вызывающий код продолжает обычным `browser ensure`, как до
-    этой правки (тот путь остаётся сломанным для не-ASCII префикса — это
-    просто отсутствие ускорения, не новый отказ)."""
+    битой на Windows встроенной распаковки — атомарно: собирает во временной
+    папке рядом с целью, подтверждает .exe и только тогда переносит на
+    итоговое место (`os.replace`). Никогда не бросает исключений: сетевые,
+    файловые и архивные отказы возвращаются как `PreseedResult(False, …)` —
+    вызывающий код продолжает обычным `browser ensure`, как до этой правки
+    (тот путь остаётся сломанным для не-ASCII префикса — просто отсутствие
+    ускорения, не новый отказ)."""
 
     version = pinned_chrome_headless_shell_version(prefix)
     if not version:
-        return False
+        return PreseedResult(False, "версия chrome-headless-shell не прочиталась из cli.js "
+                             "закреплённого HyperFrames")
     target = executable_path(prefix, version)
     if target.is_file():
-        return True
-    url = f"{BASE_URL}/{version}/win64/chrome-headless-shell-win64.zip"
+        return PreseedResult(True)
+
+    final_dir = cache_target(prefix, version)
     try:
-        request = urllib.request.Request(url, headers={"User-Agent": "aimaster-install"})
-        with opener(request, timeout=DOWNLOAD_TIMEOUT, context=ssl_context()) as response:
-            data = response.read()
-    except (urllib.error.URLError, OSError, TimeoutError) as error:
-        print(f"chrome-headless-shell напрямую не скачался: {error}", file=sys.stderr)
-        return False
-    destination = cache_target(prefix, version)
-    destination.mkdir(parents=True, exist_ok=True)
+        final_dir.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        return PreseedResult(False, f"не удалось создать папку кэша браузера: {error}")
+    sweep_stale(final_dir.parent, EXTRACT_TEMP_PREFIX)
     try:
-        with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            archive.extractall(destination)
-    except zipfile.BadZipFile as error:
-        print(f"chrome-headless-shell.zip повреждён: {error}", file=sys.stderr)
-        return False
-    return target.is_file()
+        work = Path(tempfile.mkdtemp(prefix=EXTRACT_TEMP_PREFIX, dir=str(final_dir.parent)))
+    except OSError as error:
+        return PreseedResult(False, f"не удалось создать временную папку для распаковки: {error}")
+
+    try:
+        url = f"{BASE_URL}/{version}/win64/chrome-headless-shell-win64.zip"
+        zip_path = work / "chrome-headless-shell-win64.zip"
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": "aimaster-install"})
+            with opener(request, timeout=timeout, context=ssl_context()) as response:
+                with open(zip_path, "wb") as handle:
+                    shutil.copyfileobj(response, handle)  # поток на диск, не ~100 МБ в памяти
+        except (urllib.error.URLError, http.client.HTTPException, OSError, TimeoutError) as error:
+            return PreseedResult(False, f"chrome-headless-shell напрямую не скачался: {error}")
+
+        extract_dir = work / "extracted"
+        try:
+            with zipfile.ZipFile(zip_path) as archive:
+                archive.extractall(extract_dir)
+        except (zipfile.BadZipFile, zlib.error, EOFError, ValueError, OSError) as error:
+            return PreseedResult(False, f"chrome-headless-shell.zip повреждён или не распаковался: {error}")
+
+        extracted_exe = extract_dir / "chrome-headless-shell-win64" / "chrome-headless-shell.exe"
+        if not extracted_exe.is_file():
+            return PreseedResult(False, f"после распаковки не нашёлся {extracted_exe.name}")
+
+        try:
+            if final_dir.exists():
+                shutil.rmtree(final_dir, ignore_errors=True)  # протухшая незавершённая попытка
+            os.replace(extract_dir, final_dir)
+        except OSError as error:
+            return PreseedResult(False, f"не удалось перенести распакованный браузер на место: {error}")
+    finally:
+        if work.exists():
+            shutil.rmtree(work, ignore_errors=True)
+
+    return (PreseedResult(True) if target.is_file()
+            else PreseedResult(False, "файла нет на месте после переноса"))

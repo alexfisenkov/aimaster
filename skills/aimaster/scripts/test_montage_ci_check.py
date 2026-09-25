@@ -56,8 +56,25 @@ class CiCheckTests(unittest.TestCase):
                 '<style>@import "https://fonts.googleapis.com/css2?family=Inter";</style>'
                 '<img poster="assets/local.jpg" srcset="assets/local2.jpg 1x">')
         self.assertEqual(montage_ci_check.external_urls(html),
-                         ["https://cdn.example/poster.jpg", "https://cdn.example/x2.png 2x",
+                         ["https://cdn.example/poster.jpg", "https://cdn.example/x2.png",
                           "https://fonts.googleapis.com/css2?family=Inter"])
+
+    def test_external_urls_every_srcset_candidate(self):
+        """round 3/5: несколько кандидатов через запятую — каждый внешний
+        учитывается, дескриптор плотности/ширины (1x/480w) отбрасывается."""
+
+        html = ('<img srcset="assets/local.jpg 1x, https://cdn.example/a.png 2x, '
+                '//cdn.example/b.png 3x">')
+        self.assertEqual(montage_ci_check.external_urls(html),
+                         ["https://cdn.example/a.png", "//cdn.example/b.png"])
+
+    def test_external_urls_unquoted_attribute(self):
+        html = '<img src=https://cdn.example/unquoted.png>'
+        self.assertEqual(montage_ci_check.external_urls(html), ["https://cdn.example/unquoted.png"])
+
+    def test_external_urls_image_set(self):
+        html = '<div style="background-image: image-set(https://cdn.example/img.png)"></div>'
+        self.assertEqual(montage_ci_check.external_urls(html), ["https://cdn.example/img.png"])
 
 
 def _touch(path, *_args, **_kwargs) -> Path:
@@ -133,11 +150,18 @@ class CiCheckReportTests(unittest.TestCase):
         self.assertIn("в ролике нет звука", report["problems"])
 
     def test_lint_error_finding_fails(self):
-        report = self._check(lint={"findings": [{"severity": "error", "code": "X1", "message": "beep"}]},
+        """round 3/5: обычный неуспешный lint — {"ok": false, "errorCount": N,
+        "findings": […]} — не крэш инструмента (нет ключа "error"), ровно
+        одна причина от самой находки."""
+
+        report = self._check(lint={"ok": False, "errorCount": 1,
+                                   "findings": [{"severity": "error", "code": "X1", "message": "beep"}]},
                              probe=self._clean_probe())
         self.assertIs(report["ok"], False)
-        self.assertTrue(any(p.startswith("lint:") and "X1" in p and "beep" in p
-                            for p in report["problems"]), report["problems"])
+        lint_problems = [p for p in report["problems"] if p.startswith("lint:")]
+        self.assertEqual(len(lint_problems), 1)
+        self.assertIn("X1", lint_problems[0])
+        self.assertIn("beep", lint_problems[0])
 
     def test_lint_internal_crash_fails(self):
         report = self._check(lint={"ok": False, "error": "boom", "findings": [], "errorCount": 0},

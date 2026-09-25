@@ -71,10 +71,21 @@ def _tree_headers() -> dict:
 
 
 def fetch_tree(pin: dict, *, opener=urllib.request.urlopen) -> list[dict]:
-    request = urllib.request.Request(API_TREE.format(repo=pin["repo"], tree=pin["tree"]),
-                                     headers=_tree_headers())
-    with opener(request, timeout=HTTP_TIMEOUT, context=ssl_context()) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    url = API_TREE.format(repo=pin["repo"], tree=pin["tree"])
+    context = ssl_context()
+    headers = _tree_headers()
+    try:
+        with opener(urllib.request.Request(url, headers=headers),
+                    timeout=HTTP_TIMEOUT, context=context) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        if error.code != 401 or "Authorization" not in headers:
+            raise
+        # round 3/5: протухший/невалидный токен — один анонимный повтор лучше,
+        # чем сразу падать (анонимный лимит 60/ч на IP всё ещё может хватить).
+        with opener(urllib.request.Request(url, headers=HEADERS),
+                    timeout=HTTP_TIMEOUT, context=context) as response:
+            payload = json.loads(response.read().decode("utf-8"))
     if payload.get("truncated"):
         raise OSError("GitHub отдал неполный список файлов скиллов")
     names = set(pin["bundles"])

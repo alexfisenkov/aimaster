@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,59 +23,24 @@ for _path in (str(_SCRIPTS), str(_SCRIPTS.parent)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-import install  # noqa: E402
 import install_montage_browser_win  # noqa: E402
 from install_montage_node import item  # noqa: E402
 from studio.montage import engine  # noqa: E402
 from studio.montage.engine_cli import run_engine  # noqa: E402
 from studio.platform_compat import IS_WINDOWS  # noqa: E402
 
-# round 1/5, находка CI windows-latest: два отдельных процесса Node (`ensure`
-# своим «Path: …», затем `browser path` своим `existsSync`) согласились, что
-# файл на диске есть — Python в третьем процессе тут же получил на ТОТ ЖЕ
-# путь `Path.is_file() is False` (OSError внутри pathlib проглочен). Проверено
-# (run 36137776762) и опровергнуто: не антивирус — тот же результат и при
-# полностью отключённой реал-тайм защите Defender. Опрос с паузой всё равно
-# держим — дешёвая защита от НАСТОЯЩИХ гонок с другим процессом на других
-# машинах/платформах, просто не от этой конкретной находки. Ограниченный, не
-# бесконечный.
-IS_FILE_ATTEMPTS = 10
-IS_FILE_DELAY = 0.5
+# HyperFrames сам подсказывает при отказе браузера «HYPERFRAMES_BROWSER_PATH
+# → chrome.exe» — на Windows это неверный совет (round 2/5, H2: обычный
+# Chrome не отвечает на --version и не годится для рендера, run 36141827389).
+# Не показываем человеку чужую подсказку, которая заведёт его не туда.
+_MISLEADING_HINT = ("Select a working Chrome/Chromium binary for this OS and architecture with "
+                    "HYPERFRAMES_BROWSER_PATH, or reinstall with: npx hyperframes browser ensure --force")
+_HINT_FIX = ("переустановите движок (install.py --install-deps) — chrome-headless-shell скачается "
+            "и распакуется заново; обычный Chrome для рендера на Windows не годится (H2)")
 
 
-def _wait_until_file(path: str, *, attempts=IS_FILE_ATTEMPTS, delay=IS_FILE_DELAY, sleep=time.sleep) -> bool:
-    for attempt in range(attempts):
-        if Path(path).is_file():
-            return True
-        if attempt < attempts - 1:
-            sleep(delay)
-    return False
-
-
-def _walk_up_diagnostic(path: str) -> str:
-    """CI windows-latest: сам родитель файла тоже «не читается» (WinError 3,
-    путь не существует), не только сам файл — распаковка chrome-headless-
-    shell для win64 оставляет пустую версийную папку (не антивирус, см.
-    `_env_browser_override`). Идём от файла вверх, пока не найдём первый
-    СУЩЕСТВУЮЩИЙ уровень — показывает, на чём именно расходится путь, который
-    назвал Node, с тем, что реально есть на диске, вместо одной строки без
-    опоры."""
-
-    current = Path(path)
-    missing = []
-    while True:
-        if current.exists():
-            try:
-                names = sorted(entry.name for entry in current.iterdir())
-            except OSError as error:
-                return f"первый существующий уровень {current} не читается: {error}"
-            return (f"первый существующий уровень: {current} (внутри: {names}); "
-                    f"не существуют вложенные {list(reversed(missing))}")
-        missing.append(current.name)
-        parent = current.parent
-        if parent == current:  # дошли до корня диска — дальше подниматься некуда
-            return f"ни один уровень пути не существует, дошли до {current}"
-        current = parent
+def _scrub_windows_hint(text: str) -> str:
+    return text.replace(_MISLEADING_HINT, _HINT_FIX) if IS_WINDOWS else text
 
 
 def _failure_detail(ensured, located, path: str, *, inside: bool, is_file: bool) -> str:
@@ -96,64 +60,60 @@ def _failure_detail(ensured, located, path: str, *, inside: bool, is_file: bool)
         reasons.append(f"path ничего не вывел: {located.stdout!r}")
     elif not inside:
         # Путь пишем как есть (не repr): на Windows repr() удваивает «\» и
-        # ассертам/логам, читающим сообщение как обычный текст, только мешает
-        # (round 1/5: `!r` тут же сломал собственный юнит-тест на Windows).
+        # ассертам/логам, читающим сообщение как обычный текст, только мешает.
         reasons.append(f"путь вне папки движка: {path}")
     elif not is_file:
-        reasons.append(f"файла нет на диске за {IS_FILE_ATTEMPTS} попыток по {IS_FILE_DELAY} с: {path}"
-                       f" | сырой вывод path: {located.stdout!r}"
-                       f" | {_walk_up_diagnostic(path)}")
+        reasons.append(f"файла нет на диске: {path}")
     detail = "; ".join(reasons) or "после загрузки браузер для сборки не найден в папке движка"
-    tail = (ensured.stderr or ensured.stdout).strip()[-300:]
+    tail = _scrub_windows_hint((ensured.stderr or ensured.stdout).strip()[-300:])
     return f"{detail}\n{tail}" if tail else detail
 
 
-def _env_browser_override(environ) -> str | None:
-    """Явное пользовательское `HYPERFRAMES_BROWSER_PATH` — тот же механизм,
-    который сам HyperFrames подсказывает при отказе загрузки браузера (см.
-    `browserPathHint` в его CLI). Оставлен как есть, без проверки, что путь
-    указывает именно на chrome-headless-shell: round 2/5 (владелец,
-    2026-09-25) показал прямым замером, что системный (GUI) Chrome на
-    Windows не годится для этого — `chrome.exe --version` не печатает
-    версию и не завершается вовсе (запускает полноценный браузер вместо
-    короткого ответа, run 36141827389, лог H2), поэтому CI и установщик
-    сами такой путь больше не подставляют (см. install_montage_browser_win
-    и ci.yml) — только настоящую распаковку chrome-headless-shell. Но если
-    ЧЕЛОВЕК явно задал переменную на свой рабочий бинарник (headless-shell,
-    Chromium со своей сборки — не обязательно Windows), это его выбор:
-    отклонить его здесь нечем, а если бинарник всё же не работает, дальше
-    честно откажет сам рендер HyperFrames с понятным «Chrome cannot start»,
-    а не тихая подмена на неверный браузер."""
+def _env_browser_override(environ):
+    """Явное `HYPERFRAMES_BROWSER_PATH` — механизм самого HyperFrames. На
+    Windows обычный (не headless-shell) браузер отклоняем: H2 прямым замером
+    показал, что `chrome.exe --version` не отвечает и не завершается (run
+    36141827389) — молча принять такой путь означало бы тот же тупик.
+
+    (путь, None) — пригоден; (None, причина) — явно непригоден; (None, None)
+    — не задан или файла нет (не override). round 3/5: вызывающий код НЕ
+    пишет путь в aimaster-engine.json — исчезнувшая переменная не должна
+    оставить устаревшую запись «найден»."""
 
     path = (environ or os.environ).get("HYPERFRAMES_BROWSER_PATH")
-    return path if path and Path(path).is_file() else None
+    if not path or not Path(path).is_file():
+        return None, None
+    if IS_WINDOWS and Path(path).name.lower() != "chrome-headless-shell.exe":
+        return None, (f"HYPERFRAMES_BROWSER_PATH указывает на {path} — не chrome-headless-shell.exe. "
+                      "На Windows обычный Chrome/Edge/Firefox не отвечает на проверку версии и не "
+                      "годится для рендера HyperFrames (round 2/5, H2, run 36141827389) — укажите "
+                      "путь к chrome-headless-shell.exe или не задавайте переменную вовсе.")
+    return path, None
 
 
-def _locate_after_ensure(eng, prefix: Path, pin: dict, kwargs: dict, sleep):
-    """`browser path` после уже отработавшего `ensure` — резолвит путь,
-    проверяет, что он внутри папки движка, и ждёт файл на диске (с retry)."""
+def _locate_after_ensure(eng, prefix: Path, pin: dict, kwargs: dict):
+    """`browser path` после уже отработавшего `ensure` — резолвит путь и
+    проверяет, что он внутри папки движка и существует на диске."""
 
     located = run_engine(eng, ["browser", "path"], cwd=prefix, timeout=pin["timeouts"]["cli"], **kwargs)
     lines = located.stdout.strip().splitlines()
     path = lines[-1].strip() if lines else ""
-    inside = bool(path) and install._inside(path, str(Path(prefix) / "home"))
-    is_file = bool(path) and inside and _wait_until_file(path, sleep=sleep)
+    inside = bool(path) and engine.browser_inside_home(path, prefix)
+    is_file = bool(path) and inside and Path(path).is_file()
     return located, path, inside, is_file
 
 
 def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool, update: bool,
-                    runner=None, sleep=time.sleep, environ=None) -> dict:
-    override = _env_browser_override(environ)
+                    runner=None, environ=None) -> dict:
+    override, override_error = _env_browser_override(environ)
+    if override_error:
+        return item("failed", override_error)
     if override:
-        record = engine.read_record(prefix)
-        already = record.get("browser") == override and record.get("version") == pin["version"]
-        record.update(browser=override, version=pin["version"], node=node,
-                      updated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
-        engine.write_record(prefix, record)
-        return item("found" if already else "installed",
-                    "браузер задан через HYPERFRAMES_BROWSER_PATH — скачивание пропущено", path=override)
+        return item("found", "браузер задан через HYPERFRAMES_BROWSER_PATH — скачивание пропущено",
+                    path=override)
     record = engine.read_record(prefix)
-    have_browser = bool(record.get("browser")) and Path(record["browser"]).is_file()
+    have_browser = (bool(record.get("browser")) and Path(record["browser"]).is_file()
+                    and engine.browser_inside_home(record["browser"], prefix))
     if record.get("version") == pin["version"] and have_browser:
         return item("found", path=record["browser"])
     if not have_browser and not install_missing:
@@ -164,46 +124,28 @@ def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool
     eng = engine.Engine(node=node, script=engine.entry_script(prefix), prefix=Path(prefix),
                         version=pin["version"], browser=None)
     kwargs = {} if runner is None else {"runner": runner}
+    print("Качаю компонент для сборки видео (~100 МБ)…", file=sys.stderr, flush=True)
+    preseed_reason = ""
     if IS_WINDOWS:
         # round 2/5, H1 подтверждён CI-экспериментом (run 36141827389):
-        # встроенная распаковка @puppeteer/browsers на Windows молча теряет
-        # содержимое .zip, когда путь назначения содержит кириллицу и пробел
-        # (реальный путь движка «AI Мастерская») — install_montage_browser_win
-        # качает и распаковывает chrome-headless-shell сами, Unicode-safe,
-        # прямо в кэш, который дальше найдёт `browser ensure` и не будет
-        # перекачивать. Если не вышло (сеть, версия не прочиталась) —
-        # продолжаем как раньше, вреда от попытки нет.
-        install_montage_browser_win.preseed(prefix)
-    print("Качаю компонент для сборки видео (~100 МБ)…", file=sys.stderr, flush=True)
+        # не-ASCII путь назначения оставляет пустую версийную папку у
+        # штатной распаковки @puppeteer/browsers — качаем и распаковываем
+        # сами (install_montage_browser_win.py, round 3/5: атомарно). Не
+        # вышло — не беда, продолжаем обычным `ensure`, как раньше; причину
+        # сохраняем на случай, если и он не справится.
+        result = install_montage_browser_win.preseed(prefix, timeout=pin["timeouts"]["browser"])
+        if not result.ok:
+            preseed_reason = result.reason
     ensured = run_engine(eng, ["browser", "ensure"], cwd=prefix,
                          timeout=pin["timeouts"]["browser"], **kwargs)
     if ensured.timed_out:
         return item("timeout", "браузер для сборки не скачался за отведённое время; повторите позже")
-    located, path, inside, is_file = _locate_after_ensure(eng, prefix, pin, kwargs, sleep)
-    if ensured.code == 0 and located.code == 0 and inside and not is_file:
-        # round 1/5, CI windows-latest (runs 36133902583, 36134495655): `ensure`
-        # отчитался кодом 0 и своей строкой «Path: …», отдельный `browser path`
-        # согласился с тем же путём — а на диске оказалась пустая папка нужной
-        # версии (вложенный chrome-headless-shell-win64/…exe вообще не
-        # появился). Ни _wait_until_file (истёк тем же результатом), ни
-        # исключение из Windows Defender в ci.yml это не поправили — похоже на
-        # незавершённую/битую распаковку архива, а не на замок или карантин.
-        #
-        # Повторный `ensure` БЕЗ --force (не форсированный): у самого
-        # HyperFrames уже есть эта починка внутри — при preferManagedChrome
-        # он находит версийную папку, видит, что исполняемого файла в ней
-        # нет (`staleHyperframesCachePath`), сам удаляет только её и качает
-        # заново. `--force` вместо этого чистит ВЕСЬ кэш браузера целиком
-        # (`clearBrowser()`) — на этом самом round `--force` провисел все
-        # отведённые 900 с и получил «timeout» (run 36135245236): такая
-        # уборка тяжелее и на Windows, похоже, заметно медленнее прицельной.
-        ensured = run_engine(eng, ["browser", "ensure"], cwd=prefix,
-                             timeout=pin["timeouts"]["browser"], **kwargs)
-        if ensured.timed_out:
-            return item("timeout", "браузер для сборки не скачался за отведённое время; повторите позже")
-        located, path, inside, is_file = _locate_after_ensure(eng, prefix, pin, kwargs, sleep)
+    located, path, inside, is_file = _locate_after_ensure(eng, prefix, pin, kwargs)
     if ensured.code != 0 or located.code != 0 or not inside or not is_file:
-        return item("failed", _failure_detail(ensured, located, path, inside=inside, is_file=is_file))
+        detail = _failure_detail(ensured, located, path, inside=inside, is_file=is_file)
+        if preseed_reason:
+            detail = f"{detail}\nсвой скачиватель тоже не справился: {preseed_reason}"
+        return item("failed", detail)
     record.update(browser=path, version=pin["version"], node=node,
                   updated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     engine.write_record(prefix, record)
@@ -211,11 +153,14 @@ def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool
 
 
 def check_browser(prefix: Path, pin: dict, *, environ=None) -> dict:
-    override = _env_browser_override(environ)
+    override, override_error = _env_browser_override(environ)
+    if override_error:
+        return item("failed", override_error)
     if override:
         return item("found", path=override)
     record = engine.read_record(prefix)
-    if record.get("version") == pin["version"] and record.get("browser") \
-            and Path(record["browser"]).is_file():
+    if (record.get("version") == pin["version"] and record.get("browser")
+            and Path(record["browser"]).is_file()
+            and engine.browser_inside_home(record["browser"], prefix)):
         return item("found", path=record["browser"])
     return item("missing", "скачается при install.py --install-deps")

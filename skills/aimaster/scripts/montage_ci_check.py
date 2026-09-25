@@ -40,9 +40,22 @@ DURATION = 3.0
 # Любой след сети в логе рендера — ошибка: CDN-скрипт или шрифт с Google Fonts.
 NETWORK_MARKERS = ("Inlined CDN script", "Failed to download CDN script", "from Google Fonts",
                    "fonts.googleapis.com")
-_EXTERNAL = re.compile(r"""(?:src|href|poster|srcset)\s*=\s*["']((?:[a-z][a-z0-9+.-]*:|//)[^"']*)"""
-                       r"""|url\(\s*["']?((?:[a-z][a-z0-9+.-]*:|//)[^"')]*)"""
-                       r"""|@import\s+["']((?:[a-z][a-z0-9+.-]*:|//)[^"']*)""", re.I)
+# round 3/5: srcset разбирается по каждому кандидату отдельно (обычный
+# случай — несколько через запятую с дескриптором плотности/ширины, "1x"/
+# "480w"), src/href/poster ловятся и без кавычек, url()/image-set() — как
+# один и тот же случай «функция с адресом внутри».
+_EXTERNAL = re.compile(
+    r"""(?:src|href|poster)\s*=\s*(?:"(?P<dq>[^"]*)"|'(?P<sq>[^']*)'|(?P<uq>[^\s"'>]+))"""
+    r"""|srcset\s*=\s*(?:"(?P<srcset_dq>[^"]*)"|'(?P<srcset_sq>[^']*)')"""
+    r"""|(?:url|image-set)\(\s*["']?(?P<func>[^"')]*)["']?\s*\)"""
+    r"""|@import\s+["'](?P<imp>[^"']*)["']""",
+    re.IGNORECASE | re.VERBOSE)
+_SCHEME = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//)", re.I)
+
+
+def _is_external(url: str) -> bool:
+    return bool(url) and bool(_SCHEME.match(url)) and not url.lower().startswith("data:")
+
 
 COMPOSITION = """<!doctype html>
 <html lang="ru">
@@ -70,8 +83,28 @@ COMPOSITION = """<!doctype html>
 
 
 def external_urls(html_text: str) -> list[str]:
-    found = [group for match in _EXTERNAL.findall(html_text) for group in match if group]
-    return [url for url in found if not url.lower().startswith("data:")]
+    found = []
+    for m in _EXTERNAL.finditer(html_text):
+        srcset = m.group("srcset_dq")
+        if srcset is None:
+            srcset = m.group("srcset_sq")
+        if srcset is not None:
+            for candidate in srcset.split(","):
+                candidate = candidate.strip()
+                url = candidate.split()[0] if candidate else ""
+                if _is_external(url):
+                    found.append(url)
+            continue
+        value = m.group("dq")
+        if value is None:
+            value = m.group("sq")
+        if value is None:
+            value = m.group("uq") or m.group("func") or m.group("imp")
+        if value is not None:
+            value = value.strip()
+            if _is_external(value):
+                found.append(value)
+    return found
 
 
 def _build(comp: Path) -> None:
@@ -94,13 +127,14 @@ def check(offline: bool) -> dict:
         lint = run_engine_json(engine, ["lint", ".", "--json"], cwd=comp, timeout=120, ok_codes=(0, 1))
         report["lint_errors"] = [f"{f.get('code')}: {f.get('message')}"
                                  for f in lint.get("findings", []) if f.get("severity") == "error"]
-        if lint.get("ok") is False:
+        if "error" in lint:
             # HyperFrames иногда падает ВНУТРИ самого lint (не находка, а отказ
             # инструмента): {"ok": false, "error": "…", "findings": [], "errorCount": 0}.
-            # ok_codes=(0, 1) пропускает такой код молча — без этой строки
-            # report["lint_errors"] остался бы пуст, и problems не заметил бы отказ.
-            reason = lint.get("error") or f"errorCount={lint.get('errorCount')}"
-            report["lint_errors"].append(f"lint не смог проверить: {reason}")
+            # round 3/5: `ok.is False` одна — это ЛЮБОЙ прошедший lint с
+            # находками ({"ok": false, "errorCount": N, "findings": […]}) —
+            # не крэш, а обычный результат, уже учтённый строкой выше.
+            # Признак настоящего крэша — сам ключ "error".
+            report["lint_errors"].append(f"lint не смог проверить: {lint['error']}")
         output = comp.parent / "итог ролика.mp4"
         started = time.monotonic()
         result = run_engine(engine, ["render", ".", "--output", str(output), "--quality", "draft",
