@@ -3,10 +3,13 @@ HyperFrames. Имя не test_* — unittest сам этот файл не за�
 
 from __future__ import annotations
 
+import json
 import os
+import struct
 import subprocess
 import sys
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 from unittest import mock
 
@@ -16,6 +19,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
+from studio.authoring_support import open_assets  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
 from studio.montage.draft_html import title_fragment  # noqa: E402
 from studio.montage.engine import PREFIX_ENV, Engine, load_pin  # noqa: E402
@@ -281,3 +285,45 @@ class FakeHyperframes:
             raise AssertionError(f"неожиданная правка {op}")
         index.write_text(text, encoding="utf-8")
         return {"ok": True, "receipt": {"file": "index.html", "changed": True}, "file": "index.html"}
+
+
+def tiny_mp4(tag: bytes = b"x") -> bytes:
+    """Минимальный MP4, который принимает AssetIndex (ftyp + mdat). Не проигрывается."""
+
+    ftyp = struct.pack(">I", 16) + b"ftypisom" + struct.pack(">I", 0x200)
+    return ftyp + struct.pack(">I", 8 + len(tag)) + b"mdat" + tag
+
+
+def tiny_wav(samples: int = 8) -> bytes:
+    fmt = struct.pack("<HHIIHH", 1, 1, 8000, 16000, 2, 16)
+    data = b"\x00\x00" * samples
+    body = (b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt
+            + b"data" + struct.pack("<I", len(data)) + data)
+    return b"RIFF" + struct.pack("<I", len(body)) + body
+
+
+@dataclass
+class Seeded:
+    workspace: Path
+    project_id: str
+    media: Path
+    ids: dict
+
+
+def seed_workspace(base: Path, files: dict, build_state) -> Seeded:
+    """Рабочая папка с проектом «p»: файлы из files кладутся в media/ и регистрируются
+    с ролью result, state.json собирает build_state({имя файла: asset_id})."""
+
+    workspace = Path(base) / "рабочая папка"
+    project_dir = workspace / "projects" / "p"
+    project_dir.mkdir(parents=True)
+    media = workspace / "media"
+    media.mkdir()
+    index = open_assets(workspace)
+    ids = {}
+    for name, data in files.items():
+        (media / name).write_bytes(data)
+        ids[name] = index.register(f"media/{name}", "result")["asset_id"]
+    (project_dir / "state.json").write_text(
+        json.dumps(build_state(ids), ensure_ascii=False, indent=2), encoding="utf-8")
+    return Seeded(workspace, "p", media, ids)

@@ -64,6 +64,15 @@ export const HISTORY_KIND_TEXT = Object.freeze({
   "script-ready": () => "Сценарий готов",
   "scenes-ready": () => "Раскадровка готова",
   "assembly-ready": () => "Финал собран",
+  "montage-drafted": () => "Черновой монтаж собран",
+  "montage-built": (entry) => {
+    const id = entry?.params?.target_id;
+    return typeof id === "string" && id ? `Монтаж: собрана версия ${id}` : "Монтаж: собрана версия";
+  },
+  "montage-restored": (entry) => {
+    const id = entry?.params?.target_id;
+    return typeof id === "string" && id ? `Монтаж: текущей стала версия ${id}` : "Монтаж: выбрана другая версия";
+  },
   "frame-plan-set": () => "План кадров изменён",
   "autopilot-grant": (entry) => {
     const action = { generate: "генерация", vary: "вариант", regenerate: "перегенерация" }[entry?.params?.action];

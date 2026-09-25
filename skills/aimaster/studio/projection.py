@@ -74,6 +74,7 @@ _STATE_KEYS = {
     "audio_prompts",
     "audio_results",
     "assembly",
+    "montage",
     "applied_action_ids",
     "stage_decisions",
     "history",
@@ -895,6 +896,49 @@ def _sanitize_assembly(value, asset_url):
     return _add_asset_url(result, "assembly", asset_url)
 
 
+_MONTAGE_KEYS = {"current_version", "versions", "canvas"}
+_MONTAGE_VERSION_KEYS = {"id", "asset_id", "created_at", "by", "based_on", "summary"}
+_MONTAGE_BY = {"agent", "owner", "autopilot"}
+_MONTAGE_VERSION_ID = re.compile(r"v\d{3,}")
+
+
+def _sanitize_montage(value, asset_url):
+    """Спецификация 2026-09-25 (монтаж): версии, текущая версия, размер кадра.
+    Схема самого монтажа живёт в montage/current/index.html, не в state."""
+
+    value = _exact_keys(value, _MONTAGE_KEYS, "montage")
+    versions, seen = [], []
+    for position, item in enumerate(_list(value.get("versions", []), "montage.versions")):
+        context = f"montage.versions[{position}]"
+        item = _exact_keys(item, _MONTAGE_VERSION_KEYS, context)
+        version_id = _string(item.get("id"), f"{context}.id")
+        if not _MONTAGE_VERSION_ID.fullmatch(version_id) or version_id in seen:
+            raise ProjectionError(f"{context}.id must be a unique vNNN")
+        based_on = item.get("based_on")
+        if based_on is not None and based_on not in seen:
+            raise ProjectionError(f"{context}.based_on must name an earlier version")
+        seen.append(version_id)
+        entry = {
+            "id": version_id,
+            "asset_id": _string(item.get("asset_id"), f"{context}.asset_id"),
+            "created_at": _string(item.get("created_at"), f"{context}.created_at"),
+            "by": _enum(item.get("by"), _MONTAGE_BY, f"{context}.by"),
+            "based_on": based_on,
+            "summary": _safe_system_text(item.get("summary", ""), f"{context}.summary"),
+        }
+        versions.append(_add_asset_url(entry, context, asset_url))
+    current = value.get("current_version")
+    if current is not None and current not in seen:
+        raise ProjectionError("montage.current_version must name a recorded version")
+    canvas = _exact_keys(value.get("canvas", {"width": 1080, "height": 1920}),
+                         {"width", "height"}, "montage.canvas")
+    size = {key: _non_negative_integer(canvas.get(key), f"montage.canvas.{key}")
+            for key in ("width", "height")}
+    if not all(size.values()):
+        raise ProjectionError("montage.canvas sides must be positive")
+    return {"current_version": current, "versions": versions, "canvas": size}
+
+
 # Ticket 15 repair, поправка оркестратора 11: "принадлежность цели
 # зависит от типа действия" -- `vary`/`regenerate` (and the other four
 # result-only card decisions, `hide`/`unhide`/`retire`/`restore`) only
@@ -1188,6 +1232,8 @@ def build_snapshot(
         active_project["assembly"] = _sanitize_assembly(
             state.get("assembly", {}), asset_url
         )
+        if "montage" in state:
+            active_project["montage"] = _sanitize_montage(state["montage"], asset_url)
     if _stage_reached(sequence, stage_index, "audio"):
         from .domain_positions import AUDIO_LAYERS
         by_layer = {item["layer"]: item for item in audio_layers}
@@ -1355,6 +1401,10 @@ def validate_state(state: dict) -> None:
         raise ProjectionError("photo projects cannot contain oneshot or audio owners")
     if "assembly" in state:
         _sanitize_assembly(state["assembly"], _identity_asset_url)
+    if "montage" in state:
+        if project_type == "photo":
+            raise ProjectionError("photo projects cannot contain montage")
+        _sanitize_montage(state["montage"], _identity_asset_url)
     for position, question in enumerate(_list(state.get("questions", []), "questions")):
         _sanitize_question(question, position)
     for position, action in enumerate(_list(state.get("actions", []), "actions")):

@@ -71,6 +71,11 @@ HISTORY_KINDS = {
     # Spec 2026-09-23 §2: an autopilot project authorized one paid action
     # by itself (`studio/autopilot.py`); `action` is the ledger action type.
     "autopilot-grant": frozenset({"action", "target_id"}),
+    # Спецификация 2026-09-25 (монтаж): черновик собран, собрана версия vNNN,
+    # текущей стала версия vNNN.
+    "montage-drafted": frozenset(),
+    "montage-built": frozenset({"target_id"}),
+    "montage-restored": frozenset({"target_id"}),
 }
 _HISTORY_ACTORS = frozenset({"you", "agent"})
 _HISTORY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")

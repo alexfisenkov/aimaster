@@ -40,6 +40,22 @@ from .authoring_support import (
 from .store import ProjectStore
 
 
+def apply_assembly(state: dict, mime_type: str, asset_id: str, caption: str | None) -> None:
+    """Запись `state["assembly"]` с проверками — общая для `assembly set` и версии
+    монтажа (`studio/montage/montage_state.py`), чтобы правило было одно."""
+
+    project = require_project(state)
+    require_stage_not_approved(state, "assembly", "assembly set")
+    if project.get("type") == "photo":
+        require_image_mime(mime_type, "a photo project's assembly asset")
+    else:
+        require_video_mime(mime_type, "a video/mixed project's assembly asset")
+    payload = {"status": "ready", "asset_id": asset_id}
+    if caption is not None:
+        payload["summary"] = caption
+    state["assembly"] = payload
+
+
 def set_assembly(
     store: ProjectStore,
     assets_index: AssetIndex,
@@ -81,16 +97,7 @@ def set_assembly(
     require_result_asset_role(assets_index.role_of(asset_id), "an assembly asset")
 
     def mutator(state):
-        project = require_project(state)
-        require_stage_not_approved(state, "assembly", "assembly set")
-        if project.get("type") == "photo":
-            require_image_mime(mime_type, "a photo project's assembly asset")
-        else:
-            require_video_mime(mime_type, "a video/mixed project's assembly asset")
-        payload = {"status": "ready", "asset_id": asset_id}
-        if caption is not None:
-            payload["summary"] = caption
-        state["assembly"] = payload
+        apply_assembly(state, mime_type, asset_id, caption)
         domain.append_history(state, "agent", "assembly-ready", "assembly")
 
     _, new_state = mutate(store, project_id, expected_revision, mutator)

@@ -131,6 +131,11 @@ class ProjectStore:
     def load(self, project_id: str) -> dict:
         return copy.deepcopy(self._read(self._find(project_id)))
 
+    def project_dir(self, project_id: str) -> Path:
+        """Папка проекта (там, где state.json) — для файлов рядом с состоянием, например montage/."""
+
+        return self._find(project_id)
+
     @staticmethod
     def _atomic_replace(path, state):
         serialized = json.dumps(state, ensure_ascii=False, indent=2) + "\n"
