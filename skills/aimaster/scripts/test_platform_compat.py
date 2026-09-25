@@ -198,7 +198,10 @@ class FindProgramTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp).resolve()
             alias = folder / "ffmpeg.exe"
-            os.symlink(folder / "nowhere.exe", alias)
+            try:
+                os.symlink(folder / "nowhere.exe", alias)
+            except (OSError, NotImplementedError):
+                self.skipTest("this account cannot create symlinks")
             # Сперва убеждаемся, что фикстура действительно воспроизводит
             # ситуацию WindowsApps: isfile видит битую ссылку как отсутствие
             # файла, lexists — как присутствие.
