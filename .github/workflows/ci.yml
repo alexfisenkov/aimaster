@@ -101,14 +101,19 @@ jobs:
         # round 1/5, находка CI windows-latest: два процесса Node подряд
         # подтвердили, что файл на диске есть (тот же путь из «ensure» и
         # «path»), а Python тут же — и после нескольких попыток с паузой —
-        # видел его отсутствие. Не «блокировка на секунду» (иначе retry бы
-        # помог — не помог), а поведение Defender-а на свежескачанный
-        # неподписанный .exe (~30+ МБ) под реал-тайм защитой: тихо удаляет.
-        # Раннер работает от администратора — Add-MpPreference не требует
-        # доп. прав. Путь — ровно studio.platform_compat.user_data_dir().
+        # видел его отсутствие. Путь-исключение (Add-MpPreference) не
+        # поправил ничего: тот же результат ещё дважды подряд, включая через
+        # собственный self-heal HyperFrames (retry без --force). Раз простое
+        # исключение по пути не помогает — снимаем реал-тайм защиту целиком
+        # диагностическим прогоном: если ЭТО тоже не поможет, дело не в
+        # антивирусе, и держать эту находку смысла нет (снять отдельной
+        # задачей). Раннер работает от администратора — доп. прав не нужно.
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\AI Мастерская"
+        run: |
+          Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\AI Мастерская"
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          Get-MpPreference | Select-Object DisableRealtimeMonitoring, ExclusionPath | Format-List
 
       - name: Install pinned HyperFrames, render browser and skills
         shell: bash
