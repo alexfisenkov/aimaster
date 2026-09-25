@@ -20,6 +20,7 @@ if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
 import install  # noqa: E402
+import install_montage_engine  # noqa: E402
 
 _REAL_SYMLINK = os.symlink
 
@@ -643,18 +644,71 @@ class MontageNextStepTests(unittest.TestCase):
         self.assertIn("--install-deps", text)
 
     def test_missing_npm_blocker_is_named_directly_not_install_deps(self):
-        """Разбор 1/5 → 2/5, находка C: дистрибутивный Node.js без npm —
-        --install-deps его не допоставит, next_steps должен сказать прямо."""
+        """Разбор 1/5 → 2/5 → 3/5, находка C/4: блокер — структурное поле
+        engine_install(..., blocker="npm_missing"), не разбор русского
+        текста; берём РЕАЛЬНЫЙ результат engine_install, не выдуманный."""
 
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        prefix = Path(temp.name) / "tools" / "hyperframes"
+        pin = install_montage_engine.engine.load_pin()
+        with mock.patch.object(install_montage_engine, "npm_cli_js", return_value=None):
+            hyperframes = install_montage_engine.engine_install(
+                "/usr/bin/node", prefix, pin, kind="linux", install_missing=True, update=False)
+        self.assertEqual(hyperframes["blocker"], "npm_missing")
         text = install._montage_next_step({"ok": False, "node": {"status": "found"},
-            "hyperframes": {"status": "failed", "message": "рядом с Node.js нет npm — на "
-                            "Debian/Ubuntu он ставится отдельным пакетом: sudo apt install npm"}})
-        self.assertIn("sudo apt install npm", text)
+                                           "hyperframes": hyperframes})
+        self.assertEqual(text, "Монтаж не готов: %s" % install_montage_engine.NPM_MISSING_HINT["linux"])
         self.assertNotIn("повторите: install.py --install-deps", text)
 
     def test_crash_guard_error_is_shown_verbatim(self):
         text = install._montage_next_step({"ok": False, "error": "бум"})
         self.assertIn("бум", text)
+
+
+class MontageImportFailureTests(unittest.TestCase):
+    """Разбор 1/5 → 3/5, находка E: render_text делает СВОЙ отдельный
+    `import install_montage` (за render_montage_lines) — сбой этого
+    импорта, не только внутри _montage_report, не должен ронять весь вывод
+    install.py: ни JSON, ни (главное — он выводится по умолчанию) текст.
+
+    Не наследует _TempInstall: тому нужен НАСТОЯЩИЙ _montage_report,
+    _TempInstall его подменяет мок-объектом с самого setUp."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.base = Path(temp.name).resolve()
+        self.home = self.base / "дом пользователя"
+        self.home.mkdir()
+        self.repo = self.base / "клон aimaster"
+        self.skill = self.repo / "skills" / "aimaster"
+        (self.skill / "scripts").mkdir(parents=True)
+        (self.skill / "SKILL.md").write_text("---\nname: aimaster\n---\n", encoding="utf-8")
+        (self.skill / "VERSION").write_text("2099.01.01\n", encoding="utf-8")
+        patcher = mock.patch.object(install, "check_deps", return_value=[])
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def run_install(self, *extra):
+        argv = ["--repo", str(self.repo), "--home", str(self.home), "--skip-self-check", *extra]
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            code = install.main(argv)
+        return code, buffer.getvalue()
+
+    def test_text_output_survives_a_broken_montage_import(self):
+        with mock.patch.dict(sys.modules, {"install_montage": None}):
+            code, text = self.run_install()
+        self.assertIn("Монтаж", text)  # что-то про монтаж напечаталось, не трейсбек
+        self.assertNotIn("Traceback", text)
+
+    def test_json_output_survives_a_broken_montage_import(self):
+        with mock.patch.dict(sys.modules, {"install_montage": None}):
+            code, text = self.run_install("--json")
+        report = json.loads(text)  # не упало бы в json.loads, будь там трейсбек
+        self.assertIn("montage", report)
+        self.assertEqual(report["montage"]["ok"], False)
 
 
 if __name__ == "__main__":

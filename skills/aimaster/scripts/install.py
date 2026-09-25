@@ -606,8 +606,18 @@ def render_text(report):
         if dep["message"]:
             lines.append("      " + dep["message"])
     if report.get("montage") is not None:
-        import install_montage
-        lines.extend(install_montage.render_montage_lines(report["montage"]))
+        # Тот же принцип, что у _montage_report: этот отдельный import — свой
+        # собственный риск (report["montage"] уже мог благополучно прийти как
+        # {"ok": False, "error": ...} из-под ЕЁ guard'а, но здесь модуль
+        # импортируется заново, чтобы получить render_montage_lines — и этот
+        # повторный импорт ничем не защищён сам по себе, поэтому текстовый
+        # вывод — единственный на этот момент — падал бы целиком).
+        try:
+            import install_montage
+            lines.extend(install_montage.render_montage_lines(report["montage"]))
+        except Exception as error:  # noqa: BLE001 — намеренно широкий предохранитель
+            lines.append("Монтаж (HyperFrames): не удалось показать раздел (%s)"
+                         % _short_error(error))
     if report["self_check"] is not None:
         bad = [c for c in report["self_check"] if not c["ok"]]
         lines.append("Самопроверка: %s" % ("всё в порядке" if not bad else "ОШИБКИ"))
@@ -676,9 +686,9 @@ def _montage_next_step(montage):
         blocker = node.get("message") or "нужен Node.js 22+"
         return "Монтаж не готов: %s" % blocker
     hyperframes = montage.get("hyperframes") or {}
-    # именно «нет npm» — иначе обычная ошибка самого npm («npm ERR! ...»)
-    # тоже содержит подстроку «npm» и ошибочно попала бы сюда.
-    if hyperframes.get("status") == "failed" and "нет npm" in (hyperframes.get("message") or ""):
+    # структурное поле, не разбор русского текста — не разойдётся с
+    # install_montage_engine.py и не ловит по ошибке обычный «npm ERR! ...».
+    if hyperframes.get("blocker") == "npm_missing":
         return "Монтаж не готов: %s" % hyperframes["message"]
     return ("Монтаж не готов — повторите: install.py --install-deps "
             "(подробности в разделе «Монтаж» выше)")
