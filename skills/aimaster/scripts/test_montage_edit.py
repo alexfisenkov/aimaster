@@ -83,6 +83,82 @@ class EditTests(unittest.TestCase):
                          ("am-video am-fade-in", "am-video"))
         self.assertEqual(attrs["v-2-2"]["data-media-start"], "0.5")
 
+    def test_split_audio_clip_drops_inner_fade_only(self):
+        # Round-fix-1/5, item 1: разрез настоящего <audio> с уже проставленными
+        # data-fade-in/out — внешние края (начало и конец ролика) остаются,
+        # внутренний стык (место разреза) чистится с обеих сторон.
+        self.edit(op="fade", clip="a-voice", fade_in=0.3, fade_out=0.3)
+        result = self.edit(op="split", clip="a-voice", at=1.0)
+        new_id = result["receipt"]["new_clip"]
+        attrs = self.attrs()
+        self.assertNotIn("data-fade-out", attrs["a-voice"])
+        self.assertEqual(attrs["a-voice"]["data-fade-in"], "0.3")
+        self.assertNotIn("data-fade-in", attrs[new_id])
+        self.assertEqual(attrs[new_id]["data-fade-out"], "0.3")
+
+    def test_volume_and_fade_refused_on_muted_video(self):
+        # Round-fix-1/5, item 7: v-2 немой (has_audio=False) — правка volume/fade
+        # раньше молча принималась и ничего не делала; теперь явный отказ.
+        with self.assertRaises(MontageError) as caught:
+            self.edit(op="volume", clip="v-2", value=0.5)
+        self.assertIn("звука нет", str(caught.exception))
+        with self.assertRaises(MontageError):
+            self.edit(op="fade", clip="v-2", fade_in=0.1)
+
+    def test_undo_refuses_when_the_note_is_missing_or_corrupt(self):
+        # Round-fix-1/5, item 3: гвардия отката была «открыта по умолчанию» —
+        # без отметки о состоянии файла после правки undo молча выполнялся.
+        self.edit(op="delete", clip="t-2")
+        note = sorted(self.paths.undo.glob("edit-*.json"))[-1]
+        note.unlink()
+        with self.assertRaises(MontageError) as caught:
+            self.edit(op="undo")
+        self.assertIn("отметк", str(caught.exception))
+        self.assertNotIn("t-2", self.attrs())  # чужая (не наша) правка не потеряна откатом
+
+        self.edit(op="delete", clip="t-1")
+        note = sorted(self.paths.undo.glob("edit-*.json"))[-1]
+        note.write_text("не json", encoding="utf-8")
+        with self.assertRaises(MontageError):
+            self.edit(op="undo")
+
+    def test_crlf_survives_a_cli_edit(self):
+        # Round-fix-1/5, item 12: FakeHyperframes сам читал/писал index.html
+        # универсальным переводом строк — CRLF молча превращался в LF ещё в
+        # тесте, до того как могла бы вскрыться настоящая грабля в проде.
+        crlf = self.text().replace("\n", "\r\n")
+        self.paths.index.write_bytes(crlf.encode("utf-8"))
+        self.edit(op="volume", clip="a-voice", value=0.4)
+        raw = self.paths.index.read_bytes().decode("utf-8")
+        self.assertIn("\r\n", raw)
+        self.assertNotRegex(raw, r"(?<!\r)\n")
+
+    def test_timelines_script_survives_every_edit_op(self):
+        # Round-fix-1/5, item 13: window.__timelines["main"] — то, без чего
+        # превью Studio перематывает без звука (задача 10b) — не должно
+        # пострадать ни от одной операции правки.
+        baseline = self.text()
+        cases = [
+            dict(op="trim-start", clip="v-1", seconds=0.2),
+            dict(op="trim-end", clip="v-1", duration=1.0),
+            dict(op="move", clip="v-2", at=1.5),
+            dict(op="split", clip="v-2", at=2.6),
+            dict(op="delete", clip="t-2"),
+            dict(op="volume", clip="a-voice", value=0.7),
+            dict(op="fade", clip="a-voice", fade_in=0.2),
+            dict(op="title-add", text="Т", at=3.0, duration=0.5),
+            dict(op="title-text", clip="t-1", text="Новый текст"),
+        ]
+        for kwargs in cases:
+            with self.subTest(op=kwargs["op"]):
+                self.paths.index.write_text(baseline, encoding="utf-8")
+                self.edit(**kwargs)
+                self.assertIn('window.__timelines["main"]', self.text())
+        self.paths.index.write_text(baseline, encoding="utf-8")
+        self.edit(op="delete", clip="t-2")
+        self.edit(op="undo")
+        self.assertIn('window.__timelines["main"]', self.text())
+
     def test_titles(self):
         result = self.edit(op="title-add", text="Финал <3", at=3.0, duration=1.0)
         self.assertEqual(result["receipt"]["new_clip"], "t-3")

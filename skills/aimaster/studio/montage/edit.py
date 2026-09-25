@@ -61,11 +61,19 @@ def undo_last(paths: MontagePaths) -> dict:
     if not snapshots:
         raise MontageError("отменять нечего")
     latest, note = snapshots[-1], snapshots[-1].with_suffix(".json")
+    # Гвардия — по умолчанию закрыта (round-fix-1/5, item 3): нет отметки или
+    # она повреждена — значит нельзя проверить, что монтаж с тех пор не
+    # трогали (например, мышью в столе); раньше это молча пропускало
+    # проверку и стирало чужую правку, теперь — явный отказ.
     try:
         after = json.loads(note.read_text(encoding="utf-8")).get("after")
     except (OSError, ValueError):
-        after = None
-    if after and after != _sha(paths.index):
+        raise MontageError("нет отметки о состоянии после последней правки — откат мог бы "
+                           "стереть чужие изменения, поэтому отменён") from None
+    if not isinstance(after, str) or not after:
+        raise MontageError("отметка о последней правке повреждена — откат мог бы стереть "
+                           "чужие изменения, поэтому отменён")
+    if after != _sha(paths.index):
         raise MontageError("после этой правки монтаж меняли (например, в монтажном столе) — "
                            "откат стёр бы и те изменения")
     write_index(paths.index, read_index(latest))

@@ -15,6 +15,7 @@ from .draft_html import title_fragment
 from .html_doc import (ROOT_ID, element_attrs, fmt_number as fmt, insert_before_root_end,
                        root_duration, set_attr, set_text)
 from .index_io import read_index, write_index
+from .split_fades import normalize_split_fades
 
 CLI_TIMEOUT = 120
 MAX_VOLUME = 3.98
@@ -41,9 +42,18 @@ def extend_root(ctx, end: float) -> None:
           if end > root_duration(text) + 1e-6 else text)
 
 
+def _has_sound(clip) -> bool:
+    """`<audio>` всегда звук; `<video>` — только если у него есть звуковая
+    дорожка (черновик тогда пишет data-volume, немой клип получает muted и
+    ничего звукового вовсе — round-fix-1/5, item 7: правка volume/fade на
+    немом видео раньше молча принималась и ничего не делала)."""
+
+    return clip.kind == "audio" or (clip.kind == "video" and clip.volume is not None)
+
+
 def _sound_clip(clip, op: str) -> None:
-    if clip.kind not in ("video", "audio"):
-        raise MontageError(f"правка {op} — только для видео и звука, а {clip.id} — {clip.kind}")
+    if not _has_sound(clip):
+        raise MontageError(f"правка {op} — только для клипов со звуком, а у {clip.id} звука нет")
 
 
 def move(ctx, clip, req):
@@ -81,13 +91,15 @@ def split(ctx, clip, req):
         raise MontageError(f"момент разреза должен быть внутри клипа ({clip.start}–{clip.end} с)")
     before = set(element_attrs(read_index(ctx.paths.index)))
     receipt = cli(ctx, ["split", "#" + clip.id, fmt(at)])
-    after = element_attrs(read_index(ctx.paths.index))
-    pieces = sorted(set(after) - before)
-    for piece in pieces:
-        classes = after[piece].get("class", "").split()
-        if "am-fade-in" in classes:  # проявление нужно на стыке сцен, не на разрезе
-            kept = " ".join(name for name in classes if name != "am-fade-in")
-            patch(ctx, lambda text, p=piece, k=kept: set_attr(text, p, "class", k))
+    after_text = read_index(ctx.paths.index)
+    pieces = sorted(set(element_attrs(after_text)) - before)
+    # CLI (и Studio) копируют fade-in/fade-out и класс am-fade-in на ОБЕ
+    # половины разреза — на внутреннем стыке они не нужны ни левой, ни
+    # правой стороне; нормализация общая с задачей 15 (лежит в split_fades.py,
+    # чтобы разрез, сделанный мышью в Studio, чистился тем же кодом).
+    normalized, changed = normalize_split_fades(after_text)
+    if changed:
+        write_index(ctx.paths.index, normalized)
     return {**receipt, "new_clip": pieces[0] if pieces else None}
 
 

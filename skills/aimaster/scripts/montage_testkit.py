@@ -26,6 +26,7 @@ from studio.montage.engine import PREFIX_ENV, Engine, load_pin  # noqa: E402
 from studio.montage.engine_cli import EngineResult  # noqa: E402
 from studio.montage.html_doc import (  # noqa: E402
     element_attrs, element_span, fmt_number, insert_before_root_end, root_duration, set_attr)
+from studio.montage.index_io import read_index, write_index  # noqa: E402
 from studio.platform_compat import find_program  # noqa: E402
 
 
@@ -230,7 +231,7 @@ class FakeHyperframes:
         if args[0] == "lint":
             return dict(self.lint_report)
         if args == ["timeline", "--json"]:
-            return timeline_from_html(index.read_text(encoding="utf-8"))
+            return timeline_from_html(read_index(index))
         if args[0] == "timeline":
             return self._mutate(index, args[1:])
         raise AssertionError(f"неожиданная команда {args}")
@@ -249,7 +250,7 @@ class FakeHyperframes:
         op, ref = args[0], args[1].lstrip("#")
         if op in self.refuse:
             raise MontageError(f"HyperFrames отказал: {self.refuse[op]}")
-        text = index.read_text(encoding="utf-8")
+        text = read_index(index)
         data = element_attrs(text)[ref]
         start, duration = float(data["data-start"]), float(data.get("data-duration") or 0)
         if op == "move":
@@ -283,7 +284,7 @@ class FakeHyperframes:
             text = set_attr(text, ref, f"data-{field}", value)
         else:
             raise AssertionError(f"неожиданная правка {op}")
-        index.write_text(text, encoding="utf-8")
+        write_index(index, text)
         return {"ok": True, "receipt": {"file": "index.html", "changed": True}, "file": "index.html"}
 
 
