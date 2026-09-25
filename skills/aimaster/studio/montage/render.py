@@ -17,15 +17,14 @@ from .context import ProjectContext, project_mode, scene_names
 from .engine import Engine, require_engine
 from .engine_cli import EngineRunner
 from .index_io import read_index
-from .model import Model, model_hash
-from .model_diff import diff_models
-from .montage_format import clips_count, fmt_len
+from .model import model_hash
 from .montage_state import check_writable, montage_section, record_version
 from .probe import probe_media
 from .render_steps import checked_output, normalized_index, preflight, remove_output, render_mp4
+from .version_diff import base_model, changes_since
 from .version_staging import (build_lock, discard_staging, publish_version, settle_orphans,
                               stage_version)
-from .versions import BY_VALUES, VersionMeta, next_version_id, read_version_model
+from .versions import BY_VALUES, VersionMeta, next_version_id
 
 
 @dataclass(frozen=True)
@@ -46,25 +45,6 @@ def _summary(base: str | None, changes: list[str]) -> str:
         return "Пересборка без изменений"
     more = f" и ещё {len(changes) - 3}" if len(changes) > 3 else ""
     return "; ".join(changes[:3]) + more
-
-
-def _base_model(paths, base: str | None) -> tuple[Model | None, bool]:
-    """(модель текущей версии, её снимок потерян). Потерянный снимок (state
-    версию знает, папки нет) — не повод блокировать все следующие сборки."""
-
-    if base is None:
-        return None, False
-    try:
-        return read_version_model(paths, base), False
-    except MontageError:
-        return None, True
-
-
-def _changes(base: str | None, old: Model | None, lost: bool, model: Model, names) -> list[str]:
-    if lost:
-        return [f"снимка прежней версии {base} нет на диске — изменения сравнить не с чем; "
-                f"в монтаже {clips_count(len(model.clips))}, {fmt_len(model.duration)}"]
-    return diff_models(old, model, names=names)
 
 
 def _fresh_state(ctx: ProjectContext, expected_revision: int) -> dict:
@@ -90,7 +70,7 @@ def _build(ctx, state, expected_revision, *, by, summary, engine, runner, probe)
     settle_orphans(ctx.paths, recorded)
     version_id = next_version_id(ctx.paths, recorded_ids=recorded)
     base = section["current_version"]
-    old, lost = _base_model(ctx.paths, base)
+    old, lost = base_model(ctx.paths, base)
     text = normalized_index(ctx.paths, old)
     model, warnings = preflight(ctx.paths, engine, runner, text)
     output = render_mp4(ctx, engine, runner, version_id)
@@ -100,7 +80,7 @@ def _build(ctx, state, expected_revision, *, by, summary, engine, runner, probe)
             raise MontageError("монтаж поменяли во время сборки (например, в монтажном столе) — "
                                "эта сборка не записана; соберите ещё раз")
         asset_id = _register(ctx, output)
-        changes = _changes(base, old, lost, model, scene_names(state))
+        changes = changes_since(base, old, lost, model, scene_names(state))
         meta = VersionMeta(
             version=version_id, created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             by=by or ("autopilot" if project_mode(state) == "autopilot" else "agent"),

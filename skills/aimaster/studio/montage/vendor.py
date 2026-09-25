@@ -12,19 +12,36 @@ in preview». Таймлайн на паузе длиной во весь рол
 проверки сборки. MotionPathPlugin — тоже локально: если на странице есть GSAP,
 а плагина нет, Studio при каждой загрузке превью сама тянет его с jsDelivr.
 Лицензия GSAP — стандартная бесплатная (gsap.com/standard-license); файлы не
-меняем. Задача 17 (`montage gsap`) расширяет этот модуль, а не дублирует.
+меняем. `montage gsap` (`vendor_gsap`) кладёт сюда же плагины по запросу.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ..platform_compat import replace_file
 from . import MontageError
-from .engine import install_command, load_pin, package_version
+from .composition_refs import references
+from .draft_html import script_tag
+from .engine import Engine, install_command, load_pin, package_version
+from .index_io import read_index
 from .media_sync import ASSETS_DIR
+from .paths import MontagePaths
 
 DRAFT_SCRIPTS = ("gsap", "MotionPathPlugin")
+_PLUGIN = re.compile(r"[A-Z][A-Za-z0-9]{1,40}")
+# Правила для агента, который добавляет анимации из скиллов HyperFrames.
+RULES = (
+    "GSAP и плагины — только локальные файлы из assets/: недостающие теги (missing_tags) — "
+    "в <head> после assets/gsap.min.js; ссылку на CDN проверка сборки отклонит",
+    'анимации — в уже существующий скрипт таймлайна черновика (window.__timelines["main"]): '
+    'второй таймлайн "main" и второй встроенный скрипт GSAP не заводить — превью Studio '
+    "после правки перезагружается только с одним",
+    "таймлайн остаётся на паузе (gsap.timeline({ paused: true })) и не короче ролика",
+    "у корня #root не ставить data-no-timeline — иначе превью Studio играет без звука",
+    "текст — только шрифтом «AM Inter»",
+)
 
 
 def gsap_dist(prefix: Path) -> Path:
@@ -75,3 +92,31 @@ def copy_gsap(prefix: Path, assets_dir: Path, names=DRAFT_SCRIPTS) -> list[str]:
     for source in sources:
         _copy_if_changed(source, Path(assets_dir) / source.name)
     return [f"{ASSETS_DIR}/{source.name}" for source in sources]
+
+
+def vendor_gsap(engine: Engine, paths: MontagePaths, *, plugins=()) -> dict:
+    """`montage gsap`: GSAP черновика и плагины `plugins` (имя — как у файла
+    в dist, например SplitText) → current/assets/. `script_tags` — все теги
+    по порядку загрузки, `missing_tags` — каких ещё нет в index.html."""
+
+    gsap_sources(engine.prefix)  # закреплённый GSAP стоит — иначе отказ с командой установки
+    if not paths.index.is_file():
+        raise MontageError("черновика ещё нет: сначала montage draft")
+    names, dist = list(DRAFT_SCRIPTS), gsap_dist(engine.prefix)
+    for plugin in plugins:
+        if not _PLUGIN.fullmatch(str(plugin)) or not (dist / f"{plugin}.min.js").is_file():
+            raise MontageError(f"нет плагина GSAP «{plugin}» в {dist} "
+                               "(имя — как у файла, например SplitText)")
+        if plugin not in names:
+            names.append(plugin)
+    files, copied = [], []
+    for source in gsap_sources(engine.prefix, names):
+        rel = f"{ASSETS_DIR}/{source.name}"
+        if _copy_if_changed(source, paths.assets / source.name):
+            copied.append(rel)
+        files.append(rel)
+    present = set(references(read_index(paths.index)))
+    return {"version": package_version(engine.prefix, "gsap"), "files": files, "copied": copied,
+            "script_tags": [script_tag(rel) for rel in files],
+            "missing_tags": [script_tag(rel) for rel in files if rel not in present],
+            "rules": list(RULES)}
