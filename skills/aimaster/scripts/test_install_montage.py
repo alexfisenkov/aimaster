@@ -360,6 +360,53 @@ class BrowserInstallTests(unittest.TestCase):
         self.assertEqual(argv[2:4], ["browser", "ensure"])
         self.assertEqual(kwargs["env"]["HOME"], str(self.prefix / "home"))
 
+    def test_env_override_skips_download_entirely(self):
+        """round 1/5: скачивание chrome-headless-shell для win64 стабильно
+        (три подряд попытки, антивирус исключён проверкой — run 36137776762)
+        кладёт пустую версийную папку. HYPERFRAMES_BROWSER_PATH — способ
+        самого HyperFrames обойти скачивание: если он указывает на реальный
+        файл, browser_install должен принять его без единого вызова `ensure`
+        или `path`, даже если путь вне папки движка (это системный Chrome,
+        не наша копия — ожидаемо)."""
+
+        choco_chrome = touch(self.base / "choco" / "chrome.exe")
+        item = self.call("/usr/bin/node", self.prefix, PIN,
+                         install_missing=True, update=False,
+                         runner=self.runner("не должно понадобиться"),
+                         environ={"HYPERFRAMES_BROWSER_PATH": str(choco_chrome)})
+        self.assertEqual(item["status"], "installed")
+        self.assertEqual(item["path"], str(choco_chrome))
+        self.assertEqual(self.calls, [])
+        self.assertEqual(engine.read_record(self.prefix)["browser"], str(choco_chrome))
+
+    def test_env_override_already_recorded_is_found_not_installed(self):
+        choco_chrome = touch(self.base / "choco" / "chrome.exe")
+        engine.write_record(self.prefix, {"browser": str(choco_chrome), "version": PIN["version"]})
+        item = self.call("/usr/bin/node", self.prefix, PIN,
+                         install_missing=True, update=False,
+                         runner=self.runner("не должно понадобиться"),
+                         environ={"HYPERFRAMES_BROWSER_PATH": str(choco_chrome)})
+        self.assertEqual(item["status"], "found")
+        self.assertEqual(self.calls, [])
+
+    def test_env_override_to_a_missing_file_is_ignored(self):
+        """Переменная задана, но файла по этому пути нет — не «нашли», а
+        обычный путь установки (не должен тихо принять несуществующий файл)."""
+
+        item = self.call("/usr/bin/node", self.prefix, PIN,
+                         install_missing=True, update=False,
+                         runner=self.runner(str(self.browser)),
+                         environ={"HYPERFRAMES_BROWSER_PATH": str(self.base / "нет-такого.exe")})
+        self.assertEqual(item["status"], "installed")
+        self.assertEqual(item["path"], str(self.browser))
+        self.assertGreater(len(self.calls), 0)  # обычный ensure/path всё же вызывались
+
+    def test_check_browser_honours_the_env_override(self):
+        choco_chrome = touch(self.base / "choco" / "chrome.exe")
+        item = install_montage_browser.check_browser(
+            self.prefix, PIN, environ={"HYPERFRAMES_BROWSER_PATH": str(choco_chrome)})
+        self.assertEqual(item, {"status": "found", "message": "", "path": str(choco_chrome)})
+
     def test_system_chrome_is_not_accepted(self):
         """Разбор round 1/5, CI Windows: `browser path` может отдать системный
         Chrome (например C:\\Program Files\\Google\\Chrome\\...), а не то, что

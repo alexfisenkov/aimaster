@@ -13,6 +13,7 @@ aimaster-engine.json — иначе `browser path` молча отдал бы с
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -31,10 +32,12 @@ from studio.montage.engine_cli import run_engine  # noqa: E402
 # round 1/5, находка CI windows-latest: два отдельных процесса Node (`ensure`
 # своим «Path: …», затем `browser path` своим `existsSync`) согласились, что
 # файл на диске есть — Python в третьем процессе тут же получил на ТОТ ЖЕ
-# путь `Path.is_file() is False` (OSError внутри pathlib проглочен). Классика
-# антивируса на Windows: Defender ставит только что скачанный .exe (~30+ МБ,
-# без подписи) на реал-тайм проверку и на секунду-другую держит хэндл. Опрос
-# с паузой вместо одного взгляда — не бесконечный, ограниченный.
+# путь `Path.is_file() is False` (OSError внутри pathlib проглочен). Проверено
+# (run 36137776762) и опровергнуто: не антивирус — тот же результат и при
+# полностью отключённой реал-тайм защите Defender. Опрос с паузой всё равно
+# держим — дешёвая защита от НАСТОЯЩИХ гонок с другим процессом на других
+# машинах/платформах, просто не от этой конкретной находки. Ограниченный, не
+# бесконечный.
 IS_FILE_ATTEMPTS = 10
 IS_FILE_DELAY = 0.5
 
@@ -49,11 +52,13 @@ def _wait_until_file(path: str, *, attempts=IS_FILE_ATTEMPTS, delay=IS_FILE_DELA
 
 
 def _walk_up_diagnostic(path: str) -> str:
-    """Защита от антивируса (ci.yml) не решила находку CI windows-latest до
-    конца — сам родитель файла тоже «не читается» (WinError 3, путь не
-    существует). Идём от файла вверх, пока не найдём первый СУЩЕСТВУЮЩИЙ
-    уровень — показывает, на чём именно расходится путь, который назвал
-    Node, с тем, что реально есть на диске, вместо одной строки без опоры."""
+    """CI windows-latest: сам родитель файла тоже «не читается» (WinError 3,
+    путь не существует), не только сам файл — распаковка chrome-headless-
+    shell для win64 оставляет пустую версийную папку (не антивирус, см.
+    `_env_browser_override`). Идём от файла вверх, пока не найдём первый
+    СУЩЕСТВУЮЩИЙ уровень — показывает, на чём именно расходится путь, который
+    назвал Node, с тем, что реально есть на диске, вместо одной строки без
+    опоры."""
 
     current = Path(path)
     missing = []
@@ -101,6 +106,23 @@ def _failure_detail(ensured, located, path: str, *, inside: bool, is_file: bool)
     return f"{detail}\n{tail}" if tail else detail
 
 
+def _env_browser_override(environ) -> str | None:
+    """round 1/5, CI windows-latest: скачивание chrome-headless-shell для
+    win64-152.0.7977.30 стабильно (три подряд попытки, включая self-heal
+    HyperFrames) кладёт пустую версийную папку — не антивирус (путь-
+    исключение и полное отключение реал-тайм защиты Defender ничего не
+    изменили, run 36137776762). Это подтверждённый способ самого HyperFrames
+    обойти скачивание вовсе: `HYPERFRAMES_BROWSER_PATH` — тот же механизм,
+    который он сам подсказывает при отказе загрузки (см. `browserPathHint`
+    в его CLI). Системный Chrome работает медленнее (без
+    HeadlessExperimental.beginFrame, скриншотный режим захвата вместо
+    перф-оптимизированного), но это ожидаемый, документированный HyperFrames
+    режим, а не костыль в обход его контракта."""
+
+    path = (environ or os.environ).get("HYPERFRAMES_BROWSER_PATH")
+    return path if path and Path(path).is_file() else None
+
+
 def _locate_after_ensure(eng, prefix: Path, pin: dict, kwargs: dict, sleep):
     """`browser path` после уже отработавшего `ensure` — резолвит путь,
     проверяет, что он внутри папки движка, и ждёт файл на диске (с retry)."""
@@ -114,7 +136,16 @@ def _locate_after_ensure(eng, prefix: Path, pin: dict, kwargs: dict, sleep):
 
 
 def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool, update: bool,
-                    runner=None, sleep=time.sleep) -> dict:
+                    runner=None, sleep=time.sleep, environ=None) -> dict:
+    override = _env_browser_override(environ)
+    if override:
+        record = engine.read_record(prefix)
+        already = record.get("browser") == override and record.get("version") == pin["version"]
+        record.update(browser=override, version=pin["version"], node=node,
+                      updated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        engine.write_record(prefix, record)
+        return item("found" if already else "installed",
+                    "браузер задан через HYPERFRAMES_BROWSER_PATH — скачивание пропущено", path=override)
     record = engine.read_record(prefix)
     have_browser = bool(record.get("browser")) and Path(record["browser"]).is_file()
     if record.get("version") == pin["version"] and have_browser:
@@ -163,7 +194,10 @@ def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool
     return item("installed", "скачан браузер для сборки видео (~100 МБ)", path=path)
 
 
-def check_browser(prefix: Path, pin: dict) -> dict:
+def check_browser(prefix: Path, pin: dict, *, environ=None) -> dict:
+    override = _env_browser_override(environ)
+    if override:
+        return item("found", path=override)
     record = engine.read_record(prefix)
     if record.get("version") == pin["version"] and record.get("browser") \
             and Path(record["browser"]).is_file():

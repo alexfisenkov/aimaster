@@ -97,28 +97,25 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install ffmpeg -y --no-progress
 
-      - name: Exclude the engine cache from Windows Defender (Windows)
-        # round 1/5, находка CI windows-latest: два процесса Node подряд
-        # подтвердили, что файл на диске есть (тот же путь из «ensure» и
-        # «path»), а Python тут же — и после нескольких попыток с паузой —
-        # видел его отсутствие. Путь-исключение (Add-MpPreference) не
-        # поправил ничего: тот же результат ещё дважды подряд, включая через
-        # собственный self-heal HyperFrames (retry без --force). Раз простое
-        # исключение по пути не помогает — снимаем реал-тайм защиту целиком
-        # диагностическим прогоном: если ЭТО тоже не поможет, дело не в
-        # антивирусе, и держать эту находку смысла нет (снять отдельной
-        # задачей). Раннер работает от администратора — доп. прав не нужно.
+      - name: Chrome as a Windows browser fallback (Windows)
+        # round 1/5, находка CI windows-latest: скачивание chrome-headless-
+        # shell для win64-152.0.7977.30 стабильно (три подряд попытки, включая
+        # self-heal самого HyperFrames) кладёт пустую версийную папку —
+        # антивирус исключён отдельной проверкой (путь-исключение и полное
+        # отключение реал-тайм защиты Defender не изменили ничего, run
+        # 36137776762 — тот шаг снят, находка не в нём). HYPERFRAMES_BROWSER_PATH
+        # ниже — задокументированный самим HyperFrames способ обойти
+        # скачивание совсем (see browserPathHint в его CLI): системный Chrome
+        # без HeadlessExperimental.beginFrame чуть медленнее (скриншотный
+        # режим захвата), но для 3-секундного тестового ролика это неважно.
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\AI Мастерская"
-          Set-MpPreference -DisableRealtimeMonitoring $true
-          Get-MpPreference | Select-Object DisableRealtimeMonitoring, ExclusionPath | Format-List
+        run: choco install googlechrome -y --no-progress
 
       - name: Install pinned HyperFrames, render browser and skills
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          HYPERFRAMES_BROWSER_PATH: ${{ runner.os == 'Windows' && 'C:\Program Files\Google\Chrome\Application\chrome.exe' || '' }}
         run: |
           python skills/aimaster/scripts/install_montage.py --json > montage-install.json || true
           cat montage-install.json
