@@ -103,5 +103,26 @@ class ReferenceTests(unittest.TestCase):
             self.assertEqual(composition_refs.missing_sources(html, current), [])
 
 
+    def test_local_gsap_is_allowed_and_cdn_gsap_is_not(self):
+        # Задача 10b: черновик несёт GSAP из движка локально (assets/) — это
+        # не проблема сборки, пока файл лежит в папке монтажа; тот же GSAP с
+        # CDN — внешняя ссылка, как и раньше.
+        local = ('<head><script src="assets/gsap.min.js"></script>'
+                 '<script src="assets/MotionPathPlugin.min.js"></script></head>'
+                 '<body><script>window.__timelines["main"] = gsap.timeline({ paused: true });'
+                 '</script></body>')
+        with tempfile.TemporaryDirectory() as temp:
+            current = Path(temp)
+            (current / "assets").mkdir()
+            (current / "assets" / "gsap.min.js").write_text("/* gsap */", encoding="utf-8")
+            self.assertEqual(composition_refs.check_composition(local, current),
+                             ["файла нет в папке монтажа: assets/MotionPathPlugin.min.js"])
+            (current / "assets" / "MotionPathPlugin.min.js").write_text("/* mp */", encoding="utf-8")
+            self.assertEqual(composition_refs.check_composition(local, current), [])
+            cdn = '<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>'
+            self.assertEqual(composition_refs.check_composition(cdn, current),
+                             ["внешняя ссылка: https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"])
+
+
 if __name__ == "__main__":
     unittest.main()

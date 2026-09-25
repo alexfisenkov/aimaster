@@ -16,7 +16,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from studio.montage.engine import PREFIX_ENV  # noqa: E402
+from studio.montage.engine import PREFIX_ENV, load_pin  # noqa: E402
 from studio.platform_compat import find_program  # noqa: E402
 
 
@@ -30,6 +30,21 @@ def isolate_hyperframes_dir(test: unittest.TestCase, root) -> None:
     patcher = mock.patch.dict(os.environ, {PREFIX_ENV: str(Path(root) / "неиспользуемый-hyperframes")})
     patcher.start()
     test.addCleanup(patcher.stop)
+
+
+def fake_gsap_prefix(root, *, version: str | None = None, files=("gsap", "MotionPathPlugin")) -> Path:
+    """Папка движка с одним только GSAP, как его ставит установщик:
+    `node_modules/gsap/package.json` (версия — закреплённая, если не задана)
+    и `dist/<имя>.min.js`. Для черновика и vendor без настоящего движка."""
+
+    prefix = Path(root) / "движок"
+    package = prefix / "node_modules" / "gsap"
+    (package / "dist").mkdir(parents=True, exist_ok=True)
+    (package / "package.json").write_text(
+        '{"name": "gsap", "version": "%s"}' % (version or load_pin()["gsap_version"]), encoding="utf-8")
+    for name in files:
+        (package / "dist" / f"{name}.min.js").write_text(f"/* {name} */\n", encoding="utf-8")
+    return prefix
 
 
 def ffmpeg_or_skip() -> str:

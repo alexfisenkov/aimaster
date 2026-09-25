@@ -4,8 +4,10 @@
     python skills/aimaster/scripts/montage_ci_check.py --json [--offline]
 
 Берёт движок, поставленный install_montage.py; в папке с кириллицей и
-пробелами собирает композицию из двух клипов и голоса (без текста), прогоняет
-lint, рендер и ffprobe, ищет в композиции внешние ссылки, а в логе рендера —
+пробелами собирает композицию из двух клипов и голоса (без текста) того же
+вида, что черновик: локальный GSAP из движка и таймлайн main (задача 10b —
+звук в превью Studio), без data-no-timeline. Прогоняет lint, рендер и
+ffprobe, ищет в композиции внешние ссылки, а в логе рендера —
 следы сетевых запросов (шрифты Google, CDN). --offline только помечает запуск:
 сеть отрезают снаружи (см. .github/workflows/ci.yml). Поиск внешних ссылок —
 общий с проверкой черновика: studio/montage/external_urls.py.
@@ -30,10 +32,12 @@ for _path in (str(_SCRIPTS.parent), str(_SCRIPTS)):
 
 import montage_testkit  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
+from studio.montage.draft_html import TIMELINE_SCRIPT, script_tag  # noqa: E402
 from studio.montage.engine import require_engine  # noqa: E402
 from studio.montage.engine_cli import frames_cache, run_engine, run_engine_json  # noqa: E402
 from studio.montage.external_urls import external_urls  # noqa: E402 — montage_ci_check.external_urls (план)
 from studio.montage.probe import probe_media  # noqa: E402
+from studio.montage.vendor import DRAFT_SCRIPTS, copy_gsap  # noqa: E402
 from studio.platform_compat import ensure_utf8_stdio  # noqa: E402
 
 SIZE = (540, 960)
@@ -55,20 +59,24 @@ COMPOSITION = """<!doctype html>
       .am-fade-in { animation: am-fade-in 0.4s linear both; }
       @keyframes am-fade-in { from { opacity: 0; } to { opacity: 1; } }
     </style>
+@SCRIPTS@
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="3" data-width="540" data-height="960" data-no-timeline>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="3" data-width="540" data-height="960">
       <video id="v-1" class="am-video" src="assets/clip-1.mp4" data-start="0" data-duration="1.5" data-media-start="0" data-track-index="0" data-has-audio="true" data-volume="0.3" playsinline></video>
       <video id="v-2" class="am-video am-fade-in" src="assets/clip-2.mp4" data-start="1.5" data-duration="1.5" data-media-start="0" data-track-index="0" data-has-audio="true" data-volume="0.3" playsinline></video>
       <audio id="a-voice" src="assets/voice.wav" data-start="0" data-duration="3" data-media-start="0" data-track-index="2" data-volume="1"></audio>
     </div>
+@TIMELINE@
   </body>
 </html>
-"""
+""".replace("@SCRIPTS@", "\n".join(f"    {script_tag(f'assets/{name}.min.js')}" for name in DRAFT_SCRIPTS)
+            ).replace("@TIMELINE@", "\n".join(f"    {line}" for line in TIMELINE_SCRIPT.split("\n")))
 
 
-def _build(comp: Path) -> None:
+def _build(comp: Path, engine_prefix: Path) -> None:
     assets = comp / "assets"
+    copy_gsap(engine_prefix, assets)
     montage_testkit.make_clip(assets / "clip-1.mp4", 1.5, size=SIZE, color="red", freq=440)
     montage_testkit.make_clip(assets / "clip-2.mp4", 1.5, size=SIZE, color="blue", freq=660)
     montage_testkit.make_tone(assets / "voice.wav", DURATION, freq=220)
@@ -82,7 +90,7 @@ def check(offline: bool) -> dict:
     report["engine"] = engine.version
     with tempfile.TemporaryDirectory(prefix="aimaster-montage-", ignore_cleanup_errors=True) as temp:
         comp = Path(temp) / "проверка монтажа" / "ролик 1"
-        _build(comp)
+        _build(comp, engine.prefix)
         report["external_urls"] = external_urls((comp / "index.html").read_text(encoding="utf-8"))
         lint = run_engine_json(engine, ["lint", ".", "--json"], cwd=comp, timeout=120, ok_codes=(0, 1))
         report["lint_errors"] = [f"{f.get('code')}: {f.get('message')}"

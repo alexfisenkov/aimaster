@@ -5,12 +5,16 @@ Fix round 3/5, item 10: реальный пробник (не наша гене�
 Studio при сохранении: переписывает `<!doctype html>` → `<!DOCTYPE html>`,
 `<meta ... />` → `<meta ...>` (без самозакрывающего слэша), добавляет
 `data-hf-id="hf-XXXX"` КАЖДОМУ элементу (нестабильный — никогда не
-использовать как идентичность) и `data-no-timeline` → `data-no-timeline=""`
-на корне — но наши `data-am-scenes`/`data-am-gen-mode` (раунд 2) переживают
-сохранение без изменений. Фикстуры — `fixtures/montage/studio-before.html`
-(наш черновик до открытия в Studio) и `studio-after-move.html` (тот же
-черновик после того, как в Studio подвинули клип v-2 на 1с — data-start
-"3" → "4"; остальное совпадает с точностью до data-hf-id/DOCTYPE/meta)."""
+использовать как идентичность) — но наши `data-am-*` на корне и клипах
+переживают сохранение без изменений.
+
+Задача 10b: фикстуры сняты заново (Studio 0.8.75, 2026-09-26) с черновика
+нового вида — локальный GSAP в <head>, таймлайн main после корня, без
+data-no-timeline, с data-am-layers. `fixtures/montage/studio-before.html` —
+наш черновик (плюс титр t-1, как его вставил бы montage edit) до открытия в
+Studio, `studio-after-move.html` — тот же файл после того, как в Studio мышью
+подвинули клип v-2 на 1 с (data-start "3" → "4"); остальное совпадает с
+точностью до data-hf-id/DOCTYPE/meta, <script> Studio не трогает."""
 
 from __future__ import annotations
 
@@ -26,6 +30,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
         sys.path.insert(0, _path)
 
 from montage_testkit import video_state  # noqa: E402
+from studio.montage.draft_html import TIMELINE_SCRIPT  # noqa: E402
 from studio.montage.html_doc import element_attrs, set_attr  # noqa: E402
 from studio.montage.paths import montage_paths  # noqa: E402
 from studio.montage.probe import MediaInfo  # noqa: E402
@@ -46,21 +51,29 @@ class StudioSavedFormTests(unittest.TestCase):
         attrs = element_attrs(AFTER_MOVE)
         # data-hf-id есть на каждом элементе (нестабильный, не идентичность)
         # и не мешает читать наши атрибуты.
-        self.assertEqual(attrs["root"]["data-hf-id"], "hf-ccys")
+        self.assertEqual(attrs["root"]["data-hf-id"], "hf-4cyh")
         self.assertEqual(attrs["root"]["data-am-scenes"], "s1 s2 s3")
         self.assertEqual(attrs["root"]["data-am-gen-mode"], "per_scene")
-        self.assertEqual(attrs["root"]["data-no-timeline"], "")
+        self.assertEqual(attrs["root"]["data-am-layers"], "music")
+        self.assertNotIn("data-no-timeline", attrs["root"])
         # v-2 подвинули в Studio: data-start "3" → "4".
         self.assertEqual(attrs["v-2"]["data-start"], "4")
         self.assertEqual(attrs["v-2"]["data-hf-id"], "hf-omuv")
         self.assertIn("<!DOCTYPE html>", AFTER_MOVE)
         self.assertIn('<meta charset="UTF-8">', AFTER_MOVE)
 
+    def test_studio_keeps_the_local_gsap_and_the_timeline_script(self):
+        # Задача 10b: GSAP и таймлайн main — то, ради чего в Studio слышен
+        # звук; сохранение из Studio оставляет их как были, байт в байт.
+        for part in ('<script src="assets/gsap.min.js"></script>',
+                     '<script src="assets/MotionPathPlugin.min.js"></script>',
+                     TIMELINE_SCRIPT.replace("\n", "\n    ")):
+            self.assertIn(part, BEFORE)
+            self.assertIn(part, AFTER_MOVE)
+
     def test_stale_clips_reads_markers_from_a_studio_saved_draft(self):
-        # data-am-layers ещё нет в этом (реальном, до раунда 3) файле —
-        # восстанавливается из самих клипов (item 4/5); ничего в проекте не
-        # поменялось — ничего не должно быть стейл.
-        self.assertNotIn("data-am-layers", AFTER_MOVE)
+        # Ничего в проекте не поменялось — ничего не должно быть стейл;
+        # титр t-1 (слой titles) stale_clips не касается.
         state = video_state(SCENES, audio={"music": "asset-m"})
         self.assertEqual(stale_clips(AFTER_MOVE, state), [])
 
@@ -81,7 +94,7 @@ class StudioSavedFormTests(unittest.TestCase):
         self.assertEqual(changed.count("data-hf-id"), AFTER_MOVE.count("data-hf-id"))
         self.assertIn("<!DOCTYPE html>", changed)
         self.assertIn('<meta charset="UTF-8">', changed)
-        self.assertIn('data-hf-id="hf-ccys"', changed)
+        self.assertIn('data-hf-id="hf-4cyh"', changed)
         self.assertIn('data-hf-id="hf-ata5"', changed)  # v-1 не тронут
         v1_before = element_attrs(AFTER_MOVE)["v-1"]
         v1_after = element_attrs(changed)["v-1"]

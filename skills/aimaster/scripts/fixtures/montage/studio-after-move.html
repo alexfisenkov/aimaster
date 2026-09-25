@@ -19,14 +19,25 @@
       .am-title span { background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 24px;
         font-weight: 700; line-height: 1.25; padding: 5px 11px; border-radius: 5px; }
     </style>
+    <script src="assets/gsap.min.js"></script>
+    <script src="assets/MotionPathPlugin.min.js"></script>
   </head>
   <body>
-    <div data-hf-id="hf-ccys" id="root" data-composition-id="main" data-start="0" data-duration="10" data-width="360" data-height="640" data-no-timeline="" data-am-scenes="s1 s2 s3" data-am-gen-mode="per_scene">
+    <div data-hf-id="hf-4cyh" id="root" data-composition-id="main" data-start="0" data-duration="10" data-width="360" data-height="640" data-am-scenes="s1 s2 s3" data-am-gen-mode="per_scene" data-am-layers="music">
       <video data-hf-id="hf-ata5" id="v-1" class="am-video" src="assets/asset-a.mp4" data-media-start="0" data-start="0" data-duration="3" data-track-index="0" data-am-layer="video" data-am-scene="s1" data-am-asset="asset-a" data-has-audio="true" data-volume="0.3" data-fade-out="0.4" playsinline></video>
       <video data-hf-id="hf-omuv" id="v-2" class="am-video am-fade-in" src="assets/asset-b.mp4" data-media-start="0" data-start="4" data-duration="2" data-track-index="0" data-am-layer="video" data-am-scene="s2" data-am-asset="asset-b" muted playsinline></video>
       <video data-hf-id="hf-w8pz" id="v-3" class="am-video am-fade-in" src="assets/asset-c.mp4" data-media-start="0" data-start="7" data-duration="3" data-track-index="0" data-am-layer="video" data-am-scene="s3" data-am-asset="asset-c" data-has-audio="true" data-volume="0.3" data-fade-in="0.4" data-fade-out="0.4" playsinline></video>
       <audio data-hf-id="hf-dw08" id="a-music" src="assets/asset-m.wav" data-media-start="0" data-start="0" data-duration="10" data-track-index="3" data-am-layer="music" data-am-asset="asset-m" data-volume="0.3" data-fade-out="1"></audio>
       <div data-hf-id="hf-09by" id="t-1" class="clip am-title" data-start="1" data-duration="2" data-track-index="1" data-am-layer="titles"><span data-hf-id="hf-6kul">Кот нашёл клубок</span></div>
     </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      (function () {
+        var root = document.querySelector('[data-composition-id="main"]');
+        var tl = gsap.timeline({ paused: true });
+        tl.to({}, { duration: parseFloat(root.getAttribute("data-duration")) || 0 });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
   </body>
 </html>

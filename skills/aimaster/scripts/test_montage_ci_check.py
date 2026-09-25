@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Проверка движка для CI: без движка — понятный JSON, композиция без внешних ссылок."""
+"""Проверка движка для CI: без движка — понятный JSON, композиция без внешних ссылок,
+с локальным GSAP и таймлайном main, как у черновика (задача 10b)."""
 
 from __future__ import annotations
 
 import io
 import json
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -20,6 +22,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 import montage_ci_check  # noqa: E402
 import montage_testkit  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
+from studio.montage.draft_html import TIMELINE_SCRIPT  # noqa: E402
 from studio.montage.engine import Engine  # noqa: E402
 from studio.montage.engine_cli import EngineResult  # noqa: E402
 from studio.montage.probe import MediaInfo  # noqa: E402
@@ -45,10 +48,17 @@ class CiCheckTests(unittest.TestCase):
         self.assertEqual(montage_ci_check.external_urls(html),
                          ["https://fonts.googleapis.com/css2?family=Inter", "//cdn.example/y.png"])
 
-    def test_fixture_has_no_external_urls_and_no_gsap(self):
-        self.assertEqual(montage_ci_check.external_urls(montage_ci_check.COMPOSITION), [])
-        self.assertNotIn("gsap", montage_ci_check.COMPOSITION.lower())
-        self.assertIn("data-no-timeline", montage_ci_check.COMPOSITION)
+    def test_fixture_is_shaped_like_the_draft(self):
+        # Задача 10b: CI рендерит на трёх ОС (и без сети на Linux) то же, что
+        # несёт черновик: локальный GSAP из движка и таймлайн main, без
+        # data-no-timeline — и ни одной внешней ссылки.
+        composition = montage_ci_check.COMPOSITION
+        self.assertEqual(montage_ci_check.external_urls(composition), [])
+        self.assertNotIn("data-no-timeline", composition)
+        self.assertIn('<script src="assets/gsap.min.js"></script>', composition)
+        self.assertIn('<script src="assets/MotionPathPlugin.min.js"></script>', composition)
+        self.assertIn(TIMELINE_SCRIPT.split("\n")[3].strip(), composition)
+        self.assertLess(composition.index('id="root"'), composition.index('window.__timelines["main"]'))
 
     # Все формы ссылок (srcset, image-set, @import, …) — test_montage_external_urls.py:
     # round 4/5 вынес поиск в studio/montage/external_urls.py, общий с media_sync.
@@ -64,8 +74,9 @@ def _touch(path, *_args, **_kwargs) -> Path:
     return path
 
 
-_FAKE_ENGINE = Engine(node="node", script=Path("hyperframes.mjs"), prefix=Path("/fake-prefix"),
-                      version="9.9.9", browser=None)
+def _fake_engine(prefix: Path) -> Engine:
+    return Engine(node="node", script=Path("hyperframes.mjs"), prefix=prefix, version="9.9.9",
+                  browser=None)
 
 
 class CiCheckReportTests(unittest.TestCase):
@@ -73,16 +84,20 @@ class CiCheckReportTests(unittest.TestCase):
     (round 1/5, пункт 5 — раньше это проверял только настоящий движок в CI)."""
 
     def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.prefix = montage_testkit.fake_gsap_prefix(temp.name)
         clip_patch = mock.patch.object(montage_testkit, "make_clip", side_effect=_touch)
         tone_patch = mock.patch.object(montage_testkit, "make_tone", side_effect=_touch)
         engine_patch = mock.patch.object(montage_ci_check, "require_engine",
-                                         return_value=_FAKE_ENGINE)
+                                         side_effect=lambda: _fake_engine(self.prefix))
         for patcher in (clip_patch, tone_patch, engine_patch):
             patcher.start()
             self.addCleanup(patcher.stop)
 
     def _check(self, *, lint, probe, render_code=0, render_stdout="", render_stderr=""):
         def fake_render(engine, args, *, cwd, timeout):
+            self.rendered_assets = sorted(path.name for path in (Path(cwd) / "assets").iterdir())
             args = list(args)
             output = Path(args[args.index("--output") + 1])
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +119,18 @@ class CiCheckReportTests(unittest.TestCase):
         report = self._check(lint={"findings": []}, probe=self._clean_probe())
         self.assertIs(report["ok"], True)
         self.assertEqual(report["problems"], [])
+        # GSAP движка лежит в assets композиции к моменту рендера.
+        self.assertEqual(self.rendered_assets, ["MotionPathPlugin.min.js", "clip-1.mp4", "clip-2.mp4",
+                                                "gsap.min.js", "voice.wav"])
+
+    def test_engine_without_gsap_is_a_json_problem(self):
+        self.prefix = Path(self.prefix).parent / "без-gsap"
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            code = montage_ci_check.main(["--json"])
+        report = json.loads(buffer.getvalue())
+        self.assertEqual((code, report["ok"]), (1, False))
+        self.assertIn("GSAP", report["problems"][0])
 
     def test_network_marker_fails(self):
         report = self._check(lint={"findings": []}, probe=self._clean_probe(),

@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Черновик: эталонная разметка без титров, GSAP и внешних ссылок; свой шрифт; обновление устаревших клипов."""
+"""Черновик: эталонная разметка без титров и внешних ссылок, локальный GSAP и таймлайн main
+(звук в превью Studio, задача 10b); свой шрифт; обновление устаревших клипов."""
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _SCRIPTS = Path(__file__).resolve().parent
 _SKILL_ROOT = _SCRIPTS.parent
@@ -16,12 +19,14 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from montage_testkit import video_state  # noqa: E402
+from montage_testkit import fake_gsap_prefix, video_state  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
 from studio.montage.canvas import Canvas  # noqa: E402
-from studio.montage.composition_refs import external_references, missing_sources  # noqa: E402
+from studio.montage.composition_refs import (check_composition, external_references,  # noqa: E402
+                                             missing_sources)
 from studio.montage.draft import create_draft, rebuild_draft  # noqa: E402
 from studio.montage.draft_html import title_fragment  # noqa: E402
+from studio.montage.engine import PREFIX_ENV, install_command  # noqa: E402
 from studio.montage.html_doc import element_attrs, element_span, set_attr  # noqa: E402
 from studio.montage.paths import montage_paths  # noqa: E402
 from studio.montage.probe import MediaInfo  # noqa: E402
@@ -32,9 +37,10 @@ SCENES = [("s1", "Сад", "Барсик идёт по саду", 2000, "asset-a
           ("s2", "Клубок", "Находит клубок", 2000, "asset-b")]
 # Fix round 2/5, item 3 + раунд 3/5, item 5: data-am-scenes/data-am-gen-mode/
 # data-am-layers — слепок структуры проекта на момент сборки, читает
-# stale_clips (stale.py).
+# stale_clips (stale.py). Задача 10b: без data-no-timeline — у черновика свой
+# таймлайн main (иначе Studio после правки играет перемоткой, без звука).
 ROOT = ('<div id="root" data-composition-id="main" data-start="0" data-duration="3.5" '
-        'data-width="108" data-height="192" data-no-timeline data-am-scenes="s1 s2" '
+        'data-width="108" data-height="192" data-am-scenes="s1 s2" '
         'data-am-gen-mode="per_scene" data-am-layers="voice">')
 V1 = ('<video id="v-1" class="am-video" src="assets/asset-a.mp4" data-media-start="0" '
       'data-start="0" data-duration="2" data-track-index="0" data-am-layer="video" '
@@ -63,6 +69,7 @@ class DraftTests(unittest.TestCase):
             suffix = ".wav" if asset == "asset-v" else ".mp4"
             (self.media / f"{asset}{suffix}").write_bytes(asset.encode())
         self.paths = montage_paths(base / "projects" / "p")
+        self.prefix = fake_gsap_prefix(base)
 
     def resolve(self, asset):
         return next(self.media.glob(f"{asset}.*"))
@@ -71,7 +78,8 @@ class DraftTests(unittest.TestCase):
         return self.infos[Path(path).stem]
 
     def draft(self, state):
-        return create_draft(self.paths, state, self.resolve, probe=self.probe)
+        return create_draft(self.paths, state, self.resolve, probe=self.probe,
+                            engine_prefix=self.prefix)
 
     def test_draft_is_the_reference_composition(self):
         result = self.draft(video_state(SCENES, audio={"voice": "asset-v"}))
@@ -80,8 +88,21 @@ class DraftTests(unittest.TestCase):
         for line in (ROOT, V1, V2, VOICE):
             self.assertIn(line, text)
         self.assertNotIn('data-am-layer="titles"', text)
-        self.assertNotIn("gsap", text.lower())
-        self.assertNotIn("<script", text)
+        self.assertNotIn("data-no-timeline", text)
+        # Задача 10b: локальный GSAP из движка и таймлайн main на паузе длиной
+        # в data-duration корня, зарегистрированный после корня.
+        head = text[:text.index("</head>")]
+        self.assertIn('<script src="assets/gsap.min.js"></script>', head)
+        self.assertIn('<script src="assets/MotionPathPlugin.min.js"></script>', head)
+        self.assertLess(head.index("gsap.min.js"), head.index("MotionPathPlugin.min.js"))
+        body = text[text.index("<body>"):]
+        self.assertLess(body.index('id="root"'), body.index('window.__timelines["main"] = tl;'))
+        self.assertIn("gsap.timeline({ paused: true })", body)
+        self.assertIn('root.getAttribute("data-duration")', body)
+        for name in ("gsap", "MotionPathPlugin"):
+            self.assertEqual((self.paths.assets / f"{name}.min.js").read_text(encoding="utf-8"),
+                             f"/* {name} */\n")
+        self.assertEqual(check_composition(text, self.paths.current), [])
         self.assertIn('font-family: "AM Inter", sans-serif', text)
         self.assertNotIn("font-family: sans-serif", text)
         self.assertIn('src: url("assets/fonts/inter-cyrillic-400-normal.woff2") format("woff2")', text)
@@ -92,6 +113,32 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(missing_sources(text, self.paths.current), [])
         config = json.loads((self.paths.current / "hyperframes.json").read_text(encoding="utf-8"))
         self.assertEqual(config, {"media": {"autoProxy": True}})
+
+    def test_draft_without_gsap_names_the_install_command_and_writes_nothing(self):
+        # Задача 10b: черновик без GSAP закреплённой версии не собирается —
+        # отказ называет ту же команду установки, что и require_engine.
+        with self.assertRaises(MontageError) as caught:
+            create_draft(self.paths, video_state(SCENES), self.resolve, probe=self.probe,
+                         engine_prefix=self.paths.root / "нет-движка")
+        self.assertIn("GSAP", str(caught.exception))
+        self.assertIn(install_command(), str(caught.exception))
+        self.assertFalse(self.paths.current.exists())
+
+    def test_rebuild_without_gsap_keeps_the_draft_and_makes_no_backup(self):
+        self.draft(video_state(SCENES))
+        original = self.paths.index.read_text(encoding="utf-8")
+        with self.assertRaises(MontageError):
+            rebuild_draft(self.paths, video_state(SCENES), self.resolve, probe=self.probe,
+                          engine_prefix=self.paths.root / "нет-движка")
+        self.assertEqual(self.paths.index.read_text(encoding="utf-8"), original)
+        self.assertFalse(self.paths.undo.exists())
+
+    def test_draft_takes_gsap_from_the_engine_folder_by_default(self):
+        # Без engine_prefix — папка движка, как у engine.locate
+        # (AIMASTER_HYPERFRAMES_DIR подменяет её, как в CI и смоуке).
+        with mock.patch.dict(os.environ, {PREFIX_ENV: str(self.prefix)}):
+            create_draft(self.paths, video_state(SCENES), self.resolve, probe=self.probe)
+        self.assertTrue((self.paths.assets / "gsap.min.js").is_file())
 
     def test_title_fragment_uses_the_title_style(self):
         self.assertEqual(title_fragment("t-1", "Кот & «мяч»", 0.2, 1.6),
@@ -120,7 +167,8 @@ class DraftTests(unittest.TestCase):
         self.draft(video_state(SCENES))
         original = self.paths.index.read_text(encoding="utf-8")
         self.paths.index.write_text(original + "<!-- правка в столе -->", encoding="utf-8")
-        result, backup = rebuild_draft(self.paths, video_state(SCENES), self.resolve, probe=self.probe)
+        result, backup = rebuild_draft(self.paths, video_state(SCENES), self.resolve, probe=self.probe,
+                                       engine_prefix=self.prefix)
         self.assertEqual(result.clips, 2)
         self.assertEqual(self.paths.index.read_text(encoding="utf-8"), original)
         self.assertEqual(backup.parent, self.paths.undo)

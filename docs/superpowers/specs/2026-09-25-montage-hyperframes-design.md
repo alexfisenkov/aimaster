@@ -75,6 +75,31 @@ macOS, 2026-09-25 (итоги в разделе «Факты пробы»). Пл
    в нём как «прежний формат».
 8. **Переходы — через CSS**, а не `data-fade-in/out` (в HyperFrames это
    громкость, не картинка): формулировка в «Компонентах» поправлена.
+9. **Черновик несёт локальный GSAP и таймлайн — ради звука на столе
+   (2026-09-26, задача 10b).** Композиция без таймлайна (корень с
+   `data-no-timeline`) в Studio 0.8.75 после правки на столе получает плеер
+   длиной 0, и превью переходит на воспроизведение перемоткой — в консоли
+   «Selected adapter duration (0s) does not cover the document duration
+   (10s); falling back to seek-driven playback, which never starts media
+   elements or WebAudio. Audio will not play in preview», при загрузке —
+   «Root timeline not bound». Поэтому черновик несёт GSAP 3.14.2 из движка
+   (`assets/gsap.min.js`) и таймлайн `window.__timelines["main"]` на паузе
+   длиной `data-duration` корня (длина читается при загрузке — правка длины
+   ролика не оставит таймлайн короче); `data-no-timeline` снят. Анимаций в
+   таймлайне нет: переходы остаются CSS `@keyframes`, рантайм перематывает
+   их и при таймлайне. Вместе с GSAP — локальный `MotionPathPlugin.min.js`:
+   иначе Studio, увидев GSAP, при каждой загрузке превью тянет этот плагин с
+   jsDelivr. Без GSAP закреплённой версии черновик не собирается — отказ с
+   командой установки движка. Внешние скрипты по-прежнему запрещены.
+   Проба (HyperFrames 0.8.75, macOS, headless Chrome, 2026-09-26): правка
+   мышью и Play — предупреждение о перемотке без звука по 2 раза в 4 из 4
+   прогонов прежнего черновика и ни разу в 4 из 4 нового; у только что
+   загруженного превью нового черновика длина плеера сразу 10 с, у прежнего —
+   0; прозрачность клипа на переходе в превью одинакова (0 → 0,25 → 0,5 →
+   0,75 → 1 при перемотке на паузе); рендер прежнего и нового черновика без
+   сети (прокси Node на закрытый порт) совпал покадрово и по звуку (framemd5
+   и md5 звука), следов сети в логе нет; `lint` — 0 находок; Studio
+   сохраняет `<script>` без изменений, `data-am-*` — тоже.
 
 ## Факты пробы (HyperFrames 0.8.75, macOS)
 
@@ -151,7 +176,7 @@ montage/
 │   ├── index.html           композиция HyperFrames (источник правды о монтаже)
 │   ├── hyperframes.json     конфиг проекта HyperFrames
 │   ├── assets/              клипы, звук, картинки; fonts/ — шрифт навыка;
-│   │                         gsap.min.js — только если композиции нужен GSAP
+│   │                         gsap.min.js и MotionPathPlugin.min.js — GSAP из движка
 │   └── (служебное HyperFrames: .hyperframes/, .waveform-cache/, renders/)
 └── versions/
     ├── v001/index.html      снимок композиции этой версии
@@ -163,7 +188,8 @@ montage/
 - `assets/` заполняется жёсткими ссылками на файлы из `<workspace>/media/`;
   если жёсткая ссылка невозможна (другой диск, ФС без ссылок) — копией.
   Симлинки не используются (Windows). `assets/fonts/` — копия шрифта навыка,
-  `assets/gsap.min.js` — копия из движка по команде `montage gsap`.
+  `assets/gsap.min.js` и `MotionPathPlugin.min.js` — копия из движка, её
+  кладёт черновик (уточнение 9); другие плагины — `montage gsap`.
 - Вне проекта: движок — `<user_data_dir>/tools/hyperframes/` (свой HOME
   `home/`), кеш скиллов — `<user_data_dir>/tools/hyperframes-skills/<версия>/`;
   копии скиллов — `<workspace>/.claude/skills/<имя>/` и
@@ -191,7 +217,7 @@ montage/
 | `engine.py` | Находит установленный HyperFrames закреплённой версии, запускает его CLI без shell, по полному пути (Windows: `node.exe` + скрипт пакета, не `npx.cmd`), с таймаутами и переменными `HYPERFRAMES_NO_UPDATE_CHECK=1`, `HYPERFRAMES_NO_AUTO_INSTALL=1`, `HYPERFRAMES_NO_TELEMETRY=1`, `HYPERFRAMES_SKIP_SKILLS=1`; `--frames-cache-dir` в служебную папку. Разбирает JSON-вывод. |
 | `engine.json` | Закреплённая версия: пакет, версия движка, версия GSAP, выпуск скиллов (тег, коммит, хэши ядра). Меняется только выпуском навыка после CI. |
 | `canvas.py` | Размер кадра: по ширине/высоте первого выбранного видеоклипа из `AssetIndex`; если неизвестно — 1080×1920. |
-| `draft.py` | Чистая функция «проект → композиция»: клипы по `order` сцен с `start_ms/end_ms`, выбранные результаты (`domain_positions.current_member`), аудиослои `voice/music/fx/atmos` с громкостью по умолчанию, переходы — CSS-проявление следующего клипа, `data-fade-in/out` — только мягкие края звука. Без титров, без GSAP, без внешних URL; шрифт — «AM Inter» навыка. |
+| `draft.py` | Чистая функция «проект → композиция»: клипы по `order` сцен с `start_ms/end_ms`, выбранные результаты (`domain_positions.current_member`), аудиослои `voice/music/fx/atmos` с громкостью по умолчанию, переходы — CSS-проявление следующего клипа, `data-fade-in/out` — только мягкие края звука. Без титров и внешних URL; локальный GSAP и таймлайн `main` на паузе — ради звука в превью Studio (уточнение 9); шрифт — «AM Inter» навыка. |
 | `typeface.py` | Шрифт навыка (Inter, OFL-1.1): манифест со sha256, `@font-face` на `assets/fonts/`, копия файлов в композицию. |
 | `vendor.py` | GSAP закреплённой версии из движка → `current/assets/` (`montage gsap`). |
 | `workspace_skills.py` | Скиллы HyperFrames из кеша → `<workspace>/.claude/skills` и `.agents/skills` с пометкой; чужое — `conflict`. |
@@ -285,8 +311,9 @@ README.
   (агент работает в ней); запрет на ссылки вне `current/`; `lint` перед каждой
   сборкой; версии не удалять. Титры — только `montage edit` (по просьбе; в
   автопилоте — по смыслу). Текст — только шрифтом «AM Inter». GSAP — только
-  `montage gsap` и локальный `<script>`, таймлайн регистрируется, у корня
-  снимается `data-no-timeline`; CDN — никогда.
+  локальный: черновик уже несёт его и таймлайн `main` — анимации добавляются
+  в этот таймлайн, второй не регистрируется; плагины — `montage gsap`; CDN —
+  никогда.
 - `references/autopilot.md` — шаг `assembly` через `montage`; нет движка —
   выполнить `engine.install` и продолжить; остановка — только если установка
   не удалась.
