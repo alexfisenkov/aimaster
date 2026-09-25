@@ -54,6 +54,11 @@ class _TempInstall:
         patcher = mock.patch.object(install, "check_deps", return_value=[])
         patcher.start()
         self.addCleanup(patcher.stop)
+        # раздел монтажа проверяется в test_install_montage.py; здесь — заглушка
+        montage = mock.patch.object(install, "_montage_report",
+                                    return_value={"ok": True, "node": {"status": "found", "message": ""}})
+        self.montage = montage.start()
+        self.addCleanup(montage.stop)
         self.symlinks = _can_symlink(self.base)
 
     def run_install(self, *extra):
@@ -93,6 +98,17 @@ class InstallTests(_TempInstall, unittest.TestCase):
         for agent in ("claude", "codex"):
             self.assertTrue(os.path.islink(self.target(agent)))
             self.assertEqual(install._norm(self.target(agent)), install._norm(self.skill))
+
+    def test_montage_section_is_reported_and_rendered(self):
+        code, report = self.run_install("--install-deps")
+        self.assertEqual(code, 0, report)
+        self.assertEqual(report["montage"]["ok"], True)
+        kind, install_deps, update, home = self.montage.call_args.args
+        self.assertEqual((kind, install_deps, update, home), (report["platform"], True, False, self.home))
+        text = install.render_text({**report, "montage": {
+            "ok": False, "node": {"status": "missing", "message": "Node.js не найден"}}})
+        self.assertIn("Монтаж (HyperFrames): не готов", text)
+        self.assertIn("Node.js не найден", text)
 
     def test_repeat_is_idempotent(self):
         self.need_symlinks()
@@ -526,11 +542,12 @@ class DepsTests(unittest.TestCase):
             report = install.check_deps("windows", install=False)
         run.assert_not_called()
         names = [d["name"] for d in report]
-        self.assertEqual(names, ["ffmpeg", "ffprobe", "cloudflared", "git", "node"])
+        # Node.js теперь зависимость монтажа: его проверяет install_montage.py
+        self.assertEqual(names, ["ffmpeg", "ffprobe", "cloudflared", "git"])
         self.assertTrue(all(not d["found"] and d["installed"] is None for d in report))
         self.assertEqual(report[0]["install_cmd"], "winget install -e --id Gyan.FFmpeg")
 
-    def test_install_deps_runs_winget_once_per_package_and_never_node(self):
+    def test_install_deps_runs_winget_once_per_package(self):
         with mock.patch.object(install, "_which", return_value=None), \
                 mock.patch.object(install, "_find_program", return_value="C:/winget.exe"), \
                 mock.patch.object(install, "_run", return_value=(0, "", "")) as run:
@@ -542,8 +559,7 @@ class DepsTests(unittest.TestCase):
             self.assertEqual(argv[0], "C:/winget.exe")
             self.assertIn("--disable-interactivity", argv)
             self.assertEqual(call.kwargs["timeout"], install.INSTALL_TIMEOUT)
-        node = report[-1]
-        self.assertIsNone(node["installed"])
+        self.assertNotIn("node", [d["name"] for d in report])
         self.assertIn("новый терминал", report[0]["message"])
 
     def test_linux_never_installs(self):

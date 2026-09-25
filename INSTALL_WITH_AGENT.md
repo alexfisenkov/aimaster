@@ -17,11 +17,17 @@ Python из вывода установщика — поле `python_cmd` (`pyth
 
 Разрешено проверить и при отсутствии поставить Git и Python 3.11+ через
 официальный менеджер пакетов ОС (winget, Homebrew, apt), а также запустить
-`install.py --install-deps`: он ставит бесплатные ffmpeg, cloudflared и Git.
-На Windows установщик передаёт winget флаги `--accept-package-agreements
---accept-source-agreements`, то есть соглашается с условиями этих пакетов;
-если пользователь против, запустите без `--install-deps` — установщик только
-напечатает команды. Node, npm, pip и сторонние Python-пакеты не нужны.
+`install.py --install-deps`: он ставит бесплатные ffmpeg, cloudflared и Git,
+Node.js 22+ (winget `OpenJS.NodeJS.LTS`, Homebrew `node`; на Linux только
+печатает команду) и монтажный движок HyperFrames закреплённой версии: npm-пакеты
+`hyperframes` и `gsap` в папку данных пользователя (не глобально), браузер для
+сборки видео (~100 МБ) и скиллы HyperFrames той же версии — в кеш рядом с
+движком; в рабочую папку их копирует `workspace init`, в `~/.claude/skills` и
+`~/.agents/skills` они не ставятся. На Windows установщик передаёт winget флаги
+`--accept-package-agreements --accept-source-agreements`, то есть соглашается с
+условиями этих пакетов; если пользователь против, запустите без
+`--install-deps` — установщик только напечатает команды. pip и сторонние
+Python-пакеты не нужны.
 
 Не отключайте защиты, не угадывайте пароль sudo и не печатайте токены, пароли,
 cookies или `.env`. Если нужен пароль администратора, перезагрузка или

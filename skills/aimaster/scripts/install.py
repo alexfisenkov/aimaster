@@ -10,8 +10,9 @@
      Claude Code — ~/.claude/skills/aimaster, Codex и другие — ~/.agents/skills/aimaster.
      macOS/Linux — символическая ссылка; Windows — directory junction
      (прав администратора не нужно), затем symlink, в крайнем случае копия;
-  3. проверяет необязательные программы (ffmpeg, cloudflared, git, node) и
-     ставит их только с флагом --install-deps;
+  3. проверяет необязательные программы (ffmpeg, cloudflared, git) и монтаж
+     (Node.js 22+, движок HyperFrames, браузер для сборки, скиллы HyperFrames —
+     scripts/install_montage.py) и ставит их только с флагом --install-deps;
   4. делает самопроверку во временной папке и удаляет её;
   5. печатает python_cmd — как запускать Python на этой машине.
 
@@ -60,9 +61,6 @@ DEPS = (
     ("git", "обновление навыка", "git", {
         "windows": "winget install -e --id Git.Git",
         "macos": "brew install git", "linux": "sudo apt install git"}),
-    ("node", "только разработчикам: тесты интерфейса", None, {
-        "windows": "winget install -e --id OpenJS.NodeJS.LTS",
-        "macos": "brew install node", "linux": "sudo apt install nodejs"}),
 )
 WINGET_FLAGS = ["--accept-package-agreements", "--accept-source-agreements",
                 "--disable-interactivity"]
@@ -98,13 +96,13 @@ def ensure_utf8_output():
                 pass
 
 
-def _run(argv, cwd=None, timeout=None):
+def _run(argv, cwd=None, timeout=None, env=None):
     """Запуск без оболочки; вывод как байты, декодируем сами (UTF-8 с заменой).
 
     Код TIMEOUT_CODE — программа не уложилась в timeout и остановлена."""
     try:
         proc = subprocess.run(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              stdin=subprocess.DEVNULL, timeout=timeout)
+                              stdin=subprocess.DEVNULL, timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         return TIMEOUT_CODE, "", "не завершилась за %s с" % timeout
     except (OSError, subprocess.SubprocessError) as error:
@@ -607,6 +605,9 @@ def render_text(report):
         lines.append(line)
         if dep["message"]:
             lines.append("      " + dep["message"])
+    if report.get("montage") is not None:
+        import install_montage
+        lines.extend(install_montage.render_montage_lines(report["montage"]))
     if report["self_check"] is not None:
         bad = [c for c in report["self_check"] if not c["ok"]]
         lines.append("Самопроверка: %s" % ("всё в порядке" if not bad else "ОШИБКИ"))
@@ -646,6 +647,14 @@ def default_repo():
     return skill.parents[1]
 
 
+def _montage_report(kind, install_deps, update, home):
+    """Раздел montage отчёта. Модуль импортируется здесь, а не в начале файла:
+    install_montage.py написан для Python 3.11+, а проверка версии — в main."""
+    import install_montage
+    return install_montage.montage_report(kind, install_missing=install_deps, update=update,
+                                          install_node=install_deps, home=home)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="Установить навык aimaster для агентов.")
     parser.add_argument("--repo", help="папка клона aimaster (по умолчанию — та, где лежит этот файл)")
@@ -656,7 +665,8 @@ def build_parser():
     parser.add_argument("--force", action="store_true",
                         help="заменить свою старую ссылку или копию aimaster (чужое не трогается)")
     parser.add_argument("--install-deps", action="store_true",
-                        help="поставить недостающие ffmpeg, cloudflared, git (winget/brew)")
+                        help="поставить недостающие ffmpeg, cloudflared, git (winget/brew), "
+                             "Node.js 22+ и монтажный движок HyperFrames")
     parser.add_argument("--skip-self-check", action="store_true", help="не запускать самопроверку")
     parser.add_argument("--json", action="store_true", help="вывод JSON для агента")
     parser.add_argument("--print-python-cmd", action="store_true",
@@ -698,6 +708,7 @@ def main(argv=None):
                        report["version"], args.force, args.update)
         for agent, label, parts in AGENT_DIRS if args.agent in ("all", agent)]
     report["deps"] = check_deps(kind, args.install_deps)
+    report["montage"] = _montage_report(kind, args.install_deps, args.update, home)
     report["self_check"] = None if args.skip_self_check else self_check(source)
     report["python_cmd"] = python_cmd()
     failed = [t for t in report["targets"] if t["status"] in ("conflict", "failed")]
@@ -712,6 +723,9 @@ def main(argv=None):
     if any(t["method"] == "copy" for t in report["targets"]):
         report["next_steps"].append("Навык стоит копией: после обновления клона запускайте "
                                     "install.py --update")
+    if not report["montage"]["ok"]:
+        report["next_steps"].append("Монтаж не готов — повторите: install.py --install-deps "
+                                    "(подробности в разделе «Монтаж» выше)")
     print(json.dumps(report, ensure_ascii=False, indent=2) if args.json else render_text(report))
     return 0 if report["ok"] else 1
 
