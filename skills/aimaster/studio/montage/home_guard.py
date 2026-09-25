@@ -24,7 +24,11 @@ def same_dir(a, b) -> bool:
     сам её раскрывает. Нужен хотя бы один существующий путь; если оба ещё не
     созданы (например, целевая ~/.claude/skills), падаем на сравнение
     полностью резолвнутых путей — оно тоже раскрывает существующие
-    промежуточные симлинки, просто не умеет регистронезависимость."""
+    промежуточные симлинки (регистронезависимость тут уже не гарантирована —
+    отдельно ловим на уровне родительских папок, см. would_write_into_home).
+    Цикл символических ссылок — RuntimeError на Python 3.11/3.12 у
+    Path.resolve(), OSError (ELOOP) у os.path.samefile и на 3.13+ — не
+    должен ронять проверку, только сказать «не совпало»."""
 
     try:
         return os.path.samefile(a, b)
@@ -32,14 +36,17 @@ def same_dir(a, b) -> bool:
         pass
     try:
         return Path(a).resolve() == Path(b).resolve()
-    except OSError:
+    except (OSError, RuntimeError):
         return False
 
 
 def would_write_into_home(workspace) -> bool:
-    """Рабочая папка — сама домашняя, либо <ws>/.claude/skills или
-    <ws>/.agents/skills ведёт (в т.ч. через символическую ссылку где-то по
-    пути) в настоящую глобальную папку агента."""
+    """Рабочая папка — сама домашняя, либо <ws>/.claude или <ws>/.agents
+    (сам корень агента, ДО подпапки skills — она может ещё не существовать
+    ни с той, ни с другой стороны, тогда самого симлинка не видно), либо
+    <ws>/.claude/skills / <ws>/.agents/skills ведут (в т.ч. через
+    символическую ссылку где-то по пути) в настоящую глобальную папку
+    агента."""
 
     try:
         home = Path.home()
@@ -48,4 +55,10 @@ def would_write_into_home(workspace) -> bool:
     workspace = Path(workspace).expanduser()
     if same_dir(workspace, home):
         return True
-    return any(same_dir(workspace.joinpath(*parts), home.joinpath(*parts)) for parts in AGENT_DIRS)
+    for parts in AGENT_DIRS:
+        root = parts[:-1]  # (".claude",) или (".agents",) — сам корень агента
+        if same_dir(workspace.joinpath(*root), home.joinpath(*root)):
+            return True
+        if same_dir(workspace.joinpath(*parts), home.joinpath(*parts)):
+            return True
+    return False

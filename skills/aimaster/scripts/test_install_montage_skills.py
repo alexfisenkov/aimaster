@@ -255,6 +255,21 @@ class DownloadTests(_Temp):
         fetch.download_skills(PIN, dest, tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
         self.assertTrue(lookalike.exists())
 
+    @unittest.skipIf(os.name == "nt", "права доступа POSIX — на Windows это не тестируется")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root игнорирует права доступа")
+    def test_unreadable_cache_root_does_not_fail_a_good_download(self):
+        """Разбор 3/5, находка 2: PermissionError на iterdir() при уборке не
+        должен провалить хорошую закачку — уборка мусора необязательна."""
+
+        dest = self.base / "hyperframes-skills" / "v9.9.9"
+        dest.parent.mkdir(parents=True)
+        dest.parent.chmod(0o300)  # запись+исполнение, без чтения — iterdir() падает
+        try:
+            fetch.download_skills(PIN, dest, tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
+        finally:
+            dest.parent.chmod(0o700)  # иначе временную папку теста будет не удалить
+        self.assertEqual(verify_skills(dest, PIN), [])
+
 
 class ReportTests(_Temp):
     def setUp(self):

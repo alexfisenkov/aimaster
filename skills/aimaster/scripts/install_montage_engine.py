@@ -35,6 +35,18 @@ def _pinned(prefix: Path, pin: dict) -> bool:
         and engine.package_version(prefix, "gsap") == pin["gsap_version"]
 
 
+def _gsap_message(prefix: Path, pin: dict) -> str:
+    """Различает «GSAP нет вовсе» и «GSAP не той версии» — вызывать только
+    когда HyperFrames уже на закреплённой версии, а _pinned всё равно False
+    (иначе расхождение может быть в HyperFrames, а не в GSAP)."""
+
+    gsap_have = engine.package_version(prefix, "gsap")
+    if gsap_have is None:
+        return "нет GSAP для анимаций: запустите install.py --install-deps"
+    return (f"стоит GSAP {gsap_have}, нужна {pin['gsap_version']}: "
+            f"запустите install.py --install-deps")
+
+
 NPM_MISSING_HINT = {
     "linux": ("рядом с Node.js нет npm — на Debian/Ubuntu он ставится отдельным пакетом: "
              "sudo apt install npm (или возьмите Node.js вместе с npm с "
@@ -80,15 +92,17 @@ def engine_install(node: str, prefix: Path, pin: dict, *, kind: str, install_mis
                          path=str(prefix))
     elif not (install_missing or update):
         # have уже мог совпасть с pin["version"] — тогда расхождение только в
-        # GSAP, и писать «стоит 0.8.75, нужна 0.8.75» было бы бессмысленно.
+        # GSAP (нет вовсе или не той версии), и писать «стоит 0.8.75, нужна
+        # 0.8.75» было бы бессмысленно.
         if have != pin["version"]:
             message = f"стоит {have}, нужна {pin['version']}: запустите install.py --install-deps"
         else:
-            message = "нет GSAP для анимаций: запустите install.py --install-deps"
+            message = _gsap_message(prefix, pin)
         return item("found", message, version=have, path=str(prefix))
     npm = npm_cli_js(node)
     if npm is None:
-        return item("failed", NPM_MISSING_HINT.get(kind, NPM_MISSING_HINT["linux"]))
+        return item("failed", NPM_MISSING_HINT.get(kind, NPM_MISSING_HINT["linux"]),
+                    blocker="npm_missing")
     Path(prefix).mkdir(parents=True, exist_ok=True)
     argv = [node, str(npm), "install", "--prefix", str(prefix),
             f"{pin['package']}@{pin['version']}", f"gsap@{pin['gsap_version']}", "--no-audit",
@@ -149,8 +163,9 @@ def check_package(prefix: Path, pin: dict) -> dict:
         return item("found", f"стоит {have}, нужна {pin['version']}: запустите install.py --install-deps",
                      version=have, path=str(prefix))
     if engine.package_version(prefix, "gsap") != pin["gsap_version"]:
-        return item("missing", "нет GSAP для анимаций: поставить install.py --install-deps",
-                    version=have, path=str(prefix))
+        # различает «GSAP нет вовсе» и «GSAP не той версии» — статус missing
+        # у обоих (report["ok"] должен стать False), а текст — нет.
+        return item("missing", _gsap_message(prefix, pin), version=have, path=str(prefix))
     return item("found", version=have, path=str(prefix))
 
 

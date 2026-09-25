@@ -19,7 +19,7 @@ import install  # noqa: E402
 from studio.montage import engine  # noqa: E402
 
 NODE_INSTALL = {"windows": "winget install -e --id OpenJS.NodeJS.LTS",
-                "macos": "brew install node", "linux": "sudo apt install nodejs"}
+                "macos": "brew install node", "linux": "sudo apt install nodejs npm"}
 LINUX_NODE_HINT = ("в apt часто Node.js старее 22 — тогда поставьте 22+ по инструкции "
                    "https://nodejs.org/en/download")
 READY = ("found", "installed")

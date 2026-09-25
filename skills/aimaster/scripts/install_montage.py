@@ -60,7 +60,11 @@ def montage_report(kind: str, *, install_missing: bool, update: bool, install_no
                                                install_missing=install_missing, update=update)
     else:
         report["hyperframes"] = check_package(prefix, pin)
-    if report["hyperframes"]["status"] not in READY or engine.installed_version(prefix) != pin["version"]:
+    if engine.installed_version(prefix) != pin["version"]:
+        # именно версия HyperFrames, не report["hyperframes"]["status"] целиком:
+        # тот мог стать "missing" из-за одного лишь несовпавшего GSAP (см.
+        # check_package/engine_install) — тогда сам HyperFrames уже на месте,
+        # и «сначала нужен HyperFrames» было бы неверно.
         report["browser"] = item("missing", f"сначала нужен HyperFrames {pin['version']}")
     elif act:
         report["browser"] = browser_install(node, prefix, pin, install_missing=install_missing,

@@ -111,13 +111,20 @@ def _sweep_stale(parent: Path, prefix: str, *, min_age=TEMP_MIN_AGE_SECONDS) -> 
     """Убирает временные папки от прошлых оборванных закачек: точное имя
     вида, который создаёт tempfile.mkdtemp (не префиксный glob — иначе,
     скажем, чужая «.download-notes» тоже бы совпала), и только не моложе
-    часа — свежая может быть рабочей папкой параллельно идущей закачки."""
+    часа — свежая может быть рабочей папкой параллельно идущей закачки.
+
+    Уборка — забота, не обязанность: недоступная (0o300 и т.п.) родительская
+    папка не должна ронять хорошую закачку — просто ничего не убираем."""
 
     if not parent.is_dir():
         return
     pattern = re.compile(r"^" + re.escape(prefix) + r"[A-Za-z0-9_]+$")
+    try:
+        children = list(parent.iterdir())
+    except OSError:
+        return
     now = time.time()
-    for path in parent.iterdir():
+    for path in children:
         if not pattern.match(path.name) or path.is_symlink() or not path.is_dir():
             continue
         try:

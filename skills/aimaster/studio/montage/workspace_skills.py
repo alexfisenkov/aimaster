@@ -53,13 +53,20 @@ def _sweep_stale(parent: Path, name: str, *, min_age=TEMP_MIN_AGE_SECONDS) -> No
     вида, который создаёт tempfile.mkdtemp для этого скилла (не префиксный
     glob), и только не моложе часа — свежая может быть рабочей папкой
     параллельно идущей установки. Звать один раз в начале операции, до того
-    как _copy создаст СВОЮ рабочую папку — иначе можно смести и её."""
+    как _copy создаст СВОЮ рабочую папку — иначе можно смести и её.
+
+    Уборка — забота, не обязанность: недоступная (0o300 и т.п.) родительская
+    папка не должна ронять всю установку — просто ничего не убираем."""
 
     if not parent.is_dir():
         return
     pattern = re.compile(r"^" + re.escape(f"{TEMP_PREFIX}{name}-") + r"[A-Za-z0-9_]+$")
+    try:
+        children = list(parent.iterdir())
+    except OSError:
+        return
     now = time.time()
-    for path in parent.iterdir():
+    for path in children:
         if not pattern.match(path.name) or path.is_symlink() or not path.is_dir():
             continue
         try:

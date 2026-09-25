@@ -135,6 +135,21 @@ class WorkspaceSkillsTests(unittest.TestCase):
         self.sync()
         self.assertTrue(lookalike.exists())
 
+    @unittest.skipIf(os.name == "nt", "права доступа POSIX — на Windows это не тестируется")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root игнорирует права доступа")
+    def test_unreadable_agent_dir_does_not_crash_the_sweep(self):
+        """Разбор 3/5, находка 2: PermissionError на iterdir() при уборке не
+        должен ронять всю установку — уборка мусора необязательна."""
+
+        claude_skills = self.ws / ".claude" / "skills"
+        claude_skills.mkdir(parents=True)
+        claude_skills.chmod(0o300)  # запись+исполнение, без чтения — iterdir() падает
+        try:
+            report = self.sync()
+        finally:
+            claude_skills.chmod(0o700)  # иначе временную папку теста будет не удалить
+        self.assertIn(report["status"], ("installed", "found", "conflict", "failed"))
+
 
 class HomeGuardTests(unittest.TestCase):
     """Разбор 1/5, находка 4: рабочая папка не может быть домашней."""
@@ -203,6 +218,50 @@ class HomeGuardTests(unittest.TestCase):
                 mock.patch("os.path.samefile", side_effect=fake_samefile):
             report = workspace_skills.sync_workspace_skills(case_variant, pin=PIN)
         self.assertEqual(report["status"], "skipped_home")
+
+    def test_root_level_match_is_caught_before_skills_subfolder_exists(self):
+        """Разбор 3/5, находка 3: пока ~/.claude/skills не существует ни с
+        той, ни с другой стороны, старое сравнение (только на подпапке
+        skills, резолвнутой строкой) это пропускало — теперь сверяется и
+        сам корень агента (.claude), где симлинк/регистр уже виден."""
+
+        real_claude = self.fake_home / ".claude"
+        real_claude.mkdir(parents=True)  # ~/.claude есть, ~/.claude/skills — нет
+        other_ws = self.base / "другая рабочая папка"
+        other_ws.mkdir()
+        case_variant_claude = other_ws / ".claude"
+        case_variant_claude.mkdir()  # «другой регистр» эмулируем через samefile, не реальную ФС
+        real_samefile = os.path.samefile
+
+        def fake_samefile(a, b):
+            if {str(a), str(b)} == {str(case_variant_claude), str(real_claude)}:
+                return True
+            return real_samefile(a, b)
+
+        with mock.patch("pathlib.Path.home", return_value=self.fake_home), \
+                mock.patch("os.path.samefile", side_effect=fake_samefile):
+            report = workspace_skills.sync_workspace_skills(other_ws, pin=PIN)
+        self.assertEqual(report["status"], "skipped_home")
+
+    def test_symlink_loop_in_agent_root_does_not_crash(self):
+        """Разбор 3/5, находка 3: цикл символических ссылок — на Python
+        3.11/3.12 Path.resolve() бросает RuntimeError, не OSError — не
+        должен ронять проверку, только сказать «не совпало»."""
+
+        loopy_ws = self.base / "рабочая папка с циклом"
+        loopy_ws.mkdir()
+        loop_link = loopy_ws / ".claude"
+        try:
+            os.symlink(loop_link, loop_link, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("символические ссылки недоступны")
+        (self.fake_home / ".claude").mkdir(parents=True)  # чтобы samefile дошёл до обеих сторон
+        with mock.patch("pathlib.Path.home", return_value=self.fake_home):
+            # Главное — не упасть с RuntimeError/OSError прямо из проверки
+            # гварда; сам цикл симлинков ниже, при попытке скопировать в
+            # .claude/skills, честно даёт status="failed" — это не крах.
+            report = workspace_skills.sync_workspace_skills(loopy_ws, pin=PIN)
+        self.assertIn(report["status"], ("installed", "skipped_home", "failed"))
 
     def test_no_home_env_is_treated_as_not_home(self):
         """Path.home() может бросить RuntimeError (HOME не определить) —

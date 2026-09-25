@@ -92,7 +92,9 @@ class NodeCheckTests(unittest.TestCase):
         run.assert_not_called()
         self.assertEqual(item["status"], "missing")
         self.assertIn("nodejs.org", item["message"])
-        self.assertIn("sudo apt install nodejs", item["message"])
+        # разбор 3/5, находка 5: одной nodejs недостаточно — на Debian/Ubuntu
+        # npm часто отдельный пакет, ставим сразу оба.
+        self.assertIn("sudo apt install nodejs npm", item["message"])
         # то, что реально увидит пользователь в тексте — тот же message
         lines = install_montage.render_montage_lines({"ok": False, "node": item})
         self.assertIn("      " + item["message"], lines)
@@ -218,6 +220,18 @@ class EngineInstallTests(unittest.TestCase):
         self.assertEqual(item["status"], "found")
         self.assertIn("GSAP", item["message"])
         self.assertNotIn(f"стоит {PIN['version']}, нужна {PIN['version']}", item["message"])
+
+    def test_neither_flag_names_the_gsap_version_mismatch_not_missing(self):
+        """Разбор 3/5, находка 5: GSAP стоит, но не той версии — не «нет GSAP»."""
+
+        self.fake_npm(gsap="3.14.1")([], None, None, None)
+        self.calls.clear()
+        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, kind="macos",
+                                              install_missing=False, update=False, run=self.fake_npm())
+        self.assertEqual(item["status"], "found")
+        self.assertIn("3.14.1", item["message"])
+        self.assertIn(PIN["gsap_version"], item["message"])
+        self.assertNotIn("нет GSAP", item["message"])
 
     def test_install_deps_alone_reinstalls_present_wrong_version_to_pin(self):
         """Разбор 1/5, находка 3: --install-deps один тоже чинит версию —
@@ -402,6 +416,19 @@ class CheckPackageTests(unittest.TestCase):
         item = install_montage_engine.check_package(self.prefix, PIN)
         self.assertEqual(item["status"], "found")
 
+    def test_gsap_at_wrong_version_says_the_version_not_that_it_is_missing(self):
+        """Разбор 3/5, находка 5: GSAP стоит, но не той версии — сообщение
+        должно назвать расхождение версий, а не соврать «нет GSAP»."""
+
+        touch(self.prefix / "node_modules" / "gsap" / "dist" / "gsap.min.js")
+        (self.prefix / "node_modules" / "gsap" / "package.json").write_text(
+            json.dumps({"version": "3.14.1"}), encoding="utf-8")
+        item = install_montage_engine.check_package(self.prefix, PIN)
+        self.assertEqual(item["status"], "missing")
+        self.assertIn("3.14.1", item["message"])
+        self.assertIn(PIN["gsap_version"], item["message"])
+        self.assertNotIn("нет GSAP", item["message"])
+
 
 class ReportTests(unittest.TestCase):
     def setUp(self):
@@ -441,6 +468,25 @@ class ReportTests(unittest.TestCase):
                                                     install_node=True, home=self.base)
         self.assertEqual(report["hyperframes"]["status"], "missing")
         self.assertIn("Node.js", report["hyperframes"]["message"])
+
+    def test_gsap_only_mismatch_does_not_block_the_browser_with_a_hyperframes_message(self):
+        """Разбор 3/5, находка 5: HyperFrames уже на закреплённой версии,
+        расхождение только в GSAP — статус hyperframes при этом "missing"
+        (см. CheckPackageTests), но браузеру не нужно ждать HyperFrames,
+        он уже есть; строка про браузер не должна врать про HyperFrames."""
+
+        prefix = self.base / "hf"
+        package = prefix / "node_modules" / "hyperframes"
+        touch(package / "bin" / "hyperframes.mjs")
+        (package / "package.json").write_text(json.dumps({"version": PIN["version"]}), encoding="utf-8")
+        # GSAP не поставлен вовсе
+        with mock.patch.object(engine, "find_node", return_value="/usr/bin/node"), \
+                mock.patch.object(engine, "node_major", return_value=22):
+            report = install_montage.montage_report("macos", install_missing=False, update=False,
+                                                    install_node=False, home=self.base)
+        self.assertEqual(report["hyperframes"]["status"], "missing")
+        self.assertIn("GSAP", report["hyperframes"]["message"])
+        self.assertNotIn("сначала нужен HyperFrames", report["browser"]["message"])
 
     def test_update_alone_does_not_install_a_fresh_engine(self):
         """Разбор 1/5, находка 2, на уровне отчёта целиком."""
