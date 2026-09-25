@@ -86,10 +86,14 @@ def render_mp4(ctx, engine, runner, version_id: str) -> Path:
     pin = load_pin()
     output = render_output(ctx.media_root, ctx.project_id, version_id)
     _clear_orphan(output)
-    result = runner.run(engine, ["render", ".", "--output", str(output), "--quality",
-                                 pin["render_quality"], "--frames-cache-dir",
-                                 str(frames_cache(engine)), "--quiet"],
-                        cwd=ctx.paths.current, timeout=pin["timeouts"]["render"])
+    try:
+        result = runner.run(engine, ["render", ".", "--output", str(output), "--quality",
+                                     pin["render_quality"], "--frames-cache-dir",
+                                     str(frames_cache(engine)), "--quiet"],
+                            cwd=ctx.paths.current, timeout=pin["timeouts"]["render"])
+    except BaseException:  # Ctrl+C или сбой запуска — недописанный MP4 не оставляем
+        remove_output(output)
+        raise
     log = f"{result.stdout}\n{result.stderr}"
     log_name = _write_log(ctx.paths, version_id, log)
     if result.code != 0 or not output.is_file():
@@ -128,7 +132,11 @@ def checked_output(output: Path, model: Model, text: str, probe, *, recorded_can
                                needs_audio=needs_audio)
     if problems:
         raise MontageError("Собранный ролик не прошёл проверку: " + "; ".join(problems))
-    if output.stat().st_size > MONTAGE_MAX_BYTES:
+    try:
+        size = output.stat().st_size
+    except OSError as error:
+        raise MontageError(f"собранный ролик {output.name} пропал до проверки") from error
+    if size > MONTAGE_MAX_BYTES:
         raise MontageError(f"Ролик больше {MONTAGE_MAX_BYTES // 2 ** 30} ГБ — такой файл студия "
                            "не примет; сократите монтаж")
     return info.duration

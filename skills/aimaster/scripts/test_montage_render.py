@@ -46,6 +46,14 @@ class _StudioWritesDuringRender(FakeHyperframes):
         return result
 
 
+class _InterruptedRender(FakeHyperframes):
+    """Ctrl+C посреди рендера: часть MP4 уже на диске."""
+
+    def run(self, engine, args, *, cwd, timeout):
+        super().run(engine, args, cwd=cwd, timeout=timeout)
+        raise KeyboardInterrupt
+
+
 class RenderTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -210,6 +218,22 @@ class RenderTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
         self.assertEqual(self.state()["montage"]["versions"], [])
         self.assertEqual(element_attrs(read_index(self.paths().index))["v-2"]["data-start"], "2.1")
+
+    def test_interrupted_render_leaves_no_partial_file(self):
+        with self.assertRaises(KeyboardInterrupt):
+            self.render(_InterruptedRender(render_bytes=tiny_mp4(b"x")))
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.state()["montage"]["versions"], [])
+
+    def test_vanished_output_is_a_russian_refusal(self):
+        def probe(path):
+            Path(path).unlink()  # файл пропал между ffprobe и проверкой размера
+            return self.output_info
+        ctx = open_context(self.seed.workspace, "p")
+        with self.assertRaises(MontageError) as caught:
+            render_version(ctx, ctx.revision, engine=self.engine,
+                           runner=FakeHyperframes(render_bytes=tiny_mp4(b"x")), probe=probe)
+        self.assertIn("v001.mp4", str(caught.exception))
 
     def test_a_second_build_of_the_same_project_is_refused(self):
         with build_lock(self.paths()):
