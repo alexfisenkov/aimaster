@@ -89,6 +89,8 @@ jobs:
 
       - name: FFmpeg (macOS)
         if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
         run: brew install ffmpeg
 
       - name: FFmpeg (Windows)
@@ -97,6 +99,8 @@ jobs:
 
       - name: Install pinned HyperFrames, render browser and skills
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python skills/aimaster/scripts/install_montage.py --json > montage-install.json || true
           cat montage-install.json

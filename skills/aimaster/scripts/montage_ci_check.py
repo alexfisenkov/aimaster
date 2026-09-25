@@ -40,8 +40,9 @@ DURATION = 3.0
 # Любой след сети в логе рендера — ошибка: CDN-скрипт или шрифт с Google Fonts.
 NETWORK_MARKERS = ("Inlined CDN script", "Failed to download CDN script", "from Google Fonts",
                    "fonts.googleapis.com")
-_EXTERNAL = re.compile(r"""(?:src|href)\s*=\s*["']((?:[a-z][a-z0-9+.-]*:|//)[^"']*)"""
-                       r"""|url\(\s*["']?((?:[a-z][a-z0-9+.-]*:|//)[^"')]*)""", re.I)
+_EXTERNAL = re.compile(r"""(?:src|href|poster|srcset)\s*=\s*["']((?:[a-z][a-z0-9+.-]*:|//)[^"']*)"""
+                       r"""|url\(\s*["']?((?:[a-z][a-z0-9+.-]*:|//)[^"')]*)"""
+                       r"""|@import\s+["']((?:[a-z][a-z0-9+.-]*:|//)[^"']*)""", re.I)
 
 COMPOSITION = """<!doctype html>
 <html lang="ru">
@@ -69,7 +70,7 @@ COMPOSITION = """<!doctype html>
 
 
 def external_urls(html_text: str) -> list[str]:
-    found = [first or second for first, second in _EXTERNAL.findall(html_text)]
+    found = [group for match in _EXTERNAL.findall(html_text) for group in match if group]
     return [url for url in found if not url.lower().startswith("data:")]
 
 
@@ -86,13 +87,20 @@ def check(offline: bool) -> dict:
     report = {"ok": False, "offline": offline, "problems": []}
     engine = require_engine()
     report["engine"] = engine.version
-    with tempfile.TemporaryDirectory(prefix="aimaster-montage-") as temp:
+    with tempfile.TemporaryDirectory(prefix="aimaster-montage-", ignore_cleanup_errors=True) as temp:
         comp = Path(temp) / "проверка монтажа" / "ролик 1"
         _build(comp)
         report["external_urls"] = external_urls((comp / "index.html").read_text(encoding="utf-8"))
         lint = run_engine_json(engine, ["lint", ".", "--json"], cwd=comp, timeout=120, ok_codes=(0, 1))
         report["lint_errors"] = [f"{f.get('code')}: {f.get('message')}"
                                  for f in lint.get("findings", []) if f.get("severity") == "error"]
+        if lint.get("ok") is False:
+            # HyperFrames иногда падает ВНУТРИ самого lint (не находка, а отказ
+            # инструмента): {"ok": false, "error": "…", "findings": [], "errorCount": 0}.
+            # ok_codes=(0, 1) пропускает такой код молча — без этой строки
+            # report["lint_errors"] остался бы пуст, и problems не заметил бы отказ.
+            reason = lint.get("error") or f"errorCount={lint.get('errorCount')}"
+            report["lint_errors"].append(f"lint не смог проверить: {reason}")
         output = comp.parent / "итог ролика.mp4"
         started = time.monotonic()
         result = run_engine(engine, ["render", ".", "--output", str(output), "--quality", "draft",

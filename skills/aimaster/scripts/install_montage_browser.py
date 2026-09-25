@@ -28,6 +28,30 @@ from studio.montage import engine  # noqa: E402
 from studio.montage.engine_cli import run_engine  # noqa: E402
 
 
+def _failure_detail(ensured, located, path: str, *, inside: bool, is_file: bool) -> str:
+    """Раньше сообщение об отказе показывало только хвост УСПЕШНОГО вывода
+    `ensure` — выглядело как «всё скачалось», хотя отказал отдельный шаг
+    `browser path` (разбор round 1/5, находка CI Windows: `ensure` печатает
+    «Ready to render.», код 0, а браузер всё равно «failed»). Называем
+    конкретную причину, а не только последний экран `ensure`."""
+
+    reasons = []
+    if ensured.code != 0:
+        reasons.append(f"ensure вышел с кодом {ensured.code}")
+    if located.code != 0:
+        tail = (located.stderr or located.stdout).strip()[-300:]
+        reasons.append(f"path вышел с кодом {located.code}" + (f": {tail!r}" if tail else ""))
+    elif not path:
+        reasons.append(f"path ничего не вывел: {located.stdout!r}")
+    elif not inside:
+        reasons.append(f"путь вне папки движка: {path!r}")
+    elif not is_file:
+        reasons.append(f"файла нет на диске: {path!r}")
+    detail = "; ".join(reasons) or "после загрузки браузер для сборки не найден в папке движка"
+    tail = (ensured.stderr or ensured.stdout).strip()[-300:]
+    return f"{detail}\n{tail}" if tail else detail
+
+
 def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool, update: bool,
                     runner=None) -> dict:
     record = engine.read_record(prefix)
@@ -52,9 +76,9 @@ def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool
     lines = located.stdout.strip().splitlines()
     path = lines[-1].strip() if lines else ""
     inside = bool(path) and install._inside(path, str(Path(prefix) / "home"))
-    if ensured.code != 0 or located.code != 0 or not inside or not Path(path).is_file():
-        detail = (ensured.stderr or ensured.stdout).strip()[-400:]
-        return item("failed", detail or "после загрузки браузер для сборки не найден в папке движка")
+    is_file = bool(path) and Path(path).is_file()
+    if ensured.code != 0 or located.code != 0 or not inside or not is_file:
+        return item("failed", _failure_detail(ensured, located, path, inside=inside, is_file=is_file))
     record.update(browser=path, version=pin["version"], node=node,
                   updated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     engine.write_record(prefix, record)

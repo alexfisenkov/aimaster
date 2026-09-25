@@ -56,9 +56,23 @@ def git_blob_sha(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
+def _tree_headers() -> dict:
+    """api.github.com без токена — 60 запросов/час на IP, общий на всех, кто
+    ставит монтаж с этого адреса (в CI — на весь диапазон рантайм-раннеров).
+    С GITHUB_TOKEN (в CI это `${{ github.token }}`, эфемерный на джобу) лимит
+    поднимается на порядок; значение только в заголовке запроса, никогда не
+    в выводе или логе — round 1/5, пункт 3."""
+
+    headers = dict(HEADERS)
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def fetch_tree(pin: dict, *, opener=urllib.request.urlopen) -> list[dict]:
     request = urllib.request.Request(API_TREE.format(repo=pin["repo"], tree=pin["tree"]),
-                                     headers=HEADERS)
+                                     headers=_tree_headers())
     with opener(request, timeout=HTTP_TIMEOUT, context=ssl_context()) as response:
         payload = json.loads(response.read().decode("utf-8"))
     if payload.get("truncated"):

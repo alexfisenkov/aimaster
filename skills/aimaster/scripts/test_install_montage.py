@@ -358,12 +358,47 @@ class BrowserInstallTests(unittest.TestCase):
         self.assertEqual(kwargs["env"]["HOME"], str(self.prefix / "home"))
 
     def test_system_chrome_is_not_accepted(self):
+        """Разбор round 1/5, CI Windows: `browser path` может отдать системный
+        Chrome (например C:\\Program Files\\Google\\Chrome\\...), а не то, что
+        только что скачал `ensure` — сообщение должно называть причину, а не
+        только показывать успешный хвост `ensure`."""
+
         outside = touch(self.base / "Google Chrome")
         item = self.call("/usr/bin/node", self.prefix, PIN,
                          install_missing=True, update=False,
                          runner=self.runner(str(outside)))
         self.assertEqual(item["status"], "failed")
+        self.assertIn("путь вне папки движка", item["message"])
+        self.assertIn(str(outside), item["message"])
         self.assertNotIn("browser", engine.read_record(self.prefix))
+
+    def test_failure_names_a_nonzero_path_exit_code(self):
+        """`browser path` может завершиться с ненулевым кодом (например упал
+        `findBrowser()` во второй раз) — сообщение должно назвать именно это,
+        а не молча показать успешный хвост `ensure`."""
+
+        def runner(argv, **kwargs):
+            self.calls.append((argv, kwargs))
+            if argv[2:4] == ["browser", "path"]:
+                return subprocess.CompletedProcess(argv, 1, b"", b"boom")
+            touch(self.browser)
+            return subprocess.CompletedProcess(argv, 0, b"Ready to render.", b"")
+
+        item = self.call("/usr/bin/node", self.prefix, PIN,
+                         install_missing=True, update=False, runner=runner)
+        self.assertEqual(item["status"], "failed")
+        self.assertIn("path вышел с кодом 1", item["message"])
+        self.assertIn("boom", item["message"])
+
+    def test_failure_names_a_missing_file_on_disk(self):
+        """`browser path` печатает путь внутри папки движка, но файла там нет
+        (например браузер сорвался в антивирусный карантин на Windows)."""
+
+        item = self.call("/usr/bin/node", self.prefix, PIN,
+                         install_missing=True, update=False,
+                         runner=self.runner(str(self.browser.parent / "нет-такого-файла.exe")))
+        self.assertEqual(item["status"], "failed")
+        self.assertIn("файла нет на диске", item["message"])
 
     def test_recorded_browser_is_found_without_download(self):
         touch(self.browser)

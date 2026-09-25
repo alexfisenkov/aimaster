@@ -135,6 +135,37 @@ class TreeTests(unittest.TestCase):
             fetch.fetch_tree(PIN, opener=self.opener({"truncated": True, "tree": []}))
 
 
+class TreeTokenTests(unittest.TestCase):
+    """round 1/5, пункт 3: с GITHUB_TOKEN в окружении api.github.com получает
+    `Authorization: Bearer …` — иначе 60 запросов/час на IP общие на всех."""
+
+    def opener(self, captured):
+        class Response(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def _open(request, timeout=None, context=None):
+            captured.append(request)
+            return Response(json.dumps({"truncated": False, "tree": []}).encode())
+        return _open
+
+    def test_token_in_env_adds_bearer_header(self):
+        captured = []
+        with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "секрет-не-для-печати"}):
+            fetch.fetch_tree(PIN, opener=self.opener(captured))
+        self.assertEqual(captured[0].get_header("Authorization"), "Bearer секрет-не-для-печати")
+
+    def test_no_token_omits_the_header(self):
+        captured = []
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("GITHUB_TOKEN", None)
+            fetch.fetch_tree(PIN, opener=self.opener(captured))
+        self.assertIsNone(captured[0].get_header("Authorization"))
+
+
 class SslTests(unittest.TestCase):
     def test_empty_python_store_falls_back_to_the_system_bundle(self):
         loaded = []
