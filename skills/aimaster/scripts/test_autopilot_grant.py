@@ -25,6 +25,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
         sys.path.insert(0, _path)
 
 import creator_studio  # noqa: E402
+import montage_testkit  # noqa: E402
 from studio import authoring  # noqa: E402
 from studio.autopilot import AUTOPILOT_NOTICE, StoreAutopilotPolicy  # noqa: E402
 from studio.ledger import ActionLedger, ActionRequest  # noqa: E402
@@ -45,6 +46,7 @@ class AutopilotGrantTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.workspace = Path(temp.name) / "ws"
+        montage_testkit.isolate_hyperframes_dir(self, Path(temp.name))
         cli("workspace", "init", self.workspace)
         self.store = authoring.open_store(self.workspace)
 
@@ -156,6 +158,7 @@ class AutopilotNoticeTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.workspace = Path(temp.name) / "ws"
+        montage_testkit.isolate_hyperframes_dir(self, Path(temp.name))
         cli("workspace", "init", self.workspace)
 
     def rev(self, pid):

@@ -649,10 +649,33 @@ def default_repo():
 
 def _montage_report(kind, install_deps, update, home):
     """Раздел montage отчёта. Модуль импортируется здесь, а не в начале файла:
-    install_montage.py написан для Python 3.11+, а проверка версии — в main."""
+    install_montage.py написан для Python 3.11+, а проверка версии — в main.
+
+    Неожиданная ошибка внутри монтажа (сеть, повреждённый кеш, что угодно) не
+    должна ронять всю установку: подключение навыка и остальные разделы
+    отчёта обязаны напечататься. Ожидаемые сбои (таймаут npm, битый файл и
+    т.п.) уже приходят статусом из montage_report — сюда попадают только
+    непредвиденные исключения."""
     import install_montage
-    return install_montage.montage_report(kind, install_missing=install_deps, update=update,
-                                          install_node=install_deps, home=home)
+    try:
+        return install_montage.montage_report(kind, install_missing=install_deps, update=update,
+                                              install_node=install_deps, home=home)
+    except Exception as error:  # noqa: BLE001 — намеренно широкий предохранитель
+        return {"ok": False, "error": _short_error(error)}
+
+
+def _montage_next_step(montage):
+    """Что дописать в next_steps, если монтаж не готов — называет реальный
+    затор, а не слепо повторяет --install-deps там, где это не поможет
+    (например, на Linux без Node.js установщик его сам не ставит)."""
+    if montage.get("error"):
+        return "Монтаж не готов: %s" % montage["error"]
+    node = montage.get("node") or {}
+    if node.get("status") not in ("found", "installed"):
+        blocker = node.get("message") or "нужен Node.js 22+"
+        return "Монтаж не готов: %s" % blocker
+    return ("Монтаж не готов — повторите: install.py --install-deps "
+            "(подробности в разделе «Монтаж» выше)")
 
 
 def build_parser():
@@ -661,7 +684,9 @@ def build_parser():
     parser.add_argument("--agent", choices=("all", "claude", "codex"), default="all",
                         help="куда подключать навык (по умолчанию — всем)")
     parser.add_argument("--update", action="store_true",
-                        help="обновить клон через git (если это безопасно) и переписать копии")
+                        help="обновить клон через git (если это безопасно), переписать копии и "
+                             "перевести уже стоящий монтажный движок/GSAP/браузер/кеш скиллов на "
+                             "закреплённую версию; без --install-deps ничего не ставит заново")
     parser.add_argument("--force", action="store_true",
                         help="заменить свою старую ссылку или копию aimaster (чужое не трогается)")
     parser.add_argument("--install-deps", action="store_true",
@@ -723,9 +748,8 @@ def main(argv=None):
     if any(t["method"] == "copy" for t in report["targets"]):
         report["next_steps"].append("Навык стоит копией: после обновления клона запускайте "
                                     "install.py --update")
-    if not report["montage"]["ok"]:
-        report["next_steps"].append("Монтаж не готов — повторите: install.py --install-deps "
-                                    "(подробности в разделе «Монтаж» выше)")
+    if not report["montage"].get("ok"):
+        report["next_steps"].append(_montage_next_step(report["montage"]))
     print(json.dumps(report, ensure_ascii=False, indent=2) if args.json else render_text(report))
     return 0 if report["ok"] else 1
 

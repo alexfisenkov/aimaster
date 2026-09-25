@@ -27,6 +27,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 
 import creator_studio  # noqa: E402
 import detect_tools  # noqa: E402
+import montage_testkit  # noqa: E402
 from studio import authoring  # noqa: E402
 from studio.ledger import ActionLedger  # noqa: E402
 from studio.library import LibraryError  # noqa: E402
@@ -58,6 +59,7 @@ class Base(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         self.ws = self.root / "ws"
+        montage_testkit.isolate_hyperframes_dir(self, self.root)
         cli("workspace", "init", self.ws)
         self.store = authoring.open_store(self.ws)
 
@@ -217,6 +219,7 @@ class LegacyLayoutTests(unittest.TestCase):
             ws = Path(temp) / "ws"
             (ws / "old-project").mkdir(parents=True)
             (ws / "old-project" / "state.json").write_text("{}", encoding="utf-8")
+            montage_testkit.isolate_hyperframes_dir(self, Path(temp))
             result = cli("workspace", "init", ws)
             self.assertFalse((ws / "projects").exists())
             self.assertEqual(result["legacy_projects_in_root"], ["old-project"])

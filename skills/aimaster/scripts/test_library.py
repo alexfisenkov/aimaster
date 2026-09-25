@@ -26,6 +26,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
         sys.path.insert(0, _path)
 
 import creator_studio  # noqa: E402
+import montage_testkit  # noqa: E402
 from studio import authoring  # noqa: E402
 from studio.library import LibraryError, library_file, library_root, read_index  # noqa: E402
 
@@ -86,6 +87,7 @@ class Base(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         self.ws = self.root / "ws"
+        montage_testkit.isolate_hyperframes_dir(self, self.root)
         cli("workspace", "init", self.ws)
         self.store = authoring.open_store(self.ws)
 

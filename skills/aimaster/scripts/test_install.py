@@ -110,6 +110,29 @@ class InstallTests(_TempInstall, unittest.TestCase):
         self.assertIn("Монтаж (HyperFrames): не готов", text)
         self.assertIn("Node.js не найден", text)
 
+    def test_montage_next_steps_names_the_node_blocker(self):
+        """Разбор 1/5, находка 3: без Node.js next_steps называет реальный
+        затор, а не слепо повторяет --install-deps."""
+
+        self.montage.return_value = {"ok": False, "node": {"status": "missing",
+            "message": "Node.js не найден; поставить: sudo apt install nodejs. в apt часто Node.js "
+                       "старее 22 — тогда поставьте 22+ по инструкции https://nodejs.org/en/download"}}
+        code, report = self.run_install("--install-deps")
+        text = " ".join(report["next_steps"])
+        self.assertIn("nodejs.org", text)
+        self.assertNotIn("повторите: install.py --install-deps", text)
+
+    def test_montage_crash_does_not_block_the_rest_of_the_report(self):
+        """Разбор 1/5, находка 1: сбой внутри монтажа не должен ронять весь
+        установщик — остальной JSON обязан напечататься."""
+
+        self.montage.return_value = {"ok": False, "error": "бум"}
+        code, report = self.run_install("--install-deps")
+        self.assertIn("targets", report)
+        self.assertIn("deps", report)
+        self.assertEqual(report["montage"], {"ok": False, "error": "бум"})
+        self.assertIn("Монтаж не готов: бум", " ".join(report["next_steps"]))
+
     def test_repeat_is_idempotent(self):
         self.need_symlinks()
         with mock.patch.object(install, "_is_windows", return_value=False):
@@ -573,12 +596,55 @@ class DepsTests(unittest.TestCase):
 
 class SelfCheckTests(unittest.TestCase):
     def test_self_check_on_real_skill_passes(self):
-        checks = install.self_check(_SCRIPTS.parent)
+        # workspace init внутри self_check читает AIMASTER_HYPERFRAMES_DIR по
+        # настоящему os.environ (субпроцесс наследует окружение процесса) —
+        # без подмены он читал бы настоящий кеш HyperFrames пользователя
+        # (разбор 1/5, находка 9).
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        with mock.patch.dict(os.environ, {"AIMASTER_HYPERFRAMES_DIR": str(Path(temp.name) / "hf")}):
+            checks = install.self_check(_SCRIPTS.parent)
         self.assertEqual([c["name"] for c in checks],
                          ["import studio", "creator_studio.py --help",
                           "detect_tools.py --json", "workspace init"])
         failed = [c for c in checks if not c["ok"]]
         self.assertEqual(failed, [], failed)
+
+
+class MontageReportGuardTests(unittest.TestCase):
+    """Разбор 1/5, находка 1: непредвиденное исключение внутри
+    install_montage.montage_report не должно ронять install.py целиком."""
+
+    def test_unexpected_exception_becomes_an_error_status(self):
+        with mock.patch("install_montage.montage_report", side_effect=RuntimeError("бум")):
+            result = install._montage_report("linux", True, False, None)
+        self.assertEqual(result, {"ok": False, "error": "бум"})
+
+    def test_expected_result_passes_through_unchanged(self):
+        expected = {"ok": True, "node": {"status": "found", "message": ""}}
+        with mock.patch("install_montage.montage_report", return_value=expected):
+            result = install._montage_report("macos", False, False, None)
+        self.assertEqual(result, expected)
+
+
+class MontageNextStepTests(unittest.TestCase):
+    """Разбор 1/5, находка 3: next_steps называет реальный затор."""
+
+    def test_node_blocker_is_named_directly_not_install_deps(self):
+        text = install._montage_next_step({"ok": False, "node": {"status": "missing",
+            "message": "Node.js не найден; поставить: sudo apt install nodejs. в apt часто Node.js "
+                       "старее 22 — тогда поставьте 22+ по инструкции https://nodejs.org/en/download"}})
+        self.assertIn("nodejs.org", text)
+        self.assertNotIn("--install-deps", text)
+
+    def test_ready_node_suggests_install_deps_for_the_rest(self):
+        text = install._montage_next_step({"ok": False, "node": {"status": "found"},
+            "hyperframes": {"status": "failed", "message": "npm ERR"}})
+        self.assertIn("--install-deps", text)
+
+    def test_crash_guard_error_is_shown_verbatim(self):
+        text = install._montage_next_step({"ok": False, "error": "бум"})
+        self.assertIn("бум", text)
 
 
 if __name__ == "__main__":
