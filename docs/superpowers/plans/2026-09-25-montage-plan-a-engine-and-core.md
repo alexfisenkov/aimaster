@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Этапы 1 и 2 спецификации: поставить закреплённый HyperFrames 0.8.75 с браузером и скиллами одной командой установщика, проверить его на CI трёх ОС и дать агенту монтаж проекта через `creator_studio.py montage …` — черновик, смысловой diff, правки, сборка MP4 версиями, возврат к версии, монтажный стол.
+**Goal:** Этапы 1 и 2 спецификации: поставить закреплённый HyperFrames 0.8.75 с браузером, GSAP и скиллами одной командой установщика (скиллы — в кеш рядом с движком, в рабочую папку их кладёт `workspace init`), проверить его на CI трёх ОС и дать агенту монтаж проекта через `creator_studio.py montage …` — черновик, смысловой diff, правки, сборка MP4 версиями, возврат к версии, монтажный стол.
 
-**Architecture:** Новый пакет `skills/aimaster/studio/montage/` — по файлу на ответственность (60–150 строк). Движок живёт в `<user_data_dir>/tools/hyperframes` со своим HOME (`home/`), запускается без оболочки как `node <…>/hyperframes/bin/hyperframes.mjs`. Источник правды о монтаже — `montage/current/index.html` композиции; в `state.json` только компактный раздел `montage` (версии, текущая, размер кадра), который пишется той же транзакцией, что `assembly`. Всё, что запускает движок, принимает подменяемый `runner`; тесты работают без Node через `FakeHyperframes`, реальный движок проверяют CI и сквозной тест.
+**Architecture:** Новый пакет `skills/aimaster/studio/montage/` — по файлу на ответственность (60–150 строк). Движок живёт в `<user_data_dir>/tools/hyperframes` со своим HOME (`home/`), запускается без оболочки как `node <…>/hyperframes/bin/hyperframes.mjs`. Источник правды о монтаже — `montage/current/index.html` композиции; в `state.json` только компактный раздел `montage` (версии, текущая, размер кадра), который пишется той же транзакцией, что `assembly`. Черновик — без титров, со своим шрифтом Inter из навыка; сборка не ходит в сеть. Скиллы HyperFrames — кеш `<user_data_dir>/tools/hyperframes-skills/<тег>`, копия в `<workspace>/.claude/skills` и `<workspace>/.agents/skills`. Всё, что запускает движок, принимает подменяемый `runner`; тесты работают без Node через `FakeHyperframes`, реальный движок проверяют CI и сквозной тест.
 
-**Tech Stack:** Python 3.11+ (только стандартная библиотека), unittest, HyperFrames 0.8.75 (npm, Node.js ≥ 22), FFmpeg/ffprobe, GitHub Actions (ubuntu/macos/windows).
+**Tech Stack:** Python 3.11+ (только стандартная библиотека), unittest, HyperFrames 0.8.75 и GSAP 3.14.2 (npm, Node.js ≥ 22), шрифт Inter 5.3.0 из `@fontsource/inter` (OFL-1.1), FFmpeg/ffprobe, GitHub Actions (ubuntu/macos/windows).
 
 **Spec:** `docs/superpowers/specs/2026-09-25-montage-hyperframes-design.md`
 
@@ -14,18 +14,20 @@
 
 - Версия движка закреплена: `hyperframes@0.8.75`; меняется только выпуском навыка после зелёного CI (`studio/montage/engine.json`).
 - Node.js ≥ 22 (`engines.node` пакета `hyperframes`); FFmpeg и ffprobe обязательны для черновика и сборки.
-- Движок ставится `npm install --prefix <user_data_dir>/tools/hyperframes hyperframes@0.8.75`, не глобально, без автообновления.
+- Движок ставится `npm install --prefix <user_data_dir>/tools/hyperframes hyperframes@0.8.75 gsap@3.14.2`, не глобально, без автообновления.
+- Скиллы HyperFrames (10 скиллов ядра тега `v0.8.75`, сверка хэшей) — в кеш `<user_data_dir>/tools/hyperframes-skills/v0.8.75/`, **не** в `~/.claude/skills` и `~/.agents/skills` (решение владельца 2026-09-25). В рабочую папку их копирует `workspace init` (и `montage draft`, если их там нет): `<workspace>/.claude/skills/<имя>/` и `<workspace>/.agents/skills/<имя>/` с пометкой `.aimaster-install.json`; чужая папка с тем же именем — `conflict`, не перезаписывается; пересобирается только помеченная копия другой версии.
 - Любой запуск движка — без оболочки, по полному пути к `node` и к `node_modules/hyperframes/bin/hyperframes.mjs`; npm — как `node <npm-cli.js>`. Никаких `npx`, `npx.cmd`, `npm.cmd`, `shell=True`.
 - Переменные каждого запуска: `HYPERFRAMES_NO_UPDATE_CHECK=1`, `HYPERFRAMES_NO_AUTO_INSTALL=1`, `HYPERFRAMES_NO_TELEMETRY=1`, `HYPERFRAMES_SKIP_SKILLS=1`; `HOME` (на Windows ещё `USERPROFILE`) = `<prefix>/home`; `HYPERFRAMES_BROWSER_PATH` = браузер из записи установщика; кэш кадров — `<prefix>/cache/frames` (`--frames-cache-dir` у `render`).
-- Черновик: без GSAP, без внешних URL, без внешних шрифтов (`font-family: sans-serif`), корень с `data-no-timeline`.
+- Черновик: клипы, звуковые слои, переходы (CSS `@keyframes`, звук — `data-fade-*`); **без титров** (решение владельца: титры — только `montage edit`), без GSAP, без внешних URL, корень с `data-no-timeline`. Текст — только шрифтом «AM Inter» (Inter из навыка, локальный `@font-face` на `assets/fonts/`).
+- GSAP — только локальная копия закреплённой версии из движка (`montage gsap` → `current/assets/`); внешний скрипт — ошибка проверки сборки, локальный разрешён. Любой след сети в логе рендера (шрифт Google, CDN-скрипт) — ошибка сборки: ролик с сетью и без сети обязан совпадать.
 - Медиа композиции — только внутри `montage/current/`; в `assets/` — жёсткая ссылка на файл из `<workspace>/media/`, иначе копия. Симлинки не используются.
 - Версии не удаляются и не перезаписываются; «сделать текущей» копирует снимок в `current/`.
-- MP4 версии: `<workspace>/media/<project-id>/montage/vNNN.mp4`, регистрация в `AssetIndex` с ролью `result`.
+- MP4 версии: `<workspace>/media/<project-id>/montage/vNNN.mp4`, регистрация в `AssetIndex` с ролью `result`; предел размера для таких файлов свой — `MONTAGE_MAX_BYTES` = 2 ГиБ, общий `MAX_ASSET_BYTES` (128 МиБ) не меняется.
 - Раздел `montage` в `state.json` меняется только через `authoring_support.mutate` с `expected_revision` и пишет запись в историю проекта.
-- Меняющие команды CLI (`draft`, `edit`, `render`, `restore`) требуют `--expected-revision`; все печатают один JSON-объект; отказ — код 3 без traceback.
+- Меняющие команды CLI (`draft`, `edit`, `render`, `restore`) требуют `--expected-revision`; все печатают один JSON-объект; отказ — код 3 без traceback. Без движка `montage status` отдаёт `engine.install` — точную команду установки, отказ `montage draft` называет её же; автопилот выполняет её сам.
 - Фото-проекты монтажом не затрагиваются.
 - Пути — только `pathlib`; Windows-ветки проверяются подменой `os.name`/`IS_WINDOWS`.
-- Модули — около 60–150 строк, одна ответственность (самые длинные в плане — 151–162 строки: `html_doc.py`, `install_montage_fetch.py`, `draft_plan.py`); `scripts/install.py` (720 строк) только вызывает `scripts/install_montage.py`.
+- Модули — около 60–150 строк, одна ответственность (самый длинный в плане — `html_doc.py`, 151 строка; все остальные ≤ 149); `scripts/install.py` (720 строк) только вызывает `scripts/install_montage.py`.
 - Реальные генерации и платные сервисы не используются; реальные проекты владельца не трогаются; тестовые медиа генерирует ffmpeg или собираются минимальные MP4/WAV в коде.
 - Каждая задача заканчивается зелёными: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_*.py'`, `python3 -m compileall -q skills/aimaster`, `git diff --check`, а если трогали статику — `node --experimental-vm-modules --no-warnings skills/aimaster/scripts/check_static_modules.mjs` и `node --test skills/aimaster/studio/static/ui/v2/*.test.mjs`.
 
@@ -48,11 +50,14 @@
 | Строки `timeline --json` не содержат `data-media-start` | вывод CLI | модель читает атрибуты из `index.html` сама |
 | Studio при правке мышью меняет `data-track-index` (музыка 1→0, голос 2→1) | диффы `v-link.index.*.html` | слой клипа — наш атрибут `data-am-layer`, дорожка в модель не входит |
 | `data-fade-in/out` — это **громкость** на краях клипа, не картинка (документация `html-schema.md`) | чтение схемы | визуальный переход — CSS-анимация, `data-fade-*` — только звук |
-| Композиция без GSAP: корень с `data-no-timeline`, переход — CSS `@keyframes` (рантайм перематывает: яркость кадров 1.6/1.75/2.2 с — 17 → 49 → 93 из 93), титр `font-family: sans-serif` с кириллицей. `lint` — 0 ошибок; `render` проходит с отрезанной сетью Node (`NODE_USE_ENV_PROXY=1`, прокси на закрытый порт — проверено, что fetch падает) и пустым кэшем шрифтов, кириллица титра видна | проба `plan-probe/d`, кадр 0,5 с | GSAP в `assets/` **не нужен** ни рантайму, ни черновику; рендер без сети работает, CI подтверждает это на Linux |
-| **Но при доступной сети** HyperFrames сам ходит в Google Fonts: `normalizeSystemFontPrimaryFamilies` подменяет первичное `sans-serif` на `Inter` ради детерминизма, встроенный Inter — только латиница, недостающие диапазоны (кириллица) он качает с fonts.googleapis.com на каждом рендере («Fetched 11 font face(s) for "Inter" from Google Fonts»). Без сети молча берёт системный шрифт для кириллицы | прогон кода плана на настоящем движке с чистым кэшем шрифтов; `dist/cli.js` | известное ограничение (спецификация это разрешает): лог-строка шрифтов — предупреждение, не ошибка; CDN-скрипты — ошибка. Полная автономность — только своим шрифтом в `assets/` (вопрос владельцу) |
+| Композиция без GSAP: корень с `data-no-timeline`, переход — CSS `@keyframes` (рантайм перематывает: яркость кадров 1.6/1.75/2.2 с — 17 → 49 → 93 из 93). `lint` — 0 ошибок; `render` проходит с отрезанной сетью Node (`NODE_USE_ENV_PROXY=1`, прокси на закрытый порт — проверено, что fetch падает) | проба `plan-probe/d`, кадр 0,5 с | GSAP черновику не нужен; рендер без сети работает, CI подтверждает это на Linux |
+| При доступной сети HyperFrames сам ходит в Google Fonts: `normalizeSystemFontPrimaryFamilies` подменяет первичное `sans-serif` на `Inter`, встроенный Inter — только латиница, кириллицу он качает с fonts.googleapis.com на каждом рендере («Fetched 11 font face(s) for "Inter" from Google Fonts»); без сети молча берёт системный шрифт | прогон кода плана на настоящем движке с чистым кэшем шрифтов; `dist/cli.js` | общий `sans-serif` в композиции монтажа не используется |
+| Локальный шрифт решает это: `@font-face { font-family: "AM Inter"; src: url("assets/fonts/inter-*-normal.woff2") … unicode-range … }` и `font-family: "AM Inter", sans-serif` — HyperFrames встраивает файл как data URI («Embedded local font file … → data URI»), в Google Fonts не ходит, папка кэша шрифтов даже не создаётся. Рендер с сетью и без сети (прокси Node на закрытый порт) — framemd5 одинаковый (`8674484adfe1b51624ad61dad9f903d7`), кадр 1,0 с совпал побайтно, кириллица — Inter | два рендера `проверка шрифта`, 2026-09-25 | шрифт навыка — Inter 5.3.0 из `@fontsource/inter` (OFL-1.1): латиница и кириллица, 400 и 700, `woff2`, 63,6 КБ; любой след сети в логе — ошибка сборки |
+| В `node_modules` движка GSAP нет; скиллы HyperFrames ссылаются на `gsap@3.14.2` с CDN (37 мест), Studio — `GSAP_CDN_VERSION` 3.15.0. Лицензия GSAP — «Standard 'no charge' license». Локальный `assets/gsap.min.js` 3.14.2 + `window.__timelines["main"]` + корень без `data-no-timeline`: `lint` ок, рендер без сети — код 0, CDN в логе нет, анимация видна (яркость 67,4 → 65,3 → 49,2) | `package.json` пакета `gsap`, проба `gsap-offline` | `gsap@3.14.2` ставится рядом с движком; `montage gsap` копирует его в `current/assets/` |
+| Claude Code читает `.claude/skills/` в папке запуска и в каждой папке выше до корня репозитория, вложенные — при обращении к их файлам (code.claude.com/docs/en/skills). Codex читает `.agents/skills` в каждой папке от cwd до корня репозитория, плюс `$HOME/.agents/skills` и `/etc/codex/skills` (learn.chatgpt.com/docs/build-skills, «Where Codex loads local skills») | документация, 2026-09-25 | скиллы — в `<workspace>/.claude/skills` и `<workspace>/.agents/skills`; агент работает в рабочей папке |
 | Python с python.org на macOS без «Install Certificates.command» не проверяет сертификат GitHub (`CERTIFICATE_VERIFY_FAILED`, в хранилище 0 корневых) | прогон установщика скиллов на этой машине | `ssl_context()` дополняет пустое хранилище системным `/etc/ssl/cert.pem` |
 | Без `data-no-timeline` `lint` предупреждает `missing_data_no_timeline`, рендер ждёт таймлайн 45 с | проба | атрибут обязателен в черновике |
-| Arial/Helvetica HyperFrames подменяет на Inter и тянет с Google Fonts; семейства из `GENERIC_FAMILIES` (`sans-serif` и др.) — нет | `dist/cli.js`, лог рендера пробы | черновик — только `sans-serif` |
+| Arial/Helvetica HyperFrames подменяет на Inter и тянет с Google Fonts; любое не объявленное локально семейство — тоже | `dist/cli.js`, лог рендера пробы | текст монтажа — только «AM Inter» |
 | `lint` не ловит внешнюю таблицу стилей `https://fonts.googleapis.com/…` | проба `plan-probe/e` | своя проверка внешних ссылок в `media_sync.py` |
 | Качество `render`: `draft` — CRF 28, `standard` — CRF 18, `looks` (по умолчанию) — CRF 16, `high` — CRF 15 | `dist/cli.js` | версии собираются в `standard`, CI — в `draft` |
 | `preview --foreground --json --no-open --port N` первой строкой печатает `{"ok":true,"result":{"port","pid","studioUrl","ready":true,…}}` | `logs/preview.log` пробы | `desk.py` ждёт эту строку |
@@ -60,7 +65,7 @@
 | npm у Homebrew: `/opt/homebrew/bin/node` → `Cellar/node/<v>/bin/node`, а `npm-cli.js` — в `/opt/homebrew/lib/node_modules/npm/bin/`; на Windows — рядом с `node.exe` в `node_modules\npm\bin\` | `realpath` на этой машине | `npm_cli_js()` проверяет три раскладки |
 | Текущий CI FFmpeg не ставит вовсе; Node — `actions/setup-node@v4` с `22` | `.github/workflows/ci.yml` | новая задача CI ставит FFmpeg: apt / brew / choco |
 | `AssetIndex` не знает размер кадра MP4 (`_mp4` отдаёт `None, None`) | `studio/assets.py:492-518` | `canvas.py` берёт размер у ffprobe |
-| `MAX_ASSET_BYTES` = 128 МБ | `studio/workspace.py` | сборка больше — понятный отказ |
+| `MAX_ASSET_BYTES` = 128 МБ; `AssetIndex` читает файл целиком при регистрации и при каждом `resolve` | `studio/workspace.py`, `studio/assets.py` | для `media/<проект>/montage/vNNN.mp4` — свой предел 2 ГиБ (`montage_max_bytes`), остальное как было |
 
 ## Раскладка файлов
 
@@ -78,7 +83,9 @@
 | `skills/aimaster/studio/montage/html_doc.py` | чтение атрибутов и точечная правка `index.html` |
 | `skills/aimaster/studio/montage/media_sync.py` | ссылка/копия медиа, проверка ссылок композиции |
 | `skills/aimaster/studio/montage/draft_plan.py` | проект → план черновика (чистая функция) |
-| `skills/aimaster/studio/montage/draft_html.py` | план → HTML композиции |
+| `skills/aimaster/studio/montage/typeface.py` | шрифт «AM Inter»: манифест, `@font-face`, копия в `assets/fonts/` |
+| `skills/aimaster/studio/montage/fonts/` | Inter 5.3.0 (OFL-1.1): 4 файла `woff2`, `OFL.txt`, `fonts.json` со sha256 |
+| `skills/aimaster/studio/montage/draft_html.py` | план → HTML композиции; разметка титра для `montage edit` |
 | `skills/aimaster/studio/montage/draft.py` | создать / обновить устаревшее / пересобрать `current/` |
 | `skills/aimaster/studio/montage/model.py` | модель монтажа из `timeline --json` + атрибутов, хэш, вид слоёв |
 | `skills/aimaster/studio/montage/model_diff.py` | смысловой diff по-русски |
@@ -92,11 +99,14 @@
 | `skills/aimaster/studio/montage/proc.py` | жив ли процесс, остановка с детьми |
 | `skills/aimaster/studio/montage/desk.py` | интерфейс `Desk` и `StudioDesk` |
 | `skills/aimaster/studio/montage/status.py` | состояние монтажа одним словарём |
+| `skills/aimaster/studio/montage/vendor.py` | GSAP из движка → `current/assets/` |
+| `skills/aimaster/studio/montage/skill_bundle.py` | кеш скиллов HyperFrames, хэш набора, сверка |
+| `skills/aimaster/studio/montage/workspace_skills.py` | копия скиллов в `<workspace>/.claude/skills` и `.agents/skills`, `conflict` |
 | `skills/aimaster/studio/montage/service.py` | вход для CLI и дашборда |
 | `skills/aimaster/scripts/install_montage_node.py` | Node.js 22+: найти, поставить, найти `npm-cli.js` |
 | `skills/aimaster/scripts/install_montage_engine.py` | HyperFrames через npm, браузер для сборки |
-| `skills/aimaster/scripts/install_montage_fetch.py` | скачивание и сверка скиллов HyperFrames |
-| `skills/aimaster/scripts/install_montage_skills.py` | подключение скиллов в каталоги агентов, отчёт |
+| `skills/aimaster/scripts/install_montage_fetch.py` | скачивание скиллов HyperFrames с GitHub в кеш |
+| `skills/aimaster/scripts/install_montage_skills.py` | раздел `skills` отчёта установщика (кеш, без каталогов агентов) |
 | `skills/aimaster/scripts/install_montage.py` | раздел `montage` отчёта, отдельный запуск для CI |
 | `skills/aimaster/scripts/creator_studio_montage.py` | подкоманды `montage …` |
 | `skills/aimaster/scripts/montage_ci_check.py` | проверка движка на CI (рендер 3 с) |
@@ -104,7 +114,7 @@
 | `skills/aimaster/scripts/test_montage_*.py`, `test_install_montage*.py` | тесты |
 | `skills/aimaster/references/montage.md` | канон монтажа для агента |
 
-Меняются: `studio/platform_compat.py` (`find_program`), `studio/store.py` (`project_dir`), `studio/domain.py` (виды истории), `studio/projection.py` (раздел `montage`), `studio/authoring_qa.py` (`apply_assembly`), `studio/static/ui/history-panel.js` (подписи истории), `scripts/install.py`, `scripts/test_install.py`, `scripts/creator_studio.py`, `scripts/smoke_clean_machine.py`, `.github/workflows/ci.yml`, `references/phases/06-assembly.md`, `references/autopilot.md`, `references/creator-studio.md`, `SKILL.md`, `INSTALL_WITH_AGENT.md`, `README.md`.
+Меняются: `studio/platform_compat.py` (`find_program`), `studio/store.py` (`project_dir`), `studio/workspace.py` (`MONTAGE_MAX_BYTES`), `studio/assets.py` (`montage_max_bytes`), `studio/authoring_support.py` и `studio/server.py` (передают предел), `studio/workspace_init.py` (скиллы в рабочую папку), `studio/domain.py` (виды истории), `studio/projection.py` (раздел `montage`), `studio/authoring_qa.py` (`apply_assembly`), `studio/static/ui/history-panel.js` (подписи истории), `scripts/install.py`, `scripts/test_install.py`, `scripts/creator_studio.py`, `scripts/smoke_clean_machine.py`, `.github/workflows/ci.yml`, `references/phases/06-assembly.md`, `references/autopilot.md`, `references/creator-studio.md`, `SKILL.md`, `INSTALL_WITH_AGENT.md`, `README.md`.
 
 ## Порядок задач
 
@@ -127,9 +137,9 @@
   - `studio.montage.MontageError(RuntimeError)`; `LAYERS: tuple[str, ...] = ("video", "titles", "voice", "music", "fx", "atmos")`; `LAYER_LABELS: dict[str, str]`; `TRACK_OF_LAYER: dict[str, int]`; `AUDIO_LAYER_NAMES = ("voice", "music", "fx", "atmos")`.
   - `platform_compat.find_program(name: str, *, environ=None) -> str | None`.
   - `engine.PREFIX_ENV = "AIMASTER_HYPERFRAMES_DIR"`, `engine.RECORD_NAME = "aimaster-engine.json"`.
-  - `engine.load_pin() -> dict`; `engine.tools_prefix(*, home=None, environ=None) -> Path`; `engine.entry_script(prefix: Path) -> Path`; `engine.installed_version(prefix: Path) -> str | None`; `engine.find_node(*, environ=None) -> str | None`; `engine.node_major(node: str, *, run=subprocess.run) -> int | None`; `engine.read_record(prefix: Path) -> dict`; `engine.write_record(prefix: Path, record: dict) -> None`.
+  - `engine.load_pin() -> dict`; `engine.tools_prefix(*, home=None, environ=None) -> Path`; `engine.entry_script(prefix: Path) -> Path`; `engine.package_version(prefix: Path, name: str) -> str | None`; `engine.installed_version(prefix: Path) -> str | None` (версия `hyperframes`); `engine.install_command() -> str` (точная команда установки на этой машине: этот Python + этот `install.py` + `--install-deps`, в кавычках для shell ОС); `engine.find_node(*, environ=None) -> str | None`; `engine.node_major(node: str, *, run=subprocess.run) -> int | None`; `engine.read_record(prefix: Path) -> dict`; `engine.write_record(prefix: Path, record: dict) -> None`.
   - `@dataclass(frozen=True) engine.Engine(node: str, script: Path, prefix: Path, version: str, browser: str | None)`.
-  - `engine.locate(*, home=None, environ=None, run=subprocess.run) -> tuple[Engine | None, str]` (причина по-русски, пустая при успехе); `engine.engine_status(...) -> {"state": "installed"|"missing", "version", "wanted", "reason", "prefix"}`; `engine.require_engine(**kwargs) -> Engine` (иначе `MontageError`).
+  - `engine.locate(*, home=None, environ=None, run=subprocess.run) -> tuple[Engine | None, str]` (причина по-русски, пустая при успехе); `engine.engine_status(...) -> {"state": "installed"|"missing", "version", "wanted", "reason", "prefix", "install"}`; `engine.require_engine(**kwargs) -> Engine` (иначе `MontageError` с точной командой установки).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -196,8 +206,8 @@ class _Prefix(unittest.TestCase):
 class PinTests(unittest.TestCase):
     def test_pin_is_hyperframes_0875_with_ten_core_skills(self):
         pin = engine.load_pin()
-        self.assertEqual((pin["package"], pin["version"], pin["node_min_major"]),
-                         ("hyperframes", "0.8.75", 22))
+        self.assertEqual((pin["package"], pin["version"], pin["node_min_major"], pin["gsap_version"]),
+                         ("hyperframes", "0.8.75", 22, "3.14.2"))
         skills = pin["skills"]
         self.assertEqual(skills["tag"], "v0.8.75")
         self.assertEqual(skills["commit"], "a95cb96a5dd3c1f7b31266a4b470590c86ad231f")
@@ -258,13 +268,31 @@ class LocateTests(_Prefix):
         self.assertEqual(found.script,
                          self.prefix / "node_modules" / "hyperframes" / "bin" / "hyperframes.mjs")
 
-    def test_status_and_require(self):
+    def test_status_and_require_name_the_exact_install_command(self):
         status = engine.engine_status(environ=self.env)
         self.assertEqual((status["state"], status["wanted"]), ("missing", "0.8.75"))
+        self.assertEqual(status["install"], engine.install_command())
         with mock.patch.object(engine, "find_node", return_value=None):
             with self.assertRaises(MontageError) as caught:
                 engine.require_engine(environ=self.env)
-        self.assertIn("install.py --install-deps", str(caught.exception))
+        self.assertIn(engine.install_command(), str(caught.exception))
+
+    def test_install_command_is_this_python_and_this_install_py(self):
+        command = engine.install_command()
+        self.assertIn(sys.executable, command)
+        self.assertIn(str(_SCRIPTS / "install.py"), command)
+        self.assertTrue(command.endswith("--install-deps"))
+        with mock.patch.object(engine, "IS_WINDOWS", True):
+            self.assertTrue(engine.install_command().endswith("--install-deps"))
+
+    def test_package_versions(self):
+        self.install_package()
+        gsap = self.prefix / "node_modules" / "gsap"
+        gsap.mkdir(parents=True)
+        (gsap / "package.json").write_text('{"version": "3.14.2"}', encoding="utf-8")
+        self.assertEqual((engine.package_version(self.prefix, "gsap"), engine.installed_version(self.prefix)),
+                         ("3.14.2", "0.8.75"))
+        self.assertIsNone(engine.package_version(self.prefix, "nope"))
 
 
 class FindNodeTests(unittest.TestCase):
@@ -342,6 +370,7 @@ AUDIO_LAYER_NAMES = ("voice", "music", "fx", "atmos")
   "package": "hyperframes",
   "version": "0.8.75",
   "node_min_major": 22,
+  "gsap_version": "3.14.2",
   "render_quality": "standard",
   "timeouts": {
     "cli": 120,
@@ -413,7 +442,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -421,6 +452,7 @@ from ..platform_compat import IS_WINDOWS, find_program, user_data_dir
 from . import MontageError
 
 PIN_FILE = Path(__file__).with_name("engine.json")
+INSTALL_PY = Path(__file__).resolve().parents[2] / "scripts" / "install.py"
 RECORD_NAME = "aimaster-engine.json"
 PREFIX_ENV = "AIMASTER_HYPERFRAMES_DIR"
 _VERSION = re.compile(r"v?(\d+)\.(\d+)\.(\d+)")
@@ -442,13 +474,24 @@ def entry_script(prefix: Path) -> Path:
     return Path(prefix) / "node_modules" / "hyperframes" / "bin" / "hyperframes.mjs"
 
 
-def installed_version(prefix: Path) -> str | None:
-    manifest = Path(prefix) / "node_modules" / "hyperframes" / "package.json"
+def package_version(prefix: Path, name: str) -> str | None:
+    manifest = Path(prefix) / "node_modules" / name / "package.json"
     try:
         version = json.loads(manifest.read_text(encoding="utf-8")).get("version")
     except (OSError, ValueError, AttributeError):
         return None
     return version if isinstance(version, str) else None
+
+
+def installed_version(prefix: Path) -> str | None:
+    return package_version(prefix, "hyperframes")
+
+
+def install_command() -> str:
+    """Точная команда установки монтажа на этой машине: автопилот выполняет её сам."""
+
+    argv = [sys.executable, str(INSTALL_PY), "--install-deps"]
+    return subprocess.list2cmdline(argv) if IS_WINDOWS else shlex.join(argv)
 
 
 def find_node(*, environ=None) -> str | None:
@@ -526,22 +569,21 @@ def engine_status(*, home=None, environ=None, run=subprocess.run) -> dict:
     return {"state": "installed" if found else "missing",
             "version": found.version if found else None,
             "wanted": load_pin()["version"], "reason": reason,
-            "prefix": str(tools_prefix(home=home, environ=environ))}
+            "prefix": str(tools_prefix(home=home, environ=environ)), "install": install_command()}
 
 
 def require_engine(**kwargs) -> Engine:
     found, reason = locate(**kwargs)
     if found is None:
-        raise MontageError(
-            f"Монтажный движок не готов: {reason}. Поставьте его: "
-            "python3 skills/aimaster/scripts/install.py --install-deps")
+        raise MontageError(f"Монтажный движок не готов: {reason}. Поставьте его командой: "
+                           f"{install_command()}")
     return found
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_engine.py' -v`
-Expected: PASS (13 tests; `test_posix_needs_executable_bit` на Windows — skipped).
+Expected: PASS (15 tests; `test_posix_needs_executable_bit` на Windows — skipped).
 
 - [ ] **Step 5: Full checks**
 
@@ -1207,7 +1249,7 @@ git commit -m "feat(montage): ffprobe media info and canvas size"
   - `install_montage_node.NODE_INSTALL: dict[str, str]`, `install_montage_node.READY = ("found", "installed")`, `install_montage_node.item(status, message="", **extra) -> dict`.
   - `install_montage_node.node_check(kind: str, install_missing: bool) -> dict` — `{"status": found|installed|missing|failed|timeout, "message", "path"?, "version"?, "install_cmd"?}`.
   - `install_montage_node.npm_cli_js(node: str) -> Path | None`.
-  - `install_montage_engine.engine_install(node: str, prefix: Path, pin: dict, *, update: bool, run=None) -> dict`; `install_montage_engine.check_package(prefix, pin) -> dict`.
+  - `install_montage_engine.engine_install(node: str, prefix: Path, pin: dict, *, update: bool, run=None) -> dict` — ставит `hyperframes@<version>` и `gsap@<gsap_version>` одним вызовом npm; `install_montage_engine.check_package(prefix, pin) -> dict`.
   - `install_montage_engine.browser_install(node: str, prefix: Path, pin: dict, *, runner=None) -> dict`; `install_montage_engine.check_browser(prefix, pin) -> dict`.
   - `install_montage.montage_report(kind: str, *, install_missing: bool, update: bool, install_node: bool, home: Path | None = None) -> dict` — `{"prefix", "node", "hyperframes", "browser", "ok"}` (задача 5 добавит `skills`).
   - `install_montage.render_montage_lines(report: dict) -> list[str]`; `install_montage.main(argv=None) -> int` (флаги `--json`, `--update`, `--install-node`, `--check`).
@@ -1335,7 +1377,7 @@ class EngineInstallTests(unittest.TestCase):
         self.npm = touch(self.base / "node" / "lib" / "node_modules" / "npm" / "bin" / "npm-cli.js")
         self.calls = []
 
-    def fake_npm(self, version="0.8.75", code=0):
+    def fake_npm(self, version="0.8.75", code=0, gsap="3.14.2"):
         def run(argv, cwd=None, timeout=None, env=None):
             self.calls.append({"argv": argv, "cwd": cwd, "timeout": timeout, "env": env})
             if code != 0:
@@ -1343,7 +1385,11 @@ class EngineInstallTests(unittest.TestCase):
             package = self.prefix / "node_modules" / "hyperframes"
             touch(package / "bin" / "hyperframes.mjs")
             (package / "package.json").write_text(json.dumps({"version": version}), encoding="utf-8")
-            return 0, "added 69 packages", ""
+            if gsap:
+                touch(self.prefix / "node_modules" / "gsap" / "dist" / "gsap.min.js")
+                (self.prefix / "node_modules" / "gsap" / "package.json").write_text(
+                    json.dumps({"version": gsap}), encoding="utf-8")
+            return 0, "added 70 packages", ""
         return run
 
     def test_runs_npm_cli_js_with_node_and_pinned_package(self):
@@ -1355,6 +1401,7 @@ class EngineInstallTests(unittest.TestCase):
         self.assertEqual(argv[:3], [str(self.node), str(self.npm), "install"])
         self.assertEqual(argv[argv.index("--prefix") + 1], str(self.prefix))
         self.assertIn("hyperframes@0.8.75", argv)
+        self.assertIn("gsap@3.14.2", argv)
         self.assertFalse(any("npx" in str(part) for part in argv))
         self.assertEqual(call["timeout"], PIN["timeouts"]["npm_install"])
         self.assertTrue(call["env"]["PATH"].startswith(str(self.node.parent)))
@@ -1378,6 +1425,14 @@ class EngineInstallTests(unittest.TestCase):
         item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, update=True,
                                               run=self.fake_npm())
         self.assertEqual(item["status"], "installed")
+
+    def test_missing_gsap_is_installed_without_update_flag(self):
+        self.fake_npm(gsap=None)([], None, None, None)
+        self.calls.clear()
+        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, update=False,
+                                                     run=self.fake_npm())
+        self.assertEqual(item["status"], "installed")
+        self.assertEqual(len(self.calls), 1)
 
     def test_npm_failure_and_timeout(self):
         failed = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, update=False,
@@ -1634,12 +1689,19 @@ from studio.montage import engine  # noqa: E402
 from studio.montage.engine_cli import run_engine  # noqa: E402
 
 
+def _pinned(prefix: Path, pin: dict) -> bool:
+    return engine.installed_version(prefix) == pin["version"] \
+        and engine.package_version(prefix, "gsap") == pin["gsap_version"]
+
+
 def engine_install(node: str, prefix: Path, pin: dict, *, update: bool, run=None) -> dict:
+    """HyperFrames и GSAP (локальный файл для анимаций из скиллов HyperFrames) — одним npm."""
+
     run = run or install._run
     have = engine.installed_version(prefix)
-    if have == pin["version"]:
+    if _pinned(prefix, pin):
         return item("found", version=have, path=str(prefix))
-    if have and not update:
+    if have and have != pin["version"] and not update:
         return item("found", f"стоит {have}, нужна {pin['version']}: запустите install.py --update",
                      version=have, path=str(prefix))
     npm = npm_cli_js(node)
@@ -1647,18 +1709,17 @@ def engine_install(node: str, prefix: Path, pin: dict, *, update: bool, run=None
         return item("failed", "рядом с Node.js нет npm — переустановите Node.js")
     Path(prefix).mkdir(parents=True, exist_ok=True)
     argv = [node, str(npm), "install", "--prefix", str(prefix),
-            f"{pin['package']}@{pin['version']}", "--no-audit", "--no-fund", "--omit=dev",
-            "--save-exact"]
+            f"{pin['package']}@{pin['version']}", f"gsap@{pin['gsap_version']}", "--no-audit",
+            "--no-fund", "--omit=dev", "--save-exact"]
     env = dict(os.environ)
     env["PATH"] = str(Path(node).parent) + os.pathsep + env.get("PATH", "")
     timeout = pin["timeouts"]["npm_install"]
     code, out, err = run(argv, cwd=str(prefix), timeout=timeout, env=env)
     if code == install.TIMEOUT_CODE:
         return item("timeout", f"npm не уложился в {timeout // 60} мин; повторите позже")
-    have = engine.installed_version(prefix)
-    if code != 0 or have != pin["version"]:
+    if code != 0 or not _pinned(prefix, pin):
         return item("failed", (err or out).strip()[-400:] or f"npm завершился с кодом {code}")
-    return item("installed", version=have, path=str(prefix))
+    return item("installed", version=engine.installed_version(prefix), path=str(prefix))
 
 
 def browser_install(node: str, prefix: Path, pin: dict, *, runner=None) -> dict:
@@ -1695,6 +1756,9 @@ def check_package(prefix: Path, pin: dict) -> dict:
     if have != pin["version"]:
         return item("found", f"стоит {have}, нужна {pin['version']}: запустите install.py --update",
                      version=have, path=str(prefix))
+    if engine.package_version(prefix, "gsap") != pin["gsap_version"]:
+        return item("found", "нет GSAP для анимаций: поставить install.py --install-deps",
+                    version=have, path=str(prefix))
     return item("found", version=have, path=str(prefix))
 
 
@@ -1888,9 +1952,11 @@ def _montage_report(kind, install_deps, update, home):
 официальный менеджер пакетов ОС (winget, Homebrew, apt), а также запустить
 `install.py --install-deps`: он ставит бесплатные ffmpeg, cloudflared и Git,
 Node.js 22+ (winget `OpenJS.NodeJS.LTS`, Homebrew `node`; на Linux только
-печатает команду) и монтажный движок HyperFrames закреплённой версии: npm-пакет
-в папку данных пользователя (не глобально), браузер для сборки видео (~100 МБ)
-и скиллы HyperFrames той же версии. На Windows установщик передаёт winget флаги
+печатает команду) и монтажный движок HyperFrames закреплённой версии: npm-пакеты
+`hyperframes` и `gsap` в папку данных пользователя (не глобально), браузер для
+сборки видео (~100 МБ) и скиллы HyperFrames той же версии — в кеш рядом с
+движком; в рабочую папку их копирует `workspace init`, в `~/.claude/skills` и
+`~/.agents/skills` они не ставятся. На Windows установщик передаёт winget флаги
 `--accept-package-agreements --accept-source-agreements`, то есть соглашается с
 условиями этих пакетов; если пользователь против, запустите без
 `--install-deps` — установщик только напечатает команды. pip и сторонние
@@ -1913,7 +1979,7 @@ Python-пакеты не нужны.
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_install*.py' -v`
-Expected: PASS (новые 18 тестов в `test_install_montage.py`; все тесты `test_install.py`, включая новый `test_montage_section_is_reported_and_rendered`).
+Expected: PASS (новые 19 тестов в `test_install_montage.py`; все тесты `test_install.py`, включая новый `test_montage_section_is_reported_and_rendered`).
 
 - [ ] **Step 5: Full checks**
 
@@ -1929,38 +1995,38 @@ git commit -m "feat(install): Node 22+, pinned HyperFrames and render browser vi
 
 ---
 
-### Task 5: Скиллы HyperFrames той же версии
+### Task 5: Скиллы HyperFrames той же версии — кеш рядом с движком и копия в рабочей папке
+
+Решение владельца 2026-09-25: скиллы HyperFrames **не** ставятся в `~/.claude/skills` и `~/.agents/skills`. Установщик качает закреплённое ядро (10 скиллов v0.8.75, сверка хэшей) в кеш `<user_data_dir>/tools/hyperframes-skills/v0.8.75/`, а в рабочую папку их копирует `workspace init` (и `montage draft`, задача 17): `<workspace>/.claude/skills/<имя>/` для Claude Code и `<workspace>/.agents/skills/<имя>/` для Codex. Пути проверены по документации: Claude Code читает `.claude/skills/` в папке запуска и в каждой папке выше до корня репозитория (code.claude.com/docs/en/skills, «Load skills in monorepos and subdirectories»); Codex читает `$CWD/.agents/skills` и папки выше до корня репозитория (learn.chatgpt.com/docs/build-skills, «Where Codex loads local skills»).
 
 **Files:**
-- Create: `skills/aimaster/scripts/install_montage_fetch.py` (скачивание и сверка)
-- Create: `skills/aimaster/scripts/install_montage_skills.py` (подключение и отчёт)
-- Modify: `skills/aimaster/scripts/install_montage.py` (`montage_report` получает `agents`, `skills`; раздел `skills`)
-- Modify: `skills/aimaster/scripts/install.py` (`_montage_report` передаёт `agents`)
-- Modify: `skills/aimaster/scripts/test_install.py` (ожидаемые аргументы заглушки)
-- Modify: `skills/aimaster/scripts/test_install_montage.py` (`ReportTests.setUp` глушит скачивание скиллов)
-- Test: `skills/aimaster/scripts/test_install_montage_skills.py`
+- Create: `skills/aimaster/studio/montage/skill_bundle.py` (кеш и сверка набора — общее для установщика и рабочей папки)
+- Create: `skills/aimaster/studio/montage/workspace_skills.py` (копия в рабочую папку, пометка, `conflict`)
+- Create: `skills/aimaster/scripts/install_montage_fetch.py` (скачивание с GitHub)
+- Create: `skills/aimaster/scripts/install_montage_skills.py` (раздел `skills` отчёта установщика)
+- Modify: `skills/aimaster/scripts/install_montage.py` (`montage_report` — раздел `skills`)
+- Modify: `skills/aimaster/scripts/test_install_montage.py` (`ReportTests`)
+- Modify: `skills/aimaster/studio/workspace_init.py` (ключ `hyperframes_skills`, строка README)
+- Test: `skills/aimaster/scripts/test_install_montage_skills.py`, `skills/aimaster/scripts/test_montage_workspace_skills.py`
 
 **Interfaces:**
-- Consumes: `install.AGENT_DIRS`, `install.MARKER`, `install.connect(source, target, version) -> (method, notes)`, `install.replace_installed(source, target, version) -> (method, notes, leftover)`, `install._is_link_like`, `install._norm`, `install._inside`, `install._short_error`; `engine.load_pin()["skills"]`.
-- Produces (скачивание — `install_montage_fetch`):
-  - `install_montage_fetch.git_blob_sha(data: bytes) -> str`; `bundle_hash(skill_dir: Path) -> tuple[str, int]`.
-  - `ssl_context() -> ssl.SSLContext` — если хранилище корневых сертификатов Python пусто (Python с python.org на macOS без «Install Certificates.command» — проверено на этой машине: `CERTIFICATE_VERIFY_FAILED`), подгружает системный набор `/etc/ssl/cert.pem` (macOS), `/etc/ssl/certs/ca-certificates.crt` (Debian/Ubuntu) или `/etc/pki/tls/certs/ca-bundle.crt` (RHEL).
-  - `fetch_tree(pin: dict, *, opener=urllib.request.urlopen) -> list[dict]`; `class RawFetcher(pin, *, factory=http.client.HTTPSConnection, context=None)` с `get(rel_path) -> bytes`, `close()`.
-  - `verify_skills(root: Path, pin: dict) -> list[str]`; `download_skills(pin, dest: Path, *, tree=None, fetcher=None) -> None`.
-- Produces (подключение и отчёт — `install_montage_skills`):
-  - `inspect_skill(target: Path, source: Path, ours_root: Path) -> "missing"|"ours_current"|"ours_old"|"foreign"`.
-  - `link_skills(source_root, ours_root, home, version, *, names, agents=("claude", "codex"), create=True) -> list[dict]` — элементы `{"agent", "name", "path", "status", "method", "message"}`.
-  - `skills_report(prefix: Path, home: Path, *, act: bool, agents=("claude", "codex"), pin=None, tree=None, fetcher=None) -> {"status", "version", "names", "items", "message"}`; статусы `installed|found|missing|failed|timeout|conflict`.
-  - `install_montage.montage_report(kind, *, install_missing, update, install_node, home=None, agents=("claude", "codex"), skills=True) -> dict` — теперь с ключом `skills` (на `ok` не влияет: `ok` — готовность движка).
-  - `install._montage_report(kind, install_deps, update, home, agents)`.
+- Consumes: `engine.load_pin()["skills"]`, `engine.tools_prefix(*, home, environ)`, `engine.install_command()`; `install._short_error`.
+- Produces (кеш — `studio.montage.skill_bundle`):
+  - `SKILL_MARKER = ".aimaster-install.json"`; `skills_pin() -> dict`; `skills_cache(*, home=None, environ=None, pin=None) -> Path` (= `tools_prefix().parent / "hyperframes-skills" / <тег>`; с `AIMASTER_HYPERFRAMES_DIR` — рядом с подменённой папкой движка); `bundle_hash(skill_dir) -> tuple[str, int]`; `verify_skills(root, pin) -> list[str]` (имена отсутствующих или не совпавших).
+- Produces (рабочая папка — `studio.montage.workspace_skills`):
+  - `AGENT_DIRS = ((".claude", "skills"), (".agents", "skills"))`; `inspect_copy(target, version) -> "missing"|"current"|"outdated"|"foreign"`.
+  - `sync_workspace_skills(workspace, *, create=True, home=None, environ=None, pin=None) -> {"status", "version", "names", "items": [{"path", "name", "status", "message"?}], "message"}`; статусы `installed|found|missing|failed|conflict`. Нет кеша — `missing` с точной командой установки, без исключения. Пересобирается только помеченная копия другой версии; чужая папка — `conflict`, не трогается.
+  - `skills_summary(workspace, **kwargs) -> {"status", "version", "message"}` — то же коротко, для ответов `workspace init`, `montage draft`, `montage status`.
+- Produces (установщик): `install_montage_fetch.ssl_context()`, `git_blob_sha(data)`, `fetch_tree(pin, *, opener=urllib.request.urlopen)`, `class RawFetcher(pin, *, factory=http.client.HTTPSConnection, context=None)`, `download_skills(pin, dest, *, tree=None, fetcher=None)`; `install_montage_skills.skills_report(*, act: bool, home=None, pin=None, tree=None, fetcher=None) -> {"status", "version", "path", "names", "message"}` (`installed|found|missing|failed|timeout`).
+- Produces: `install_montage.montage_report(kind, *, install_missing, update, install_node, home=None, skills=True)` — с ключом `skills` (на `ok` не влияет); `init_workspace(ws)["hyperframes_skills"] = {"status", "version", "message"}`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
 `skills/aimaster/scripts/test_install_montage_skills.py` (эталонные хэши посчитаны тем же алгоритмом, что совпал с `skills-manifest.json` HyperFrames 0.8.75 на всех 21 скилле):
 
 ```python
 #!/usr/bin/env python3
-"""Скиллы HyperFrames: сверка с выпуском, подключение как у навыка, чужое не трогаем."""
+"""Скиллы HyperFrames в кеше: сверка с выпуском, скачивание, отчёт установщика."""
 
 from __future__ import annotations
 
@@ -1981,6 +2047,8 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 
 import install_montage_fetch as fetch  # noqa: E402
 import install_montage_skills as skills  # noqa: E402
+from studio.montage import engine  # noqa: E402
+from studio.montage.skill_bundle import bundle_hash, verify_skills  # noqa: E402
 
 FILES = {
     "demo/SKILL.md": b"---\nname: demo\n---\r\nhello\r\n",
@@ -2030,16 +2098,16 @@ class HashTests(_Temp):
 
     def test_bundle_hash_matches_reference_vectors(self):
         root = self.write(self.base / "skills")
-        self.assertEqual(fetch.bundle_hash(root / "demo"), ("82e2a555abf32641", 3))
-        self.assertEqual(fetch.bundle_hash(root / "other"), ("05d1df8575671f97", 1))
+        self.assertEqual(bundle_hash(root / "demo"), ("82e2a555abf32641", 3))
+        self.assertEqual(bundle_hash(root / "other"), ("05d1df8575671f97", 1))
 
     def test_crlf_is_normalized_only_in_text_files(self):
         lf = dict(FILES, **{"demo/SKILL.md": b"---\nname: demo\n---\nhello\n"})
         root = self.write(self.base / "lf", lf)
-        self.assertEqual(fetch.bundle_hash(root / "demo")[0], "82e2a555abf32641")
+        self.assertEqual(bundle_hash(root / "demo")[0], "82e2a555abf32641")
         py_lf = dict(FILES, **{"demo/scripts/run.py": b"print(1)\n"})
         root = self.write(self.base / "py", py_lf)
-        self.assertNotEqual(fetch.bundle_hash(root / "demo")[0], "82e2a555abf32641")
+        self.assertNotEqual(bundle_hash(root / "demo")[0], "82e2a555abf32641")
 
 
 class TreeTests(unittest.TestCase):
@@ -2083,20 +2151,20 @@ class SslTests(unittest.TestCase):
 
 class DownloadTests(_Temp):
     def test_download_verifies_and_places_the_bundle(self):
-        dest = self.base / "skills" / "v9.9.9"
+        dest = self.base / "hyperframes-skills" / "v9.9.9"
         fetch.download_skills(PIN, dest, tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
-        self.assertEqual(fetch.verify_skills(dest, PIN), [])
+        self.assertEqual(verify_skills(dest, PIN), [])
         if os.name != "nt":
             self.assertTrue(os.access(dest / "demo" / "scripts" / "run.py", os.X_OK))
 
     def test_tampered_file_leaves_nothing(self):
-        dest = self.base / "skills" / "v9.9.9"
+        dest = self.base / "hyperframes-skills" / "v9.9.9"
         bad = dict(FILES, **{"demo/a.json": b'{"a":2}'})
         with self.assertRaises(OSError) as caught:
             fetch.download_skills(PIN, dest, tree=tree_for(FILES), fetcher=FakeFetcher(bad))
         self.assertIn("git sha", str(caught.exception))
         self.assertFalse(dest.exists())
-        self.assertEqual(list((self.base / "skills").iterdir()), [])
+        self.assertEqual(list((self.base / "hyperframes-skills").iterdir()), [])
 
     def test_wrong_bundle_hash_is_refused(self):
         pin = dict(PIN, bundles={**PIN["bundles"], "demo": {"hash": "0" * 16, "files": 3}})
@@ -2105,78 +2173,31 @@ class DownloadTests(_Temp):
         self.assertIn("demo", str(caught.exception))
 
 
-class LinkTests(_Temp):
+class ReportTests(_Temp):
     def setUp(self):
         super().setUp()
-        self.home = self.base / "дом"
-        self.ours = self.base / "tools" / "skills"
-        self.source = self.write(self.ours / "v9.9.9")
+        patcher = mock.patch.dict(os.environ, {engine.PREFIX_ENV: str(self.base / "tools" / "hyperframes")})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.cache = self.base / "tools" / "hyperframes-skills" / "v9.9.9"
 
-    def link(self, create=True):
-        return skills.link_skills(self.source, self.ours, self.home, "v9.9.9",
-                                  names=["demo", "other"], create=create)
-
-    def test_fresh_install_then_repeat_is_found(self):
-        first = self.link()
-        self.assertEqual({i["status"] for i in first}, {"installed"})
-        self.assertEqual(len(first), 4)
-        self.assertTrue((self.home / ".claude" / "skills" / "demo" / "SKILL.md").is_file())
-        self.assertTrue((self.home / ".agents" / "skills" / "other" / "SKILL.md").is_file())
-        self.assertEqual({i["status"] for i in self.link()}, {"found"})
-
-    def test_foreign_folder_is_a_conflict_and_untouched(self):
-        foreign = self.home / ".claude" / "skills" / "other"
-        foreign.mkdir(parents=True)
-        (foreign / "SKILL.md").write_text("чужое", encoding="utf-8")
-        items = {(i["agent"], i["name"]): i for i in self.link()}
-        self.assertEqual(items[("claude", "other")]["status"], "conflict")
-        self.assertEqual((foreign / "SKILL.md").read_text(encoding="utf-8"), "чужое")
-        self.assertEqual(items[("claude", "demo")]["status"], "installed")
-
-    def test_old_version_of_ours_is_replaced(self):
-        old = self.write(self.ours / "v9.9.8")
-        skills.link_skills(old, self.ours, self.home, "v9.9.8", names=["demo"], agents=("claude",))
-        target = self.home / ".claude" / "skills" / "demo"
-        self.assertEqual(skills.inspect_skill(target, self.source / "demo", self.ours), "ours_old")
-        items = skills.link_skills(self.source, self.ours, self.home, "v9.9.9", names=["demo"],
-                                   agents=("claude",))
-        self.assertEqual(items[0]["status"], "installed")
-        self.assertEqual(skills.inspect_skill(target, self.source / "demo", self.ours), "ours_current")
-
-    def test_dry_run_reports_missing(self):
-        self.assertEqual({i["status"] for i in self.link(create=False)}, {"missing"})
-        self.assertFalse((self.home / ".claude").exists())
-
-
-class ReportTests(_Temp):
     def test_check_only_never_downloads(self):
         fetcher = FakeFetcher({})
-        report = skills.skills_report(self.base / "tools", self.base / "дом", act=False, pin=PIN,
-                                      tree=[], fetcher=fetcher)
-        self.assertEqual(report["status"], "missing")
+        report = skills.skills_report(act=False, pin=PIN, tree=[], fetcher=fetcher)
+        self.assertEqual((report["status"], report["path"]), ("missing", str(self.cache)))
         self.assertEqual(fetcher.gets, [])
 
-    def test_act_downloads_links_and_aggregates(self):
-        report = skills.skills_report(self.base / "tools", self.base / "дом", act=True, pin=PIN,
-                                      tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
+    def test_act_downloads_into_the_cache_then_finds_it(self):
+        report = skills.skills_report(act=True, pin=PIN, tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
         self.assertEqual((report["status"], report["version"]), ("installed", "v9.9.9"))
-        again = skills.skills_report(self.base / "tools", self.base / "дом", act=True, pin=PIN,
-                                     tree=[], fetcher=FakeFetcher({}))
+        self.assertEqual(verify_skills(self.cache, PIN), [])
+        again = skills.skills_report(act=True, pin=PIN, tree=[], fetcher=FakeFetcher({}))
         self.assertEqual(again["status"], "found")
-
-    def test_conflict_is_named_in_the_message(self):
-        foreign = self.base / "дом" / ".claude" / "skills" / "other"
-        foreign.mkdir(parents=True)
-        (foreign / "SKILL.md").write_text("чужое", encoding="utf-8")
-        report = skills.skills_report(self.base / "tools", self.base / "дом", act=True, pin=PIN,
-                                      tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
-        self.assertEqual(report["status"], "conflict")
-        self.assertIn(str(foreign), report["message"])
 
     def test_rate_limit_message(self):
         error = skills.urllib.error.HTTPError("https://api.github.com", 403, "rate limit", {}, None)
         with mock.patch.object(skills, "download_skills", side_effect=error):
-            report = skills.skills_report(self.base / "tools", self.base / "дом", act=True, pin=PIN)
+            report = skills.skills_report(act=True, pin=PIN)
         self.assertEqual(report["status"], "failed")
         self.assertIn("через час", report["message"])
 
@@ -2185,25 +2206,313 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+`skills/aimaster/scripts/test_montage_workspace_skills.py`:
 
-Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_install_montage_skills.py' -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'install_montage_fetch'`.
+```python
+#!/usr/bin/env python3
+"""Скиллы HyperFrames в рабочей папке: копия с пометкой, чужое — conflict, без кеша — статус."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+_SCRIPTS = Path(__file__).resolve().parent
+_SKILL_ROOT = _SCRIPTS.parent
+for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
+
+from studio.montage import engine, workspace_skills  # noqa: E402
+from studio.workspace_init import init_workspace  # noqa: E402
+
+FILES = {
+    "demo/SKILL.md": b"---\nname: demo\n---\r\nhello\r\n",
+    "demo/scripts/run.py": b"print(1)\r\n",
+    "demo/a.json": b'{"a":1}',
+    "other/SKILL.md": b"---\nname: other\n---\n",
+}
+PIN = {"repo": "heygen-com/hyperframes", "tag": "v9.9.9", "commit": "c" * 40, "tree": "t" * 40,
+       "bundles": {"demo": {"hash": "82e2a555abf32641", "files": 3},
+                   "other": {"hash": "05d1df8575671f97", "files": 1}}}
+
+
+class WorkspaceSkillsTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.base = Path(temp.name).resolve()
+        patcher = mock.patch.dict(os.environ, {engine.PREFIX_ENV: str(self.base / "tools" / "hyperframes")})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.cache = self.base / "tools" / "hyperframes-skills" / "v9.9.9"
+        for rel, data in FILES.items():
+            (self.cache / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.cache / rel).write_bytes(data)
+        self.ws = self.base / "рабочая папка"
+        self.ws.mkdir()
+
+    def sync(self, **kwargs):
+        return workspace_skills.sync_workspace_skills(self.ws, pin=PIN, **kwargs)
+
+    def test_copies_into_both_agent_folders_with_a_marker(self):
+        report = self.sync()
+        self.assertEqual((report["status"], len(report["items"])), ("installed", 4))
+        for parts in ((".claude", "skills"), (".agents", "skills")):
+            skill = self.ws.joinpath(*parts, "demo")
+            self.assertFalse(skill.is_symlink())
+            self.assertEqual((skill / "scripts" / "run.py").read_bytes(), FILES["demo/scripts/run.py"])
+            marker = json.loads((skill / ".aimaster-install.json").read_text(encoding="utf-8"))
+            self.assertEqual((marker["installed_by"], marker["version"]), ("aimaster", "v9.9.9"))
+        self.assertEqual(self.sync()["status"], "found")
+
+    def test_foreign_folder_is_a_conflict_and_untouched(self):
+        foreign = self.ws / ".claude" / "skills" / "other"
+        foreign.mkdir(parents=True)
+        (foreign / "SKILL.md").write_text("чужое", encoding="utf-8")
+        report = self.sync()
+        self.assertEqual(report["status"], "conflict")
+        self.assertIn(str(foreign), report["message"])
+        self.assertEqual((foreign / "SKILL.md").read_text(encoding="utf-8"), "чужое")
+        self.assertTrue((self.ws / ".claude" / "skills" / "demo" / "SKILL.md").is_file())
+
+    def test_outdated_marked_copy_is_rebuilt(self):
+        old = self.ws / ".agents" / "skills" / "demo"
+        old.mkdir(parents=True)
+        (old / "SKILL.md").write_text("старое", encoding="utf-8")
+        (old / ".aimaster-install.json").write_text(
+            json.dumps({"installed_by": "aimaster", "version": "v9.9.8"}), encoding="utf-8")
+        report = self.sync()
+        item = next(i for i in report["items"] if i["path"] == str(old))
+        self.assertEqual(item["status"], "installed")
+        self.assertEqual((old / "SKILL.md").read_bytes(), FILES["demo/SKILL.md"])
+        self.assertEqual(json.loads((old / ".aimaster-install.json").read_text(encoding="utf-8"))["version"],
+                         "v9.9.9")
+
+    def test_read_only_check_writes_nothing(self):
+        self.assertEqual(self.sync(create=False)["status"], "missing")
+        self.assertFalse((self.ws / ".claude").exists())
+
+    def test_empty_cache_is_a_status_not_an_error(self):
+        shutil.rmtree(self.cache)
+        report = self.sync()
+        self.assertEqual(report["status"], "missing")
+        self.assertIn("--install-deps", report["message"])
+        self.assertFalse((self.ws / ".claude").exists())
+
+    def test_workspace_init_reports_skills_and_never_fails(self):
+        result = init_workspace(self.base / "новая папка")
+        self.assertIn("projects/", result["created"])
+        self.assertEqual(result["hyperframes_skills"]["status"], "missing")
+        self.assertIn("--install-deps", result["hyperframes_skills"]["message"])
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+(В последнем тесте кеш подменённой папки пуст для настоящей закреплённой версии v0.8.75 — `workspace init` не падает и называет команду установки.)
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_*skills.py' -v`
+Expected: FAIL — `ModuleNotFoundError: No module named 'install_montage_fetch'` и `ImportError: cannot import name 'workspace_skills'`.
 
 - [ ] **Step 3: Write minimal implementation**
+
+`skills/aimaster/studio/montage/skill_bundle.py`:
+
+```python
+"""Скиллы HyperFrames закреплённой версии: где лежит кеш и как сверить набор.
+
+Кеш — <user_data_dir>/tools/hyperframes-skills/<тег>/<имя>, рядом с папкой движка
+(при AIMASTER_HYPERFRAMES_DIR — рядом с подменённой). Хэш набора — алгоритм
+`hashSkillBundle` HyperFrames, сверенный на всех 21 скилле v0.8.75: sha256 от
+«путь\\0содержимое\\0» по отсортированным путям, CRLF → LF только в текстовых файлах.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+
+from .engine import load_pin, tools_prefix
+
+SKILL_MARKER = ".aimaster-install.json"
+TEXT_EXT = frozenset({".md", ".txt", ".mjs", ".js", ".ts", ".jsx", ".tsx", ".html", ".css",
+                      ".json", ".svg", ".csv", ".yml", ".yaml"})
+
+
+def skills_pin() -> dict:
+    return load_pin()["skills"]
+
+
+def skills_cache(*, home=None, environ=None, pin=None) -> Path:
+    pin = pin or skills_pin()
+    return tools_prefix(home=home, environ=environ).parent / "hyperframes-skills" / pin["tag"]
+
+
+def bundle_hash(skill_dir: Path) -> tuple[str, int]:
+    """(хэш, число файлов) как у `hyperframes skills check`; пометка aimaster не считается."""
+
+    skill_dir = Path(skill_dir)
+    files = sorted((p for p in skill_dir.rglob("*")
+                    if p.is_file() and p.name not in (".DS_Store", SKILL_MARKER)),
+                   key=lambda p: p.relative_to(skill_dir).as_posix())
+    digest = hashlib.sha256()
+    for path in files:
+        rel = path.relative_to(skill_dir).as_posix()
+        data = path.read_bytes()
+        if rel[rel.rfind("."):] in TEXT_EXT:
+            data = data.decode("utf-8").replace("\r\n", "\n").encode("utf-8")
+        digest.update(rel.encode("utf-8") + b"\0" + data + b"\0")
+    return digest.hexdigest()[:16], len(files)
+
+
+def verify_skills(root: Path, pin: dict) -> list[str]:
+    """Имена скиллов, которых нет в root или чей хэш не совпал с выпуском."""
+
+    broken = []
+    for name, expected in sorted(pin["bundles"].items()):
+        folder = Path(root) / name
+        if not (folder / "SKILL.md").is_file() \
+                or bundle_hash(folder) != (expected["hash"], expected["files"]):
+            broken.append(name)
+    return broken
+```
+
+`skills/aimaster/studio/montage/workspace_skills.py`:
+
+```python
+"""Скиллы HyperFrames в рабочей папке: <ws>/.claude/skills/<имя> (Claude Code) и
+<ws>/.agents/skills/<имя> (Codex) — копией из кеша с пометкой «поставлено aimaster».
+
+Глобально (~/.claude/skills, ~/.agents/skills) не ставятся — решение владельца
+2026-09-25. Claude Code читает .claude/skills в папке запуска и выше до корня
+репозитория (code.claude.com/docs/en/skills), Codex — $CWD/.agents/skills и выше до
+корня репозитория (learn.chatgpt.com/docs/build-skills). Чужая папка с тем же именем
+не трогается (conflict); пересобирается только наша копия другой версии.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
+from .engine import install_command
+from .skill_bundle import SKILL_MARKER, skills_cache, skills_pin, verify_skills
+
+AGENT_DIRS = ((".claude", "skills"), (".agents", "skills"))
+
+
+def inspect_copy(target: Path, version: str) -> str:
+    """missing | current | outdated | foreign."""
+
+    if target.is_symlink() or (target.exists() and not target.is_dir()):
+        return "foreign"
+    if not target.exists():
+        return "missing"
+    try:
+        marker = json.loads((target / SKILL_MARKER).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "foreign"
+    if not isinstance(marker, dict) or marker.get("installed_by") != "aimaster":
+        return "foreign"
+    return "current" if marker.get("version") == version else "outdated"
+
+
+def _copy(source: Path, target: Path, version: str) -> None:
+    """Новая копия собирается рядом и встаёт на место; прежняя наша уходит только после."""
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix=f".{target.name}-", dir=str(target.parent)))
+    try:
+        fresh, old = work / "new", work / "old"
+        shutil.copytree(source, fresh, ignore=shutil.ignore_patterns(".DS_Store", "__pycache__"))
+        (fresh / SKILL_MARKER).write_text(json.dumps(
+            {"installed_by": "aimaster", "source": "hyperframes-skills", "version": version},
+            ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        if target.exists():
+            os.rename(target, old)
+        try:
+            os.rename(fresh, target)
+        except OSError:
+            if old.exists() and not target.exists():
+                os.rename(old, target)
+            raise
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _overall(statuses) -> str:
+    for status in ("failed", "conflict", "missing", "installed"):
+        if status in statuses:
+            return status
+    return "found"
+
+
+def sync_workspace_skills(workspace, *, create=True, home=None, environ=None, pin=None) -> dict:
+    pin = pin or skills_pin()
+    source_root = skills_cache(home=home, environ=environ, pin=pin)
+    names = sorted(pin["bundles"])
+    base = {"version": pin["tag"], "names": names, "items": [], "message": ""}
+    if verify_skills(source_root, pin):
+        return {**base, "status": "missing",
+                "message": f"скиллы HyperFrames не скачаны; поставить: {install_command()}"}
+    items = []
+    for parts in AGENT_DIRS:
+        for name in names:
+            target = Path(workspace).joinpath(*parts, name)
+            state = inspect_copy(target, pin["tag"])
+            item = {"path": str(target), "name": name, "status": "found"}
+            if state == "foreign":
+                item["status"] = "conflict"
+            elif state != "current" and not create:
+                item["status"] = "missing"
+            elif state != "current":
+                try:
+                    _copy(source_root / name, target, pin["tag"])
+                    item["status"] = "installed"
+                except (OSError, shutil.Error) as error:
+                    item.update(status="failed", message=str(error)[:300])
+            items.append(item)
+    status = _overall({item["status"] for item in items})
+    conflicts = [item["path"] for item in items if item["status"] == "conflict"]
+    if conflicts:
+        message = "чужие папки с теми же именами не тронуты: " + ", ".join(conflicts)
+    elif status == "missing":
+        message = "скиллы HyperFrames не скопированы в рабочую папку: montage draft или workspace init"
+    else:
+        message = ""
+    return {**base, "status": status, "items": items, "message": message}
+
+
+def skills_summary(workspace, **kwargs) -> dict:
+    """Коротко для ответов CLI: статус, версия, что делать."""
+
+    report = sync_workspace_skills(workspace, **kwargs)
+    return {key: report[key] for key in ("status", "version", "message")}
+```
 
 `skills/aimaster/scripts/install_montage_fetch.py`:
 
 ```python
 #!/usr/bin/env python3
-"""Скачивание и сверка скиллов HyperFrames закреплённой версии (engine.json → skills).
+"""Скачивание скиллов HyperFrames закреплённой версии (engine.json → skills) в кеш.
 
 Список файлов — один запрос к API деревьев GitHub по закреплённому дереву
 `skills/`, содержимое — raw.githubusercontent.com по закреплённому коммиту через
 одно HTTPS-соединение. Каждый файл сверяется с git-хэшем блоба, каждый скилл —
-с хэшем набора из skills-manifest.json этой версии (алгоритм `hashSkillBundle`
-HyperFrames, воспроизведён и сверен на всех 21 скилле v0.8.75). Подключение в
-каталоги агентов — install_montage_skills.py.
+с хэшем набора из skills-manifest.json этой версии (studio/montage/skill_bundle.py).
 """
 
 from __future__ import annotations
@@ -2219,12 +2528,10 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-import install
+from studio.montage.skill_bundle import verify_skills
 
 API_TREE = "https://api.github.com/repos/{repo}/git/trees/{tree}?recursive=1"
 RAW_HOST = "raw.githubusercontent.com"
-TEXT_EXT = frozenset({".md", ".txt", ".mjs", ".js", ".ts", ".jsx", ".tsx", ".html", ".css",
-                      ".json", ".svg", ".csv", ".yml", ".yaml"})
 HTTP_TIMEOUT = 60
 HEADERS = {"User-Agent": "aimaster-install", "Accept": "application/vnd.github+json"}
 CA_BUNDLES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt",
@@ -2246,23 +2553,6 @@ def ssl_context() -> ssl.SSLContext:
 
 def git_blob_sha(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
-
-
-def bundle_hash(skill_dir: Path) -> tuple[str, int]:
-    """(хэш, число файлов) как у `hyperframes skills check`: CRLF → LF только в текстовых."""
-
-    skill_dir = Path(skill_dir)
-    files = sorted((p for p in skill_dir.rglob("*")
-                    if p.is_file() and p.name not in (".DS_Store", install.MARKER)),
-                   key=lambda p: p.relative_to(skill_dir).as_posix())
-    digest = hashlib.sha256()
-    for path in files:
-        rel = path.relative_to(skill_dir).as_posix()
-        data = path.read_bytes()
-        if rel[rel.rfind("."):] in TEXT_EXT:
-            data = data.decode("utf-8").replace("\r\n", "\n").encode("utf-8")
-        digest.update(rel.encode("utf-8") + b"\0" + data + b"\0")
-    return digest.hexdigest()[:16], len(files)
 
 
 def fetch_tree(pin: dict, *, opener=urllib.request.urlopen) -> list[dict]:
@@ -2311,18 +2601,6 @@ class RawFetcher:
             self.connection = None
 
 
-def verify_skills(root: Path, pin: dict) -> list[str]:
-    """Имена скиллов, которых нет в root или чей хэш не совпал с выпуском."""
-
-    broken = []
-    for name, expected in sorted(pin["bundles"].items()):
-        folder = Path(root) / name
-        if not (folder / "SKILL.md").is_file() \
-                or bundle_hash(folder) != (expected["hash"], expected["files"]):
-            broken.append(name)
-    return broken
-
-
 def download_skills(pin: dict, dest: Path, *, tree=None, fetcher=None) -> None:
     """Качает во временную папку рядом с dest, сверяет, затем ставит на место."""
 
@@ -2359,84 +2637,21 @@ def download_skills(pin: dict, dest: Path, *, tree=None, fetcher=None) -> None:
 
 ```python
 #!/usr/bin/env python3
-"""Скиллы HyperFrames той же версии, что и движок: подключение и отчёт.
+"""Скиллы HyperFrames для install.py: скачать закреплённое ядро в кеш
+<user_data_dir>/tools/hyperframes-skills/<тег> и доложить статус.
 
-Скачанное (install_montage_fetch.py) лежит в <prefix>/skills/<тег>/<имя> и
-подключается в ~/.claude/skills и ~/.agents/skills так же, как навык aimaster
-(install.connect: ссылка, junction или копия с пометкой). Чужая папка с тем же
-именем не трогается — статус conflict. Ставится только ядро (10 скиллов):
-сценарные скиллы HyperFrames (figma, slideshow, …) не нужны — монтажом руководит
-aimaster.
+В каталоги агентов (~/.claude/skills, ~/.agents/skills) скиллы не ставятся —
+решение владельца 2026-09-25: в рабочую папку их копирует `workspace init`
+(studio/montage/workspace_skills.py).
 """
 
 from __future__ import annotations
 
-import json
-import os
-import shutil
 import urllib.error
-from pathlib import Path
 
 import install
-from install_montage_fetch import download_skills, verify_skills
-from studio.montage import engine
-
-
-def inspect_skill(target: Path, source: Path, ours_root: Path) -> str:
-    """missing | ours_current | ours_old | foreign."""
-
-    if install._is_link_like(target):
-        if install._norm(target) == install._norm(source):
-            return "ours_current"
-        return "ours_old" if install._inside(os.path.realpath(str(target)), str(ours_root)) \
-            else "foreign"
-    if not Path(target).exists():
-        return "missing"
-    try:
-        marker = json.loads((Path(target) / install.MARKER).read_text(encoding="utf-8"))
-        origin = str(marker.get("source", ""))
-    except (OSError, ValueError, AttributeError):
-        return "foreign"
-    if not origin or not install._inside(origin, str(ours_root)):
-        return "foreign"
-    return "ours_current" if install._norm(origin) == install._norm(source) else "ours_old"
-
-
-def link_skills(source_root, ours_root, home, version, *, names, agents=("claude", "codex"),
-                create=True) -> list[dict]:
-    items = []
-    for agent, _label, parts in install.AGENT_DIRS:
-        if agent not in agents:
-            continue
-        for name in names:
-            source = Path(source_root) / name
-            target = Path(home).joinpath(*parts) / name
-            state = inspect_skill(target, source, Path(ours_root))
-            item = {"agent": agent, "name": name, "path": str(target), "status": "found",
-                    "method": None, "message": ""}
-            if state == "foreign":
-                item.update(status="conflict", message="здесь чужая папка с тем же именем; не тронута")
-            elif state != "ours_current" and not create:
-                item.update(status="missing", message="поставить: install.py --install-deps")
-            elif state != "ours_current":
-                try:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    if state == "ours_old":
-                        method, _notes, _left = install.replace_installed(source, target, version)
-                    else:
-                        method, _notes = install.connect(source, target, version)
-                    item.update(status="installed", method=method)
-                except (OSError, shutil.Error) as error:
-                    item.update(status="failed", message=install._short_error(error))
-            items.append(item)
-    return items
-
-
-def _overall(statuses) -> str:
-    for status in ("failed", "timeout", "conflict", "missing", "installed"):
-        if status in statuses:
-            return status
-    return "found"
+from install_montage_fetch import download_skills
+from studio.montage.skill_bundle import skills_cache, skills_pin, verify_skills
 
 
 def _download_problem(error) -> tuple[str, str]:
@@ -2451,34 +2666,22 @@ def _download_problem(error) -> tuple[str, str]:
     return "failed", "скиллы HyperFrames не скачались: " + install._short_error(error)
 
 
-def skills_report(prefix: Path, home: Path, *, act: bool, agents=("claude", "codex"),
-                  pin=None, tree=None, fetcher=None) -> dict:
-    pin = pin or engine.load_pin()["skills"]
-    ours_root = Path(prefix) / "skills"
-    source_root = ours_root / pin["tag"]
-    names = sorted(pin["bundles"])
-    base = {"version": pin["tag"], "names": names, "items": [], "message": ""}
-    if verify_skills(source_root, pin):
-        if not act:
-            return {**base, "status": "missing",
-                    "message": "скиллы HyperFrames не скачаны; поставить: install.py --install-deps"}
-        try:
-            download_skills(pin, source_root, tree=tree, fetcher=fetcher)
-        except (OSError, ValueError) as error:
-            status, message = _download_problem(error)
-            return {**base, "status": status, "message": message}
-    items = link_skills(source_root, ours_root, home, pin["tag"], names=names, agents=agents,
-                        create=act)
-    status = _overall({item["status"] for item in items})
-    conflicts = [item["path"] for item in items if item["status"] == "conflict"]
-    if conflicts:
-        message = "чужие папки с теми же именами не тронуты: " + ", ".join(conflicts)
-    elif status == "missing":
-        message = "скиллы HyperFrames не подключены; поставить: install.py --install-deps"
-    else:
-        message = ""
-    return {**base, "status": status, "items": items, "message": message}
-
+def skills_report(*, act: bool, home=None, pin=None, tree=None, fetcher=None) -> dict:
+    pin = pin or skills_pin()
+    dest = skills_cache(home=home, pin=pin)
+    base = {"version": pin["tag"], "path": str(dest), "names": sorted(pin["bundles"])}
+    if not verify_skills(dest, pin):
+        return {**base, "status": "found", "message": ""}
+    if not act:
+        return {**base, "status": "missing",
+                "message": "скиллы HyperFrames не скачаны; поставить: install.py --install-deps"}
+    try:
+        download_skills(pin, dest, tree=tree, fetcher=fetcher)
+    except (OSError, ValueError) as error:
+        status, message = _download_problem(error)
+        return {**base, "status": status, "message": message}
+    return {**base, "status": "installed",
+            "message": "в рабочую папку скиллы кладёт workspace init (и montage draft)"}
 ```
 
 В `skills/aimaster/scripts/install_montage.py`:
@@ -2488,7 +2691,7 @@ def skills_report(prefix: Path, home: Path, *, act: bool, agents=("claude", "cod
 
 ```python
 def montage_report(kind: str, *, install_missing: bool, update: bool, install_node: bool,
-                   home: Path | None = None, agents=("claude", "codex"), skills=True) -> dict:
+                   home: Path | None = None, skills=True) -> dict:
     pin = engine.load_pin()
     prefix = engine.tools_prefix(home=home)
     act = install_missing or update
@@ -2507,44 +2710,17 @@ def montage_report(kind: str, *, install_missing: bool, update: bool, install_no
     else:
         report["browser"] = check_browser(prefix, pin)
     if skills:
-        report["skills"] = install_montage_skills.skills_report(
-            prefix, Path(home) if home else Path.home(), act=act, agents=agents)
-    # ok — готовность движка; конфликт имён скиллов виден в report["skills"], но сборку не блокирует
+        report["skills"] = install_montage_skills.skills_report(act=act, home=home)
+    # ok — готовность движка; статус скиллов виден в report["skills"], сборку он не блокирует
     report["ok"] = all(report[key]["status"] in READY for key in ("node", "hyperframes", "browser"))
     return report
-```
-
-В `skills/aimaster/scripts/install.py` — `_montage_report` заменить:
-
-```python
-def _montage_report(kind, install_deps, update, home, agents):
-    """Раздел montage отчёта. Модуль импортируется здесь, а не в начале файла:
-    install_montage.py написан для Python 3.11+, а проверка версии — в main."""
-    import install_montage
-    return install_montage.montage_report(kind, install_missing=install_deps, update=update,
-                                          install_node=install_deps, home=home, agents=agents)
-```
-
-и вызов в `main`:
-
-```python
-    agents = ("claude", "codex") if args.agent == "all" else (args.agent,)
-    report["montage"] = _montage_report(kind, args.install_deps, args.update, home, agents)
-```
-
-В `skills/aimaster/scripts/test_install.py`, тест `test_montage_section_is_reported_and_rendered` — строки распаковки аргументов заменить на:
-
-```python
-        kind, install_deps, update, home, agents = self.montage.call_args.args
-        self.assertEqual((kind, install_deps, update, home, agents),
-                         (report["platform"], True, False, self.home, ("claude", "codex")))
 ```
 
 В `skills/aimaster/scripts/test_install_montage.py`, `ReportTests.setUp` — в конец добавить:
 
 ```python
         skills_patch = mock.patch.object(install_montage.install_montage_skills, "skills_report",
-                                         return_value={"status": "found", "items": [], "message": ""})
+                                         return_value={"status": "found", "message": ""})
         self.skills = skills_patch.start()
         self.addCleanup(skills_patch.stop)
 ```
@@ -2552,32 +2728,48 @@ def _montage_report(kind, install_deps, update, home, agents):
 и в `ReportTests` — тест:
 
 ```python
-    def test_skills_follow_the_act_flag_and_agents(self):
+    def test_skills_follow_the_act_flag(self):
         with mock.patch.object(engine, "find_node", return_value=None):
             report = install_montage.montage_report("linux", install_missing=True, update=False,
-                                                    install_node=False, home=self.base,
-                                                    agents=("claude",))
+                                                    install_node=False, home=self.base)
         self.assertEqual(report["skills"]["status"], "found")
-        _prefix, home = self.skills.call_args.args
-        self.assertEqual(home, self.base)
-        self.assertEqual(self.skills.call_args.kwargs, {"act": True, "agents": ("claude",)})
+        self.assertEqual(self.skills.call_args.kwargs, {"act": True, "home": self.base})
+```
+
+`skills/aimaster/studio/workspace_init.py`:
+
+- после строки `from .library import INDEX_NAME, KIND_FOLDERS, LIBRARY_DIR_NAME, SCHEMA_VERSION, write_index_atomic` добавить `from .montage.workspace_skills import skills_summary`;
+- в `README_TEXT` перед пунктом про `.studio/` добавить:
+
+```
+- `.claude/skills/`, `.agents/skills/` — скиллы HyperFrames для агента (монтаж
+  ролика). Их кладёт и обновляет aimaster; свои скиллы кладите рядом — папки
+  с чужими скиллами он не трогает.
+```
+
+- в `init_workspace` строку `result = {"workspace": str(root), "created": created, "already_initialized": not created}` заменить на:
+
+```python
+    result = {"workspace": str(root), "created": created, "already_initialized": not created,
+              # без кеша — статус missing и команда установки, не ошибка
+              "hyperframes_skills": skills_summary(root)}
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_install*.py' -v`
-Expected: PASS (новые 18 тестов в `test_install_montage_skills.py`; `test_install_montage.py` — 19; `test_install.py` — все).
+Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_*skills.py' -v && python3 -m unittest discover -s skills/aimaster/scripts -p 'test_install*.py'`
+Expected: PASS (13 тестов в `test_install_montage_skills.py`, 6 — в `test_montage_workspace_skills.py`; `test_install_montage.py` — 20).
 
 - [ ] **Step 5: Full checks**
 
 Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_*.py' && python3 -m compileall -q skills/aimaster && git diff --check`
-Expected: всё зелёное.
+Expected: всё зелёное (прежние тесты `workspace init` проходят: скиллы не входят в `created`, повторный запуск остаётся `already_initialized`).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add skills/aimaster/scripts/install_montage_fetch.py skills/aimaster/scripts/install_montage_skills.py skills/aimaster/scripts/install_montage.py skills/aimaster/scripts/install.py skills/aimaster/scripts/test_install.py skills/aimaster/scripts/test_install_montage.py skills/aimaster/scripts/test_install_montage_skills.py
-git commit -m "feat(install): HyperFrames core skills pinned to v0.8.75, conflicts left untouched"
+git add skills/aimaster/studio/montage/skill_bundle.py skills/aimaster/studio/montage/workspace_skills.py skills/aimaster/scripts/install_montage_fetch.py skills/aimaster/scripts/install_montage_skills.py skills/aimaster/scripts/install_montage.py skills/aimaster/scripts/test_install_montage.py skills/aimaster/studio/workspace_init.py skills/aimaster/scripts/test_install_montage_skills.py skills/aimaster/scripts/test_montage_workspace_skills.py
+git commit -m "feat(montage): HyperFrames skills pinned to v0.8.75 in a cache, copied into the workspace"
 ```
 
 ---
@@ -2591,7 +2783,7 @@ git commit -m "feat(install): HyperFrames core skills pinned to v0.8.75, conflic
 
 **Interfaces:**
 - Consumes: `engine.require_engine()`, `engine_cli.run_engine`, `engine_cli.run_engine_json`, `engine_cli.frames_cache`, `probe.probe_media`, `montage_testkit.make_clip/make_tone`, `platform_compat.ensure_utf8_stdio`.
-- Produces: `montage_ci_check.COMPOSITION: str`, `montage_ci_check.external_urls(html_text) -> list[str]`, `montage_ci_check.check(offline: bool) -> dict`, `montage_ci_check.main(argv=None) -> int` (JSON: `ok`, `offline`, `engine`, `lint_errors`, `render_seconds`, `probe`, `external_urls`, `network_markers` — неожиданная сеть, ошибка; `known_network` — подкачка Inter с Google Fonts, известное ограничение; `problems`). Задача 19 переведёт проверку на настоящий черновик.
+- Produces: `montage_ci_check.COMPOSITION: str`, `montage_ci_check.external_urls(html_text) -> list[str]`, `montage_ci_check.check(offline: bool) -> dict`, `montage_ci_check.main(argv=None) -> int` (JSON: `ok`, `offline`, `engine`, `lint_errors`, `render_seconds`, `probe`, `external_urls`, `network_markers` — любой след сети в логе рендера, ошибка; `problems`). Композиция здесь без текста: шрифт монтажа появится в задаче 10, а задача 19 переведёт проверку на настоящий черновик с кириллическим титром и сравнит ролик с сетью и без.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2667,10 +2859,10 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'montage_ci_check'`.
     python skills/aimaster/scripts/montage_ci_check.py --json [--offline]
 
 Берёт движок, поставленный install_montage.py; в папке с кириллицей и
-пробелами собирает композицию из двух клипов, титра и голоса, прогоняет lint,
-рендер и ffprobe, ищет в композиции внешние ссылки, а в логе рендера — следы
-сетевых запросов (шрифты Google, CDN). --offline только помечает запуск: сеть
-отрезают снаружи (см. .github/workflows/ci.yml).
+пробелами собирает композицию из двух клипов и голоса (без текста), прогоняет
+lint, рендер и ffprobe, ищет в композиции внешние ссылки, а в логе рендера —
+следы сетевых запросов (шрифты Google, CDN). --offline только помечает запуск:
+сеть отрезают снаружи (см. .github/workflows/ci.yml).
 """
 
 from __future__ import annotations
@@ -2700,10 +2892,9 @@ from studio.platform_compat import ensure_utf8_stdio  # noqa: E402
 
 SIZE = (540, 960)
 DURATION = 3.0
-# CDN-скрипт в логе — ошибка; подкачка Inter с Google Fonts — известное ограничение
-# HyperFrames (подменяет sans-serif на Inter), фиксируется отдельно, но не валит проверку.
-SCRIPT_MARKERS = ("Inlined CDN script", "Failed to download CDN script")
-FONT_MARKERS = ("from Google Fonts",)
+# Любой след сети в логе рендера — ошибка: CDN-скрипт или шрифт с Google Fonts.
+NETWORK_MARKERS = ("Inlined CDN script", "Failed to download CDN script", "from Google Fonts",
+                   "fonts.googleapis.com")
 _EXTERNAL = re.compile(r"""(?:src|href)\s*=\s*["']((?:[a-z][a-z0-9+.-]*:|//)[^"']*)"""
                        r"""|url\(\s*["']?((?:[a-z][a-z0-9+.-]*:|//)[^"')]*)""", re.I)
 
@@ -2719,17 +2910,12 @@ COMPOSITION = """<!doctype html>
       .am-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
       .am-fade-in { animation: am-fade-in 0.4s linear both; }
       @keyframes am-fade-in { from { opacity: 0; } to { opacity: 1; } }
-      .am-title { position: absolute; left: 30px; right: 30px; bottom: 115px; z-index: 5;
-        display: flex; justify-content: center; font-family: sans-serif; }
-      .am-title span { background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 32px;
-        font-weight: 700; padding: 8px 16px; border-radius: 8px; }
     </style>
   </head>
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="3" data-width="540" data-height="960" data-no-timeline>
       <video id="v-1" class="am-video" src="assets/clip-1.mp4" data-start="0" data-duration="1.5" data-media-start="0" data-track-index="0" data-has-audio="true" data-volume="0.3" playsinline></video>
       <video id="v-2" class="am-video am-fade-in" src="assets/clip-2.mp4" data-start="1.5" data-duration="1.5" data-media-start="0" data-track-index="0" data-has-audio="true" data-volume="0.3" playsinline></video>
-      <div id="t-1" class="clip am-title" data-start="0.2" data-duration="2.6" data-track-index="1"><span>Проверка монтажа</span></div>
       <audio id="a-voice" src="assets/voice.wav" data-start="0" data-duration="3" data-media-start="0" data-track-index="2" data-volume="1"></audio>
     </div>
   </body>
@@ -2770,9 +2956,7 @@ def check(offline: bool) -> dict:
         report["render_seconds"] = round(time.monotonic() - started, 1)
         log = result.stdout + "\n" + result.stderr
         report["network_markers"] = [line.strip()[:300] for line in log.splitlines()
-                                     if any(marker in line for marker in SCRIPT_MARKERS)]
-        report["known_network"] = [line.strip()[:300] for line in log.splitlines()
-                                   if any(marker in line for marker in FONT_MARKERS)]
+                                     if any(marker in line for marker in NETWORK_MARKERS)]
         if result.code != 0 or not output.is_file():
             report["problems"].append(f"рендер завершился с кодом {result.code}: {log.strip()[-600:]}")
         else:
@@ -2862,7 +3046,7 @@ if __name__ == "__main__":
           sudo unshare --net -- bash -c "ip link set lo up && exec setpriv --reuid=$(id -u) --regid=$(id -g) --init-groups env PATH=\"$PATH\" HOME=\"$HOME\" PYTHONUTF8=1 python skills/aimaster/scripts/montage_ci_check.py --json --offline"
 ```
 
-Если шаг «без сети» на CI упадёт (в отчёте `problems` — строки `сеть: …` или ошибка рендера), шаг не отключать молча: добавить ему `continue-on-error: true`, а в `skills/aimaster/references/montage.md` (задача 20), раздел «Known limitations», записать строки отчёта как известное ограничение. Проба 2026-09-25 на macOS показала, что без сети рендер проходит (кириллица — системным шрифтом), поэтому по умолчанию шаг строгий.
+Если шаг «без сети» на CI упадёт (в отчёте `problems` — строки `сеть: …` или ошибка рендера), шаг не отключать молча: добавить ему `continue-on-error: true`, а в `skills/aimaster/references/montage.md` (задача 20), раздел «Known limitations», записать строки отчёта как известное ограничение. Проба 2026-09-25 на macOS: без сети рендер проходит, поэтому по умолчанию шаг строгий.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -2871,7 +3055,7 @@ Expected: PASS (3 tests).
 
 Затем проверить на этой машине по-настоящему (движок ставится в папку данных пользователя, ~225 МБ):
 Run: `python3 skills/aimaster/scripts/install_montage.py --json && python3 skills/aimaster/scripts/montage_ci_check.py --json`
-Expected: оба `"ok": true`; у `montage_ci_check` — `"external_urls": []`, `"network_markers": []`, `probe.duration` ≈ 3.0, `540×960`, `has_audio: true`; в `known_network` при доступной сети — строка «Fetched … "Inter" from Google Fonts» (это известное ограничение, см. факты).
+Expected: оба `"ok": true`; у `montage_ci_check` — `"external_urls": []`, `"network_markers": []`, `probe.duration` ≈ 3.0, `540×960`, `has_audio: true`.
 
 - [ ] **Step 5: Full checks**
 
@@ -2886,7 +3070,7 @@ git commit -m "ci(montage): real HyperFrames install and 3-second render on thre
 git push
 gh run watch --exit-status
 ```
-Expected: задачи `montage · ubuntu-latest|macos-latest|windows-latest` зелёные; в логе Linux шаг «Render without network» — `"ok": true, "offline": true, "known_network": []` (без сети HyperFrames шрифт не качает, а берёт системный).
+Expected: задачи `montage · ubuntu-latest|macos-latest|windows-latest` зелёные; в логе Linux шаг «Render without network» — `"ok": true, "offline": true, "network_markers": []`.
 
 ---
 ### Task 7: Раскладка `montage/` и точечная правка `index.html`
@@ -3552,11 +3736,11 @@ git commit -m "feat(montage): hard-link-or-copy media and composition reference 
 **Interfaces:**
 - Consumes: `domain_positions.position_specs(state)`, `domain_positions.current_member(state, spec, "result", missing_ok=True)`; `probe.MediaInfo`; `AUDIO_LAYER_NAMES`; `MontageError`.
 - Produces:
-  - `draft_plan.TRANSITION = 0.4`, `TITLE_INSET = 0.2`, `MIN_TITLE = 0.5`, `DEFAULT_VOLUMES = {"voice": 1.0, "music": 0.3, "fx": 0.8, "atmos": 0.5}`, `VIDEO_VOLUME = {False: 1.0, True: 0.3}`, `LAYER_FADE_OUT = {"music": 1.0, "atmos": 1.0}`.
-  - `@dataclass(frozen=True) ClipPlan(clip_id, layer, start, duration, scene_id=None, asset_id=None, media_start=0.0, volume=None, fade_in=0.0, fade_out=0.0, visual_fade=False, has_audio=False, text=None)`.
+  - `draft_plan.TRANSITION = 0.4`, `DEFAULT_VOLUMES = {"voice": 1.0, "music": 0.3, "fx": 0.8, "atmos": 0.5}`, `VIDEO_VOLUME = {False: 1.0, True: 0.3}`, `LAYER_FADE_OUT = {"music": 1.0, "atmos": 1.0}`.
+  - `@dataclass(frozen=True) ClipPlan(clip_id, layer, start, duration, scene_id=None, asset_id=None, media_start=0.0, volume=None, fade_in=0.0, fade_out=0.0, visual_fade=False, has_audio=False)`.
   - `@dataclass(frozen=True) DraftPlan(duration: float, clips: tuple[ClipPlan, ...])` с `media_assets() -> list[str]` и `first_video_asset() -> str | None`.
-  - `scene_ranges(state) -> dict[str, tuple[float, float]]`; `scene_text(scene) -> str`; `video_sources(state, *, strict=True) -> list[tuple[dict | None, str]]`; `audio_sources(state) -> dict[str, str]`; `plan_draft(state, media: Callable[[str], MediaInfo]) -> DraftPlan`.
-  - Идентификаторы клипов: видео `v-<n>` (по порядку сцен), титры `t-<n>` (номер сцены), звук `a-<layer>`.
+  - `scene_ranges(state) -> dict[str, tuple[float, float]]`; `video_sources(state, *, strict=True) -> list[tuple[dict | None, str]]`; `audio_sources(state) -> dict[str, str]`; `plan_draft(state, media: Callable[[str], MediaInfo]) -> DraftPlan`.
+  - Идентификаторы клипов: видео `v-<n>` (по порядку сцен), звук `a-<layer>`. Титров и надписей в черновике нет (решение владельца 2026-09-25): их добавляет только `montage edit` (задача 14).
   - `montage_testkit.video_state(scenes, *, audio=None, gen_mode="per_scene", oneshot_asset=None, mode="guided", project_id="p") -> dict`; `scenes` — список `(scene_id, title, text, duration_ms, asset_id | None)`.
 
 - [ ] **Step 1: Write the failing test**
@@ -3620,7 +3804,7 @@ def video_state(scenes, *, audio=None, gen_mode="per_scene", oneshot_asset=None,
 
 ```python
 #!/usr/bin/env python3
-"""План черновика: порядок сцен, окна сцен, выбранные результаты, звук, титры, переходы."""
+"""План черновика: порядок сцен, окна сцен, выбранные результаты, звук, переходы; без титров."""
 
 from __future__ import annotations
 
@@ -3670,10 +3854,11 @@ class DraftPlanTests(unittest.TestCase):
         self.assertEqual((videos[1].volume, videos[1].has_audio), (None, False))
         self.assertEqual(plan.first_video_asset(), "asset-a")
 
-    def test_titles_from_active_scene_text(self):
-        plan = plan_draft(video_state(SCENES), MEDIA.__getitem__)
-        self.assertEqual([(c.clip_id, c.start, c.duration, c.text) for c in by_layer(plan, "titles")],
-                         [("t-1", 0.2, 1.6, "Барсик идёт по саду"), ("t-2", 2.2, 1.1, "Находит клубок")])
+    def test_draft_has_no_titles(self):
+        """Текст сцены — описание кадра, а не реплика: титры добавляет только montage edit."""
+        plan = plan_draft(video_state(SCENES, audio={"voice": "asset-v"}), MEDIA.__getitem__)
+        self.assertEqual(by_layer(plan, "titles"), [])
+        self.assertEqual([c.clip_id for c in plan.clips], ["v-1", "v-2", "a-voice"])
 
     def test_audio_layers_and_video_under_them(self):
         plan = plan_draft(video_state(SCENES, audio={"voice": "asset-v", "music": "asset-m"}),
@@ -3705,8 +3890,7 @@ class DraftPlanTests(unittest.TestCase):
         plan = plan_draft(state, MEDIA.__getitem__)
         self.assertEqual([(c.clip_id, c.scene_id, c.start, c.duration) for c in by_layer(plan, "video")],
                          [("v-1", None, 0.0, 3.0)])
-        self.assertEqual([(c.clip_id, c.start, c.duration) for c in by_layer(plan, "titles")],
-                         [("t-1", 0.2, 1.6), ("t-2", 2.2, 0.6)])
+        self.assertEqual(by_layer(plan, "titles"), [])
 
 
 if __name__ == "__main__":
@@ -3727,10 +3911,11 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'studio.montage.draft_p
 
 Видео — по порядку сцен, каждый клип в окне своей сцены и не длиннее исходника;
 выбранный результат берётся по указателю позиции (`current_member`), а не по
-порядку списка. Звук — один текущий файл на слой от начала ролика. Титры —
-активная версия текста сцены. Переход — проявление следующего клипа (CSS в
-draft_html) и мягкие края его звука (`data-fade-in/out` в HyperFrames — это
-громкость, не картинка).
+порядку списка. Звук — один текущий файл на слой от начала ролика. Переход —
+проявление следующего клипа (CSS `@keyframes` в draft_html) и мягкие края его
+звука (`data-fade-in/out` в HyperFrames — это громкость, не картинка).
+Титров и надписей в черновике нет: текст сцены — описание кадра, а не реплика;
+титры добавляет только `montage edit` (решение владельца 2026-09-25).
 """
 
 from __future__ import annotations
@@ -3743,8 +3928,6 @@ from . import AUDIO_LAYER_NAMES, MontageError
 from .probe import MediaInfo
 
 TRANSITION = 0.4
-TITLE_INSET = 0.2
-MIN_TITLE = 0.5
 DEFAULT_VOLUMES = {"voice": 1.0, "music": 0.3, "fx": 0.8, "atmos": 0.5}
 VIDEO_VOLUME = {False: 1.0, True: 0.3}  # без звуковых слоёв / под ними
 LAYER_FADE_OUT = {"music": 1.0, "atmos": 1.0}
@@ -3764,7 +3947,6 @@ class ClipPlan:
     fade_out: float = 0.0
     visual_fade: bool = False
     has_audio: bool = False
-    text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -3793,13 +3975,6 @@ def scene_ranges(state) -> dict[str, tuple[float, float]]:
         ranges[scene["scene_id"]] = (round(start / 1000, 3), round((start + duration) / 1000, 3))
         cursor = start + duration
     return ranges
-
-
-def scene_text(scene: dict) -> str:
-    block = scene.get("script_block") or {}
-    active = next((v for v in block.get("versions", [])
-                   if v.get("version_id") == block.get("active_version_id")), {})
-    return " ".join(str(active.get("text", "")).split())
 
 
 def _current_asset(state, spec) -> str | None:
@@ -3859,26 +4034,12 @@ def _video_clips(state, videos, media, under_layers) -> list[ClipPlan]:
     return clips
 
 
-def _title_clips(state, total: float) -> list[ClipPlan]:
-    ranges = scene_ranges(state)
-    clips = []
-    for index, scene in enumerate(_ordered(state), start=1):
-        text = scene_text(scene)
-        start, end = ranges[scene["scene_id"]]
-        start, end = start + TITLE_INSET, min(end, total) - TITLE_INSET
-        if text and end - start >= MIN_TITLE:
-            clips.append(ClipPlan(f"t-{index}", "titles", round(start, 3), round(end - start, 3),
-                                  scene_id=scene["scene_id"], text=text))
-    return clips
-
-
 def plan_draft(state: dict, media: Callable[[str], MediaInfo]) -> DraftPlan:
     if (state.get("project") or {}).get("type") == "photo":
         raise MontageError("у фото-проекта монтажа нет: его сборка — принятая картинка")
     audio = audio_sources(state)
     clips = _video_clips(state, video_sources(state), media, bool(audio))
     total = round(max(clip.start + clip.duration for clip in clips), 3)
-    clips += _title_clips(state, total)
     for layer, asset in audio.items():
         info = media(asset)
         clips.append(ClipPlan(f"a-{layer}", layer, 0.0, round(min(info.duration, total), 3),
@@ -3901,7 +4062,7 @@ Expected: всё зелёное.
 
 ```bash
 git add skills/aimaster/studio/montage/draft_plan.py skills/aimaster/scripts/montage_testkit.py skills/aimaster/scripts/test_montage_draft_plan.py
-git commit -m "feat(montage): draft plan from chosen scene videos, sound layers and scene texts"
+git commit -m "feat(montage): draft plan from chosen scene videos and sound layers, no titles"
 ```
 
 ---
@@ -3909,28 +4070,141 @@ git commit -m "feat(montage): draft plan from chosen scene videos, sound layers 
 ### Task 10: Черновик — HTML композиции и `montage/current/`
 
 **Files:**
+- Create: `skills/aimaster/studio/montage/fonts/` — `inter-latin-400-normal.woff2`, `inter-cyrillic-400-normal.woff2`, `inter-latin-700-normal.woff2`, `inter-cyrillic-700-normal.woff2`, `OFL.txt`, `fonts.json`
+- Create: `skills/aimaster/studio/montage/typeface.py`
 - Create: `skills/aimaster/studio/montage/draft_html.py`
 - Create: `skills/aimaster/studio/montage/draft.py`
-- Test: `skills/aimaster/scripts/test_montage_draft.py`
+- Test: `skills/aimaster/scripts/test_montage_typeface.py`, `skills/aimaster/scripts/test_montage_draft.py`
 
 **Interfaces:**
 - Consumes: `draft_plan.plan_draft/video_sources/audio_sources/TRANSITION/ClipPlan/DraftPlan`; `canvas.canvas_for/Canvas`; `media_sync.sync_media`; `html_doc.element_attrs/set_attr/fmt_number`; `paths.MontagePaths`; `probe.probe_media/MediaInfo`; `platform_compat.replace_file`; `TRACK_OF_LAYER`.
 - Produces:
-  - `draft_html.render_draft_html(plan: DraftPlan, canvas: Canvas, sources: Mapping[str, str]) -> str`.
+  - `typeface.FONT_DIR`, `typeface.FONT_FAMILY = "AM Inter"`, `typeface.FONT_STACK = '"AM Inter", sans-serif'`, `typeface.ASSETS_SUBDIR = "fonts"`; `load_manifest() -> dict`; `verify_bundle(manifest=None) -> list[str]`; `font_face_css(indent="      ", manifest=None) -> str` (четыре `@font-face` на `assets/fonts/*.woff2`); `sync_fonts(assets_dir, manifest=None) -> list[str]`.
+  - `draft_html.render_draft_html(plan: DraftPlan, canvas: Canvas, sources: Mapping[str, str]) -> str`; `draft_html.title_fragment(clip_id, text, start, duration) -> str` — разметка титра (черновик их не создаёт; зовут `montage edit title-add`, тесты и проверка CI).
   - `draft.HYPERFRAMES_CONFIG = {"media": {"autoProxy": True}}`.
   - `@dataclass(frozen=True) draft.DraftResult(canvas: Canvas, duration: float, clips: int, media: dict)`.
   - `draft.write_text_atomic(path: Path, text: str) -> None`.
   - `draft.build_current(paths, state, resolve: Callable[[str], Path], *, probe=probe_media) -> DraftResult`; `draft.create_draft(...) -> DraftResult` (отказ, если `index.html` уже есть); `draft.rebuild_draft(paths, state, resolve, *, probe=probe_media) -> tuple[DraftResult, Path | None]` (прежний `current/index.html` — в `.undo/before-rebuild-*.html`, путь вторым элементом).
   - `draft.stale_clips(html_text, state) -> list[{"clip", "layer", "scene_id", "asset_id", "current_asset_id"}]`; `draft.refresh_draft(paths, state, resolve, *, probe=probe_media) -> list[dict]`.
-  - Разметка черновика: атрибуты `data-am-layer`, `data-am-scene`, `data-am-asset`; классы `am-video`, `am-fade-in`, `am-title`.
+  - Разметка черновика: атрибуты `data-am-layer`, `data-am-scene`, `data-am-asset`; классы `am-video`, `am-fade-in`; стиль `.am-title` объявлен заранее — для титров, которые добавит `montage edit` (в черновике их нет). Весь текст — шрифтом `typeface.FONT_STACK`; `current/assets/fonts/` заполняет `build_current`.
+
+- [ ] **Step 0: Положить шрифт в навык**
+
+Шрифт — Inter из npm-пакета `@fontsource/inter@5.3.0` (лицензия OFL-1.1, файл `LICENSE` пакета — текст OFL с копирайтом авторов Inter): латиница и кириллица, начертания 400 и 700, `woff2`, вместе 63,6 КБ. Файлы берутся из закреплённого архива пакета со сверкой sha256 (разовая команда, в навык не входит):
+
+```bash
+python3 - <<'PY'
+import hashlib, io, shutil, subprocess, tarfile, tempfile
+from pathlib import Path
+
+TGZ_SHA = "02034af8d41dcc67ac8eab88f642e129bb8a2e8922abf30229c32725f54d8fd6"
+WANT = {"package/files/inter-latin-400-normal.woff2": "inter-latin-400-normal.woff2",
+        "package/files/inter-cyrillic-400-normal.woff2": "inter-cyrillic-400-normal.woff2",
+        "package/files/inter-latin-700-normal.woff2": "inter-latin-700-normal.woff2",
+        "package/files/inter-cyrillic-700-normal.woff2": "inter-cyrillic-700-normal.woff2",
+        "package/LICENSE": "OFL.txt"}
+out = Path("skills/aimaster/studio/montage/fonts")
+out.mkdir(parents=True, exist_ok=True)
+with tempfile.TemporaryDirectory() as temp:
+    subprocess.run([shutil.which("npm"), "pack", "@fontsource/inter@5.3.0", "--pack-destination", temp],
+                   check=True, stdout=subprocess.DEVNULL)
+    data = next(Path(temp).glob("*.tgz")).read_bytes()
+assert hashlib.sha256(data).hexdigest() == TGZ_SHA, "архив @fontsource/inter@5.3.0 не совпал"
+with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+    for member, name in WANT.items():
+        (out / name).write_bytes(tar.extractfile(member).read())
+PY
+```
+
+`skills/aimaster/studio/montage/fonts/fonts.json` (sha256 и размеры сверены с архивом):
+
+```json
+{
+  "family": "AM Inter",
+  "source": "npm @fontsource/inter@5.3.0, files/*.woff2",
+  "tarball_sha256": "02034af8d41dcc67ac8eab88f642e129bb8a2e8922abf30229c32725f54d8fd6",
+  "license": "OFL-1.1",
+  "license_file": "OFL.txt",
+  "license_sha256": "3b0a5fca3d17942cde889069889dedbbbd075e9b599968c82a95f4d944e9b345",
+  "files": [
+    {"file": "inter-latin-400-normal.woff2", "weight": 400, "bytes": 23664,
+     "sha256": "8909904ab6c872eb994093482a88a28eca2cd95912d7b6fecd72103b0dc07edc",
+     "unicode_range": "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"},
+    {"file": "inter-cyrillic-400-normal.woff2", "weight": 400, "bytes": 7712,
+     "sha256": "f0bb586459ce8f09b238285040f17e3e9e9538b2c5a7aae0775194e33c36c3c3",
+     "unicode_range": "U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116"},
+    {"file": "inter-latin-700-normal.woff2", "weight": 700, "bytes": 24356,
+     "sha256": "6f56409fd3d64bb85f7d070bce20749db2d66b6d63cec586cc22d1c761be2491",
+     "unicode_range": "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"},
+    {"file": "inter-cyrillic-700-normal.woff2", "weight": 700, "bytes": 7904,
+     "sha256": "5917871d3cc970d8ce195101cbf65c1f68ec948022eb6070030342bb7edfb3bb",
+     "unicode_range": "U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116"}
+  ]
+}
+```
 
 - [ ] **Step 1: Write the failing test**
+
+`skills/aimaster/scripts/test_montage_typeface.py`:
+
+```python
+#!/usr/bin/env python3
+"""Шрифт монтажа: файлы в навыке совпадают с манифестом, @font-face только локальный."""
+
+from __future__ import annotations
+
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+_SCRIPTS = Path(__file__).resolve().parent
+_SKILL_ROOT = _SCRIPTS.parent
+for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
+
+from studio.montage import typeface  # noqa: E402
+
+
+class TypefaceTests(unittest.TestCase):
+    def test_bundle_matches_the_manifest_and_carries_the_license(self):
+        manifest = typeface.load_manifest()
+        self.assertEqual(typeface.verify_bundle(manifest), [])
+        self.assertEqual((manifest["family"], manifest["license"]), (typeface.FONT_FAMILY, "OFL-1.1"))
+        license_text = (typeface.FONT_DIR / manifest["license_file"]).read_text(encoding="utf-8")
+        self.assertIn("SIL Open Font License, Version 1.1", license_text)
+        self.assertLess(sum(item["bytes"] for item in manifest["files"]), 100 * 1024)
+
+    def test_css_declares_only_local_files_with_cyrillic(self):
+        css = typeface.font_face_css()
+        self.assertEqual(css.count("@font-face"), 4)
+        self.assertNotIn("http", css)
+        self.assertIn('url("assets/fonts/inter-cyrillic-700-normal.woff2")', css)
+        self.assertIn("U+0400-045F", css)
+        self.assertEqual(typeface.FONT_STACK, '"AM Inter", sans-serif')
+
+    def test_sync_copies_once_and_repairs_a_damaged_copy(self):
+        with tempfile.TemporaryDirectory() as temp:
+            assets = Path(temp) / "assets"
+            self.assertEqual(len(typeface.sync_fonts(assets)), 4)
+            self.assertEqual(typeface.sync_fonts(assets), [])
+            damaged = assets / "fonts" / "inter-latin-400-normal.woff2"
+            damaged.write_bytes(b"broken")
+            self.assertEqual(typeface.sync_fonts(assets), ["inter-latin-400-normal.woff2"])
+            self.assertEqual(damaged.read_bytes(),
+                             (typeface.FONT_DIR / "inter-latin-400-normal.woff2").read_bytes())
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
 
 `skills/aimaster/scripts/test_montage_draft.py`:
 
 ```python
 #!/usr/bin/env python3
-"""Черновик: эталонная разметка, без GSAP и внешних ссылок; обновление только устаревших клипов."""
+"""Черновик: эталонная разметка без титров, GSAP и внешних ссылок; свой шрифт; обновление устаревших клипов."""
 
 from __future__ import annotations
 
@@ -3950,6 +4224,7 @@ from montage_testkit import video_state  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
 from studio.montage.canvas import Canvas  # noqa: E402
 from studio.montage.draft import create_draft, rebuild_draft, refresh_draft, stale_clips  # noqa: E402
+from studio.montage.draft_html import title_fragment  # noqa: E402
 from studio.montage.html_doc import element_attrs  # noqa: E402
 from studio.montage.media_sync import external_references, missing_sources  # noqa: E402
 from studio.montage.paths import montage_paths  # noqa: E402
@@ -3966,8 +4241,6 @@ V1 = ('<video id="v-1" class="am-video" src="assets/asset-a.mp4" data-media-star
 V2 = ('<video id="v-2" class="am-video am-fade-in" src="assets/asset-b.mp4" data-media-start="0" '
       'data-start="2" data-duration="1.5" data-track-index="0" data-am-layer="video" '
       'data-am-scene="s2" data-am-asset="asset-b" muted playsinline></video>')
-T1 = ('<div id="t-1" class="clip am-title" data-start="0.2" data-duration="1.6" '
-      'data-track-index="1" data-am-layer="titles" data-am-scene="s1"><span>Барсик идёт по саду</span></div>')
 VOICE = ('<audio id="a-voice" src="assets/asset-v.wav" data-media-start="0" data-start="0" '
          'data-duration="3.5" data-track-index="2" data-am-layer="voice" data-am-asset="asset-v" '
          'data-volume="1"></audio>')
@@ -4001,16 +4274,25 @@ class DraftTests(unittest.TestCase):
     def test_draft_is_the_reference_composition(self):
         result = self.draft(video_state(SCENES, audio={"voice": "asset-v"}))
         text = self.paths.index.read_text(encoding="utf-8")
-        self.assertEqual((result.canvas, result.duration, result.clips), (Canvas(108, 192), 3.5, 5))
-        for line in (ROOT, V1, V2, T1, VOICE):
+        self.assertEqual((result.canvas, result.duration, result.clips), (Canvas(108, 192), 3.5, 3))
+        for line in (ROOT, V1, V2, VOICE):
             self.assertIn(line, text)
+        self.assertNotIn('data-am-layer="titles"', text)
         self.assertNotIn("gsap", text.lower())
         self.assertNotIn("<script", text)
-        self.assertIn("font-family: sans-serif", text)
+        self.assertIn('font-family: "AM Inter", sans-serif', text)
+        self.assertNotIn("font-family: sans-serif", text)
+        self.assertIn('src: url("assets/fonts/inter-cyrillic-400-normal.woff2") format("woff2")', text)
+        self.assertTrue((self.paths.assets / "fonts" / "inter-cyrillic-700-normal.woff2").is_file())
         self.assertEqual(external_references(text), [])
         self.assertEqual(missing_sources(text, self.paths.current), [])
         config = json.loads((self.paths.current / "hyperframes.json").read_text(encoding="utf-8"))
         self.assertEqual(config, {"media": {"autoProxy": True}})
+
+    def test_title_fragment_uses_the_title_style(self):
+        self.assertEqual(title_fragment("t-1", "Кот & «мяч»", 0.2, 1.6),
+                         '<div id="t-1" class="clip am-title" data-start="0.2" data-duration="1.6" '
+                         'data-track-index="1" data-am-layer="titles"><span>Кот &amp; «мяч»</span></div>')
 
     def test_second_draft_is_refused(self):
         self.draft(video_state(SCENES))
@@ -4035,7 +4317,7 @@ class DraftTests(unittest.TestCase):
         original = self.paths.index.read_text(encoding="utf-8")
         self.paths.index.write_text(original + "<!-- правка в столе -->", encoding="utf-8")
         result, backup = rebuild_draft(self.paths, video_state(SCENES), self.resolve, probe=self.probe)
-        self.assertEqual(result.clips, 4)
+        self.assertEqual(result.clips, 2)
         self.assertEqual(self.paths.index.read_text(encoding="utf-8"), original)
         self.assertEqual(backup.parent, self.paths.undo)
         self.assertTrue(backup.read_text(encoding="utf-8").endswith("<!-- правка в столе -->"))
@@ -4047,10 +4329,83 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_draft.py' -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'studio.montage.draft'`.
+Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_[dt]*.py' -v`
+Expected: FAIL — `ModuleNotFoundError: No module named 'studio.montage.draft'` и `ImportError: cannot import name 'typeface'`.
 
 - [ ] **Step 3: Write minimal implementation**
+
+`skills/aimaster/studio/montage/typeface.py`:
+
+```python
+"""Шрифт монтажа: Inter (OFL-1.1) из навыка → current/assets/fonts, @font-face локально.
+
+HyperFrames 0.8.75 подменяет общий `sans-serif` на Inter и при сети тянет его с
+Google Fonts. Шрифт, объявленный в композиции через локальный @font-face, он
+встраивает как data URI и в сеть не ходит (проба 2026-09-25: рендер с сетью и
+без сети совпал покадрово, framemd5 одинаковый). Поэтому текст в композициях
+монтажа — только семейство FONT_FAMILY. Файлы — латиница и кириллица, 400 и 700,
+из @fontsource/inter 5.3.0; манифест со sha256 — fonts/fonts.json.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+from pathlib import Path
+
+FONT_DIR = Path(__file__).with_name("fonts")
+FONT_FAMILY = "AM Inter"
+FONT_STACK = f'"{FONT_FAMILY}", sans-serif'
+ASSETS_SUBDIR = "fonts"
+
+
+def load_manifest() -> dict:
+    return json.loads((FONT_DIR / "fonts.json").read_text(encoding="utf-8"))
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def verify_bundle(manifest=None) -> list[str]:
+    """Файлы шрифта в навыке, которых нет или чей sha256 не совпал с манифестом."""
+
+    manifest = manifest or load_manifest()
+    return [item["file"] for item in manifest["files"]
+            if not (FONT_DIR / item["file"]).is_file()
+            or _sha256(FONT_DIR / item["file"]) != item["sha256"]]
+
+
+def font_face_css(indent: str = "      ", manifest=None) -> str:
+    manifest = manifest or load_manifest()
+    return "\n".join(
+        f'{indent}@font-face {{ font-family: "{FONT_FAMILY}"; '
+        f'src: url("assets/{ASSETS_SUBDIR}/{item["file"]}") format("woff2"); '
+        f'font-weight: {item["weight"]}; font-style: normal; font-display: block; '
+        f'unicode-range: {item["unicode_range"]}; }}'
+        for item in manifest["files"])
+
+
+def sync_fonts(assets_dir: Path, manifest=None) -> list[str]:
+    """Кладёт файлы шрифта в <current>/assets/fonts; совпавшие не трогает.
+    Возвращает имена скопированных."""
+
+    manifest = manifest or load_manifest()
+    target_dir = Path(assets_dir) / ASSETS_SUBDIR
+    target_dir.mkdir(parents=True, exist_ok=True)
+    copied = []
+    for item in manifest["files"]:
+        target = target_dir / item["file"]
+        if target.is_file() and _sha256(target) == item["sha256"]:
+            continue
+        temporary = target.with_name(f".{target.name}.part")
+        shutil.copyfile(FONT_DIR / item["file"], temporary)
+        os.replace(temporary, target)
+        copied.append(item["file"])
+    return copied
+```
 
 `skills/aimaster/studio/montage/draft_html.py`:
 
@@ -4060,8 +4415,9 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'studio.montage.draft'`
 Без GSAP и внешних ссылок. Корень помечен data-no-timeline: без таймлайна
 рантайм иначе ждёт его 45 с на каждом рендере. Переход между клипами —
 CSS-анимация проявления, которую рантайм HyperFrames перематывает покадрово
-(проба 0.8.75: яркость кадров 17 → 49 → 93). Шрифт титров — системный
-sans-serif: такие семейства HyperFrames не тянет с Google Fonts.
+(проба 0.8.75: яркость кадров 17 → 49 → 93). Титров в черновике нет; стиль
+.am-title — для титров, которые добавит montage edit. Шрифт — только локальный
+typeface.FONT_FAMILY: общий sans-serif HyperFrames подменяет на Inter с Google Fonts.
 """
 
 from __future__ import annotations
@@ -4073,15 +4429,16 @@ from . import TRACK_OF_LAYER
 from .canvas import Canvas
 from .draft_plan import TRANSITION, ClipPlan, DraftPlan
 from .html_doc import fmt_number as fmt
+from .typeface import FONT_STACK, font_face_css
 
 _STYLE = """      * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-      html, body {{ width: {w}px; height: {h}px; overflow: hidden; background: #000; }}
+      html, body {{ width: {w}px; height: {h}px; overflow: hidden; background: #000; font-family: {font_stack}; }}
       #root {{ position: relative; width: {w}px; height: {h}px; overflow: hidden; background: #000; }}
       .am-video {{ position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }}
       .am-fade-in {{ animation: am-fade-in {t}s linear both; }}
       @keyframes am-fade-in {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
       .am-title {{ position: absolute; left: {pad}px; right: {pad}px; bottom: {bottom}px; z-index: 5;
-        display: flex; justify-content: center; text-align: center; font-family: sans-serif; }}
+        display: flex; justify-content: center; text-align: center; font-family: {font_stack}; }}
       .am-title span {{ background: rgba(0, 0, 0, 0.6); color: #fff; font-size: {font}px;
         font-weight: 700; line-height: 1.25; padding: {vpad}px {hpad}px; border-radius: {radius}px; }}"""
 
@@ -4108,9 +4465,6 @@ def _sound(clip: ClipPlan) -> list:
 
 
 def _element(clip: ClipPlan, sources: Mapping[str, str]) -> str:
-    if clip.layer == "titles":
-        pairs = [("id", clip.clip_id), ("class", "clip am-title")] + _common(clip, "titles")
-        return f"<div {_attrs(pairs)}><span>{html.escape(clip.text or '', quote=False)}</span></div>"
     media = [("src", sources[clip.asset_id]), ("data-media-start", fmt(clip.media_start))]
     if clip.layer == "video":
         classes = "am-video am-fade-in" if clip.visual_fade else "am-video"
@@ -4121,9 +4475,19 @@ def _element(clip: ClipPlan, sources: Mapping[str, str]) -> str:
     return f"<audio {_attrs(pairs)}></audio>"
 
 
+def title_fragment(clip_id: str, text: str, start: float, duration: float) -> str:
+    """Титр на дорожке «Титры» со стилем .am-title. Черновик титров не создаёт:
+    их добавляет montage edit (title-add) — по просьбе или в автопилоте по смыслу."""
+
+    pairs = [("id", clip_id), ("class", "clip am-title"), ("data-start", fmt(start)),
+             ("data-duration", fmt(duration)), ("data-track-index", TRACK_OF_LAYER["titles"]),
+             ("data-am-layer", "titles")]
+    return f"<div {_attrs(pairs)}><span>{html.escape(text, quote=False)}</span></div>"
+
+
 def render_draft_html(plan: DraftPlan, canvas: Canvas, sources: Mapping[str, str]) -> str:
     scale = canvas.width / 1080
-    style = _STYLE.format(w=canvas.width, h=canvas.height, t=fmt(TRANSITION),
+    style = _STYLE.format(w=canvas.width, h=canvas.height, t=fmt(TRANSITION), font_stack=FONT_STACK,
                           pad=round(60 * scale), bottom=round(canvas.height * 0.12),
                           font=max(24, round(64 * scale)), vpad=round(16 * scale),
                           hpad=round(32 * scale), radius=round(16 * scale))
@@ -4134,7 +4498,7 @@ def render_draft_html(plan: DraftPlan, canvas: Canvas, sources: Mapping[str, str
     return "\n".join([
         "<!doctype html>", '<html lang="ru">', "  <head>", '    <meta charset="UTF-8" />',
         f'    <meta name="viewport" content="width={canvas.width}, height={canvas.height}" />',
-        "    <style>", style, "    </style>", "  </head>", "  <body>", f"    <div {root}>",
+        "    <style>", font_face_css(), style, "    </style>", "  </head>", "  <body>", f"    <div {root}>",
         *body, "    </div>", "  </body>", "</html>", ""])
 ```
 
@@ -4161,6 +4525,7 @@ from .html_doc import element_attrs, fmt_number, set_attr
 from .media_sync import sync_media
 from .paths import MontagePaths
 from .probe import MediaInfo, probe_media
+from .typeface import sync_fonts
 
 HYPERFRAMES_CONFIG = {"media": {"autoProxy": True}}
 
@@ -4199,6 +4564,7 @@ def build_current(paths: MontagePaths, state: dict, resolve: Callable[[str], Pat
     canvas = canvas_for(media(first) if first else None)
     synced = sync_media(((asset, resolve(asset)) for asset in plan.media_assets()), paths.assets)
     sources = {asset: item["src"] for asset, item in synced.items()}
+    sync_fonts(paths.assets)
     write_text_atomic(paths.current / "hyperframes.json",
                       json.dumps(HYPERFRAMES_CONFIG, indent=2) + "\n")
     write_text_atomic(paths.index, render_draft_html(plan, canvas, sources))
@@ -4274,8 +4640,8 @@ def refresh_draft(paths, state, resolve, *, probe=probe_media) -> list[dict]:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_draft.py' -v`
-Expected: PASS (4 tests).
+Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_[dt]*.py' -v`
+Expected: PASS (`test_montage_typeface.py` — 3, `test_montage_draft.py` — 5; `test_montage_draft_plan.py` — 7).
 
 - [ ] **Step 5: Full checks**
 
@@ -4285,8 +4651,8 @@ Expected: всё зелёное.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add skills/aimaster/studio/montage/draft_html.py skills/aimaster/studio/montage/draft.py skills/aimaster/scripts/test_montage_draft.py
-git commit -m "feat(montage): GSAP-free offline draft composition with refresh of stale clips"
+git add skills/aimaster/studio/montage/fonts skills/aimaster/studio/montage/typeface.py skills/aimaster/studio/montage/draft_html.py skills/aimaster/studio/montage/draft.py skills/aimaster/scripts/test_montage_typeface.py skills/aimaster/scripts/test_montage_draft.py
+git commit -m "feat(montage): offline draft composition with a bundled Inter font, refresh of stale clips"
 ```
 
 ---
@@ -4295,16 +4661,17 @@ git commit -m "feat(montage): GSAP-free offline draft composition with refresh o
 **Files:**
 - Create: `skills/aimaster/studio/montage/model.py`
 - Create: `skills/aimaster/studio/montage/model_diff.py`
-- Modify: `skills/aimaster/scripts/montage_testkit.py` (добавить `timeline_from_html`, `fake_engine`, `FakeHyperframes`)
+- Modify: `skills/aimaster/scripts/montage_testkit.py` (добавить `timeline_from_html`, `fake_engine`, `FakeHyperframes`, `TITLES`, `with_titles`)
 - Test: `skills/aimaster/scripts/test_montage_model.py`
 
 **Interfaces:**
-- Consumes: `engine.Engine`; `engine_cli.EngineRunner`, `engine_cli.EngineResult`; `html_doc.element_attrs/element_span/set_attr/root_duration/fmt_number`; `LAYERS`, `LAYER_LABELS`, `MontageError`.
+- Consumes: `engine.Engine`; `engine_cli.EngineRunner`, `engine_cli.EngineResult`; `html_doc.element_attrs/element_span/set_attr/root_duration/fmt_number/insert_before_root_end`; `draft_html.title_fragment`; `LAYERS`, `LAYER_LABELS`, `MontageError`.
 - Produces:
   - `@dataclass(frozen=True) model.Clip(id, layer, kind, start, duration, media_start=0.0, volume=None, fade_in=0.0, fade_out=0.0, scene_id=None, asset_id=None, src=None, text=None)` со свойством `end`.
   - `@dataclass(frozen=True) model.Model(duration: float, clips: tuple[Clip, ...])` с `to_dict()`, `Model.from_dict(data)`, `clip(clip_id) -> Clip` (иначе `MontageError`).
   - `model.build_model(timeline: dict, html_text: str) -> Model`; `model.model_hash(model) -> str` (16 hex); `model.read_model(engine, current_dir: Path, *, cache_dir: Path | None = None, runner=None) -> Model`; `model.layers_view(model) -> list[{"layer", "label", "clips": [{"id", "kind", "start", "duration", "media_start", "volume", "scene_id", "asset_id", "text"}]}]` (порядок `LAYERS`, все шесть дорожек всегда).
-  - `model_diff.fmt_time(seconds) -> "м:сс.д"`, `model_diff.fmt_len(seconds) -> "3,5 с"`, `model_diff.clip_name(clip, names) -> str`, `model_diff.diff_models(old: Model | None, new: Model, *, names: Mapping[str, str] | None = None) -> list[str]`.
+  - `model_diff.fmt_time(seconds) -> "м:сс.д"`, `model_diff.fmt_len(seconds) -> "3,5 с"`, `model_diff.clips_count(n) -> "1 клип" | "3 клипа" | "5 клипов"`, `model_diff.clip_name(clip, names) -> str`, `model_diff.diff_models(old: Model | None, new: Model, *, names: Mapping[str, str] | None = None) -> list[str]`.
+  - `montage_testkit.TITLES = (("t-1", "Барсик идёт по саду", 0.2, 1.6), ("t-2", "Находит клубок", 2.2, 1.1))`, `montage_testkit.with_titles(html_text, titles=TITLES) -> str` — черновик без титров плюс титры, как их добавил бы `montage edit` (для тестов модели, правок, сборки).
   - `montage_testkit.timeline_from_html(html_text) -> dict` (форма вывода `timeline --json` 0.8.75), `montage_testkit.fake_engine(prefix) -> Engine`, `class montage_testkit.FakeHyperframes(*, lint_report=None, render_bytes=None, render_log="[INFO] done", refuse=None)` — методы `json(...)`, `run(...)` как у `EngineRunner`, список `calls`, словарь `refuse` (`{"move": "причина"}`).
 
 - [ ] **Step 1: Write the failing test**
@@ -4314,14 +4681,26 @@ git commit -m "feat(montage): GSAP-free offline draft composition with refresh o
 ```python
 from studio.montage import MontageError  # noqa: E402
 from studio.montage.engine import Engine  # noqa: E402
+from studio.montage.draft_html import title_fragment  # noqa: E402
 from studio.montage.engine_cli import EngineResult  # noqa: E402
 from studio.montage.html_doc import (  # noqa: E402
-    element_attrs, element_span, fmt_number, root_duration, set_attr)
+    element_attrs, element_span, fmt_number, insert_before_root_end, root_duration, set_attr)
 ```
 
 и в конец файла:
 
 ```python
+TITLES = (("t-1", "Барсик идёт по саду", 0.2, 1.6), ("t-2", "Находит клубок", 2.2, 1.1))
+
+
+def with_titles(html_text: str, titles=TITLES) -> str:
+    """Черновик без титров + титры, как их добавил бы montage edit (title-add)."""
+
+    for clip_id, text, start, duration in titles:
+        html_text = insert_before_root_end(html_text, title_fragment(clip_id, text, start, duration))
+    return html_text
+
+
 def fake_engine(prefix: Path) -> Engine:
     return Engine(node="node", script=Path(prefix) / "hyperframes.mjs", prefix=Path(prefix),
                   version="0.8.75", browser=None)
@@ -4449,13 +4828,14 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from montage_testkit import FakeHyperframes, fake_engine, timeline_from_html, video_state  # noqa: E402
+from montage_testkit import (  # noqa: E402
+    FakeHyperframes, fake_engine, timeline_from_html, video_state, with_titles)
 from studio.montage.canvas import Canvas  # noqa: E402
 from studio.montage.draft_html import render_draft_html  # noqa: E402
 from studio.montage.draft_plan import plan_draft  # noqa: E402
 from studio.montage.html_doc import element_span, insert_before_root_end, set_attr, set_text  # noqa: E402
 from studio.montage.model import Model, build_model, layers_view, model_hash, read_model  # noqa: E402
-from studio.montage.model_diff import diff_models, fmt_len, fmt_time  # noqa: E402
+from studio.montage.model_diff import clips_count, diff_models, fmt_len, fmt_time  # noqa: E402
 from studio.montage.probe import MediaInfo  # noqa: E402
 
 MEDIA = {"asset-a": MediaInfo(2.0, 108, 192, True, True),
@@ -4468,9 +4848,14 @@ SCENES = [("s1", "Сад", "Барсик идёт по саду", 2000, "asset-a
 NAMES = {"s1": "сцены 1 «Сад»", "s2": "сцены 2 «Клубок»"}
 
 
-def draft_html() -> str:
+def bare_draft() -> str:
     plan = plan_draft(video_state(SCENES, audio={"voice": "asset-v"}), MEDIA.__getitem__)
     return render_draft_html(plan, Canvas(108, 192), SOURCES)
+
+
+def draft_html() -> str:
+    """Черновик и два титра, добавленных правкой: титров в самом черновике нет."""
+    return with_titles(bare_draft())
 
 
 def model_of(text: str) -> Model:
@@ -4531,7 +4916,10 @@ class DiffTests(unittest.TestCase):
         self.assertEqual((fmt_time(65.3), fmt_len(3.5)), ("1:05.3", "3,5 с"))
 
     def test_first_version(self):
+        self.assertEqual(diff_models(None, model_of(bare_draft())), ["черновой монтаж: 3 клипа, 3,5 с"])
         self.assertEqual(diff_models(None, self.old), ["черновой монтаж: 5 клипов, 3,5 с"])
+        self.assertEqual([clips_count(n) for n in (1, 2, 11, 21, 22, 25)],
+                         ["1 клип", "2 клипа", "11 клипов", "21 клип", "22 клипа", "25 клипов"])
 
     def test_trim_head_is_one_line(self):
         text = self.text
@@ -4748,6 +5136,14 @@ def fmt_len(seconds: float) -> str:
     return f"{float(seconds):.1f}".replace(".", ",") + " с"
 
 
+def clips_count(count: int) -> str:
+    if count % 10 == 1 and count % 100 != 11:
+        return f"{count} клип"
+    if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14:
+        return f"{count} клипа"
+    return f"{count} клипов"
+
+
 def clip_name(clip: Clip, names: Mapping[str, str]) -> str:
     if clip.layer == "titles":
         return f"титр «{clip.text or clip.id}»"
@@ -4810,7 +5206,7 @@ def _split_pieces(before: dict, after: dict) -> dict[str, str]:
 def diff_models(old: Model | None, new: Model, *, names: Mapping[str, str] | None = None) -> list[str]:
     names = names or {}
     if old is None:
-        return [f"черновой монтаж: {len(new.clips)} клипов, {fmt_len(new.duration)}"]
+        return [f"черновой монтаж: {clips_count(len(new.clips))}, {fmt_len(new.duration)}"]
     before = {clip.id: clip for clip in old.clips}
     after = {clip.id: clip for clip in new.clips}
     changes = []
@@ -4899,7 +5295,7 @@ MODEL = Model(1.0, (Clip(id="v-1", layer="video", kind="video", start=0.0, durat
 def meta(version, based_on=None, model_hash="h1"):
     return VersionMeta(version=version, created_at="2026-09-25T10:00:00+00:00", by="agent",
                        based_on=based_on, summary="Черновой монтаж",
-                       changes=("черновой монтаж: 1 клипов, 1,0 с",), asset_id="asset-x",
+                       changes=("черновой монтаж: 1 клип, 1,0 с",), asset_id="asset-x",
                        model_hash=model_hash)
 
 
@@ -5572,14 +5968,15 @@ git commit -m "feat(montage): montage section in state, written with assembly an
 - Test: `skills/aimaster/scripts/test_montage_edit.py`
 
 **Interfaces:**
-- Consumes: `model.read_model/model_hash/Model.clip`; `engine_cli.EngineRunner`; `draft.write_text_atomic`; `html_doc.element_attrs/set_attr/set_text/insert_before_root_end/root_duration/fmt_number/ROOT_ID`; `paths.MontagePaths`; `TRACK_OF_LAYER`; `MontageError`.
+- Consumes: `model.read_model/model_hash/Model.clip`; `engine_cli.EngineRunner`; `draft.write_text_atomic`; `draft_html.title_fragment`; `html_doc.element_attrs/set_attr/set_text/insert_before_root_end/root_duration/fmt_number/ROOT_ID`; `paths.MontagePaths`; `MontageError`; `montage_testkit.with_titles`.
 - Produces:
   - `edit.OPS = ("move", "trim-start", "trim-end", "split", "delete", "volume", "fade", "title-add", "title-text", "undo")`.
   - `@dataclass(frozen=True) edit.EditRequest(op, clip=None, at=None, seconds=None, duration=None, value=None, fade_in=None, fade_out=None, text=None)`.
   - `@dataclass(frozen=True) edit.EditContext(engine, paths, runner)`.
   - `edit.apply_edit(engine, paths, request, *, expected_model_hash=None, runner=None) -> {"op", "clip", "model_hash_before", "model_hash", "duration", "receipt"}`; для `undo` — `{"op": "undo", "ok": True, "restored": <имя снимка>}`.
   - `edit.undo_last(paths) -> dict`.
-  - `edit_ops.need(value, flag, op)`, `edit_ops.CLIP_OPS: dict[str, Callable[[EditContext, Clip, EditRequest], dict]]`, `edit_ops.title_add(ctx, request) -> {"ok", "new_clip"}`; у `split` квитанция дополнена `new_clip`.
+  - `edit_ops.need(value, flag, op)`, `edit_ops.CLIP_OPS: dict[str, Callable[[EditContext, Clip, EditRequest], dict]]`, `edit_ops.title_add(ctx, request) -> {"ok", "new_clip"}` (номер — следующий свободный `t-N`, на черновике без титров — `t-1`); у `split` квитанция дополнена `new_clip`.
+  - Титры и надписи появляются в монтаже только здесь (`title-add`, `title-text`): черновик их не создаёт (решение владельца 2026-09-25).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -5603,7 +6000,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from montage_testkit import FakeHyperframes, fake_engine, video_state  # noqa: E402
+from montage_testkit import FakeHyperframes, fake_engine, video_state, with_titles  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
 from studio.montage.canvas import Canvas  # noqa: E402
 from studio.montage.draft_html import render_draft_html  # noqa: E402
@@ -5630,7 +6027,9 @@ class EditTests(unittest.TestCase):
         self.paths = montage_paths(base / "p")
         self.paths.current.mkdir(parents=True)
         plan = plan_draft(video_state(SCENES, audio={"voice": "asset-v"}), MEDIA.__getitem__)
-        self.paths.index.write_text(render_draft_html(plan, Canvas(108, 192), SOURCES), encoding="utf-8")
+        self.bare = render_draft_html(plan, Canvas(108, 192), SOURCES)
+        # титры t-1, t-2 — как после двух правок title-add: в черновике их нет
+        self.paths.index.write_text(with_titles(self.bare), encoding="utf-8")
         self.runner = FakeHyperframes()
         self.engine = fake_engine(base / "engine")
 
@@ -5674,6 +6073,13 @@ class EditTests(unittest.TestCase):
                          ("Финал <3", "4"))
         self.edit(op="title-text", clip="t-1", text="Кот & мяч")
         self.assertEqual(self.attrs()["t-1"]["_text"], "Кот & мяч")
+
+    def test_first_title_on_a_bare_draft_is_t1(self):
+        self.paths.index.write_text(self.bare, encoding="utf-8")
+        result = self.edit(op="title-add", text="Привет", at=0.5, duration=1.0)
+        self.assertEqual(result["receipt"]["new_clip"], "t-1")
+        self.assertEqual((self.attrs()["t-1"]["class"], self.attrs()["t-1"]["data-am-layer"]),
+                         ("clip am-title", "titles"))
 
     def test_volume_and_fade(self):
         self.edit(op="volume", clip="a-voice", value=0.5)
@@ -5744,11 +6150,11 @@ CLI отклоняет, а Studio удлиняет корень. Поэтому 
 
 from __future__ import annotations
 
-import html
 import re
 
-from . import TRACK_OF_LAYER, MontageError
+from . import MontageError
 from .draft import write_text_atomic
+from .draft_html import title_fragment
 from .html_doc import (ROOT_ID, element_attrs, fmt_number as fmt, insert_before_root_end,
                        root_duration, set_attr, set_text)
 
@@ -5860,9 +6266,7 @@ def title_add(ctx, req):
     ids = element_attrs(ctx.paths.index.read_text(encoding="utf-8"))
     number = max((int(m.group(1)) for m in map(_TITLE_ID.fullmatch, ids) if m), default=0) + 1
     new_id = f"t-{number}"
-    fragment = (f'<div id="{new_id}" class="clip am-title" data-start="{fmt(start)}" '
-                f'data-duration="{fmt(duration)}" data-track-index="{TRACK_OF_LAYER["titles"]}" '
-                f'data-am-layer="titles"><span>{html.escape(text, quote=False)}</span></div>')
+    fragment = title_fragment(new_id, text, start, duration)
     extend_root(ctx, start + duration)
     patch(ctx, lambda current: insert_before_root_end(current, fragment))
     return {"ok": True, "new_clip": new_id}
@@ -5991,7 +6395,7 @@ def apply_edit(engine: Engine, paths: MontagePaths, request: EditRequest, *,
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_edit.py' -v`
-Expected: PASS (9 tests).
+Expected: PASS (10 tests).
 
 - [ ] **Step 5: Full checks**
 
@@ -6012,15 +6416,19 @@ git commit -m "feat(montage): Studio-aligned agent edits with stale-model guard 
 - Create: `skills/aimaster/studio/montage/context.py`
 - Create: `skills/aimaster/studio/montage/verify.py`
 - Create: `skills/aimaster/studio/montage/render.py`
+- Modify: `skills/aimaster/studio/workspace.py` (`MONTAGE_MAX_BYTES`)
+- Modify: `skills/aimaster/studio/assets.py` (`AssetIndex(..., montage_max_bytes=None)`, `_size_limit`)
+- Modify: `skills/aimaster/studio/authoring_support.py`, `skills/aimaster/studio/server.py` (передают `montage_max_bytes`)
 - Test: `skills/aimaster/scripts/test_montage_render.py`
 
 **Interfaces:**
-- Consumes: `workspace.resolve_workspace_paths`, `workspace.MAX_ASSET_BYTES`; `authoring_support.open_store/open_assets`; `store.ProjectStore.project_dir/load`, `store.RevisionConflict`; `engine.require_engine/load_pin/Engine`; `engine_cli.EngineRunner/frames_cache`; `media_sync.check_composition`; `model.read_model/model_hash/Model`; `model_diff.diff_models`; `montage_state.check_writable/montage_section/record_version`; `versions.*`; `paths.render_output`; `probe.probe_media/MediaInfo`; `canvas.Canvas`; `html_doc.element_attrs/ROOT_ID`.
+- Consumes: `workspace.resolve_workspace_paths`, `workspace.MAX_ASSET_BYTES`, `workspace.MONTAGE_MAX_BYTES`; `authoring_support.open_store/open_assets`; `store.ProjectStore.project_dir/load`, `store.RevisionConflict`; `engine.require_engine/load_pin/Engine`; `engine_cli.EngineRunner/frames_cache`; `media_sync.check_composition`; `model.read_model/model_hash/Model`; `model_diff.diff_models`; `montage_state.check_writable/montage_section/record_version`; `versions.*`; `paths.render_output`; `probe.probe_media/MediaInfo`; `canvas.Canvas`; `html_doc.element_attrs/ROOT_ID`.
 - Produces:
   - `@dataclass(frozen=True) context.ProjectContext(workspace, project_id, store, assets, state, project_dir, media_root)` со свойствами `paths`, `revision`, `mode` и методами `resolve(asset_id) -> Path`, `scene_names() -> {scene_id: "сцены N «Название»"}`; `context.open_context(workspace, project_id) -> ProjectContext`.
-  - `verify.FONT_MARKERS`, `verify.SCRIPT_MARKERS`; `verify.network_markers(log_text) -> list[str]` (все следы сети — в `warnings` версии); `verify.unexpected_network(log_text) -> list[str]` (только CDN-скрипты — это ошибка; подкачка Inter с Google Fonts — известное ограничение HyperFrames); `verify.lint_problems(report) -> list[str]`; `verify.output_problems(info, *, duration, canvas, needs_audio) -> list[str]`; `verify.DURATION_TOLERANCE = 0.1`.
+  - `workspace.MONTAGE_MAX_BYTES = 2 * 1024 ** 3`; `AssetIndex(root, allowed_roots, max_bytes, *, db_path=None, montage_max_bytes=None)` — файл `<медиа>/<проект>/montage/vNNN.mp4` проверяется по `montage_max_bytes`, любой другой — по `max_bytes`.
+  - `verify.FONT_MARKERS`, `verify.SCRIPT_MARKERS`; `verify.network_markers(log_text) -> list[str]` — любой след сети в логе рендера (подкачка шрифта с Google Fonts, CDN-скрипт) — **ошибка сборки**: у монтажа свой шрифт и свой GSAP в `assets/`, ролик с сетью и без сети обязан совпадать; `verify.lint_problems(report) -> list[str]`; `verify.lint_warnings(report) -> list[str]` (предупреждения lint — в `warnings` версии); `verify.output_problems(info, *, duration, canvas, needs_audio) -> list[str]`; `verify.DURATION_TOLERANCE = 0.1`.
   - `@dataclass(frozen=True) render.RenderOutcome(version, asset_id, path, duration, changes: list, warnings: list, revision)`.
-  - `render.render_version(ctx, expected_revision, *, by=None, summary=None, engine=None, runner=None, probe=probe_media) -> RenderOutcome`. Лог рендера — `montage/.logs/render-vNNN.log`; `warnings` — строки лога со следами сети.
+  - `render.render_version(ctx, expected_revision, *, by=None, summary=None, engine=None, runner=None, probe=probe_media) -> RenderOutcome`. Лог рендера — `montage/.logs/render-vNNN.log`; след сети в логе — `MontageError`, свой MP4 удалён; `warnings` — предупреждения lint.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -6045,6 +6453,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 
 from montage_testkit import (FakeHyperframes, fake_engine, seed_workspace, tiny_mp4,  # noqa: E402
                              tiny_wav, video_state)
+from studio.assets import AssetIndex, AssetValidationError  # noqa: E402
 from studio.authoring_support import open_assets, open_store  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
 from studio.montage.canvas import Canvas  # noqa: E402
@@ -6055,9 +6464,10 @@ from studio.montage.html_doc import set_attr  # noqa: E402
 from studio.montage.montage_state import record_draft  # noqa: E402
 from studio.montage.probe import MediaInfo  # noqa: E402
 from studio.montage.render import render_version  # noqa: E402
-from studio.montage.verify import network_markers, unexpected_network  # noqa: E402
+from studio.montage.verify import network_markers  # noqa: E402
 from studio.montage.versions import read_meta  # noqa: E402
 from studio.store import RevisionConflict  # noqa: E402
+from studio.workspace import MAX_ASSET_BYTES, MONTAGE_MAX_BYTES  # noqa: E402
 
 
 class RenderTests(unittest.TestCase):
@@ -6099,7 +6509,7 @@ class RenderTests(unittest.TestCase):
         state = self.state()
         self.assertEqual(state["montage"]["current_version"], "v001")
         self.assertEqual(state["assembly"]["asset_id"], outcome.asset_id)
-        self.assertEqual(outcome.changes, ["черновой монтаж: 5 клипов, 3,5 с"])
+        self.assertEqual(outcome.changes, ["черновой монтаж: 3 клипа, 3,5 с"])
         self.assertEqual(outcome.warnings, [])
         meta = read_meta(open_context(self.seed.workspace, "p").paths, "v001")
         self.assertEqual((meta.by, meta.based_on, meta.summary), ("agent", None, "Черновой монтаж"))
@@ -6128,7 +6538,7 @@ class RenderTests(unittest.TestCase):
     def test_external_url_is_refused_before_the_engine(self):
         ctx = open_context(self.seed.workspace, "p")
         text = ctx.paths.index.read_text(encoding="utf-8")
-        ctx.paths.index.write_text(set_attr(text, "t-1", "style", "background:url(https://x.example/y.png)"),
+        ctx.paths.index.write_text(set_attr(text, "v-1", "style", "background:url(https://x.example/y.png)"),
                                    encoding="utf-8")
         runner = FakeHyperframes(render_bytes=tiny_mp4(b"x"))
         with self.assertRaises(MontageError) as caught:
@@ -6157,16 +6567,26 @@ class RenderTests(unittest.TestCase):
             render_version(ctx, ctx.revision - 1, engine=self.engine, runner=runner, probe=self.probe)
         self.assertEqual(runner.calls, [])
 
-    def test_network_traces_become_warnings(self):
+    def test_network_access_fails_the_render(self):
         runner = FakeHyperframes(render_bytes=tiny_mp4(b"x"), render_log=(
             '[INFO] [Compiler] Fetched 11 font face(s) for "Inter" from Google Fonts'))
-        self.assertEqual(len(self.render(runner).warnings), 1)
+        with self.assertRaises(MontageError) as caught:
+            self.render(runner)
+        self.assertIn("AM Inter", str(caught.exception))
+        self.assertFalse(self.output.exists())
+        self.assertIsNone(self.state()["montage"]["current_version"])
 
-    def test_known_font_fetch_is_not_unexpected_network(self):
+    def test_network_markers_catch_fonts_and_cdn_scripts_only(self):
         cdn = "[INFO] [Compiler] Inlined CDN script: https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"
-        log = '[INFO] [Compiler] Fetched 11 font face(s) for "Inter" from Google Fonts\n' + cdn
+        local = "[INFO] [Compiler] Embedded local font file assets/fonts/inter-latin-400-normal.woff2 → data URI"
+        log = '[INFO] [Compiler] Fetched 11 font face(s) for "Inter" from Google Fonts\n' + local + "\n" + cdn
         self.assertEqual(len(network_markers(log)), 2)
-        self.assertEqual(unexpected_network(log), [cdn])
+        self.assertEqual(network_markers(local), [])
+
+    def test_lint_warnings_travel_with_the_version(self):
+        runner = FakeHyperframes(render_bytes=tiny_mp4(b"x"), lint_report={"ok": True, "findings": [
+            {"severity": "warning", "code": "media_without_id", "message": "у клипа нет id"}]})
+        self.assertEqual(self.render(runner).warnings, ["media_without_id: у клипа нет id"])
 
     def test_autopilot_projects_sign_versions_as_autopilot(self):
         store = open_store(self.seed.workspace)
@@ -6176,6 +6596,24 @@ class RenderTests(unittest.TestCase):
         store.transact("p", 1, autopilot)
         self.render()
         self.assertEqual(read_meta(open_context(self.seed.workspace, "p").paths, "v001").by, "autopilot")
+
+
+class MontageSizeLimitTests(unittest.TestCase):
+    def test_montage_output_has_its_own_limit_and_the_rest_keeps_the_common_one(self):
+        self.assertEqual((MONTAGE_MAX_BYTES, MAX_ASSET_BYTES), (2 * 1024 ** 3, 128 * 1024 ** 2))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            media = root / "media"
+            for rel in ("p/montage/v001.mp4", "p/montage/final.mp4", "p/clip.mp4"):
+                (media / rel).parent.mkdir(parents=True, exist_ok=True)
+                (media / rel).write_bytes(tiny_mp4(b"x" * 400))
+            index = AssetIndex(root, (media,), max_bytes=100, montage_max_bytes=10_000,
+                               db_path=root / ".studio" / "assets.sqlite3")
+            asset_id = index.register("media/p/montage/v001.mp4", "result")["asset_id"]
+            self.assertEqual(index.resolve(asset_id)[0], media / "p" / "montage" / "v001.mp4")
+            for rel in ("media/p/montage/final.mp4", "media/p/clip.mp4"):
+                with self.assertRaises(AssetValidationError):
+                    index.register(rel, "result")
 
 
 if __name__ == "__main__":
@@ -6188,6 +6626,62 @@ Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_r
 Expected: FAIL — `ModuleNotFoundError: No module named 'studio.montage.context'`.
 
 - [ ] **Step 3: Write minimal implementation**
+
+Предел размера для собранных роликов монтажа — отдельный (решение владельца 2026-09-25), общий предел ассетов (`MAX_ASSET_BYTES`, 128 МиБ) не меняется.
+
+В `skills/aimaster/studio/workspace.py` после `MAX_ASSET_BYTES = 128 * 1024 * 1024` добавить:
+
+```python
+
+# Собранный ролик монтажа (<медиа>/<проект>/montage/vNNN.mp4) длиннее любого
+# результата генерации: у него свой предел; остальные ассеты — MAX_ASSET_BYTES.
+MONTAGE_MAX_BYTES = 2 * 1024 * 1024 * 1024
+```
+
+В `skills/aimaster/studio/assets.py`:
+
+- в импорты добавить `import re` (после `import os`);
+- после функции `_within` добавить:
+
+```python
+
+
+# Собранный ролик монтажа относительно корня медиа — studio/montage/paths.render_output.
+_MONTAGE_OUTPUT = re.compile(r"[^/]+/montage/v\d{3,}\.mp4")
+```
+
+- `__init__` получает ключевой параметр: строку `def __init__(self, root, allowed_roots, max_bytes, *, db_path=None):` заменить на `def __init__(self, root, allowed_roots, max_bytes, *, db_path=None, montage_max_bytes=None):`, а после строки `self.max_bytes = max_bytes` добавить:
+
+```python
+        if montage_max_bytes is not None and (
+            isinstance(montage_max_bytes, bool)
+            or not isinstance(montage_max_bytes, int)
+            or montage_max_bytes <= 0
+        ):
+            raise AssetValidationError("montage_max_bytes must be a positive integer")
+        self.montage_max_bytes = montage_max_bytes
+```
+
+- перед `def _inspect_path` добавить метод:
+
+```python
+    def _size_limit(self, resolved: Path) -> int:
+        """Собранный ролик монтажа (<медиа>/<проект>/montage/vNNN.mp4) — свой предел;
+        любой другой файл, в том числе .mp4 рядом, — общий max_bytes."""
+
+        if self.montage_max_bytes:
+            for allowed in self.allowed_roots:
+                if _within(resolved, allowed) and _MONTAGE_OUTPUT.fullmatch(
+                        resolved.relative_to(allowed).as_posix()):
+                    return max(self.max_bytes, self.montage_max_bytes)
+        return self.max_bytes
+```
+
+- в `_inspect_path` первой строкой тела добавить `limit = self._size_limit(resolved)`, а в двух проверках `size > self.max_bytes` и `len(data) > self.max_bytes` заменить `self.max_bytes` на `limit`.
+
+В `skills/aimaster/studio/authoring_support.py` (`open_assets`) и `skills/aimaster/studio/server.py` (сборка `AssetIndex` в `serve`) — в импорт из `.workspace` добавить `MONTAGE_MAX_BYTES`, а в вызов `AssetIndex(...)` после `max_bytes=MAX_ASSET_BYTES,` — строку `montage_max_bytes=MONTAGE_MAX_BYTES,`: сервер и CLI открывают один и тот же индекс и обязаны видеть один предел.
+
+Ограничение, которое наследует план Б: `AssetIndex` читает файл в память целиком при регистрации и при каждом `resolve` (проверка сигнатуры MP4 по всем коробкам и sha256). Для роликов в сотни мегабайт это приемлемо; потоковая проверка больших файлов — задача плана Б, если ролики станут длиннее.
 
 `skills/aimaster/studio/montage/context.py`:
 
@@ -6255,9 +6749,11 @@ from __future__ import annotations
 from .canvas import Canvas
 from .probe import MediaInfo
 
-# HyperFrames 0.8.75 сам подменяет первичное sans-serif на Inter и докачивает его
-# кириллицу с Google Fonts, если есть сеть (без сети берёт системный шрифт): это
-# известное ограничение, а не ошибка черновика. CDN-скрипт — всегда ошибка.
+# HyperFrames 0.8.75 подменяет общий sans-serif на Inter и при сети тянет его с
+# Google Fonts, а CDN-скрипты встраивает, скачав. У монтажа свой шрифт
+# (typeface, @font-face из assets/fonts — встраивается как data URI без сети) и
+# свой GSAP в assets/ (montage gsap): любой такой след в логе — ошибка сборки,
+# иначе ролик с сетью и без сети получится разным.
 FONT_MARKERS = ("from Google Fonts", "fonts.googleapis.com", "FONT_FETCH")
 SCRIPT_MARKERS = ("Inlined CDN script", "Failed to download CDN script", "cdn.jsdelivr.net")
 DURATION_TOLERANCE = 0.1  # три кадра при 30 к/с: контейнер округляет длину по кадрам и звуку
@@ -6272,16 +6768,20 @@ def network_markers(log_text: str) -> list[str]:
     return _lines(log_text, FONT_MARKERS + SCRIPT_MARKERS)
 
 
-def unexpected_network(log_text: str) -> list[str]:
-    return _lines(log_text, SCRIPT_MARKERS)
+def _findings(report: dict, severity: str) -> list[str]:
+    return [f"{item.get('code')}: {item.get('message')}"
+            for item in report.get("findings") or [] if item.get("severity") == severity]
 
 
 def lint_problems(report: dict) -> list[str]:
-    problems = [f"{item.get('code')}: {item.get('message')}"
-                for item in report.get("findings") or [] if item.get("severity") == "error"]
+    problems = _findings(report, "error")
     if report.get("ok") is False and not problems:
         problems.append("lint не прошёл, но не назвал ошибок")
     return problems
+
+
+def lint_warnings(report: dict) -> list[str]:
+    return _findings(report, "warning")
 
 
 def output_problems(info: MediaInfo, *, duration: float, canvas: Canvas,
@@ -6314,7 +6814,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..store import RevisionConflict
-from ..workspace import MAX_ASSET_BYTES
+from ..workspace import MONTAGE_MAX_BYTES
 from . import AUDIO_LAYER_NAMES, MontageError
 from .canvas import Canvas
 from .context import ProjectContext
@@ -6327,7 +6827,8 @@ from .model_diff import diff_models
 from .montage_state import check_writable, montage_section, record_version
 from .paths import render_output
 from .probe import probe_media
-from .verify import lint_problems, network_markers, output_problems
+from .typeface import FONT_FAMILY
+from .verify import lint_problems, lint_warnings, network_markers, output_problems
 from .versions import (BY_VALUES, VersionMeta, discard_staging, next_version_id, publish_version,
                        read_version_model, stage_version)
 
@@ -6357,7 +6858,7 @@ def _summary(base: str | None, changes: list[str]) -> str:
     return "; ".join(changes[:3]) + more
 
 
-def _preflight(ctx, engine, runner) -> tuple[Model, str]:
+def _preflight(ctx, engine, runner) -> tuple[Model, str, list[str]]:
     html_text = ctx.paths.index.read_text(encoding="utf-8")
     problems = check_composition(html_text, ctx.paths.current)
     if problems:
@@ -6367,7 +6868,8 @@ def _preflight(ctx, engine, runner) -> tuple[Model, str]:
     problems = lint_problems(report)
     if problems:
         raise MontageError("Проверка монтажа (lint) нашла ошибки: " + "; ".join(problems))
-    return read_model(engine, ctx.paths.current, cache_dir=ctx.paths.cache, runner=runner), html_text
+    model = read_model(engine, ctx.paths.current, cache_dir=ctx.paths.cache, runner=runner)
+    return model, html_text, lint_warnings(report)
 
 
 def _render(ctx, engine, runner, version_id) -> tuple[Path, str]:
@@ -6387,6 +6889,12 @@ def _render(ctx, engine, runner, version_id) -> tuple[Path, str]:
         output.unlink(missing_ok=True)
         why = "не уложилась по времени" if result.timed_out else (result.stderr or result.stdout).strip()[-500:]
         raise MontageError(f"Сборка не удалась: {why}")
+    network = network_markers(log)
+    if network:
+        output.unlink(missing_ok=True)
+        raise MontageError(f"Сборка обращалась в сеть: {'; '.join(network)}. Текст — только шрифтом "
+                           f"«{FONT_FAMILY}» (он в assets/fonts), скрипты — только локальные из assets/ "
+                           "(GSAP кладёт montage gsap)")
     return output, log
 
 
@@ -6398,8 +6906,8 @@ def _checked_asset(ctx, output: Path, model: Model, html_text: str, probe) -> tu
                                    needs_audio=needs_audio)
         if problems:
             raise MontageError("Собранный ролик не прошёл проверку: " + "; ".join(problems))
-        if output.stat().st_size > MAX_ASSET_BYTES:
-            raise MontageError(f"Ролик больше {MAX_ASSET_BYTES // 2 ** 20} МБ — такой файл студия "
+        if output.stat().st_size > MONTAGE_MAX_BYTES:
+            raise MontageError(f"Ролик больше {MONTAGE_MAX_BYTES // 2 ** 30} ГБ — такой файл студия "
                                "не примет; сократите монтаж")
         asset = ctx.assets.register(output.relative_to(ctx.workspace).as_posix(), "result")
     except BaseException:
@@ -6420,10 +6928,10 @@ def render_version(ctx: ProjectContext, expected_revision: int, *, by: str | Non
         raise MontageError("черновика ещё нет: сначала montage draft")
     engine = engine or require_engine()
     runner = runner or EngineRunner()
-    model, html_text = _preflight(ctx, engine, runner)
+    model, html_text, warnings = _preflight(ctx, engine, runner)
     base = montage_section(ctx.state)["current_version"]
     version_id = next_version_id(ctx.paths)
-    output, log = _render(ctx, engine, runner, version_id)
+    output, _log = _render(ctx, engine, runner, version_id)
     asset_id, duration = _checked_asset(ctx, output, model, html_text, probe)
     old = read_version_model(ctx.paths, base) if base else None
     changes = diff_models(old, model, names=ctx.scene_names())
@@ -6440,14 +6948,14 @@ def render_version(ctx: ProjectContext, expected_revision: int, *, by: str | Non
         output.unlink(missing_ok=True)
         raise
     publish_version(ctx.paths, staging, version_id)
-    return RenderOutcome(version_id, asset_id, str(output), duration, changes,
-                         network_markers(log), written["revision"])
+    return RenderOutcome(version_id, asset_id, str(output), duration, changes, warnings,
+                         written["revision"])
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_render.py' -v`
-Expected: PASS (10 tests).
+Expected: PASS (12 tests).
 
 - [ ] **Step 5: Full checks**
 
@@ -6457,7 +6965,7 @@ Expected: всё зелёное.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add skills/aimaster/studio/montage/context.py skills/aimaster/studio/montage/verify.py skills/aimaster/studio/montage/render.py skills/aimaster/scripts/test_montage_render.py
+git add skills/aimaster/studio/montage/context.py skills/aimaster/studio/montage/verify.py skills/aimaster/studio/montage/render.py skills/aimaster/studio/workspace.py skills/aimaster/studio/assets.py skills/aimaster/studio/authoring_support.py skills/aimaster/studio/server.py skills/aimaster/scripts/test_montage_render.py
 git commit -m "feat(montage): render a checked MP4 version and make it the assembly"
 ```
 
@@ -6856,15 +7364,18 @@ git commit -m "feat(montage): montage desk interface and HyperFrames Studio impl
 
 **Files:**
 - Create: `skills/aimaster/studio/montage/status.py`
+- Create: `skills/aimaster/studio/montage/vendor.py`
 - Create: `skills/aimaster/studio/montage/service.py`
 - Test: `skills/aimaster/scripts/test_montage_service.py`
 
 **Interfaces:**
-- Consumes: `context.open_context/ProjectContext`; `engine.locate/require_engine/load_pin/Engine`; `draft.create_draft/rebuild_draft/refresh_draft/stale_clips/write_text_atomic`; `edit.EditRequest/apply_edit`; `model.read_model/model_hash/layers_view`; `model_diff.diff_models`; `montage_state.check_writable/montage_section/record_draft/record_restore`; `render.render_version`; `versions.list_versions/read_version_model/has_unrendered_changes/restore_files`; `desk.StudioDesk/Desk`; `store.RevisionConflict`; `assets.AssetError`; `probe.probe_media`.
+- Consumes: `context.open_context/ProjectContext`; `engine.locate/require_engine/load_pin/install_command/package_version/Engine`; `workspace_skills.skills_summary`; `draft.create_draft/rebuild_draft/refresh_draft/stale_clips/write_text_atomic`; `edit.EditRequest/apply_edit`; `model.read_model/model_hash/layers_view`; `model_diff.diff_models`; `montage_state.check_writable/montage_section/record_draft/record_restore`; `render.render_version`; `versions.list_versions/read_version_model/has_unrendered_changes/restore_files`; `desk.StudioDesk/Desk`; `store.RevisionConflict`; `assets.AssetError`; `probe.probe_media`.
 - Produces:
-  - `status.montage_status(ctx, engine: Engine | None, reason: str, *, runner=None, desk=None) -> dict` — форма ответа описана в разделе «Контракт для плана Б».
+  - `status.montage_status(ctx, engine: Engine | None, reason: str, *, runner=None, desk=None) -> dict` — форма ответа описана в разделе «Контракт для плана Б»; `engine.install` — точная команда установки, когда движка нет (иначе `None`); `skills` — скиллы HyperFrames в рабочей папке (только проверка, без записи).
+  - `vendor.gsap_dist(engine) -> Path`, `vendor.RULES`, `vendor.vendor_gsap(engine, paths, *, plugins=()) -> {"version", "files", "copied", "script_tags", "rules"}` — GSAP закреплённой версии из `<prefix>/node_modules/gsap/dist` в `current/assets/`; без GSAP или не той версии — `MontageError` с командой установки.
   - `service.DRAFT_MODES = ("new", "refresh", "rebuild")`.
-  - `service.draft(workspace, project_id, expected_revision, *, mode="new", engine=None, runner=None, probe=None) -> {"project_id", "revision", "canvas", "duration", "clips", "current", "backup"}` (`backup` — путь прежнего черновика при `rebuild`, иначе `None`; для `refresh` — `{"project_id", "revision", "refreshed": [...]}`).
+  - `service.draft(workspace, project_id, expected_revision, *, mode="new", engine=None, runner=None, probe=None) -> {"project_id", "revision", "canvas", "duration", "clips", "current", "backup", "skills"}` (`backup` — путь прежнего черновика при `rebuild`, иначе `None`; для `refresh` — `{"project_id", "revision", "refreshed": [...], "skills"}`). После успешного черновика кладёт скиллы HyperFrames в рабочую папку, если их там нет (`skills_summary`).
+  - `service.gsap(workspace, project_id, *, plugins=(), engine=None) -> {"project_id", **vendor_gsap(...)}`.
   - `service.status(workspace, project_id, *, locate=None, runner=None, desk=None) -> dict`.
   - `service.diff(workspace, project_id, *, against=None, engine=None, runner=None) -> {"project_id", "base", "model_hash", "changes", "unrendered_changes"}`.
   - `service.edit(workspace, project_id, expected_revision, request: EditRequest, *, expected_model_hash=None, engine=None, runner=None) -> dict` (поля `apply_edit` + `project_id`, `revision`).
@@ -6882,6 +7393,7 @@ git commit -m "feat(montage): montage desk interface and HyperFrames Studio impl
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
@@ -6899,6 +7411,7 @@ from montage_testkit import (FakeHyperframes, fake_engine, seed_workspace, tiny_
 from studio.authoring_support import open_assets, open_store  # noqa: E402
 from studio.montage import MontageError, service  # noqa: E402
 from studio.montage.edit import EditRequest  # noqa: E402
+from studio.montage.engine import PREFIX_ENV  # noqa: E402
 from studio.montage.probe import MediaInfo  # noqa: E402
 from studio.store import RevisionConflict  # noqa: E402
 
@@ -6907,6 +7420,10 @@ class ServiceTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
+        # кеш скиллов — в пустой временной папке: реальный HOME тесты не читают
+        environ = mock.patch.dict(os.environ, {PREFIX_ENV: str(Path(temp.name) / "tools" / "hyperframes")})
+        environ.start()
+        self.addCleanup(environ.stop)
         files = {"a.mp4": tiny_mp4(b"a"), "b.mp4": tiny_mp4(b"b"), "c.mp4": tiny_mp4(b"c"),
                  "v.wav": tiny_wav()}
         self.seed = seed_workspace(Path(temp.name).resolve(), files, lambda ids: video_state(
@@ -6933,10 +7450,11 @@ class ServiceTests(unittest.TestCase):
     def test_full_cycle(self):
         drafted = service.draft(self.ws, "p", 0, **self.kw(probe=True))
         self.assertEqual((drafted["revision"], drafted["canvas"], drafted["clips"]),
-                         (1, {"width": 108, "height": 192}, 5))
+                         (1, {"width": 108, "height": 192}, 3))
+        self.assertEqual(drafted["skills"]["status"], "missing")
         status = self.status()
-        self.assertEqual((status["exists"], status["unrendered_changes"], status["engine"]["state"]),
-                         (True, True, "installed"))
+        self.assertEqual((status["exists"], status["unrendered_changes"], status["engine"]["state"],
+                          status["engine"]["install"]), (True, True, "installed", None))
         self.assertEqual([layer["layer"] for layer in status["layers"]][:3], ["video", "titles", "voice"])
         first = service.render(self.ws, "p", 1, **self.kw(probe=True))
         self.assertEqual((first["version"], first["revision"]), ("v001", 2))
@@ -6964,6 +7482,8 @@ class ServiceTests(unittest.TestCase):
                          ("missing", "не найден Node.js", False))
         self.assertEqual((status["current_version"], status["versions"], status["desk"]),
                          (None, [], {"state": "closed"}))
+        self.assertIn("--install-deps", status["engine"]["install"])
+        self.assertEqual(status["skills"]["status"], "missing")
 
     def test_draft_without_engine_refuses_and_writes_nothing(self):
         with mock.patch.object(service, "require_engine",
@@ -6992,12 +7512,31 @@ class ServiceTests(unittest.TestCase):
 
     def test_rebuild_keeps_the_edited_draft_as_backup(self):
         service.draft(self.ws, "p", 0, **self.kw(probe=True))
-        service.edit(self.ws, "p", 1, EditRequest(op="delete", clip="t-2"), **self.kw())
+        service.edit(self.ws, "p", 1, EditRequest(op="delete", clip="v-2"), **self.kw())
         rebuilt = service.draft(self.ws, "p", 1, mode="rebuild", **self.kw(probe=True))
         self.assertEqual(rebuilt["revision"], 2)
-        self.assertNotIn('id="t-2"', Path(rebuilt["backup"]).read_text(encoding="utf-8"))
-        titles = next(layer for layer in self.status()["layers"] if layer["layer"] == "titles")
-        self.assertEqual([clip["id"] for clip in titles["clips"]], ["t-1", "t-2"])
+        self.assertNotIn('id="v-2"', Path(rebuilt["backup"]).read_text(encoding="utf-8"))
+        video = next(layer for layer in self.status()["layers"] if layer["layer"] == "video")
+        self.assertEqual([clip["id"] for clip in video["clips"]], ["v-1", "v-2"])
+
+    def test_gsap_is_copied_from_the_engine_folder(self):
+        with self.assertRaises(MontageError) as caught:
+            service.gsap(self.ws, "p", engine=self.engine)
+        self.assertIn("--install-deps", str(caught.exception))
+        dist = self.engine.prefix / "node_modules" / "gsap" / "dist"
+        dist.mkdir(parents=True)
+        (dist.parent / "package.json").write_text('{"version": "3.14.2"}', encoding="utf-8")
+        (dist / "gsap.min.js").write_text("/* gsap */", encoding="utf-8")
+        (dist / "SplitText.min.js").write_text("/* split */", encoding="utf-8")
+        service.draft(self.ws, "p", 0, **self.kw(probe=True))
+        result = service.gsap(self.ws, "p", plugins=["SplitText"], engine=self.engine)
+        self.assertEqual(result["files"], ["assets/gsap.min.js", "assets/SplitText.min.js"])
+        self.assertEqual(result["script_tags"][0], '<script src="assets/gsap.min.js"></script>')
+        current = self.ws / "projects" / "p" / "montage" / "current"
+        self.assertEqual((current / "assets" / "gsap.min.js").read_text(encoding="utf-8"), "/* gsap */")
+        self.assertEqual(service.gsap(self.ws, "p", engine=self.engine)["copied"], [])
+        with self.assertRaises(MontageError):
+            service.gsap(self.ws, "p", plugins=["../evil"], engine=self.engine)
 
     def test_restore_unknown_version(self):
         service.draft(self.ws, "p", 0, **self.kw(probe=True))
@@ -7017,6 +7556,75 @@ Expected: FAIL — `ImportError: cannot import name 'service'`.
 
 - [ ] **Step 3: Write minimal implementation**
 
+`skills/aimaster/studio/montage/vendor.py`:
+
+```python
+"""GSAP для композиции монтажа: файл из установленного движка → current/assets/.
+
+Скиллы HyperFrames анимируют через GSAP и подключают его с CDN, а сборка монтажа
+внешние скрипты запрещает. GSAP закреплённой версии (engine.json → gsap_version)
+ставит установщик рядом с движком (`<prefix>/node_modules/gsap`); `montage gsap`
+копирует его в assets/, и композиция подключает <script src="assets/gsap.min.js">.
+Лицензия GSAP — стандартная бесплатная (gsap.com/standard-license); файл не меняем.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import shutil
+from pathlib import Path
+
+from . import MontageError
+from .engine import Engine, install_command, load_pin, package_version
+from .paths import MontagePaths
+
+_PLUGIN = re.compile(r"[A-Z][A-Za-z0-9]{1,40}")
+RULES = (
+    'в <head>: <script src="assets/gsap.min.js"></script> (и плагины) — только локальные ссылки',
+    'таймлайн на паузе и зарегистрирован: window.__timelines = window.__timelines || {}; '
+    'const tl = gsap.timeline({ paused: true }); …; window.__timelines["main"] = tl;',
+    "у корня #root убрать data-no-timeline — иначе рантайм не перематывает таймлайн",
+    "текст — только шрифтом «AM Inter»",
+)
+
+
+def gsap_dist(engine: Engine) -> Path:
+    return Path(engine.prefix) / "node_modules" / "gsap" / "dist"
+
+
+def _copy_if_changed(source: Path, target: Path) -> bool:
+    if target.is_file() and target.read_bytes() == source.read_bytes():
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.part")
+    shutil.copyfile(source, temporary)
+    os.replace(temporary, target)
+    return True
+
+
+def vendor_gsap(engine: Engine, paths: MontagePaths, *, plugins=()) -> dict:
+    wanted, version = load_pin()["gsap_version"], package_version(engine.prefix, "gsap")
+    if version != wanted:
+        found = f"стоит {version}" if version else "не установлен"
+        raise MontageError(f"GSAP {wanted} рядом с движком {found}; поставить: {install_command()}")
+    if not paths.index.is_file():
+        raise MontageError("черновика ещё нет: сначала montage draft")
+    names = ["gsap"]
+    for plugin in plugins:
+        if not _PLUGIN.fullmatch(plugin) or not (gsap_dist(engine) / f"{plugin}.min.js").is_file():
+            raise MontageError(f"нет плагина GSAP «{plugin}» в {gsap_dist(engine)}")
+        names.append(plugin)
+    files, copied = [], []
+    for name in dict.fromkeys(names):
+        rel = f"assets/{name}.min.js"
+        if _copy_if_changed(gsap_dist(engine) / f"{name}.min.js", paths.current / rel):
+            copied.append(rel)
+        files.append(rel)
+    return {"version": version, "files": files, "copied": copied,
+            "script_tags": [f'<script src="{rel}"></script>' for rel in files], "rules": list(RULES)}
+```
+
 `skills/aimaster/studio/montage/status.py`:
 
 ```python
@@ -7028,10 +7636,11 @@ from ..assets import AssetError
 from .context import ProjectContext
 from .desk import StudioDesk
 from .draft import stale_clips
-from .engine import Engine, load_pin
+from .engine import Engine, install_command, load_pin
 from .model import layers_view, model_hash, read_model
 from .montage_state import montage_section
 from .versions import has_unrendered_changes, list_versions
+from .workspace_skills import skills_summary
 
 
 def _base(ctx: ProjectContext, engine: Engine | None, reason: str) -> dict:
@@ -7040,7 +7649,9 @@ def _base(ctx: ProjectContext, engine: Engine | None, reason: str) -> dict:
         "project_id": ctx.project_id, "revision": ctx.revision,
         "engine": {"state": "installed" if engine else "missing",
                    "version": engine.version if engine else None,
-                   "wanted": load_pin()["version"], "reason": reason},
+                   "wanted": load_pin()["version"], "reason": reason,
+                   "install": None if engine else install_command()},
+        "skills": skills_summary(ctx.workspace, create=False),
         "exists": ctx.paths.index.is_file(),
         "current_version": section["current_version"] if section else None,
         "versions": list(section["versions"]) if section else [],
@@ -7100,7 +7711,9 @@ from .montage_state import check_writable, montage_section, record_draft, record
 from .probe import probe_media
 from .render import render_version
 from .status import montage_status
+from .vendor import vendor_gsap
 from .versions import has_unrendered_changes, list_versions, read_version_model, restore_files
+from .workspace_skills import skills_summary
 
 DRAFT_MODES = ("new", "refresh", "rebuild")
 
@@ -7126,7 +7739,8 @@ def draft(workspace, project_id, expected_revision, *, mode="new", engine=None, 
     probe = probe or probe_media
     if mode == "refresh":
         refreshed = refresh_draft(ctx.paths, ctx.state, ctx.resolve, probe=probe)
-        return {"project_id": project_id, "revision": ctx.revision, "refreshed": refreshed}
+        return {"project_id": project_id, "revision": ctx.revision, "refreshed": refreshed,
+                "skills": skills_summary(ctx.workspace)}
     if mode == "rebuild":
         result, backup = rebuild_draft(ctx.paths, ctx.state, ctx.resolve, probe=probe)
     else:
@@ -7134,7 +7748,15 @@ def draft(workspace, project_id, expected_revision, *, mode="new", engine=None, 
     written = record_draft(ctx.store, project_id, expected_revision, canvas=result.canvas)
     return {"project_id": project_id, "revision": written["revision"],
             "canvas": result.canvas.to_dict(), "duration": result.duration, "clips": result.clips,
-            "current": str(ctx.paths.current), "backup": str(backup) if backup else None}
+            "current": str(ctx.paths.current), "backup": str(backup) if backup else None,
+            "skills": skills_summary(ctx.workspace)}
+
+
+def gsap(workspace, project_id, *, plugins=(), engine=None) -> dict:
+    ctx = open_context(workspace, project_id)
+    check_writable(ctx.state)
+    return {"project_id": project_id,
+            **vendor_gsap(engine or require_engine(), ctx.paths, plugins=tuple(plugins))}
 
 
 def status(workspace, project_id, *, locate=None, runner=None, desk=None) -> dict:
@@ -7205,7 +7827,7 @@ def close_desk(workspace, project_id, *, desk=None) -> dict:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_service.py' -v`
-Expected: PASS (7 tests).
+Expected: PASS (8 tests).
 
 - [ ] **Step 5: Full checks**
 
@@ -7215,8 +7837,8 @@ Expected: всё зелёное.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add skills/aimaster/studio/montage/status.py skills/aimaster/studio/montage/service.py skills/aimaster/scripts/test_montage_service.py
-git commit -m "feat(montage): montage status and service entry points for CLI and dashboard"
+git add skills/aimaster/studio/montage/status.py skills/aimaster/studio/montage/vendor.py skills/aimaster/studio/montage/service.py skills/aimaster/scripts/test_montage_service.py
+git commit -m "feat(montage): montage status, local GSAP and service entry points for CLI and dashboard"
 ```
 
 ---
@@ -7229,7 +7851,7 @@ git commit -m "feat(montage): montage status and service entry points for CLI an
 - Test: `skills/aimaster/scripts/test_montage_cli.py`
 
 **Interfaces:**
-- Consumes: `service.draft/status/diff/edit/render/restore/open_desk/close_desk`; `edit.OPS/EditRequest`; `versions.BY_VALUES`; `MontageError`; `creator_studio.DOMAIN_ERROR_EXIT_CODE = 3`.
+- Consumes: `service.draft/status/diff/edit/render/restore/gsap/open_desk/close_desk`; `edit.OPS/EditRequest`; `versions.BY_VALUES`; `MontageError`; `creator_studio.DOMAIN_ERROR_EXIT_CODE = 3`.
 - Produces:
   - `creator_studio_montage.add_montage_subcommands(subparsers) -> None`.
   - Команды (флаг `--json` принимается у всех; вывод — всегда один JSON-объект):
@@ -7239,6 +7861,7 @@ git commit -m "feat(montage): montage status and service entry points for CLI an
     - `montage edit WS P OP [--clip ID] [--at S] [--seconds S] [--duration S] [--value V] [--fade-in S] [--fade-out S] [--text T] --expected-revision N [--expected-model-hash H]`
     - `montage render WS P --expected-revision N [--by agent|owner|autopilot] [--summary TEXT]`
     - `montage restore WS P VERSION --expected-revision N`
+    - `montage gsap WS P [--plugin NAME]…` — GSAP из движка в `current/assets/` (ответ — файлы, теги `<script>`, правила)
     - `montage open WS P`, `montage close WS P`
   - Код выхода 3 и одна строка `creator_studio.py: error: <текст>` на любой `MontageError`.
 
@@ -7287,8 +7910,10 @@ class CliTests(unittest.TestCase):
                          ("trim-start", "v-1", 0.5, "abc"))
         self.assertEqual(parse("montage", "restore", "WS", "p", "v001", "--expected-revision", "4").version,
                          "v001")
-        for name in ("status", "diff", "open", "close"):
+        for name in ("status", "diff", "gsap", "open", "close"):
             self.assertEqual(parse("montage", name, "WS", "p").subcommand, name)
+        self.assertEqual(parse("montage", "gsap", "WS", "p", "--plugin", "SplitText", "--plugin", "Flip").plugin,
+                         ["SplitText", "Flip"])
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             parse("montage", "render", "WS", "p")
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
@@ -7313,6 +7938,8 @@ class CliTests(unittest.TestCase):
         call.assert_called_once_with(Path("WS"), "p", 7, "v002")
         call, _ = self.run_handler("open_desk", "open", "WS", "p")
         call.assert_called_once_with(Path("WS"), "p")
+        call, _ = self.run_handler("gsap", "gsap", "WS", "p", "--plugin", "SplitText")
+        call.assert_called_once_with(Path("WS"), "p", plugins=["SplitText"])
 
     def test_edit_builds_the_request(self):
         call, _ = self.run_handler("edit", "edit", "WS", "p", "volume", "--clip", "a-voice",
@@ -7348,7 +7975,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'creator_studio_montage
 ```python
 """`creator_studio.py montage …` — монтаж на HyperFrames (спецификация 2026-09-25).
 
-draft | status | diff | edit <op> | render | restore <vNNN> | open | close.
+draft | status | diff | edit <op> | render | restore <vNNN> | gsap | open | close.
 Каждая команда печатает один JSON-объект (флаг --json принимается для
 единообразия со спецификацией). Меняющие команды требуют --expected-revision.
 Регистрирует creator_studio.build_parser; провайдеров и сети (кроме
@@ -7399,6 +8026,10 @@ def command_montage_restore(args):
     _print(service.restore(args.workspace, args.project, args.expected_revision, args.version))
 
 
+def command_montage_gsap(args):
+    _print(service.gsap(args.workspace, args.project, plugins=args.plugin or []))
+
+
 def command_montage_open(args):
     _print(service.open_desk(args.workspace, args.project))
 
@@ -7422,7 +8053,7 @@ def add_montage_subcommands(subparsers) -> None:
         parser.set_defaults(handler=handler)
         return parser
 
-    draft = command("draft", "черновой монтаж из выбранных видео, звука и текста сцен",
+    draft = command("draft", "черновой монтаж из выбранных видео и звука (без титров)",
                     command_montage_draft, writes=True)
     mode = draft.add_mutually_exclusive_group()
     mode.add_argument("--refresh", action="store_true", help="заменить только устаревшие клипы")
@@ -7443,6 +8074,8 @@ def add_montage_subcommands(subparsers) -> None:
     render.add_argument("--summary")
     restore = command("restore", "сделать версию текущей", command_montage_restore, writes=True)
     restore.add_argument("version")
+    gsap = command("gsap", "положить GSAP из движка в assets/ монтажа", command_montage_gsap)
+    gsap.add_argument("--plugin", action="append", help="плагин GSAP, например SplitText")
     command("open", "открыть монтажный стол (HyperFrames Studio)", command_montage_open)
     command("close", "закрыть монтажный стол", command_montage_close)
 ```
@@ -7461,7 +8094,7 @@ from studio.montage import MontageError  # noqa: E402
 - в докстринг модуля последним абзацем:
 
 ```
-`montage draft|status|diff|edit|render|restore|open|close` (spec 2026-09-25)
+`montage draft|status|diff|edit|render|restore|gsap|open|close` (spec 2026-09-25)
 is the HyperFrames montage of video/mixed projects — see
 `skills/aimaster/scripts/creator_studio_montage.py` and `references/montage.md`.
 ```
@@ -7469,7 +8102,7 @@ is the HyperFrames montage of video/mixed projects — see
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_cli.py' -v`
-Expected: PASS (4 tests). Затем: `python3 skills/aimaster/scripts/creator_studio.py montage --help` — печатает восемь подкоманд.
+Expected: PASS (4 tests). Затем: `python3 skills/aimaster/scripts/creator_studio.py montage --help` — печатает девять подкоманд.
 
 - [ ] **Step 5: Full checks**
 
@@ -7480,7 +8113,7 @@ Expected: всё зелёное.
 
 ```bash
 git add skills/aimaster/scripts/creator_studio_montage.py skills/aimaster/scripts/creator_studio.py skills/aimaster/scripts/test_montage_cli.py
-git commit -m "feat(cli): creator_studio.py montage draft|status|diff|edit|render|restore|open|close"
+git commit -m "feat(cli): creator_studio.py montage draft|status|diff|edit|render|restore|gsap|open|close"
 ```
 
 ---
@@ -7494,8 +8127,8 @@ git commit -m "feat(cli): creator_studio.py montage draft|status|diff|edit|rende
 - Modify: `.github/workflows/ci.yml` (шаг сквозного теста в `montage-engine`)
 
 **Interfaces:**
-- Consumes: всё из задач 1–18: `service.*`, `engine.locate`, `desk.port_answers`, `media_sync.external_references/missing_sources/sync_media`, `draft_plan.plan_draft`, `draft_html.render_draft_html`, `draft.HYPERFRAMES_CONFIG`, `canvas.canvas_for/Canvas`, `verify.lint_problems/network_markers/output_problems`, `montage_testkit.make_clip/make_tone/seed_workspace/video_state/ffmpeg_or_skip`.
-- Produces: `montage_ci_check.build_draft(comp: Path) -> str` (вместо `COMPOSITION` и `external_urls`, которые удаляются); переменная окружения `AIMASTER_REQUIRE_ENGINE=1` — сквозной тест без движка падает, а не пропускается; шаг смоука «монтаж: статус и понятный отказ».
+- Consumes: всё из задач 1–18: `service.*`, `engine.locate`, `desk.port_answers`, `media_sync.external_references/missing_sources/sync_media`, `draft_plan.plan_draft`, `draft_html.render_draft_html/title_fragment`, `html_doc.insert_before_root_end`, `typeface.sync_fonts/FONT_STACK`, `draft.HYPERFRAMES_CONFIG`, `canvas.canvas_for/Canvas`, `verify.lint_problems/network_markers/output_problems`, `platform_compat.find_program`, `montage_testkit.make_clip/make_tone/seed_workspace/video_state/ffmpeg_or_skip`.
+- Produces: `montage_ci_check.TITLE`, `montage_ci_check.build_draft(comp: Path) -> str` (черновик навыка + кириллический титр, как после `montage edit title-add`; вместо `COMPOSITION` и `external_urls`, которые удаляются), `montage_ci_check.video_md5(path) -> str` (md5 декодированного видеопотока; в JSON — `video_md5`); переменная окружения `AIMASTER_REQUIRE_ENGINE=1` — сквозной тест без движка падает, а не пропускается; шаг смоука «монтаж: статус и понятный отказ»; шаг CI «Same video with and without network».
 
 - [ ] **Step 1: Write the failing test**
 
@@ -7503,8 +8136,9 @@ git commit -m "feat(cli): creator_studio.py montage draft|status|diff|edit|rende
 
 ```python
 #!/usr/bin/env python3
-"""Сквозной монтаж на настоящем HyperFrames: черновик → сборка → правка → diff → сборка →
-возврат → стол. Без движка — пропуск; на CI (AIMASTER_REQUIRE_ENGINE=1) — падение."""
+"""Сквозной монтаж на настоящем HyperFrames: черновик без титров (скиллы — в рабочую папку) →
+сборка → обрезка и кириллический титр → diff → сборка без сети → GSAP в assets → возврат → стол.
+Без движка — пропуск; на CI (AIMASTER_REQUIRE_ENGINE=1) — падение."""
 
 from __future__ import annotations
 
@@ -7541,6 +8175,16 @@ class RealEngineTests(unittest.TestCase):
             raise unittest.SkipTest(message)
         montage_testkit.ffmpeg_or_skip()
 
+    def _skills_landed(self, ws, skills):
+        """На CI установщик скачал скиллы в кеш — черновик кладёт их в рабочую папку."""
+        if os.environ.get("AIMASTER_REQUIRE_ENGINE") != "1" and skills["status"] == "missing":
+            return
+        self.assertEqual(skills["status"], "installed")
+        for parts in ((".claude", "skills"), (".agents", "skills")):
+            skill = ws.joinpath(*parts, "hyperframes")
+            self.assertTrue((skill / "SKILL.md").is_file())
+            self.assertTrue((skill / ".aimaster-install.json").is_file())
+
     def test_draft_render_edit_diff_restore_desk(self):
         with tempfile.TemporaryDirectory(prefix="aimaster-e2e-") as temp:
             base = Path(temp) / "проверка монтажа"
@@ -7555,27 +8199,38 @@ class RealEngineTests(unittest.TestCase):
                  ("s2", "Клубок", "Находит клубок", 1000, ids["b.mp4"])], audio={"voice": ids["v.wav"]}))
             ws = seed.workspace
             drafted = service.draft(ws, "p", 0)
-            index = montage_paths(ws.resolve() / "projects" / "p").index
-            self.assertEqual(external_references(index.read_text(encoding="utf-8")), [])
+            paths = montage_paths(ws.resolve() / "projects" / "p")
+            html_text = paths.index.read_text(encoding="utf-8")
+            self.assertEqual(external_references(html_text), [])
+            self.assertNotIn('data-am-layer="titles"', html_text)
             self.assertEqual(drafted["canvas"], {"width": 540, "height": 960})
+            self._skills_landed(ws, drafted["skills"])
 
             first = service.render(ws, "p", drafted["revision"])
             info = probe_media(Path(first["path"]))
             self.assertAlmostEqual(info.duration, 3.0, delta=0.1)
             self.assertEqual((info.width, info.height, info.has_audio), (540, 960, True))
-            unexpected = [line for line in first["warnings"] if "Google Fonts" not in line]
-            self.assertEqual(unexpected, [], "сборка тянула из сети что-то кроме шрифта Inter")
+            self.assertEqual(first["warnings"], [])
 
             service.edit(ws, "p", first["revision"], EditRequest(op="trim-start", clip="v-1", seconds=0.5))
+            added = service.edit(ws, "p", first["revision"],
+                                 EditRequest(op="title-add", text="Ёжик и кот: проверка", at=0.5, duration=2.0))
+            self.assertEqual(added["receipt"]["new_clip"], "t-1")
             status = service.status(ws, "p")
             video = next(layer for layer in status["layers"] if layer["layer"] == "video")
             self.assertEqual(video["clips"][0]["media_start"], 0.5)
             self.assertIs(status["unrendered_changes"], True)
             self.assertEqual(service.diff(ws, "p")["changes"],
-                             ["клип сцены 1 «Сад»: начало обрезано на 0,5 с"])
+                             ["добавлен титр «Ёжик и кот: проверка» с 0:00.5",
+                              "клип сцены 1 «Сад»: начало обрезано на 0,5 с"])
 
+            # титр кириллицей — своим шрифтом, без сети: иначе render_version откажет
             second = service.render(ws, "p", first["revision"])
-            self.assertEqual(second["version"], "v002")
+            self.assertEqual((second["version"], second["warnings"]), ("v002", []))
+
+            vendored = service.gsap(ws, "p")
+            self.assertEqual((vendored["version"], vendored["files"]), ("3.14.2", ["assets/gsap.min.js"]))
+            self.assertGreater((paths.current / "assets" / "gsap.min.js").stat().st_size, 10_000)
             service.restore(ws, "p", second["revision"], "v001")
             status = service.status(ws, "p")
             self.assertEqual((status["current_version"], status["unrendered_changes"]), ("v001", False))
@@ -7596,7 +8251,7 @@ if __name__ == "__main__":
 
 ```python
 #!/usr/bin/env python3
-"""Проверка движка для CI: без движка — понятный JSON; черновик навыка готов к сборке без сети."""
+"""Проверка движка для CI: без движка — понятный JSON; черновик навыка с титром готов к сборке без сети."""
 
 from __future__ import annotations
 
@@ -7640,8 +8295,15 @@ class CiCheckTests(unittest.TestCase):
             html_text = montage_ci_check.build_draft(comp)
             self.assertEqual(external_references(html_text), [])
             self.assertEqual(missing_sources(html_text, comp), [])
+            self.assertTrue((comp / "assets" / "fonts" / "inter-cyrillic-700-normal.woff2").is_file())
+            clip = montage_testkit.make_clip(Path(temp) / "кадр.mp4", 1.0)
+            self.assertEqual(montage_ci_check.video_md5(clip), montage_ci_check.video_md5(clip))
+            self.assertEqual(len(montage_ci_check.video_md5(clip)), 32)
         self.assertIn("data-no-timeline", html_text)
         self.assertNotIn("gsap", html_text.lower())
+        self.assertIn(montage_ci_check.TITLE, html_text)
+        self.assertIn('font-family: "AM Inter", sans-serif', html_text)
+        self.assertNotIn("font-family: sans-serif", html_text)
 
 
 if __name__ == "__main__":
@@ -7666,10 +8328,12 @@ Expected на машине с движком из задачи 6: PASS уже с
     python skills/aimaster/scripts/montage_ci_check.py --json [--offline]
 
 Черновик строится теми же модулями, что `montage draft` (plan_draft →
-render_draft_html → sync_media), в папке с кириллицей и пробелами; затем lint,
-рендер, ffprobe, проверка внешних ссылок композиции и следов сети в логе
-рендера. --offline только помечает запуск: сеть отрезают снаружи (см.
-.github/workflows/ci.yml).
+render_draft_html → sync_media, шрифт — sync_fonts), в папке с кириллицей и
+пробелами; к нему добавляется кириллический титр, как после `montage edit
+title-add`. Затем lint, рендер, ffprobe, проверка внешних ссылок композиции и
+следов сети в логе рендера (любой след — ошибка), md5 видеопотока: на Linux CI
+сравнивает его у запусков с сетью и без. --offline только помечает запуск:
+сеть отрезают снаружи (см. .github/workflows/ci.yml).
 """
 
 from __future__ import annotations
@@ -7693,18 +8357,20 @@ import montage_testkit  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
 from studio.montage.canvas import Canvas, canvas_for  # noqa: E402
 from studio.montage.draft import HYPERFRAMES_CONFIG  # noqa: E402
-from studio.montage.draft_html import render_draft_html  # noqa: E402
+from studio.montage.draft_html import render_draft_html, title_fragment  # noqa: E402
 from studio.montage.draft_plan import plan_draft  # noqa: E402
 from studio.montage.engine import require_engine  # noqa: E402
 from studio.montage.engine_cli import frames_cache, run_engine, run_engine_json  # noqa: E402
+from studio.montage.html_doc import insert_before_root_end  # noqa: E402
 from studio.montage.media_sync import external_references, sync_media  # noqa: E402
 from studio.montage.probe import probe_media  # noqa: E402
-from studio.montage.verify import (FONT_MARKERS, lint_problems, network_markers,  # noqa: E402
-                                   output_problems, unexpected_network)
-from studio.platform_compat import ensure_utf8_stdio  # noqa: E402
+from studio.montage.typeface import sync_fonts  # noqa: E402
+from studio.montage.verify import lint_problems, network_markers, output_problems  # noqa: E402
+from studio.platform_compat import ensure_utf8_stdio, find_program  # noqa: E402
 
 SIZE = (540, 960)
 DURATION = 3.0
+TITLE = "Проверка шрифта: Ёжик и кот 2026"
 
 
 def build_draft(comp: Path) -> str:
@@ -7722,10 +8388,23 @@ def build_draft(comp: Path) -> str:
     synced = sync_media(((name, files[name]) for name in plan.media_assets()), comp / "assets")
     html_text = render_draft_html(plan, canvas_for(infos[plan.first_video_asset()]),
                                   {name: item["src"] for name, item in synced.items()})
+    html_text = insert_before_root_end(html_text, title_fragment("t-1", TITLE, 0.2, 2.6))
+    sync_fonts(comp / "assets")
     (comp / "hyperframes.json").write_text(json.dumps(HYPERFRAMES_CONFIG, indent=2) + "\n",
                                            encoding="utf-8")
     (comp / "index.html").write_text(html_text, encoding="utf-8")
     return html_text
+
+
+def video_md5(path: Path) -> str:
+    """md5 декодированного видеопотока: ролик с сетью и без сети обязан совпасть."""
+
+    ffmpeg = find_program("ffmpeg")
+    if ffmpeg is None:
+        raise OSError("нет ffmpeg для md5 видео")
+    proc = subprocess.run([ffmpeg, "-v", "error", "-i", str(path), "-map", "0:v", "-f", "md5", "-"],
+                          capture_output=True, text=True, check=True, timeout=300)
+    return proc.stdout.strip().rsplit("=", 1)[-1]
 
 
 def check(offline: bool) -> dict:
@@ -7745,15 +8424,14 @@ def check(offline: bool) -> dict:
                             cwd=comp, timeout=900)
         report["render_seconds"] = round(time.monotonic() - started, 1)
         log = result.stdout + "\n" + result.stderr
-        report["network_markers"] = unexpected_network(log)
-        report["known_network"] = [line for line in network_markers(log)
-                                   if any(marker in line for marker in FONT_MARKERS)]
+        report["network_markers"] = network_markers(log)
         if result.code != 0 or not output.is_file():
             tail = (result.stderr or result.stdout).strip()[-600:]
             report["problems"].append(f"рендер завершился с кодом {result.code}: {tail}")
         else:
             info = probe_media(output)
             report["probe"] = asdict(info)
+            report["video_md5"] = video_md5(output)
             report["problems"] += output_problems(info, duration=DURATION, canvas=Canvas(*SIZE),
                                                   needs_audio=True)
     report["problems"] += [f"внешняя ссылка: {url}" for url in report["external_urls"]]
@@ -7807,11 +8485,17 @@ def step_montage(env: dict, workspace: Path) -> None:
            "montage status: неожиданная форма %s" % json.dumps(status, ensure_ascii=False)[:800])
     state = status["engine"]["state"]
     expect(state in ("installed", "missing"), "montage status: engine.state=%s" % state)
+    expect(state == "installed" or "--install-deps" in (status["engine"].get("install") or ""),
+           "montage status: без движка нет команды установки: %s" % status["engine"])
+    expect(status.get("skills", {}).get("status") in ("found", "missing", "installed", "conflict"),
+           "montage status: нет раздела skills")
     err = run_refused(env, CLI, "montage", "draft", workspace, PROJECT,
                       "--expected-revision", status["revision"])
     wanted = "Монтажный движок не готов" if state == "missing" else "нет выбранного видео"
     expect(wanted in err and "Traceback" not in err,
            "montage draft: ждали отказ «%s», получили %s" % (wanted, err[-800:]))
+    expect(state == "installed" or "--install-deps" in err,
+           "montage draft: в отказе нет команды установки: %s" % err[-800:])
     log("  монтаж: движок %s, черновик без видео отклонён понятной фразой" % state)
 ```
 
@@ -7821,13 +8505,28 @@ def step_montage(env: dict, workspace: Path) -> None:
         ("монтаж: статус и понятный отказ", lambda: step_montage(env, workspace)),
 ```
 
-В `.github/workflows/ci.yml`, задача `montage-engine`, после шага «Render a 3-second clip…» (перед шагом «Render without network») добавить:
+В `.github/workflows/ci.yml`, задача `montage-engine`: шаги «Render a 3-second clip, ffprobe, no external URLs, no network traces» и «Render without network (Linux, empty network namespace)» из задачи 6 заменить на (`shell: bash` включает `pipefail`, иначе `tee` спрятал бы код выхода):
 
 ```yaml
-      - name: Montage end-to-end on the real engine (draft, render, edit, diff, restore, desk)
+      - name: Render the skill's draft with a Cyrillic title, ffprobe, no external URLs, no network traces
+        shell: bash
+        run: python skills/aimaster/scripts/montage_ci_check.py --json | tee montage-online.json
+
+      - name: Montage end-to-end on the real engine (draft, render, edit, diff, restore, gsap, desk)
         env:
           AIMASTER_REQUIRE_ENGINE: "1"
         run: python -m unittest discover -s skills/aimaster/scripts -p "test_montage_e2e.py" -v
+
+      - name: Render without network (Linux, empty network namespace)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo unshare --net -- bash -c "ip link set lo up && exec setpriv --reuid=$(id -u) --regid=$(id -g) --init-groups env PATH=\"$PATH\" HOME=\"$HOME\" PYTHONUTF8=1 python skills/aimaster/scripts/montage_ci_check.py --json --offline" | tee montage-offline.json
+
+      - name: Same video with and without network (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          python -c "import json; a, b = (json.load(open(n, encoding='utf-8')) for n in ('montage-online.json', 'montage-offline.json')); assert a['video_md5'] and a['video_md5'] == b['video_md5'], (a.get('video_md5'), b.get('video_md5')); print('video_md5', a['video_md5'])"
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -7835,7 +8534,7 @@ def step_montage(env: dict, workspace: Path) -> None:
 Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_ci_check.py' -v`
 Expected: PASS (2 tests; второй — skipped без ffmpeg).
 Run: `AIMASTER_REQUIRE_ENGINE=1 python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_e2e.py' -v && python3 skills/aimaster/scripts/montage_ci_check.py --json && python3 skills/aimaster/scripts/smoke_clean_machine.py`
-Expected: сквозной тест PASS; `montage_ci_check` — `"ok": true`, `"network_markers": []`; смоук — строка «монтаж: движок missing, черновик без видео отклонён понятной фразой» (в смоуке HOME подменён, движка там нет) и «✓ смоук пройден».
+Expected: сквозной тест PASS; `montage_ci_check` — `"ok": true`, `"network_markers": []`, `video_md5` — 32 знака; смоук — строка «монтаж: движок missing, черновик без видео отклонён понятной фразой» (в смоуке HOME подменён, движка там нет) и «✓ смоук пройден».
 
 - [ ] **Step 5: Full checks**
 
@@ -7850,7 +8549,7 @@ git commit -m "test(montage): real-engine end-to-end, smoke montage step, CI bui
 git push
 gh run watch --exit-status
 ```
-Expected: все задачи CI зелёные, в `montage · windows-latest` сквозной тест прошёл целиком (в том числе стол: `taskkill` остановил `preview`).
+Expected: все задачи CI зелёные, в `montage · windows-latest` сквозной тест прошёл целиком (в том числе стол: `taskkill` остановил `preview`); в `montage · ubuntu-latest` шаг «Same video with and without network» печатает один `video_md5` для обоих запусков.
 
 ---
 
@@ -7858,8 +8557,8 @@ Expected: все задачи CI зелёные, в `montage · windows-latest` 
 
 **Files:**
 - Create: `skills/aimaster/references/montage.md`
-- Modify: `skills/aimaster/references/phases/06-assembly.md` (переписать)
-- Modify: `skills/aimaster/references/autopilot.md` (шаг 6 и «Allowed stops»)
+- Modify: `skills/aimaster/references/phases/06-assembly.md` (указатель на монтаж + прежний текст как «прежний формат»)
+- Modify: `skills/aimaster/references/autopilot.md` (шаг 6 и «Allowed stops»: движок автопилот ставит сам)
 - Modify: `skills/aimaster/references/creator-studio.md` (раздел «Questions and assembly»)
 - Modify: `skills/aimaster/SKILL.md` («Studio workflow»)
 - Test: `skills/aimaster/scripts/test_montage_docs.py`
@@ -7895,11 +8594,18 @@ class DocsTests(unittest.TestCase):
     def test_canon_names_every_command_and_edit(self):
         text = (_SKILL_ROOT / "references" / "montage.md").read_text(encoding="utf-8")
         for command in ("montage draft", "montage status", "montage diff", "montage edit",
-                        "montage render", "montage restore", "montage open", "montage close",
-                        "--refresh", "--rebuild", "--expected-revision", "--expected-model-hash"):
+                        "montage render", "montage restore", "montage gsap", "montage open",
+                        "montage close", "--refresh", "--rebuild", "--expected-revision",
+                        "--expected-model-hash", "engine.install", "AM Inter", ".claude/skills",
+                        ".agents/skills", "data-no-timeline"):
             self.assertIn(command, text)
         for op in OPS:
             self.assertIn(f"`{op}", text)
+
+    def test_autopilot_installs_the_engine_itself(self):
+        text = (_SKILL_ROOT / "references" / "autopilot.md").read_text(encoding="utf-8")
+        self.assertIn("engine.install", text)
+        self.assertNotIn("installing software is outside the autopilot authorization", text)
 
     def test_canon_is_linked_from_the_entry_points(self):
         for rel in ("SKILL.md", "references/creator-studio.md", "references/autopilot.md",
@@ -7940,13 +8646,22 @@ refused once `assembly` is approved.
 
 Run `montage status WS P` first. `engine.state: installed` — go on.
 `missing` — `engine.reason` says what is absent (Node.js 22+, HyperFrames
-0.8.75 or its render browser). Say it in one sentence and give the command
-`python3 <skill>/scripts/install.py --install-deps` (free and local, about
-225 MB: the npm package and a headless Chrome). In `guided`, ask before running
-it; in `autopilot` it is an allowed stop — installing software is outside the
-autopilot authorization. Never run `npx hyperframes`, `hyperframes init`,
-`npm install -g` or HyperFrames' own skill installer: the skill runs its pinned
-engine itself.
+0.8.75, its render browser or GSAP) and `engine.install` is the exact install
+command for this machine; a draft refused for the same reason names the same
+command. It is free and local: about 225 MB of npm packages and a headless
+Chrome.
+
+- `autopilot`: run `engine.install` yourself, without asking, then
+  `montage status` again and continue. If the installer's report says
+  `"ok": false` (for example Linux without Node.js 22), that is an allowed stop:
+  report its message and the command.
+- `guided`: offer it once, in one sentence: «Для монтажа нужен бесплатный
+  движок HyperFrames, около 225 МБ. Установить?». On «да» — or the dashboard's
+  prompt «Установить → чат» — run it and continue.
+
+Never run `npx hyperframes`, `hyperframes init`, `npm install -g` or
+HyperFrames' own skill installer: the skill installs its pinned engine, GSAP and
+skills itself.
 
 ## Commands
 
@@ -7956,14 +8671,15 @@ code 3 and one Russian sentence: relay it as is.
 
 | Command | What it does |
 |---|---|
-| `montage draft WS P --expected-revision N` | first draft from the chosen scene videos, sound layers and scene texts |
+| `montage draft WS P --expected-revision N` | first draft from the chosen scene videos and sound layers; no titles |
 | `montage draft … --refresh` | replace only clips whose scene or layer got a new chosen result (`stale_clips` in `status`) |
 | `montage draft … --rebuild` | build the draft again from the project; the previous `index.html` goes to `montage/.undo/` |
-| `montage status WS P` | engine, versions, current version, `layers`, `model_hash`, `unrendered_changes`, `stale_clips`, desk, `paths.output` |
+| `montage status WS P` | engine (with `engine.install` when missing), HyperFrames skills in the workspace, versions, current version, `layers`, `model_hash`, `unrendered_changes`, `stale_clips`, desk, `paths.output` |
 | `montage diff WS P [--against vNNN]` | Russian list of changes since the current (or given) version |
 | `montage edit WS P OP … --expected-revision N [--expected-model-hash H]` | one edit (below) |
 | `montage render WS P --expected-revision N [--by agent\|owner\|autopilot] [--summary "…"]` | reference check → lint → MP4 → checks → new version → assembly |
 | `montage restore WS P vNNN --expected-revision N` | make an earlier version current again |
+| `montage gsap WS P [--plugin NAME]` | copy the pinned GSAP (and plugins) from the engine into `current/assets/` |
 | `montage open WS P` / `montage close WS P` | start / stop the montage desk (HyperFrames Studio) |
 
 Edit operations (`OP`):
@@ -7980,8 +8696,9 @@ Edit operations (`OP`):
 - `undo` — take back your own last edit; refused if the montage changed after
   it (for example in the desk).
 
-Clip ids come from `status.layers`: videos `v-N`, titles `t-N`, sound
-`a-voice`, `a-music`, `a-fx`, `a-atmos`; a split piece gets `<id>-2`.
+Clip ids come from `status.layers`: videos `v-N`, titles `t-N` (numbered as
+they are added), sound `a-voice`, `a-music`, `a-fx`, `a-atmos`; a split piece
+gets `<id>-2`.
 
 ## What the draft contains
 
@@ -7990,10 +8707,47 @@ Clip ids come from `status.layers`: videos `v-N`, titles `t-N`, sound
 - sound layers voice / music / fx / atmos from 0 s; volumes 1.0 / 0.3 / 0.8 /
   0.5; music and atmosphere fade out over 1 s; scene videos play at 0.3 under
   sound layers and at 1.0 without them;
-- titles = the active text of each scene;
-- transition = 0.4 s fade-in of the next clip plus soft sound edges;
-- no GSAP, no external URLs, no web fonts (`sans-serif`), root with
-  `data-no-timeline`: a build works without the network.
+- transition = 0.4 s CSS fade-in of the next clip plus soft sound edges;
+- no titles or captions: a scene's text describes the shot, it is not a line;
+- one bundled font, «AM Inter» (Inter, OFL-1.1, in `current/assets/fonts/`),
+  declared by a local `@font-face`; no GSAP, no external URLs, root with
+  `data-no-timeline`: a build works without the network and looks the same
+  with and without it.
+
+## Titles and captions
+
+Only through `montage edit title-add` / `title-text`:
+
+- `guided` — when the user asks for them;
+- `autopilot` — where the meaning needs them: a name, a place, a date, a line
+  the voice does not say. Short, one idea per title, not over faces. Otherwise
+  leave the picture clean.
+
+Never copy scene texts into titles as they are.
+
+## Font
+
+All text is set in «AM Inter»: `.am-title` and the page body already use it.
+In any CSS you write, the family is `font-family: "AM Inter", sans-serif` —
+never another family, never a bare `sans-serif`, never a font link or
+`@import`. HyperFrames downloads any family that is not declared locally from
+Google Fonts, and a render that touched the network is refused.
+
+## GSAP
+
+The draft needs no GSAP. When an effect does (animations from the HyperFrames
+skills):
+
+1. `montage gsap WS P [--plugin SplitText]` — copies GSAP 3.14.2 from the
+   installed engine into `current/assets/`; the reply lists `script_tags` and
+   the rules. If it refuses because GSAP is missing, run the command it names
+   (the same install as for the engine) and repeat.
+2. Put those `<script src="assets/…">` tags into `<head>`. Never a CDN link:
+   the build check refuses external scripts; local ones are fine.
+3. Register one paused timeline:
+   `window.__timelines = window.__timelines || {}; const tl = gsap.timeline({ paused: true }); …; window.__timelines["main"] = tl;`
+4. Remove `data-no-timeline` from the root, otherwise the runtime does not seek
+   the timeline.
 
 ## Guided flow
 
@@ -8009,11 +8763,13 @@ Clip ids come from `status.layers`: videos `v-N`, titles `t-N`, sound
 
 ## Autopilot flow
 
-`montage draft` → `montage render` → review the MP4: duration, frame size and
-sound are checked by the render itself; look at frames if a viewer is
-available, otherwise say the visual check was not performed. Fix a visible
-defect with `montage edit` and render again. Then `stage approve` and the final
-report. No questions.
+`montage status` (install the engine yourself if it is missing) →
+`montage draft` → titles where the meaning needs them → `montage render` →
+review the MP4: duration, frame size, sound and the absence of network access
+are checked by the render itself; look at frames if a viewer is available,
+otherwise say the visual check was not performed. Fix a visible defect with
+`montage edit` and render again. Then `stage approve` and the final report. No
+questions.
 
 ## Retelling a diff
 
@@ -8035,19 +8791,25 @@ of being overwritten.
 
 ## HyperFrames skills
 
-The ten core HyperFrames skills of the same version are installed with this
-skill. Use them only for what the draft does not do (animated titles, intros,
-effects). This skill leads the montage: never start a new HyperFrames project,
-never run `hyperframes init`, never install HyperFrames workflow skills
-(`figma`, `slideshow`, …), never reference files outside `montage/current/`.
-Animate with CSS `@keyframes` on the clip element: the HyperFrames runtime seeks
-CSS animations frame by frame. GSAP from a CDN and web fonts need the network
-and are refused by the build check.
+The ten core HyperFrames skills of the same version live in the workspace, not
+in your global skills: `<workspace>/.claude/skills/<name>/` for Claude Code and
+`<workspace>/.agents/skills/<name>/` for Codex. `workspace init` and
+`montage draft` copy them from the cache next to the engine and mark them
+(`.aimaster-install.json`); a folder with the same name that aimaster did not
+put there is left alone (`conflict` in the reply). They are visible when the
+agent works in the workspace folder. Use them only for what the draft does not
+do (animated titles, intros, effects). This skill leads the montage: never
+start a new HyperFrames project, never run `hyperframes init`, never install
+HyperFrames workflow skills (`figma`, `slideshow`, …), never reference files
+outside `montage/current/`. Prefer CSS `@keyframes` on the clip element (the
+runtime seeks CSS animations frame by frame); use GSAP only as described above.
 
 ## Rules
 
 - The reference check and `lint` run before every build; a failure means no
   version: name the error and the clip.
+- A render whose log shows network access (a Google font, a CDN script) is
+  refused and leaves no version: fix the font or the script and build again.
 - Never edit or delete anything in `montage/versions/` or a version's MP4.
 - A failed build leaves no version and keeps the current one.
 - After a new scene video is chosen, `status.stale_clips` lists the clips to
@@ -8059,32 +8821,30 @@ and are refused by the build check.
 - Studio sends its own usage analytics (PostHog) unless the key
   `hyperframes-studio:telemetryDisabled=1` is set on its page origin; a desk
   opened from chat does not set it.
-- A build larger than 128 MB is refused (the studio's asset limit).
-- HyperFrames 0.8.75 replaces the generic `sans-serif` with its Inter font and,
-  when online, downloads Inter's Cyrillic glyphs from Google Fonts on every
-  build (the line «Fetched … "Inter" from Google Fonts» lands in the version's
-  `warnings`). Offline it silently uses a system sans-serif instead, so the same
-  montage may look slightly different on and off the network. A warning about a
-  CDN script, on the other hand, is a defect: report it.
+- A build larger than 2 GB is refused (the montage limit; other assets keep
+  their 128 MB). The studio reads a version's MP4 whole to check it.
+- HyperFrames 0.8.75 downloads every font family not declared locally from
+  Google Fonts: that is why text uses only «AM Inter».
 ````
 
-`skills/aimaster/references/phases/06-assembly.md` заменить целиком:
+`skills/aimaster/references/phases/06-assembly.md` — указатель на монтаж; прежний текст остаётся ниже как «прежний формат» (решение владельца 2026-09-25). Заменить целиком:
 
 ```markdown
 # Assembly
 
 **Creator Studio projects (`video`, `mixed`):** the assembly is the montage on
-HyperFrames. Enter after every scene video (or the one-shot video) is chosen
-and `motion`/`audio` are approved: `montage draft` → `montage render` → show
-the version. In `guided`, wait for «собери» or edits; in `autopilot`, continue
-to acceptance yourself. Commands, rules and errors: [montage](../montage.md).
+HyperFrames — read [montage](../montage.md). Enter after every scene video (or
+the one-shot video) is chosen and `motion`/`audio` are approved:
+`montage draft` → `montage render` → show the version. In `guided`, wait for
+«собери» or edits; in `autopilot`, continue to acceptance yourself.
 Photo projects: `assembly set` with the accepted image.
 
-**Legacy T2 projects only** (SKILL.md, «Legacy projects only»): enter only after
-all active motion revisions are approved. Preview the intended assembly. With an
-available montage adapter and fresh permission, assemble; otherwise create a
-handoff containing sources, active artifacts and revisions, order, durations,
-script, prompts, QA, and comments.
+## Previous format (legacy T2 projects only)
+
+For legacy projects (SKILL.md, «Legacy projects only») the previous rule stays
+as it was:
+
+Enter only after all active motion revisions are approved. Preview the intended assembly. With an available montage adapter and fresh permission, assemble; otherwise create a handoff containing sources, active artifacts and revisions, order, durations, script, prompts, QA, and comments.
 ```
 
 `skills/aimaster/references/autopilot.md`:
@@ -8093,20 +8853,23 @@ script, prompts, QA, and comments.
 
 ```markdown
 6. **`assembly`.** Photo: `assembly set` with the accepted image, then the final
-   report. Video/mixed: the [montage](montage.md) — `montage status` (engine
-   must be `installed`), `montage draft`, `montage render`; review the MP4
-   (duration, frame size and sound are checked by the render; frames visually
-   when a viewer is available, otherwise say the visual check was not
-   performed); fix a defect with `montage edit` and render again. Then
-   `stage approve` and the final report.
+   report. Video/mixed: the [montage](montage.md) — `montage status`; if
+   `engine.state` is `missing`, run its `engine.install` command yourself
+   (free, local; no question) and check again; then `montage draft`, titles
+   only where the meaning needs them (`montage edit title-add`),
+   `montage render`; review the MP4 (duration, frame size, sound and no network
+   access are checked by the render; frames visually when a viewer is
+   available, otherwise say the visual check was not performed); fix a defect
+   with `montage edit` and render again. Then `stage approve` and the final
+   report.
 ```
 
 - в «Allowed stops» после пункта про `action enqueue` … `autopilot`. добавить:
 
 ```markdown
-- the montage engine is missing (`montage status` → `engine.state: missing`):
-  installing software is outside the autopilot authorization; the resume
-  command is `python3 <skill>/scripts/install.py --install-deps`.
+- the montage engine could not be installed: `engine.install` ran and its
+  report says `"ok": false` (for example Linux without Node.js 22). Report the
+  installer's message and the command.
 ```
 
 `skills/aimaster/references/creator-studio.md` — перед заголовком `## Jobs, grants and the active operator` вставить:
@@ -8124,6 +8887,7 @@ creator_studio.py montage edit WS P OP [--clip ID] [--at S] [--seconds S] [--dur
   [--value V] [--fade-in S] [--fade-out S] [--text T] --expected-revision N [--expected-model-hash H]
 creator_studio.py montage render WS P --expected-revision N [--by agent|owner|autopilot] [--summary "…"]
 creator_studio.py montage restore WS P vNNN --expected-revision N
+creator_studio.py montage gsap WS P [--plugin NAME]
 creator_studio.py montage open WS P
 creator_studio.py montage close WS P
 ```
@@ -8141,7 +8905,7 @@ creator_studio.py montage close WS P
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_montage_docs.py' -v`
-Expected: PASS (2 tests).
+Expected: PASS (3 tests).
 
 - [ ] **Step 5: Full checks**
 
@@ -8182,7 +8946,8 @@ git commit -m "docs(montage): montage canon, assembly phase, autopilot step, CLI
 ```json
 {
   "project_id": "p", "revision": 4,
-  "engine": {"state": "installed", "version": "0.8.75", "wanted": "0.8.75", "reason": ""},
+  "engine": {"state": "installed", "version": "0.8.75", "wanted": "0.8.75", "reason": "", "install": null},
+  "skills": {"status": "found", "version": "v0.8.75", "message": ""},
   "exists": true,
   "current_version": "v002",
   "versions": ["…как в снапшоте, без asset_url…"],
@@ -8195,8 +8960,8 @@ git commit -m "docs(montage): montage canon, assembly phase, autopilot step, CLI
       {"id": "v-1", "kind": "video", "start": 0.5, "duration": 4.5, "media_start": 0.5, "volume": 0.3,
        "scene_id": "s1", "asset_id": "asset-…", "text": null}]},
     {"layer": "titles", "label": "Титры", "clips": [
-      {"id": "t-1", "kind": "div", "start": 0.2, "duration": 4.6, "media_start": 0.0, "volume": null,
-       "scene_id": "s1", "asset_id": null, "text": "Барсик идёт по саду"}]},
+      {"id": "t-1", "kind": "div", "start": 0.5, "duration": 2.0, "media_start": 0.0, "volume": null,
+       "scene_id": null, "asset_id": null, "text": "Барсик и клубок"}]},
     {"layer": "voice", "label": "Голос", "clips": []},
     {"layer": "music", "label": "Музыка", "clips": []},
     {"layer": "fx", "label": "Шумы", "clips": []},
@@ -8208,7 +8973,7 @@ git commit -m "docs(montage): montage canon, assembly phase, autopilot step, CLI
 }
 ```
 
-Без движка: `engine.state = "missing"`, `reason` по-русски, `model_hash/duration/unrendered_changes = null`, `layers = []`, `desk = {"state": "closed"}` — остальное заполнено. `layers` — всегда шесть дорожек в порядке `LAYERS`; «Есть несобранные правки» = `unrendered_changes is True`. Повторный вызов дёшев: модель кэшируется по содержимому `index.html` (`montage/.cache/model-*.json`), движок зовётся только после правки.
+Без движка: `engine.state = "missing"`, `reason` по-русски, `engine.install` — точная команда установки для этой машины (строка; при установленном движке — `null`), `model_hash/duration/unrendered_changes = null`, `layers = []`, `desk = {"state": "closed"}` — остальное заполнено. `skills` — скиллы HyperFrames в рабочей папке (`found|missing|conflict|failed`, только проверка). Титров в черновике нет: дорожка «Титры» пуста, пока агент не добавит их правкой; у такого титра `scene_id = null`. `layers` — всегда шесть дорожек в порядке `LAYERS`; «Есть несобранные правки» = `unrendered_changes is True`. Повторный вызов дёшев: модель кэшируется по содержимому `index.html` (`montage/.cache/model-*.json`), движок зовётся только после правки.
 
 **3. Функции для эндпоинтов и кнопок** (все открывают проект заново, отказ — `MontageError` с русским текстом, устаревшая ревизия — `store.RevisionConflict`, запрет по стадии — `AuthoringError`):
 
@@ -8220,34 +8985,39 @@ git commit -m "docs(montage): montage canon, assembly phase, autopilot step, CLI
 | «Показать в папке» | путь `status["paths"]["output"]` | — |
 | «Скачать» | `versions[i].asset_id` → существующий `/assets/<id>`; имя файла `<project-id>-vNNN.mp4` | — |
 | «Собрать ролик → чат» | промпт агенту: `montage diff` → пересказ → `montage render --by owner` | — |
+| «Установить → чат» (режим с уточнениями, `engine.state = "missing"`) | промпт агенту: выполнить `status.engine.install`, затем `montage status` и продолжить | — |
+| сборка (`service.render`) | `service.render(ws, pid, expected_revision, by=…, summary=…)` | поля `RenderOutcome` + `project_id`; `warnings` — предупреждения `lint`; след сети в логе рендера — `MontageError`, версии нет |
 
 **4. Интерфейсы для варианта 2 и схемы слоёв:** `desk.Desk` (`open/close/status(paths) -> dict`, формы ответа — как у `StudioDesk`); `model.Model`/`model.Clip` (поля — задача 11); `model.layers_view(model)`; `model_diff.diff_models(old, new, names=...)`; `versions.VersionMeta` и `versions.list_versions(paths)` (`meta.json` хранит ещё `changes[]` и `model_hash`); `paths.montage_paths(project_dir)`; `context.open_context(ws, pid)`.
 
 **5. История проекта:** виды `montage-drafted`, `montage-built` (`target_id` = vNNN), `montage-restored` (`target_id`); подписи уже есть в `static/ui/history-panel.js`.
 
-**6. Чего план А не делает (остаётся плану Б и этапу 4):** HTTP-эндпоинты (reveal, restore, desk, download с `Content-Disposition`), страница-переходник Studio с отключением телеметрии, экран «Сборка» и его модели (`node --test`), промпт `screen-prompts.js::assembleFinal`, остановка стола по простою и при выходе сервера дашборда, Mini App и «Прислать в Telegram».
+**6. Чего план А не делает (остаётся плану Б и этапу 4):** HTTP-эндпоинты (reveal, restore, desk, download с `Content-Disposition`), страница-переходник Studio с отключением телеметрии, экран «Сборка» и его модели (`node --test`), промпты `screen-prompts.js::assembleFinal` и «Установить → чат», остановка стола по простою и при выходе сервера дашборда, Mini App и «Прислать в Telegram». Ещё одно наследство: `AssetIndex` читает MP4 версии целиком при регистрации и при каждом `resolve` (сигнатура по всем коробкам MP4 и sha256) — при роликах в сотни мегабайт отдача файла дашбордом заметно медленнее; потоковая проверка больших файлов — задача плана Б, если ролики станут длинными.
 
-## Решения плана, которых нет в спецификации, и вопросы владельцу
+## Решения плана и владельца
 
-Решения (приняты, чтобы план был исполнимым; каждое проверено прогоном):
+Решения владельца и оркестратора 2026-09-25 (ответы на вопросы первой редакции плана), что изменили в плане:
 
-1. **Переход — CSS, а не `data-fade-*`.** В HyperFrames `data-fade-in/out` меняют только громкость; картинка проявляется CSS-анимацией, которую рантайм перематывает покадрово. `data-fade-*` остаются для мягких краёв звука.
-2. **Свой HOME движка** (`<prefix>/home`): браузер, кэши и настройки HyperFrames не попадают в домашнюю папку человека; `--update` и удаление — одна папка.
-3. **Скиллы — только ядро (10 из 21)**, из тега v0.8.75, со сверкой хэшей; сценарные (`figma`, `slideshow`, `general-video`, …) не ставятся — нет конфликта имён, монтажом руководит aimaster.
-4. **`draft --rebuild`** (в спецификации нет): черновик заново из проекта, прежний `index.html` уходит в `montage/.undo/` — ничего не теряется.
-5. **Откат правки агента** — собственный снимок в `.undo/` на каждую правку (покрывает и наши точечные правки атрибутов, которых квитанции HyperFrames не видят); квитанция HyperFrames всё равно возвращается в ответе.
-6. **Установка скиллов с GitHub** работает и на Python с python.org без «Install Certificates.command» (системный набор сертификатов).
-7. **Канон `references/montage.md` — по-английски**, как соседние файлы `references/`; всё, что видит человек (ошибки, diff, CLI-помощь), — по-русски.
+1. **Скиллы HyperFrames — в рабочую папку, не глобально.** Установщик качает ядро v0.8.75 со сверкой хэшей в `<user_data_dir>/tools/hyperframes-skills/v0.8.75/` и в `~/.claude/skills`/`~/.agents/skills` ничего не ставит; `workspace init` (и `montage draft`) копирует их в `<workspace>/.claude/skills/<имя>/` и `<workspace>/.agents/skills/<имя>/` с пометкой; чужая папка — `conflict`; пересобирается только помеченная копия другой версии; без кеша `workspace init` не падает. Пути проверены по документации Claude Code и Codex (факты пробы). — задачи 5, 17, 19, 20.
+2. **Субтитров в черновике нет.** Черновик — клипы, звук, переходы; титры — только `montage edit` (по просьбе или в автопилоте по смыслу). — задачи 9, 10, 11, 14, 20.
+3. **Свой шрифт.** Inter 5.3.0 из `@fontsource/inter` (OFL-1.1): латиница и кириллица, 400 и 700, 63,6 КБ, локальный `@font-face` из `assets/fonts/`. Проверено рендером: HyperFrames встраивает файл и в сеть не ходит, ролик с сетью и без сети совпадает. Любой след сети в логе рендера теперь — ошибка сборки. — задачи 6, 10, 15, 19, 20.
+4. **GSAP — локально.** `gsap@3.14.2` ставится тем же npm рядом с движком; `montage gsap` копирует его в `current/assets/`; внешний скрипт по-прежнему ошибка проверки, локальный разрешён; правило для агента — в каноне. — задачи 1, 4, 17, 18, 19, 20.
+5. **Автопилот ставит движок сам.** `montage status` отдаёт `engine.install`, отказ `montage draft` называет ту же команду; канон автопилота велит выполнить её и продолжить; остановка — только если установщик ответил `"ok": false`. Режим с уточнениями — вопрос в чате и промпт «Установить → чат» (кнопка — план Б). — задачи 1, 17, 19, 20.
+6. **Предел размера** для `media/<проект>/montage/vNNN.mp4` — 2 ГиБ (`MONTAGE_MAX_BYTES`), общий `MAX_ASSET_BYTES` не тронут. — задача 15.
+7. **`06-assembly.md`** — указатель на монтаж, старый текст сохранён как «прежний формат». — задача 20.
+8. **Переходы через CSS**, `data-fade-*` — только звук: подтверждено, формулировка спецификации поправлена.
 
-Вопросы, которые без владельца не решить:
+Решения плана, которых нет в спецификации (приняты, чтобы план был исполнимым; каждое проверено прогоном):
 
-1. **Скилл `hyperframes` объявляет себя «обязательной точкой входа для любого видео».** Поставленный глобально в `~/.claude/skills` и `~/.agents/skills`, он будет срабатывать во всех проектах и может перехватывать другие видео-задачи (Remotion, «сделай монтаж»). Ставить ли ядро глобально, как решено в спецификации, или только по запросу / в другое место?
-2. **Шрифт.** При доступной сети HyperFrames на каждой сборке ходит в Google Fonts за кириллицей Inter; без сети берёт системный шрифт — ролик может чуть отличаться. Положить в навык свободный шрифт с кириллицей (OFL, ~300 КБ) и объявлять его в черновике — тогда сборка полностью автономна и одинакова везде?
-3. **GSAP для скиллов HyperFrames.** Их анимации держатся на GSAP с CDN, а наша проверка сборки внешние скрипты запрещает. Ставить ли `gsap` локально вместе с движком (npm, закреплённая версия) и разрешить его в `assets/`?
-4. **`references/phases/06-assembly.md` в SKILL.md объявлен файлом старого формата T2.** План переписывает его как указатель на монтаж и сохраняет старый текст для T2. Так?
-5. **Автопилот без движка.** План считает это разрешённой остановкой (установка программ не входит в полномочия автопилота). Или автопилоту можно ставить движок самому?
-6. **Титры из текста сцены.** Текст сцены — описание кадра, а не реплика; титры могут выглядеть странно. Оставить (как в спецификации) или по умолчанию титров не делать?
-7. **Предел 128 МБ на ассет** (`MAX_ASSET_BYTES`) при качестве CRF 18: длинный ролик будет отклонён. Поднять предел для результатов монтажа, снизить качество или оставить отказ?
+1. **Свой HOME движка** (`<prefix>/home`): браузер, кэши и настройки HyperFrames не попадают в домашнюю папку человека; `--update` и удаление — одна папка.
+2. **Скиллы — только ядро (10 из 21)**, из тега v0.8.75, со сверкой хэшей; сценарные (`figma`, `slideshow`, `general-video`, …) не ставятся — нет конфликта имён, монтажом руководит aimaster.
+3. **`draft --rebuild`** (в спецификации нет): черновик заново из проекта, прежний `index.html` уходит в `montage/.undo/` — ничего не теряется.
+4. **Откат правки агента** — собственный снимок в `.undo/` на каждую правку (покрывает и наши точечные правки атрибутов, которых квитанции HyperFrames не видят); квитанция HyperFrames всё равно возвращается в ответе.
+5. **Установка скиллов с GitHub** работает и на Python с python.org без «Install Certificates.command» (системный набор сертификатов).
+6. **Канон `references/montage.md` — по-английски**, как соседние файлы `references/`; всё, что видит человек (ошибки, diff, CLI-помощь), — по-русски.
+7. **Предупреждения `lint`** — в `warnings` версии (раньше там были следы сети, теперь сеть — ошибка).
+
+Открытых вопросов к владельцу нет.
 
 ## Самопроверка
 
@@ -8255,28 +9025,36 @@ git commit -m "docs(montage): montage canon, assembly phase, autopilot step, CLI
 
 | Требование спецификации | Задача |
 |---|---|
-| `engine.json`: пакет, версия, выпуск скиллов | 1 |
+| `engine.json`: пакет, версия, GSAP, выпуск скиллов | 1 |
 | `engine.py`: поиск, запуск без оболочки по полному пути (Windows — `node.exe` + скрипт), переменные, тайм-ауты, `--frames-cache-dir`, JSON | 1, 2 |
-| `--install-deps`: Node ≥ 22 (winget/brew/инструкция Linux), HyperFrames через `npm install --prefix`, предзагрузка браузера с сообщением, скиллы той же версии с пометкой и `conflict`, раздел `montage` в JSON, `--update` | 4, 5 |
+| `--install-deps`: Node ≥ 22 (winget/brew/инструкция Linux), HyperFrames и GSAP через `npm install --prefix`, предзагрузка браузера с сообщением, скиллы той же версии — в кеш со сверкой хэшей, раздел `montage` в JSON, `--update` | 4, 5 |
+| Скиллы — в рабочую папку (`.claude/skills`, `.agents/skills`) копией с пометкой, `conflict`, `workspace init` не падает без кеша (решение владельца 1) | 5, 17 |
 | CI: реальная установка на трёх ОС, черновик из клипов ffmpeg, `lint`, рендер 3 с, ffprobe, нет внешних URL, рендер без сети на Linux | 6, 19 |
 | `canvas.py` | 3 |
 | `media_sync.py` (жёсткая ссылка / копия, `src` внутри папки) | 8 |
-| `draft.py` (клипы по `order`, `current_member`, аудиослои, титры, переходы, без GSAP и внешних URL), `draft --refresh` | 9, 10 |
+| `draft.py` (клипы по `order`, `current_member`, аудиослои, переходы CSS; без титров, без GSAP и внешних URL; шрифт навыка), `draft --refresh` | 9, 10 |
+| Шрифт с кириллицей в навыке, локальный `@font-face`, рендер с сетью и без сети одинаковый (решение владельца 3) | 10, 15, 19 |
 | `model.py` (дорожки и клипы, хэш, смысловой diff) | 11 |
 | `versions.py` (создать, список, сделать текущей, «несобранные правки») | 12 |
 | Раздел `montage` в state через транзакцию с `expected_revision`, история, проекция/валидация | 13 |
-| `edit.py` (обрезка начала сдвигает исходник, сдвиг за конец удлиняет корень, громкость, разрез, удаление, титры) | 14 |
-| `render.py` (lint → рендер → ffprobe → ассет `result` в `media/<id>/montage/vNNN.mp4` → версия → `assembly`; ошибка — версии нет) | 15 |
+| `edit.py` (обрезка начала сдвигает исходник, сдвиг за конец удлиняет корень, громкость, разрез, удаление, титры — только здесь) | 14 |
+| `render.py` (lint → рендер → ffprobe → ассет `result` в `media/<id>/montage/vNNN.mp4` → версия → `assembly`; ошибка или след сети — версии нет; предел 2 ГиБ) | 15 |
 | `desk.py` (интерфейс, `StudioDesk`, один процесс на проект, тайм-аут старта — процесс убит) | 16 |
-| CLI `montage draft|status|diff|edit|render|restore|open|close`, `--json`, `--expected-revision` | 17, 18 |
-| Канон: `06-assembly.md`, `montage.md`, `autopilot.md`, `creator-studio.md`, `SKILL.md` | 20 |
+| CLI `montage draft|status|diff|edit|render|restore|gsap|open|close`, `--json`, `--expected-revision`; `engine.install` в `status` | 17, 18 |
+| Канон: `06-assembly.md` (указатель + прежний формат), `montage.md` (титры, шрифт, GSAP, скиллы в рабочей папке), `autopilot.md` (движок ставит сам), `creator-studio.md`, `SKILL.md` | 20 |
 | Сквозная проверка на тестовых клипах, шаг в смоуке | 19 |
-| GSAP только если нужен рантайму | факты пробы: не нужен; задача 6/19 подтверждает |
+| GSAP — локальная копия из движка, когда композиции он нужен (решение владельца 4) | 4, 17, 18, 19, 20 |
 
 Этапы 3–5 спецификации (экран, телефон, выпуск) — вне плана А; их опора описана в «Контракте для плана Б».
 
 **2. Заглушки.** Поиск по плану слов «TBD», «TODO», «implement later», «подобно задаче», «добавить обработку ошибок» пуст; каждый шаг с кодом содержит код целиком, у каждой правки существующего файла указан точный якорь.
 
-**3. Согласованность имён.** Сигнатуры из блоков Interfaces совпадают с кодом задач: `run_engine/run_engine_json/EngineRunner.json|run`, `read_model(..., runner=)`, `apply_edit(..., runner=)`, `render_version(ctx, expected_revision, *, by, summary, engine, runner, probe)`, `service.*(…, engine=None, runner=None, probe=None)`, `StudioDesk(engine, *, popen, clock, sleep, alive, answers, kill)`, `rebuild_draft(...) -> (DraftResult, backup)`.
+**3. Согласованность имён.** Сигнатуры из блоков Interfaces совпадают с кодом задач: `run_engine/run_engine_json/EngineRunner.json|run`, `read_model(..., runner=)`, `apply_edit(..., runner=)`, `render_version(ctx, expected_revision, *, by, summary, engine, runner, probe)`, `service.*(…, engine=None, runner=None, probe=None)`, `service.gsap(ws, pid, *, plugins, engine)`, `StudioDesk(engine, *, popen, clock, sleep, alive, answers, kill)`, `rebuild_draft(...) -> (DraftResult, backup)`, `skills_report(*, act, home, pin, tree, fetcher)`, `sync_workspace_skills(ws, *, create, home, environ, pin)`, `skills_summary(ws, **kw)`, `title_fragment(id, text, start, duration)`, `vendor_gsap(engine, paths, *, plugins)`, `AssetIndex(..., montage_max_bytes=None)`.
 
-**4. Прогон кода плана (2026-09-25).** Весь код и все правки плана были перенесены скриптом в копию репозитория во временной папке и проверены: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_*.py'` — 449 тестов, OK (8 пропусков — Windows-ветки и тесты, которым нужен движок в папке по умолчанию); `compileall` — чисто; `check_static_modules.mjs` — 104 модуля; `node --test` v2 — зелёный. На настоящем HyperFrames 0.8.75 (поставлен установщиком плана в отдельную временную папку, скиллы — в подменённый HOME): установка движка, браузера и 10 скиллов со сверкой хэшей, `montage_ci_check.py` обеих редакций (`ok: true`), сквозной тест `test_montage_e2e.py` (черновик → сборка → обрезка начала через настоящий CLI → diff одной строкой → v002 → возврат → настоящий монтажный стол открылся и закрылся) и смоук чистой машины в обеих ветках (движок есть / нет). Прогон нашёл и план исправил: пустое хранилище сертификатов Python с python.org, подкачку Inter с Google Fonts, два слишком длинных модуля установщика.
+**4. Прогон кода плана (2026-09-25, после решений владельца).** Весь код и все правки плана перенесены скриптом в копию репозитория во временной папке (включая шрифт из закреплённого архива, правки `assets.py`/`workspace.py`/`server.py`/`authoring_support.py`/`workspace_init.py` и `ci.yml`, который разобран YAML-парсером) и проверены:
+
+- без движка: `python3 -m unittest discover -s skills/aimaster/scripts -p 'test_*.py'` — 462 теста, OK (8 пропусков: Windows-ветки и сквозной тест); `compileall` — чисто; `check_static_modules.mjs` — 104 модуля; `node --test` v2 — 133 из 133; `git diff --check` — чисто; число тестов в каждом шаге 4 совпало с прогоном;
+- на настоящем HyperFrames 0.8.75 (поставлен установщиком плана во временную папку через `AIMASTER_HYPERFRAMES_DIR`): установщик доставил `gsap@3.14.2` без `--update` и скачал 10 скиллов в `hyperframes-skills/v0.8.75` рядом с движком со сверкой хэшей; в `~/.claude/skills` и `~/.agents/skills` ничего не появилось; полный набор с движком и `AIMASTER_REQUIRE_ENGINE=1` — 463 теста, OK;
+- сквозной тест: черновик без титров, скиллы скопированы в `.claude/skills` и `.agents/skills` рабочей папки с пометкой → v001 (`warnings: []`) → обрезка начала и кириллический титр через настоящий CLI → diff двумя строками → v002 без обращения к сети → `montage gsap` скопировал GSAP 3.14.2 → возврат к v001 → настоящий монтажный стол открылся и закрылся;
+- шрифт: `montage_ci_check.py` с сетью и с отрезанной сетью Node (`NODE_USE_ENV_PROXY=1`, прокси на закрытый порт) — оба `ok: true`, `network_markers: []`, `video_md5` одинаковый (`97fb4fc5cd3d731bb09544cfef3af7e5`); в логе рендера — «Embedded local font file: assets/fonts/inter-…-normal.woff2 (… → data URI)», папка кэша шрифтов HyperFrames не создавалась; на кадре 1,0 с титр «Проверка шрифта: Ёжик и кот 2026» набран Inter;
+- смоук чистой машины — в обеих ветках (движка нет / есть): «монтаж: движок missing|installed, черновик без видео отклонён понятной фразой», «✓ смоук пройден».
