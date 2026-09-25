@@ -16,17 +16,16 @@ import hashlib
 import http.client
 import json
 import os
-import re
 import shutil
 import ssl
 import tempfile
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 from studio.montage.skill_bundle import verify_skills
+from studio.montage.temp_sweep import sweep_stale
 
 API_TREE = "https://api.github.com/repos/{repo}/git/trees/{tree}?recursive=1"
 RAW_HOST = "raw.githubusercontent.com"
@@ -35,11 +34,9 @@ HTTP_TIMEOUT = 60
 HEADERS = {"User-Agent": "aimaster-install", "Accept": "application/vnd.github+json"}
 CA_BUNDLES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt",
               "/etc/pki/tls/certs/ca-bundle.crt")
-# ".download-" совпал бы с чем угодно, начинающимся так же; вид ниже —
-# ровно то, что создаёт tempfile.mkdtemp(prefix=...), и только это сверяется
-# при уборке (studio/montage/workspace_skills.py::_sweep_stale — тот же принцип).
+# префикс tempfile.mkdtemp рабочей папки закачки; уборку прежних оборванных
+# ведёт studio/montage/temp_sweep.py — общая с копией скиллов в рабочую папку.
 DOWNLOAD_TEMP_PREFIX = ".aimaster-tmp-download-"
-TEMP_MIN_AGE_SECONDS = 3600  # не трогаем то, что моложе часа — вдруг это чужой параллельный запуск
 
 
 def ssl_context() -> ssl.SSLContext:
@@ -107,34 +104,6 @@ class RawFetcher:
         pass  # для симметрии с прежним интерфейсом; urlopen ничего не держит открытым
 
 
-def _sweep_stale(parent: Path, prefix: str, *, min_age=TEMP_MIN_AGE_SECONDS) -> None:
-    """Убирает временные папки от прошлых оборванных закачек: точное имя
-    вида, который создаёт tempfile.mkdtemp (не префиксный glob — иначе,
-    скажем, чужая «.download-notes» тоже бы совпала), и только не моложе
-    часа — свежая может быть рабочей папкой параллельно идущей закачки.
-
-    Уборка — забота, не обязанность: недоступная (0o300 и т.п.) родительская
-    папка не должна ронять хорошую закачку — просто ничего не убираем."""
-
-    if not parent.is_dir():
-        return
-    pattern = re.compile(r"^" + re.escape(prefix) + r"[A-Za-z0-9_]+$")
-    try:
-        children = list(parent.iterdir())
-    except OSError:
-        return
-    now = time.time()
-    for path in children:
-        if not pattern.match(path.name) or path.is_symlink() or not path.is_dir():
-            continue
-        try:
-            age = now - path.stat().st_mtime
-        except OSError:
-            continue
-        if age >= min_age:
-            shutil.rmtree(path, ignore_errors=True)
-
-
 def download_skills(pin: dict, dest: Path, *, tree=None, fetcher=None) -> None:
     """Качает во временную папку рядом с dest, сверяет, затем ставит на место."""
 
@@ -143,7 +112,7 @@ def download_skills(pin: dict, dest: Path, *, tree=None, fetcher=None) -> None:
     fetcher = RawFetcher(pin) if own else fetcher
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    _sweep_stale(dest.parent, DOWNLOAD_TEMP_PREFIX)
+    sweep_stale(dest.parent, DOWNLOAD_TEMP_PREFIX)
     work = Path(tempfile.mkdtemp(prefix=DOWNLOAD_TEMP_PREFIX, dir=str(dest.parent)))
     try:
         for item in tree:

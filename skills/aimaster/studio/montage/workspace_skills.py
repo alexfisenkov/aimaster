@@ -12,33 +12,38 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import tempfile
-import time
 from pathlib import Path
 
 from .engine import install_command
 from .home_guard import would_write_into_home
 from .skill_bundle import SKILL_MARKER, skills_cache, skills_pin, verify_skills
+from .temp_sweep import sweep_stale
 
 AGENT_DIRS = ((".claude", "skills"), (".agents", "skills"))
 HOME_SKIP_MESSAGE = ("рабочая папка — домашняя, скиллы HyperFrames ставятся только в папку "
                      "видеопроектов")
-# ".<имя>-" совпал бы с чужой папкой вроде «.hyperframes-backup» (у скилла
-# как раз есть имя «hyperframes») — вид ниже точно совпадает с тем, что
-# создаёт tempfile.mkdtemp, и только это сверяется при уборке.
+# рабочая папка копии — tempfile.mkdtemp(prefix=f"{TEMP_PREFIX}<имя>-"); не
+# «.<имя>-»: тот совпал бы с чужой «.hyperframes-backup». Уборку оборванных
+# прежних копий ведёт temp_sweep.py — общий с закачкой скиллов в кеш.
 TEMP_PREFIX = ".aimaster-tmp-"
-TEMP_MIN_AGE_SECONDS = 3600  # не трогаем то, что моложе часа — вдруг чужой параллельный запуск
 
 
 def inspect_copy(target: Path, version: str) -> str:
-    """missing | current | outdated | foreign."""
+    """missing | current | outdated | foreign | unreadable.
 
-    if target.is_symlink() or (target.exists() and not target.is_dir()):
-        return "foreign"
-    if not target.exists():
-        return "missing"
+    unreadable — запись нельзя даже проверить (папка агента без права на
+    поиск): на Python 3.11/3.12 is_symlink/exists тогда бросают
+    PermissionError, а workspace init падать не должен."""
+
+    try:
+        if target.is_symlink() or (target.exists() and not target.is_dir()):
+            return "foreign"
+        if not target.exists():
+            return "missing"
+    except OSError:
+        return "unreadable"
     try:
         marker = json.loads((target / SKILL_MARKER).read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -46,35 +51,6 @@ def inspect_copy(target: Path, version: str) -> str:
     if not isinstance(marker, dict) or marker.get("installed_by") != "aimaster":
         return "foreign"
     return "current" if marker.get("version") == version else "outdated"
-
-
-def _sweep_stale(parent: Path, name: str, *, min_age=TEMP_MIN_AGE_SECONDS) -> None:
-    """Убирает СВОИ временные папки от прошлых оборванных копий: точное имя
-    вида, который создаёт tempfile.mkdtemp для этого скилла (не префиксный
-    glob), и только не моложе часа — свежая может быть рабочей папкой
-    параллельно идущей установки. Звать один раз в начале операции, до того
-    как _copy создаст СВОЮ рабочую папку — иначе можно смести и её.
-
-    Уборка — забота, не обязанность: недоступная (0o300 и т.п.) родительская
-    папка не должна ронять всю установку — просто ничего не убираем."""
-
-    if not parent.is_dir():
-        return
-    pattern = re.compile(r"^" + re.escape(f"{TEMP_PREFIX}{name}-") + r"[A-Za-z0-9_]+$")
-    try:
-        children = list(parent.iterdir())
-    except OSError:
-        return
-    now = time.time()
-    for path in children:
-        if not pattern.match(path.name) or path.is_symlink() or not path.is_dir():
-            continue
-        try:
-            age = now - path.stat().st_mtime
-        except OSError:
-            continue
-        if age >= min_age:
-            shutil.rmtree(path, ignore_errors=True)
 
 
 def _copy(source: Path, target: Path, version: str) -> None:
@@ -126,7 +102,7 @@ def sync_workspace_skills(workspace, *, create=True, home=None, environ=None, pi
         for parts in AGENT_DIRS:
             agent_dir = Path(workspace).joinpath(*parts)
             for name in names:
-                _sweep_stale(agent_dir, name)
+                sweep_stale(agent_dir, f"{TEMP_PREFIX}{name}-")
     items = []
     for parts in AGENT_DIRS:
         for name in names:
@@ -135,6 +111,8 @@ def sync_workspace_skills(workspace, *, create=True, home=None, environ=None, pi
             item = {"path": str(target), "name": name, "status": "found"}
             if state == "foreign":
                 item["status"] = "conflict"
+            elif state == "unreadable":
+                item.update(status="failed", message="нет доступа к папке — скилл не проверен")
             elif state != "current" and not create:
                 item["status"] = "missing"
             elif state != "current":

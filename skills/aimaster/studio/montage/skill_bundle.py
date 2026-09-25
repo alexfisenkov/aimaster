@@ -43,7 +43,16 @@ def any_skills_cached(*, home=None, environ=None, pin=None) -> bool:
         children = list(cache_root.iterdir())
     except OSError:
         return False
-    return any(child.is_dir() and not child.name.startswith(".") for child in children)
+    return any(not child.name.startswith(".") and _is_dir(child) for child in children)
+
+
+def _is_dir(path: Path) -> bool:
+    # на Python 3.11/3.12 is_dir() бросает PermissionError, если папка
+    # читается, но не открывается для поиска (0o600) — это «нет», не сбой
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
 
 
 def bundle_hash(skill_dir: Path) -> tuple[str, int]:

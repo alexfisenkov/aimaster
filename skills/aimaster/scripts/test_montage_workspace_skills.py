@@ -108,13 +108,14 @@ class WorkspaceSkillsTests(unittest.TestCase):
         папка может быть рабочей папкой параллельно идущей установки."""
 
         claude_skills = self.ws / ".claude" / "skills"
-        stale = claude_skills / f"{workspace_skills.TEMP_PREFIX}demo-oldjunk"
-        stale.mkdir(parents=True)
+        claude_skills.mkdir(parents=True)
+        # имена — настоящий mkdtemp, как у _copy: уборка сверяет его точный вид (разбор 4/5)
+        prefix = f"{workspace_skills.TEMP_PREFIX}demo-"
+        stale = Path(tempfile.mkdtemp(prefix=prefix, dir=str(claude_skills)))
         (stale / "leftover.txt").write_text("мусор", encoding="utf-8")
         old_time = time.time() - 7200  # два часа назад
         os.utime(stale, (old_time, old_time))
-        fresh = claude_skills / f"{workspace_skills.TEMP_PREFIX}demo-freshjunk"
-        fresh.mkdir(parents=True)  # mtime — прямо сейчас
+        fresh = Path(tempfile.mkdtemp(prefix=prefix, dir=str(claude_skills)))
         keep = claude_skills / "not-a-temp-dir"
         keep.mkdir(parents=True)
         self.sync()
@@ -149,6 +150,43 @@ class WorkspaceSkillsTests(unittest.TestCase):
         finally:
             claude_skills.chmod(0o700)  # иначе временную папку теста будет не удалить
         self.assertIn(report["status"], ("installed", "found", "conflict", "failed"))
+
+    @unittest.skipIf(os.name == "nt", "права доступа POSIX — на Windows это не тестируется")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root игнорирует права доступа")
+    def test_unsearchable_agent_dir_does_not_crash_the_sync(self):
+        """Разбор 4/5, находка 2: 0o600 — iterdir() работает, а stat каждой
+        записи нет; на Python 3.11/3.12 уборка (is_symlink/is_dir) и
+        inspect_copy (is_symlink/exists) бросали PermissionError."""
+
+        claude_skills = self.ws / ".claude" / "skills"
+        stale = Path(tempfile.mkdtemp(prefix=f"{workspace_skills.TEMP_PREFIX}demo-",
+                                      dir=str(self._mkdir(claude_skills))))
+        old_time = time.time() - 7200
+        os.utime(stale, (old_time, old_time))
+        claude_skills.chmod(0o600)
+        try:
+            report = self.sync()
+        finally:
+            claude_skills.chmod(0o700)
+        self.assertEqual(report["status"], "failed")
+        failed = [item for item in report["items"] if item["path"].startswith(str(claude_skills))]
+        self.assertEqual({item["status"] for item in failed}, {"failed"})
+        self.assertTrue(stale.exists())  # недоступное не тронуто
+
+    def test_unstatable_target_is_a_failed_item_not_a_crash(self):
+        """То же без chmod — переносимо на любую ОС и версию Python."""
+
+        denied = PermissionError(13, "Permission denied")
+        with mock.patch.object(type(self.ws), "is_symlink", side_effect=denied):
+            self.assertEqual(workspace_skills.inspect_copy(self.ws / "x", "v9.9.9"), "unreadable")
+            report = self.sync()
+        self.assertEqual({item["status"] for item in report["items"]}, {"failed"})
+        self.assertIn("нет доступа", report["items"][0]["message"])
+
+    @staticmethod
+    def _mkdir(path: Path) -> Path:
+        path.mkdir(parents=True)
+        return path
 
 
 class HomeGuardTests(unittest.TestCase):

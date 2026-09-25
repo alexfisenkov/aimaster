@@ -228,13 +228,13 @@ class DownloadTests(_Temp):
         папка может быть рабочей папкой параллельно идущей закачки."""
 
         dest = self.base / "hyperframes-skills" / "v9.9.9"
-        stale = dest.parent / f"{fetch.DOWNLOAD_TEMP_PREFIX}oldjunk"
-        stale.mkdir(parents=True)
+        dest.parent.mkdir(parents=True)
+        # имена — настоящий mkdtemp: уборка сверяет его точный вид (разбор 4/5)
+        stale = Path(tempfile.mkdtemp(prefix=fetch.DOWNLOAD_TEMP_PREFIX, dir=str(dest.parent)))
         (stale / "leftover.txt").write_text("мусор", encoding="utf-8")
         old_time = time.time() - 7200  # два часа назад
         os.utime(stale, (old_time, old_time))
-        fresh = dest.parent / f"{fetch.DOWNLOAD_TEMP_PREFIX}freshjunk"
-        fresh.mkdir(parents=True)  # mtime — прямо сейчас
+        fresh = Path(tempfile.mkdtemp(prefix=fetch.DOWNLOAD_TEMP_PREFIX, dir=str(dest.parent)))
         keep = dest.parent / "not-a-download-dir"
         keep.mkdir(parents=True)
         fetch.download_skills(PIN, dest, tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
@@ -326,6 +326,27 @@ class ReportTests(_Temp):
                                       fetcher=fetcher)
         self.assertEqual(report["status"], "missing")
         self.assertEqual(fetcher.gets, [])
+
+    def test_unstatable_entry_is_not_a_crash(self):
+        """Разбор 4/5: папка читается, но не открывается для поиска (0o600) —
+        на Python 3.11/3.12 is_dir() каждой записи бросает PermissionError."""
+
+        (self.cache.parent / "v0.8.70").mkdir(parents=True)
+        denied = PermissionError(13, "Permission denied")
+        with mock.patch.object(type(self.cache), "is_dir", side_effect=denied):
+            self.assertFalse(any_skills_cached(pin=PIN))
+
+    @unittest.skipIf(os.name == "nt", "права доступа POSIX — на Windows это не тестируется")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root игнорирует права доступа")
+    def test_unsearchable_cache_root_is_not_a_crash(self):
+        root = self.cache.parent
+        (root / "v0.8.70").mkdir(parents=True)
+        root.chmod(0o600)  # чтение без поиска: iterdir() работает, stat записей — нет
+        try:
+            result = any_skills_cached(pin=PIN)
+        finally:
+            root.chmod(0o700)
+        self.assertIn(result, (True, False))  # главное — без исключения
 
     def test_unreadable_cache_root_is_not_a_crash(self):
         """Разбор 2/5, находка D: PermissionError на iterdir — статус, не трейсбек."""
