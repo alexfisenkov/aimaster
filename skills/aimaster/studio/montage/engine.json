@@ -1,0 +1,32 @@
+{
+  "package": "hyperframes",
+  "version": "0.8.75",
+  "node_min_major": 22,
+  "gsap_version": "3.14.2",
+  "render_quality": "standard",
+  "timeouts": {
+    "cli": 120,
+    "render": 1800,
+    "preview_start": 30,
+    "npm_install": 900,
+    "browser": 900
+  },
+  "skills": {
+    "repo": "heygen-com/hyperframes",
+    "tag": "v0.8.75",
+    "commit": "a95cb96a5dd3c1f7b31266a4b470590c86ad231f",
+    "tree": "553a635bb8604fa571cf155d7df09171ecf4d6b9",
+    "bundles": {
+      "hyperframes": {"hash": "e4788caea448bc93", "files": 26},
+      "hyperframes-animation": {"hash": "9add954e7eff1aa6", "files": 122},
+      "hyperframes-audio": {"hash": "7e9a13aba7143c08", "files": 7},
+      "hyperframes-cli": {"hash": "d994bb25706982ee", "files": 11},
+      "hyperframes-core": {"hash": "b4d9c7b3d0e5ae75", "files": 11},
+      "hyperframes-creative": {"hash": "0803c90800fda4ce", "files": 79},
+      "hyperframes-keyframes": {"hash": "16a7da9819e7e4ab", "files": 3},
+      "hyperframes-registry": {"hash": "4a1a7daf23a9e569", "files": 12},
+      "hyperframes-studio": {"hash": "b063eaa9eb1e4b9b", "files": 1},
+      "media-use": {"hash": "b35de041b87e763d", "files": 98}
+    }
+  }
+}

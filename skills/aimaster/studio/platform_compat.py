@@ -223,3 +223,26 @@ def ensure_utf8_stdio() -> None:
                 reconfigure(encoding="utf-8", errors="replace")
             except (OSError, ValueError):
                 pass
+
+
+def find_program(name: str, *, environ=None) -> str | None:
+    """Полный путь к программе из абсолютных элементов PATH или None.
+
+    Пустой или относительный элемент PATH означал бы текущую папку, где может
+    лежать чужой файл. На Windows берём только настоящие .exe/.com: .cmd и
+    .bat запускаются через cmd.exe, а оболочку монтаж не использует.
+    """
+
+    environ = os.environ if environ is None else environ
+    folders = []
+    for entry in environ.get("PATH", "").split(os.pathsep):
+        entry = entry.strip().strip('"')
+        if entry and os.path.isabs(entry) and entry not in folders:
+            folders.append(entry)
+    suffixes = ("",) if not IS_WINDOWS or os.path.splitext(name)[1] else (".exe", ".com")
+    for folder in folders:
+        for suffix in suffixes:
+            candidate = os.path.join(folder, name + suffix)
+            if os.path.isfile(candidate) and (IS_WINDOWS or os.access(candidate, os.X_OK)):
+                return candidate
+    return None
