@@ -137,13 +137,20 @@ def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool
         # round 1/5, CI windows-latest (runs 36133902583, 36134495655): `ensure`
         # отчитался кодом 0 и своей строкой «Path: …», отдельный `browser path`
         # согласился с тем же путём — а на диске оказалась пустая папка нужной
-        # версии (└ вложенный chrome-headless-shell-win64/…exe вообще не
+        # версии (вложенный chrome-headless-shell-win64/…exe вообще не
         # появился). Ни _wait_until_file (истёк тем же результатом), ни
         # исключение из Windows Defender в ci.yml это не поправили — похоже на
         # незавершённую/битую распаковку архива, а не на замок или карантин.
-        # Один принудительный перекач с нуля («ensure --force» чистит кэш и
-        # качает заново) — до того, как сдаться финально.
-        ensured = run_engine(eng, ["browser", "ensure", "--force"], cwd=prefix,
+        #
+        # Повторный `ensure` БЕЗ --force (не форсированный): у самого
+        # HyperFrames уже есть эта починка внутри — при preferManagedChrome
+        # он находит версийную папку, видит, что исполняемого файла в ней
+        # нет (`staleHyperframesCachePath`), сам удаляет только её и качает
+        # заново. `--force` вместо этого чистит ВЕСЬ кэш браузера целиком
+        # (`clearBrowser()`) — на этом самом round `--force` провисел все
+        # отведённые 900 с и получил «timeout» (run 36135245236): такая
+        # уборка тяжелее и на Windows, похоже, заметно медленнее прицельной.
+        ensured = run_engine(eng, ["browser", "ensure"], cwd=prefix,
                              timeout=pin["timeouts"]["browser"], **kwargs)
         if ensured.timed_out:
             return item("timeout", "браузер для сборки не скачался за отведённое время; повторите позже")

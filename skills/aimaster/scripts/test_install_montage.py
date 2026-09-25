@@ -449,29 +449,31 @@ class BrowserInstallTests(unittest.TestCase):
         self.assertEqual(item["status"], "installed")
         self.assertEqual(engine.read_record(self.prefix)["browser"], str(delayed))
         self.assertEqual(sleeps, [install_montage_browser.IS_FILE_DELAY] * 2)
-        # выдержало короткий опрос — принудительный перекач не понадобился
-        force_calls = [argv for argv, _kwargs in self.calls if argv[2:5] == ["browser", "ensure", "--force"]]
-        self.assertEqual(force_calls, [])
+        # выдержало короткий опрос — повторный ensure не понадобился
+        ensure_calls = [argv for argv, _kwargs in self.calls if argv[2:4] == ["browser", "ensure"]]
+        self.assertEqual(len(ensure_calls), 1)
 
-    def test_incomplete_extraction_recovers_on_forced_reensure(self):
+    def test_incomplete_extraction_recovers_on_a_second_ensure(self):
         """Дословно найденная причина на CI windows-latest (runs 36133902583,
         36134495655): и `ensure`, и отдельный `browser path` кодом 0
         согласились на один и тот же путь — а версия-папка на диске
         оказалась пустой (вложенный `chrome-headless-shell-win64/…exe`
         распаковка не создала). Короткий опрос это не лечит — файла ждать
-        неоткуда. Второй `browser ensure --force` (чистый перекач с нуля)
+        неоткуда. Второй `ensure` БЕЗ --force (round 1/5, третий заход:
+        --force провисел все 900 с и получил «timeout» на run 36135245236 —
+        у самого HyperFrames уже есть починка стale-кэша без полной чистки)
         должен получить настоящий файл и завершиться «installed»."""
 
         real = self.prefix / "home" / ".cache" / "hyperframes" / "chrome" / "настоящий.exe"
         calls = []
 
-        # Сценарий по порядку вызовов, а не по разбору argv: ensure #1 и path #1
-        # обещают путь, которого ещё нет на диске; ensure --force и path #2 —
-        # то же самое обещание, но на этот раз файл действительно появляется.
+        # Сценарий по порядку вызовов: ensure #1 и path #1 обещают путь,
+        # которого ещё нет на диске; ensure #2 и path #2 — то же самое
+        # обещание, но на этот раз файл действительно появляется.
         sequence = iter([
             subprocess.CompletedProcess(["ensure"], 0, b"Ready to render.", b""),          # ensure #1
             subprocess.CompletedProcess(["path"], 0, (str(real) + "\n").encode(), b""),     # path #1 (файла ещё нет)
-            subprocess.CompletedProcess(["ensure", "--force"], 0, b"Ready to render.", b""),  # ensure --force
+            subprocess.CompletedProcess(["ensure"], 0, b"Ready to render.", b""),           # ensure #2
             subprocess.CompletedProcess(["path"], 0, (str(real) + "\n").encode(), b""),     # path #2
         ])
 
@@ -479,7 +481,7 @@ class BrowserInstallTests(unittest.TestCase):
             calls.append((argv, kwargs))
             result = next(sequence)
             if argv[2:4] == ["browser", "path"] and len(calls) == 4:
-                # к моменту ВТОРОГО path файл уже реально скачан force-ensure'ом
+                # к моменту ВТОРОГО path файл уже реально скачан вторым ensure
                 touch(real)
             return result
 
@@ -488,14 +490,14 @@ class BrowserInstallTests(unittest.TestCase):
                          runner=sequenced_runner)
         self.assertEqual(item["status"], "installed")
         self.assertEqual(engine.read_record(self.prefix)["browser"], str(real))
-        force_calls = [argv for argv, _kwargs in calls if argv[2:5] == ["browser", "ensure", "--force"]]
-        self.assertEqual(len(force_calls), 1)
+        ensure_calls = [argv for argv, _kwargs in calls if argv[2:4] == ["browser", "ensure"]]
+        self.assertEqual(len(ensure_calls), 2)
 
     def test_gives_up_after_the_last_retry(self):
         """Файл так и не появился ни разу — после `IS_FILE_ATTEMPTS` попыток
-        опроса, принудительного перекача (тоже безрезультатного через тот же
-        runner) и ещё стольких же попыток — «failed», а не бесконечный опрос
-        и не тихий один заход без объяснения."""
+        опроса, второго `ensure` (тоже безрезультатного через тот же runner)
+        и ещё стольких же попыток — «failed», а не бесконечный опрос и не
+        тихий один заход без объяснения."""
 
         never = self.prefix / "home" / "так-и-не-скачался.exe"
         sleeps = []
@@ -504,9 +506,9 @@ class BrowserInstallTests(unittest.TestCase):
                          runner=self.runner(str(never)), sleep=sleeps.append)
         self.assertEqual(item["status"], "failed")
         self.assertEqual(len(sleeps), 2 * (install_montage_browser.IS_FILE_ATTEMPTS - 1))
-        # второй заход дошёл до перекача --force, а не молча повторил первый
-        force_calls = [argv for argv, _kwargs in self.calls if argv[2:5] == ["browser", "ensure", "--force"]]
-        self.assertEqual(len(force_calls), 1)
+        # второй заход реально был — retry, а не молча повторённый первый ответ
+        ensure_calls = [argv for argv, _kwargs in self.calls if argv[2:4] == ["browser", "ensure"]]
+        self.assertEqual(len(ensure_calls), 2)
 
     def test_recorded_browser_is_found_without_download(self):
         touch(self.browser)
