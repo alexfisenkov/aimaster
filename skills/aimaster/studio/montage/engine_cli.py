@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,15 +68,66 @@ def _decode(raw) -> str:
     return (raw or b"").decode("utf-8", errors="replace")
 
 
+def _group_kwargs() -> dict:
+    """Popen-флаги, под которыми node становится корнем отдельной группы
+    процессов — без этого таймаут убивает только node, а Chrome и ffmpeg,
+    которых node запустил, остаются висеть сиротами."""
+
+    return ({"creationflags": CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW} if IS_WINDOWS
+           else {"start_new_session": True})
+
+
+def _taskkill_path() -> str:
+    root = os.environ.get("SystemRoot") or os.environ.get("windir") or "C:\\Windows"
+    return str(Path(root) / "System32" / "taskkill.exe")
+
+
+def _kill_tree(proc) -> None:
+    """Останавливает весь узел процессов node, а не только сам node.
+
+    POSIX: node запущен лидером своей сессии (`_group_kwargs`), поэтому его
+    pgid равен его pid — killpg разом убивает node и всех его детей. Windows:
+    сигналов нет, поэтому taskkill /T (дерево) по полному пути System32, без
+    оболочки."""
+
+    if IS_WINDOWS:
+        subprocess.run([_taskkill_path(), "/T", "/F", "/PID", str(proc.pid)],
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL)
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass  # уже сам завершился между таймаутом и попыткой убить
+
+
+def default_runner(argv, *, cwd, env, stdin, stdout, stderr, timeout, popen=subprocess.Popen):
+    """Как subprocess.run, но при таймауте останавливает весь узел процессов,
+    а не только node, и сохраняет частичный вывод, накопленный до убийства.
+
+    `popen=` — только для тестов (как и `popen=` у popen_engine): реальные
+    вызовы используют subprocess.Popen по умолчанию."""
+
+    proc = popen(argv, cwd=cwd, env=env, stdin=stdin, stdout=stdout, stderr=stderr,
+                **_group_kwargs())
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_tree(proc)
+        out, err = proc.communicate()  # дренируем то, что успело накопиться
+        raise subprocess.TimeoutExpired(argv, timeout, output=out, stderr=err) from None
+    return subprocess.CompletedProcess(argv, proc.returncode, out, err)
+
+
 def run_engine(engine: Engine, args: Sequence[str], *, cwd: Path, timeout: float,
-               runner=subprocess.run) -> EngineResult:
+               runner=default_runner) -> EngineResult:
     engine_home(engine).mkdir(parents=True, exist_ok=True)
     try:
         proc = runner(argv_for(engine, args), cwd=str(cwd), env=engine_env(engine),
                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                       stderr=subprocess.PIPE, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return EngineResult(124, "", f"не завершился за {timeout:g} с", True)
+    except subprocess.TimeoutExpired as error:
+        return EngineResult(124, _decode(error.output), _decode(error.stderr), True)
     except OSError as error:
         return EngineResult(127, "", str(error))
     return EngineResult(proc.returncode, _decode(proc.stdout), _decode(proc.stderr))
@@ -87,13 +139,16 @@ def _json_payload(text: str):
     if start < 0:
         return None
     try:
-        return json.loads(text[start:])
+        # raw_decode вместо loads: остаток строки после JSON (хвостовой лог,
+        # перевод строки) не должен валить разбор — нам нужен только объект.
+        value, _ = json.JSONDecoder().raw_decode(text[start:])
     except ValueError:
         return None
+    return value
 
 
 def run_engine_json(engine: Engine, args: Sequence[str], *, cwd: Path, timeout: float,
-                    ok_codes=(0,), runner=subprocess.run) -> dict:
+                    ok_codes=(0,), runner=default_runner) -> dict:
     result = run_engine(engine, args, cwd=cwd, timeout=timeout, runner=runner)
     command = " ".join(map(str, list(args)[:2]))
     if result.timed_out:
@@ -120,11 +175,13 @@ def popen_engine(engine: Engine, args: Sequence[str], *, cwd: Path, log_path: Pa
 
     engine_home(engine).mkdir(parents=True, exist_ok=True)
     Path(log_path).parent.mkdir(parents=True, exist_ok=True)
-    extra = ({"creationflags": CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW} if IS_WINDOWS
-             else {"start_new_session": True})
     with open(log_path, "wb") as log:
-        return popen(argv_for(engine, args), cwd=str(cwd), env=engine_env(engine),
-                     stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, **extra)
+        try:
+            return popen(argv_for(engine, args), cwd=str(cwd), env=engine_env(engine),
+                         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                         **_group_kwargs())
+        except OSError as error:
+            raise MontageError(f"не удалось запустить HyperFrames: {error}") from error
 
 
 class EngineRunner:

@@ -3,9 +3,13 @@
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -114,6 +118,21 @@ class RunTests(unittest.TestCase):
                                                             timeout=1), {"x": 1})
         fake.assert_called_once()
 
+    def test_runner_object_run_also_delegates(self):
+        sentinel = engine_cli.EngineResult(0, "ok", "", False)
+        with mock.patch.object(engine_cli, "run_engine", return_value=sentinel) as fake:
+            self.assertIs(engine_cli.EngineRunner().run(self.engine, ["a"], cwd=self.base,
+                                                         timeout=1), sentinel)
+        fake.assert_called_once()
+
+    def test_json_payload_ignores_trailing_text_after_the_object(self):
+        # raw_decode вместо loads: строка после закрывающей скобки (лишний
+        # лог, перевод строки) не должна ронять разбор.
+        run = FakeRun(stdout='{"ok": true}\nещё одна строка лога в конце\n'.encode("utf-8"))
+        payload = engine_cli.run_engine_json(self.engine, ["timeline", "--json"],
+                                             cwd=self.base, timeout=5, runner=run)
+        self.assertEqual(payload, {"ok": True})
+
 
 class PopenTests(unittest.TestCase):
     def setUp(self):
@@ -146,6 +165,150 @@ class PopenTests(unittest.TestCase):
         self.assertTrue(kwargs["creationflags"] & engine_cli.CREATE_NEW_PROCESS_GROUP)
         self.assertTrue(kwargs["creationflags"] & engine_cli.CREATE_NO_WINDOW)
         self.assertNotIn("start_new_session", kwargs)
+
+    def test_oserror_becomes_montage_error(self):
+        def failing_popen(argv, **kwargs):
+            raise OSError("node не найден")
+        with self.assertRaises(MontageError) as caught:
+            engine_cli.popen_engine(self.engine, ["preview", "."], cwd=self.base,
+                                    log_path=self.base / "desk.log", popen=failing_popen)
+        self.assertIn("не удалось запустить", str(caught.exception))
+
+
+class FakePopen:
+    """Имитирует subprocess.Popen: первый communicate() — таймаут (как
+    настоящий Popen, который в этот момент отдаёт то, что успел накопить),
+    второй (после «убийства») — то, что осталось от процесса."""
+
+    def __init__(self, argv, **kwargs):
+        self.argv = argv
+        self.kwargs = kwargs
+        self.pid = 777
+        self.returncode = None
+        self._calls = 0
+
+    def communicate(self, timeout=None):
+        self._calls += 1
+        if self._calls == 1:
+            raise subprocess.TimeoutExpired(self.argv, timeout)
+        self.returncode = -9
+        return b"partial-out", b"partial-err"
+
+
+class ImmediatePopen:
+    """Завершается сразу — для проверки штатного (без таймаута) пути."""
+
+    def __init__(self, argv, **kwargs):
+        self.argv = argv
+        self.kwargs = kwargs
+        self.pid = 555
+        self.returncode = 0
+
+    def communicate(self, timeout=None):
+        return b'{"ok": true}', b""
+
+
+class DefaultRunnerTests(unittest.TestCase):
+    """default_runner — то, что run_engine/run_engine_json используют по
+    умолчанию вместо голого subprocess.run, начиная с этого исправления."""
+
+    def test_success_path_returns_completed_process(self):
+        result = engine_cli.default_runner(
+            ["node", "x"], cwd="/tmp", env={}, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, popen=ImmediatePopen)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b'{"ok": true}')
+
+    def test_posix_timeout_kills_the_process_group(self):
+        killed = []
+        with mock.patch.object(engine_cli, "IS_WINDOWS", False), \
+                mock.patch.object(engine_cli.os, "killpg", side_effect=lambda pid, sig: killed.append((pid, sig))):
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                engine_cli.default_runner(
+                    ["node", "x"], cwd="/tmp", env={}, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1, popen=FakePopen)
+        self.assertEqual(killed, [(777, engine_cli.signal.SIGKILL)])
+        self.assertEqual(caught.exception.output, b"partial-out")
+        self.assertEqual(caught.exception.stderr, b"partial-err")
+
+    def test_windows_timeout_kills_whole_tree_via_taskkill_and_keeps_partial_output(self):
+        kills = []
+
+        def fake_run(argv, **kwargs):
+            kills.append(argv)
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+        with mock.patch.object(engine_cli, "IS_WINDOWS", True), \
+                mock.patch.object(subprocess, "run", fake_run):
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                engine_cli.default_runner(
+                    ["node", "x"], cwd="/tmp", env={}, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1, popen=FakePopen)
+        self.assertEqual(kills[0][0], engine_cli._taskkill_path())
+        self.assertEqual(kills[0][1:], ["/T", "/F", "/PID", "777"])
+        self.assertEqual(caught.exception.output, b"partial-out")
+        self.assertEqual(caught.exception.stderr, b"partial-err")
+
+    def test_run_engine_reports_partial_output_and_stays_timed_out(self):
+        base = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(base, ignore_errors=True))
+        fake_engine = make_engine(base)
+        runner = lambda argv, **kwargs: engine_cli.default_runner(argv, popen=FakePopen, **kwargs)  # noqa: E731
+        with mock.patch.object(engine_cli, "IS_WINDOWS", False), \
+                mock.patch.object(engine_cli.os, "killpg"):
+            result = engine_cli.run_engine(fake_engine, ["render"], cwd=base, timeout=1,
+                                           runner=runner)
+        self.assertTrue(result.timed_out)
+        self.assertEqual(result.stdout, "partial-out")
+        self.assertEqual(result.stderr, "partial-err")
+
+
+_FAKE_NODE = """
+import json
+import os
+import subprocess
+import sys
+import time
+
+pid_file = sys.argv[1]
+child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"])
+with open(pid_file, "w", encoding="utf-8") as handle:
+    json.dump({"node": os.getpid(), "child": child.pid}, handle)
+    handle.flush()
+    os.fsync(handle.fileno())
+time.sleep(20)
+"""
+
+
+class RealTimeoutKillsTreeTests(unittest.TestCase):
+    """Настоящий узел процессов: node (тут — python-заглушка) сам порождает
+    ребёнка (как HyperFrames порождает Chrome/ffmpeg). По таймауту должны
+    погибнуть оба, не только прямой потомок run_engine."""
+
+    def test_posix_timeout_kills_node_and_its_child(self):
+        if os.name == "nt":
+            self.skipTest("процессная группа POSIX — на Windows своя ветка, см. DefaultRunnerTests")
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            script = base / "fake_node.py"
+            script.write_text(_FAKE_NODE, encoding="utf-8")
+            pid_file = base / "pids.json"
+            fake_engine = engine.Engine(node=sys.executable, script=script, prefix=base,
+                                        version="0.8.75", browser=None)
+            result = engine_cli.run_engine(fake_engine, [str(pid_file)], cwd=base, timeout=2)
+            self.assertTrue(result.timed_out)
+            pids = json.loads(pid_file.read_text(encoding="utf-8"))
+            deadline = time.monotonic() + 5
+            alive = dict(pids)
+            while alive and time.monotonic() < deadline:
+                for label, pid in list(alive.items()):
+                    try:
+                        os.kill(pid, 0)
+                    except ProcessLookupError:
+                        del alive[label]
+                if alive:
+                    time.sleep(0.05)
+            self.assertEqual(alive, {}, f"эти процессы всё ещё живы: {alive}")
 
 
 if __name__ == "__main__":
