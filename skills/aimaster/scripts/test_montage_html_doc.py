@@ -103,5 +103,49 @@ class PathsTests(unittest.TestCase):
                 version_number(bad)
 
 
+# Fix round 1/5: <script> (montage gsap допишет свой), <style> и комментарии
+# не должны читаться как разметка тег-сканером на регэкспах.
+WITH_SCRIPT = """<div id="root" data-duration="1">
+  <!-- фальшивка <div id="v-1"></div> в комментарии -->
+  <style>#fake[id="v-1"] { color: red; }</style>
+  <script>const html = '<div id="v-1"></div>';</script>
+  <video id="v-1" src="assets/a.mp4" data-start="0"></video>
+</div>
+"""
+
+NESTED_SPAN = ('<div id="t-1" class="clip am-title"><span>внешний '
+               '<span class="hl">внутренний</span> хвост</span></div>')
+
+
+class FixRoundOneTests(unittest.TestCase):
+    def test_comments_style_and_script_are_not_markup(self):
+        changed = set_attr(WITH_SCRIPT, "v-1", "data-start", "1")
+        self.assertIn('id="v-1" src="assets/a.mp4" data-start="1"', changed)
+        self.assertIn("фальшивка <div id=\"v-1\"></div> в комментарии", changed)
+        self.assertIn("const html = '<div id=\"v-1\"></div>';", changed)
+        begin, end = element_span(WITH_SCRIPT, "v-1")
+        self.assertEqual(WITH_SCRIPT[begin:end],
+                         '<video id="v-1" src="assets/a.mp4" data-start="0"></video>')
+
+    def test_set_text_replaces_nested_spans_as_one_block(self):
+        changed = set_text(NESTED_SPAN, "t-1", "новый текст")
+        self.assertEqual(changed, '<div id="t-1" class="clip am-title"><span>новый текст</span></div>')
+
+    def test_set_attr_bare_boolean_insert_and_remove(self):
+        base = '<video id="v-1" src="a.mp4"></video>'
+        muted = set_attr(base, "v-1", "muted", True)
+        self.assertEqual(muted, '<video id="v-1" src="a.mp4" muted></video>')
+        unmuted = set_attr(muted, "v-1", "muted", None)
+        self.assertEqual(unmuted, base)
+        # true → true — не задваивает и не переносит атрибут не туда.
+        self.assertEqual(set_attr(muted, "v-1", "muted", True), muted)
+
+    def test_insert_before_root_end_keeps_crlf(self):
+        crlf = SAMPLE.replace("\n", "\r\n")
+        inserted = insert_before_root_end(crlf, '<div id="t-9"></div>')
+        self.assertIn('<div id="t-9"></div>\r\n    </div>\r\n  </body>', inserted)
+        self.assertNotIn("</div>\n    </div>", inserted)
+
+
 if __name__ == "__main__":
     unittest.main()

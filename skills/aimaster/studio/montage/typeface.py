@@ -33,12 +33,19 @@ def _sha256(path: Path) -> str:
 
 
 def verify_bundle(manifest=None) -> list[str]:
-    """Файлы шрифта в навыке, которых нет или чей sha256 не совпал с манифестом."""
+    """Файлы шрифта в навыке, которых нет или чей sha256 не совпал с
+    манифестом — включая лицензию: OFL требует нести её текст рядом с
+    файлами, а не просто сослаться на неё, так что она проверяется наравне
+    со шрифтами, а не отдельным особым случаем."""
 
     manifest = manifest or load_manifest()
-    return [item["file"] for item in manifest["files"]
-            if not (FONT_DIR / item["file"]).is_file()
-            or _sha256(FONT_DIR / item["file"]) != item["sha256"]]
+    broken = [item["file"] for item in manifest["files"]
+              if not (FONT_DIR / item["file"]).is_file()
+              or _sha256(FONT_DIR / item["file"]) != item["sha256"]]
+    license_file, license_sha = manifest["license_file"], manifest["license_sha256"]
+    if not (FONT_DIR / license_file).is_file() or _sha256(FONT_DIR / license_file) != license_sha:
+        broken.append(license_file)
+    return broken
 
 
 def font_face_css(indent: str = "      ", manifest=None) -> str:
@@ -52,27 +59,38 @@ def font_face_css(indent: str = "      ", manifest=None) -> str:
 
 
 def sync_fonts(assets_dir: Path, manifest=None) -> list[str]:
-    """Кладёт файлы шрифта в <current>/assets/fonts; совпавшие не трогает.
-    Возвращает имена скопированных. Сбой файловой системы (нет прав, диск
-    занят другим процессом на Windows) — MontageError, а не голый traceback."""
+    """Кладёт файлы шрифта и лицензию (OFL требует нести её текст рядом —
+    условие 2) в <current>/assets/fonts; совпавшие не трогает. Возвращает
+    имена скопированных.
+
+    Повреждённый пакет (не тот sha256 у файла шрифта или лицензии, самого
+    файла нет) — отказ сразу, до копирования: показывать в композиции
+    половину шрифта хуже, чем не показать вовсе. Сбой файловой системы (нет
+    прав, диск занят другим процессом на Windows) — MontageError, а не
+    голый traceback."""
 
     manifest = manifest or load_manifest()
+    broken = verify_bundle(manifest)
+    if broken:
+        raise MontageError("пакет навыка повреждён, переустановите: " + ", ".join(broken))
     target_dir = Path(assets_dir) / ASSETS_SUBDIR
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
     except OSError as error:
         raise MontageError(f"не удалось создать папку шрифтов {target_dir}: {error}") from error
+    items = [(item["file"], item["sha256"]) for item in manifest["files"]]
+    items.append((manifest["license_file"], manifest["license_sha256"]))
     copied = []
-    for item in manifest["files"]:
-        target = target_dir / item["file"]
-        if target.is_file() and _sha256(target) == item["sha256"]:
+    for name, sha256 in items:
+        target = target_dir / name
+        if target.is_file() and _sha256(target) == sha256:
             continue
         temporary = target.with_name(f".{target.name}.part")
         try:
-            shutil.copyfile(FONT_DIR / item["file"], temporary)
+            shutil.copyfile(FONT_DIR / name, temporary)
             replace_file(temporary, target)
         except OSError as error:
             temporary.unlink(missing_ok=True)
-            raise MontageError(f"не удалось скопировать шрифт {item['file']}: {error}") from error
-        copied.append(item["file"])
+            raise MontageError(f"не удалось скопировать {name}: {error}") from error
+        copied.append(name)
     return copied

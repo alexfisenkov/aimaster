@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -79,6 +80,8 @@ class DraftTests(unittest.TestCase):
         self.assertNotIn("font-family: sans-serif", text)
         self.assertIn('src: url("assets/fonts/inter-cyrillic-400-normal.woff2") format("woff2")', text)
         self.assertTrue((self.paths.assets / "fonts" / "inter-cyrillic-700-normal.woff2").is_file())
+        # Fix round 1/5: лицензия шрифта едет рядом с файлами (условие 2 OFL).
+        self.assertTrue((self.paths.assets / "fonts" / "OFL.txt").is_file())
         self.assertEqual(external_references(text), [])
         self.assertEqual(missing_sources(text, self.paths.current), [])
         config = json.loads((self.paths.current / "hyperframes.json").read_text(encoding="utf-8"))
@@ -116,6 +119,72 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(self.paths.index.read_text(encoding="utf-8"), original)
         self.assertEqual(backup.parent, self.paths.undo)
         self.assertTrue(backup.read_text(encoding="utf-8").endswith("<!-- правка в столе -->"))
+
+    # Fix round 1/5: три находки reviewer'а на refresh/stale_clips.
+
+    def test_refresh_flips_muted_state_both_directions(self):
+        self.draft(video_state(SCENES, audio={"voice": "asset-v"}))
+        # s1 переезжает на немой asset-b (звук должен пропасть), s2 — на
+        # asset-c со звуком (звук должен появиться); voice остался принятым,
+        # значит VIDEO_VOLUME[True] = 0.3.
+        newer = video_state([("s1", "Сад", "Барсик идёт по саду", 2000, "asset-b"),
+                             ("s2", "Клубок", "Находит клубок", 2000, "asset-c")],
+                            audio={"voice": "asset-v"})
+        stale = refresh_draft(self.paths, newer, self.resolve, probe=self.probe)
+        changes = {item["clip"]: item.get("audio_change") for item in stale}
+        self.assertEqual(changes, {"v-1": "пропал звук", "v-2": "добавился звук"})
+        after = element_attrs(self.paths.index.read_text(encoding="utf-8"))
+        self.assertIn("muted", after["v-1"])
+        for key in ("data-has-audio", "data-volume", "data-fade-in", "data-fade-out"):
+            self.assertNotIn(key, after["v-1"])
+        self.assertNotIn("muted", after["v-2"])
+        self.assertEqual((after["v-2"]["data-has-audio"], after["v-2"]["data-volume"],
+                          after["v-2"]["data-fade-in"], after["v-2"]["data-fade-out"]),
+                         ("true", "0.3", "0.4", "0.4"))
+
+    def test_stale_clips_reports_unaccepted_without_touching_it(self):
+        self.draft(video_state(SCENES))
+        newer = video_state(SCENES)
+        next(r for r in newer["video_results"] if r["scene_id"] == "s2")["decision"] = "rejected"
+        before = element_attrs(self.paths.index.read_text(encoding="utf-8"))
+        stale = refresh_draft(self.paths, newer, self.resolve, probe=self.probe)
+        self.assertEqual([(item["clip"], item["reason"], item["current_asset_id"]) for item in stale],
+                         [("v-2", "нет принятого", None)])
+        after = element_attrs(self.paths.index.read_text(encoding="utf-8"))
+        self.assertEqual(after["v-2"], before["v-2"])
+
+    def test_stale_clips_removed_scene_needs_rebuild(self):
+        self.draft(video_state(SCENES))
+        newer = video_state([SCENES[0]])
+        stale = stale_clips(self.paths.index.read_text(encoding="utf-8"), newer)
+        self.assertEqual([(item["clip"], item["scene_id"], item["reason"]) for item in stale],
+                         [("v-2", "s2", "нужен --rebuild")])
+
+    def test_stale_clips_added_scene_needs_rebuild(self):
+        self.draft(video_state(SCENES))
+        newer = video_state(SCENES + [("s3", "Финал", "Титры", 1000, "asset-c")])
+        stale = stale_clips(self.paths.index.read_text(encoding="utf-8"), newer)
+        self.assertEqual([(item["clip"], item["scene_id"], item["reason"]) for item in stale],
+                         [(None, "s3", "нужен --rebuild")])
+
+    def test_stale_clips_gen_mode_switch_needs_rebuild(self):
+        self.draft(video_state(SCENES))
+        newer = video_state([("s1", "Сад", "Барсик идёт по саду", 2000, None),
+                             ("s2", "Клубок", "Находит клубок", 2000, None)],
+                            gen_mode="one_shot", oneshot_asset="asset-c")
+        stale = stale_clips(self.paths.index.read_text(encoding="utf-8"), newer)
+        self.assertEqual({item["clip"]: item["reason"] for item in stale},
+                         {"v-1": "нужен --rebuild", "v-2": "нужен --rebuild"})
+
+    def test_refresh_preserves_crlf_of_an_existing_draft(self):
+        self.draft(video_state(SCENES))
+        crlf = self.paths.index.read_text(encoding="utf-8").replace("\n", "\r\n")
+        self.paths.index.write_bytes(crlf.encode("utf-8"))
+        newer = video_state([SCENES[0], ("s2", "Клубок", "Находит клубок", 2000, "asset-c")])
+        refresh_draft(self.paths, newer, self.resolve, probe=self.probe)
+        after = self.paths.index.read_bytes().decode("utf-8")
+        self.assertIsNone(re.search(r"(?<!\r)\n", after))
+        self.assertEqual(after.count("\r\n"), crlf.count("\r\n"))
 
 
 if __name__ == "__main__":

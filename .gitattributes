@@ -1,0 +1,5 @@
+# Шрифт монтажа (skills/aimaster/studio/montage/fonts/): .woff2 бинарны, а
+# OFL.txt/fonts.json должны доходить до Windows-агентов байт в байт — sha256
+# в fonts.json сверяется с реальным файлом (typeface.verify_bundle), и
+# CRLF-перевод строк в OFL.txt сломал бы эту проверку.
+skills/aimaster/studio/montage/fonts/* -text

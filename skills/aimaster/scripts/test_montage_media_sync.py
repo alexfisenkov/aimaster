@@ -54,6 +54,16 @@ class SyncTests(unittest.TestCase):
         with self.assertRaises(MontageError):
             media_sync.link_or_copy(self.source, self.assets / "asset-1.mp4")
 
+    def test_stat_failure_on_existing_target_is_a_montage_error(self):
+        # Fix round 1/5: гонка/права при os.path.samefile или .stat() на уже
+        # существующем target не должны утечь голым OSError.
+        self.assets.mkdir(parents=True)
+        (self.assets / "asset-1.mp4").write_bytes(b"video-bytes")
+        with mock.patch.object(media_sync.os.path, "samefile",
+                               side_effect=OSError(errno.EACCES, "denied")):
+            with self.assertRaises(MontageError):
+                media_sync.link_or_copy(self.source, self.assets / "asset-1.mp4")
+
 
 class ReferenceTests(unittest.TestCase):
     HTML = """<html><head>
@@ -63,6 +73,7 @@ class ReferenceTests(unittest.TestCase):
              .b { background: url('assets/ok.png'); }</style></head>
       <body><video src="assets/a.mp4"></video><audio src="../media/v.wav"></audio>
       <img src="/abs/x.png"><img src="data:image/png;base64,AA"><a href="#top">.</a>
+      <img src="assets/missing.png">
       <div style="background:url(https://y.example/b.png)"></div></body></html>"""
 
     def test_external_references(self):
@@ -72,16 +83,36 @@ class ReferenceTests(unittest.TestCase):
             "https://x.example/a.css", "file:///etc/x.png", "https://y.example/b.png"])
 
     def test_missing_and_escaping_sources(self):
+        # Fix round 1/5: экранирование ("../…", "/abs/…") и отсутствие файла —
+        # разные находки, разный текст (было: обе в missing_sources под одним
+        # «файла нет»).
         with tempfile.TemporaryDirectory() as temp:
             current = Path(temp)
             (current / "assets").mkdir()
             (current / "assets" / "a.mp4").write_bytes(b"x")
             (current / "assets" / "ok.png").write_bytes(b"x")
-            self.assertEqual(media_sync.missing_sources(self.HTML, current),
-                             ["../media/v.wav", "/abs/x.png"])
+            self.assertEqual(media_sync.escaping_sources(self.HTML), ["../media/v.wav", "/abs/x.png"])
+            self.assertEqual(media_sync.missing_sources(self.HTML, current), ["assets/missing.png"])
             problems = media_sync.check_composition(self.HTML, current)
         self.assertIn("внешняя ссылка: https://x.example/a.css", problems)
-        self.assertIn("файла нет в папке монтажа: ../media/v.wav", problems)
+        self.assertIn("ссылка вне папки монтажа: ../media/v.wav", problems)
+        self.assertIn("ссылка вне папки монтажа: /abs/x.png", problems)
+        self.assertIn("файла нет в папке монтажа: assets/missing.png", problems)
+        self.assertNotIn("файла нет в папке монтажа: ../media/v.wav", problems)
+
+    def test_escaping_forms_are_caught_on_every_host(self):
+        # Разбор чисто лексический (не спрашивает файловую систему хоста),
+        # поэтому Windows-формы проверяются и на macOS/Linux CI тоже.
+        html = ('<video src="C:/x.mp4"></video><video src="C:\\x.mp4"></video>'
+                '<video src="D:a.mp4"></video><video src="..\\media\\v.wav"></video>'
+                '<video src="\\abs\\x.mp4"></video><video src="assets/ok.mp4"></video>')
+        self.assertEqual(media_sync.escaping_sources(html), [
+            "C:/x.mp4", "C:\\x.mp4", "D:a.mp4", "..\\media\\v.wav", "\\abs\\x.mp4"])
+        with tempfile.TemporaryDirectory() as temp:
+            current = Path(temp)
+            (current / "assets").mkdir()
+            (current / "assets" / "ok.mp4").write_bytes(b"x")
+            self.assertEqual(media_sync.missing_sources(html, current), [])
 
 
 if __name__ == "__main__":

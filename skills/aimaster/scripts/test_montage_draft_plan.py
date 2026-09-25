@@ -14,8 +14,9 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
         sys.path.insert(0, _path)
 
 from montage_testkit import video_state  # noqa: E402
+from studio.domain import DomainValidationError  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
-from studio.montage.draft_plan import plan_draft  # noqa: E402
+from studio.montage.draft_plan import audio_sources, plan_draft, video_sources  # noqa: E402
 from studio.montage.probe import MediaInfo  # noqa: E402
 from studio.projection import validate_state  # noqa: E402
 
@@ -86,6 +87,74 @@ class DraftPlanTests(unittest.TestCase):
         self.assertEqual([(c.clip_id, c.scene_id, c.start, c.duration) for c in by_layer(plan, "video")],
                          [("v-1", None, 0.0, 3.0)])
         self.assertEqual(by_layer(plan, "titles"), [])
+
+
+# Fix round 1/5: _current_asset брал результат по указателю позиции не
+# спрашивая decision/retired/hidden — отклонённый, отправленный в архив,
+# скрытый или ещё не принятый результат тогда попадал в черновик как обычный.
+_REJECTING_STATES = {
+    "undecided": lambda result: result.pop("decision", None),
+    "rejected": lambda result: result.__setitem__("decision", "rejected"),
+    "retired": lambda result: result.__setitem__("retired", True),
+    "hidden": lambda result: result.__setitem__("hidden", True),
+    "empty_asset_id": lambda result: result.__setitem__("asset_id", ""),
+}
+
+
+class AcceptedOnlyTests(unittest.TestCase):
+    def _video_result_for(self, state, scene_id):
+        return next(r for r in state["video_results"] if r["scene_id"] == scene_id)
+
+    def _audio_result_for(self, state, layer):
+        return next(r for r in state["audio_results"]
+                    if r["result_id"] == f"result:audio:{layer}")
+
+    def test_unaccepted_scene_video_is_excluded_and_named(self):
+        for name, mutate in _REJECTING_STATES.items():
+            with self.subTest(state=name):
+                state = video_state(SCENES)
+                mutate(self._video_result_for(state, "s2"))
+                found = video_sources(state, strict=False)
+                self.assertEqual([scene["scene_id"] for scene, _asset in found], ["s1"])
+                with self.assertRaises(MontageError) as caught:
+                    plan_draft(state, MEDIA.__getitem__)
+                self.assertIn("Клубок", str(caught.exception))
+                self.assertIn("не принято", str(caught.exception))
+
+    def test_unaccepted_audio_layer_is_silently_excluded(self):
+        for name, mutate in _REJECTING_STATES.items():
+            with self.subTest(state=name):
+                state = video_state(SCENES, audio={"voice": "asset-v"})
+                mutate(self._audio_result_for(state, "voice"))
+                self.assertEqual(audio_sources(state), {})
+                # Звук необязателен — план собирается и без принятого голоса.
+                plan = plan_draft(state, MEDIA.__getitem__)
+                self.assertEqual(by_layer(plan, "voice"), [])
+
+    def test_unaccepted_one_shot_is_named(self):
+        state = video_state([("s1", "Сад", "Барсик в саду", 2000, None),
+                             ("s2", "Клубок", "Клубок", 2000, None)],
+                            gen_mode="one_shot", oneshot_asset="asset-o")
+        state["video_results"][0]["decision"] = "rejected"
+        with self.assertRaises(MontageError) as caught:
+            plan_draft(state, MEDIA.__getitem__)
+        self.assertIn("не принято", str(caught.exception))
+
+    def test_duplicate_link_is_a_montage_error_not_a_domain_error(self):
+        state = video_state(SCENES)
+        duplicate = dict(self._video_result_for(state, "s2"))
+        duplicate["result_id"] = "result:scene:s2:video-dup"
+        duplicate["asset_id"] = "asset-c"
+        state["video_results"].append(duplicate)
+        with self.assertRaises(MontageError):
+            video_sources(state, strict=False)
+        # А не оригинальным исключением слоя владений — оно течь наружу не должно.
+        try:
+            video_sources(state, strict=False)
+        except DomainValidationError:
+            self.fail("duplicate link должен всплывать как MontageError")
+        except MontageError:
+            pass
 
 
 if __name__ == "__main__":
