@@ -5,21 +5,18 @@
 левая половина больше не кончается на границе сцены (убираем `data-fade-out`),
 правая больше не начинается с неё (убираем `data-fade-in` и класс `am-fade-in`).
 
-Пара «левая/правая половина» узнаётся по разметке, не по тому, кто её только
-что создал: тот же исходник (`data-am-asset` — если титр, то текст) и смежные
-без зазора тайминг и `data-media-start`, в пределах одного кадра. Поэтому
-функция чистая и годится и для наших правок, и для разреза, сделанного мышью
-в Studio (задача 15 зовёт её перед lint/render)."""
+Пара «половина слева/справа» узнаётся общим правилом `split_pairs.
+is_split_pair`, не тем, кто её только что создал — поэтому функция чистая и
+годится и для наших правок, и для разреза, сделанного мышью в Studio (задача
+15 зовёт её перед lint/render).
+"""
 
 from __future__ import annotations
 
-from .html_doc import element_attrs, set_attr
+from typing import Iterable
 
-# Единой частоты кадров у композиции пока нет (титры и «внешние» видео могут
-# отличаться) — берём консервативное 1/30 с: тестовые клипы навыка кодируются
-# на 30 кадрах в секунду (montage_testkit.make_clip), а более редкий монтаж
-# только выигрывает от чуть более широкого допуска.
-ONE_FRAME = 1 / 30
+from .html_doc import element_attrs, set_attr
+from .split_pairs import SplitMark, is_split_pair
 
 
 def _num(value):
@@ -29,54 +26,57 @@ def _num(value):
         return None
 
 
-def _same_source(left: dict, right: dict) -> bool:
-    left_source = left.get("data-am-asset") or left.get("src")
-    right_source = right.get("data-am-asset") or right.get("src")
-    if left_source or right_source:
-        return bool(left_source) and left_source == right_source
-    # титр: своего ассета нет, опознаём по совпадающему тексту обеих половин
-    return left.get("_tag") == "div" and right.get("_tag") == "div" and left.get("_text") == right.get("_text")
+def _mark(attrs: dict) -> SplitMark | None:
+    start, duration = _num(attrs.get("data-start")), _num(attrs.get("data-duration"))
+    if start is None or duration is None:
+        return None
+    tag = attrs.get("_tag")
+    layer = attrs.get("data-am-layer") or ("titles" if tag == "div" else tag or "")
+    return SplitMark(layer=layer, asset_id=attrs.get("data-am-asset") or None,
+                     src=attrs.get("src") or None, text=attrs.get("_text") or None,
+                     start=start, duration=duration, media_start=_num(attrs.get("data-media-start")) or 0.0)
 
 
-def _contiguous(left: dict, right: dict) -> bool:
-    if not _same_source(left, right):
-        return False
-    left_start, left_duration = _num(left.get("data-start")), _num(left.get("data-duration"))
-    right_start = _num(right.get("data-start"))
-    if None in (left_start, left_duration, right_start):
-        return False
-    if abs(right_start - (left_start + left_duration)) > ONE_FRAME:
-        return False
-    left_media = _num(left.get("data-media-start")) or 0.0
-    right_media = _num(right.get("data-media-start")) or 0.0
-    return abs(right_media - (left_media + left_duration)) <= ONE_FRAME
-
-
-def normalize_split_fades(text: str) -> tuple[str, list[str]]:
+def normalize_split_fades(text: str, only: Iterable[str] | None = None) -> tuple[str, list[str]]:
     """Снимает внутренний `data-fade-out` слева и `data-fade-in`/`am-fade-in`
     справа на каждом найденном стыке разреза. Идемпотентна: повторный вызов
-    на уже нормализованном тексте возвращает его же и пустой список."""
+    на уже нормализованном тексте возвращает его же и пустой список.
+
+    `only` — id правых половин, которые вообще рассматривать (round-fix-2/5,
+    item 1): без него функция чистит ЛЮБУЮ подходящую пару во всём документе,
+    что при разрезе одного клипа задевало и чужой, случайно оказавшийся
+    смежным по разметке; `edit_ops.split()` передаёт сюда только пары,
+    которые создал сам вызов."""
 
     attrs = element_attrs(text)
     ids = sorted(attrs)
+    scope = None if only is None else set(only)
     changed: list[str] = []
     for left_id in ids:
-        left = attrs[left_id]
+        left = _mark(attrs[left_id])
+        if left is None:
+            continue
         for right_id in ids:
-            if right_id == left_id:
+            if right_id == left_id or (scope is not None and right_id not in scope):
                 continue
-            right = attrs[right_id]
-            if not _contiguous(left, right):
+            right = _mark(attrs[right_id])
+            if right is None or not is_split_pair(left, right):
                 continue
-            left_dirty = "data-fade-out" in left
-            right_classes = right.get("class", "").split()
-            right_dirty = "data-fade-in" in right or "am-fade-in" in right_classes
-            if left_dirty:
+            left_attrs, right_attrs = attrs[left_id], attrs[right_id]
+            if "data-fade-out" in left_attrs:
                 text = set_attr(text, left_id, "data-fade-out", None)
                 changed.append(left_id)
-            if right_dirty:
+            right_classes = right_attrs.get("class", "").split()
+            has_fade_in_attr = "data-fade-in" in right_attrs
+            has_fade_in_class = "am-fade-in" in right_classes
+            if has_fade_in_attr:
                 text = set_attr(text, right_id, "data-fade-in", None)
+            if has_fade_in_class:
+                # round-fix-2/5, item 2: класс переписываем, только если он
+                # действительно нёс am-fade-in — иначе на элементе без class
+                # вовсе (типично для <audio>) появлялся бы пустой class="".
                 kept = " ".join(name for name in right_classes if name != "am-fade-in")
-                text = set_attr(text, right_id, "class", kept)
+                text = set_attr(text, right_id, "class", kept or None)
+            if has_fade_in_attr or has_fade_in_class:
                 changed.append(right_id)
     return text, changed

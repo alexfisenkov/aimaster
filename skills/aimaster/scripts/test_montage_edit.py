@@ -96,6 +96,30 @@ class EditTests(unittest.TestCase):
         self.assertNotIn("data-fade-in", attrs[new_id])
         self.assertEqual(attrs[new_id]["data-fade-out"], "0.3")
 
+    def test_explicit_fade_survives_a_later_unrelated_split(self):
+        # Round-fix-2/5, item 1: разрез не должен трогать fade на ДРУГОМ
+        # клипе, даже если тот раньше был правой половиной более раннего
+        # разреза того же исходника. v-1 -> v-1, v-1-2; на v-1-2 ставим
+        # fade-in правкой (не копией CLI); затем разрезаем САМ v-1-2 ->
+        # v-1-2, v-1-2-2 — v-1-2 в этом втором разрезе уже не «новый кусок»,
+        # но старая (нескопированная) нормализация всё равно его находила
+        # как правую половину пары v-1/v-1-2 и стирала fade.
+        self.edit(op="split", clip="v-1", at=1.0)
+        self.edit(op="fade", clip="v-1-2", fade_in=0.3)
+        self.assertEqual(self.attrs()["v-1-2"]["data-fade-in"], "0.3")
+        self.edit(op="split", clip="v-1-2", at=1.5)
+        self.assertEqual(self.attrs()["v-1-2"]["data-fade-in"], "0.3")
+
+    def test_volume_allowed_by_markup_even_if_the_timeline_row_omits_it(self):
+        # Round-fix-2/5, item 7: _has_sound теперь смотрит на свою разметку
+        # (data-has-audio/muted), а не на Clip.volume — то самое поле строки
+        # `timeline --json`, о ненадёжности которого для этой же цели уже
+        # предупреждал round-fix-1/5, item 8 (там — про data-am-asset/src).
+        text = self.text().replace(' data-volume="0.3"', "")  # v-1: data-has-audio остаётся, data-volume снят
+        self.paths.index.write_text(text, encoding="utf-8")
+        self.edit(op="volume", clip="v-1", value=0.6)
+        self.assertEqual(self.attrs()["v-1"]["data-volume"], "0.6")
+
     def test_volume_and_fade_refused_on_muted_video(self):
         # Round-fix-1/5, item 7: v-2 немой (has_audio=False) — правка volume/fade
         # раньше молча принималась и ничего не делала; теперь явный отказ.
@@ -121,6 +145,18 @@ class EditTests(unittest.TestCase):
         note.write_text("не json", encoding="utf-8")
         with self.assertRaises(MontageError):
             self.edit(op="undo")
+
+    def test_undo_refuses_when_the_note_is_valid_json_but_not_an_object(self):
+        # Round-fix-2/5, item 6: валидный JSON, но не словарь (список,
+        # число, null) — .get("after") падал бы AttributeError'ом мимо
+        # отказа, а не отказывал по-русски.
+        self.edit(op="delete", clip="t-2")
+        note = sorted(self.paths.undo.glob("edit-*.json"))[-1]
+        for payload in ("[1, 2, 3]", "42", "null", '"после правки"'):
+            note.write_text(payload, encoding="utf-8")
+            with self.assertRaises(MontageError) as caught:
+                self.edit(op="undo")
+            self.assertIn("отметк", str(caught.exception))
 
     def test_crlf_survives_a_cli_edit(self):
         # Round-fix-1/5, item 12: FakeHyperframes сам читал/писал index.html

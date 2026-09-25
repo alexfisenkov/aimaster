@@ -42,17 +42,28 @@ def extend_root(ctx, end: float) -> None:
           if end > root_duration(text) + 1e-6 else text)
 
 
-def _has_sound(clip) -> bool:
+def _has_sound(ctx, clip) -> bool:
     """`<audio>` всегда звук; `<video>` — только если у него есть звуковая
-    дорожка (черновик тогда пишет data-volume, немой клип получает muted и
-    ничего звукового вовсе — round-fix-1/5, item 7: правка volume/fade на
-    немом видео раньше молча принималась и ничего не делала)."""
+    дорожка (черновик тогда пишет `data-has-audio` и полный набор звуковых
+    атрибутов, немой клип получает `muted` и ничего звукового вовсе).
 
-    return clip.kind == "audio" or (clip.kind == "video" and clip.volume is not None)
+    Смотрим свою же разметку через `element_attrs`, не `clip.volume`
+    (round-fix-2/5, item 7): `Clip.volume` приходит из поля `volume` строки
+    `timeline --json` — то же самое поле, о ненадёжности которого для
+    определения исходника уже предупреждал round-fix-1/5, item 8, и по той
+    же причине: это не наша метка, а то, что вернул CLI, и он не обязан
+    отдавать его одинаково для одной и той же разметки всегда."""
+
+    if clip.kind == "audio":
+        return True
+    if clip.kind != "video":
+        return False
+    attrs = element_attrs(read_index(ctx.paths.index)).get(clip.id, {})
+    return "data-has-audio" in attrs or "muted" not in attrs
 
 
-def _sound_clip(clip, op: str) -> None:
-    if not _has_sound(clip):
+def _sound_clip(ctx, clip, op: str) -> None:
+    if not _has_sound(ctx, clip):
         raise MontageError(f"правка {op} — только для клипов со звуком, а у {clip.id} звука нет")
 
 
@@ -96,8 +107,11 @@ def split(ctx, clip, req):
     # CLI (и Studio) копируют fade-in/fade-out и класс am-fade-in на ОБЕ
     # половины разреза — на внутреннем стыке они не нужны ни левой, ни
     # правой стороне; нормализация общая с задачей 15 (лежит в split_fades.py,
-    # чтобы разрез, сделанный мышью в Studio, чистился тем же кодом).
-    normalized, changed = normalize_split_fades(after_text)
+    # чтобы разрез, сделанный мышью в Studio, чистился тем же кодом). `only`
+    # — только куски ЭТОГО разреза (round-fix-2/5, item 1): без него чужой,
+    # случайно смежный по разметке fade где-то ещё в документе тоже попал бы
+    # под нормализацию.
+    normalized, changed = normalize_split_fades(after_text, only=pieces)
     if changed:
         write_index(ctx.paths.index, normalized)
     return {**receipt, "new_clip": pieces[0] if pieces else None}
@@ -109,14 +123,14 @@ def delete(ctx, clip, req):
 
 def volume(ctx, clip, req):
     value = need(req.value, "value", req.op)
-    _sound_clip(clip, req.op)
+    _sound_clip(ctx, clip, req.op)
     if not 0 <= value <= MAX_VOLUME:
         raise MontageError(f"громкость — от 0 до {MAX_VOLUME}")
     return cli(ctx, ["set", "#" + clip.id, f"volume={fmt(value)}"])
 
 
 def fade(ctx, clip, req):
-    _sound_clip(clip, req.op)
+    _sound_clip(ctx, clip, req.op)
     if req.fade_in is None and req.fade_out is None:
         raise MontageError("для правки fade нужен --fade-in или --fade-out")
     for name, value in (("data-fade-in", req.fade_in), ("data-fade-out", req.fade_out)):

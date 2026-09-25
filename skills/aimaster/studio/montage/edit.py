@@ -66,10 +66,13 @@ def undo_last(paths: MontagePaths) -> dict:
     # трогали (например, мышью в столе); раньше это молча пропускало
     # проверку и стирало чужую правку, теперь — явный отказ.
     try:
-        after = json.loads(note.read_text(encoding="utf-8")).get("after")
+        data = json.loads(note.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         raise MontageError("нет отметки о состоянии после последней правки — откат мог бы "
                            "стереть чужие изменения, поэтому отменён") from None
+    # round-fix-2/5, item 6: валидный JSON, но не объект (список, число,
+    # строка, null) — .get() на нём падал бы AttributeError'ом мимо отказа.
+    after = data.get("after") if isinstance(data, dict) else None
     if not isinstance(after, str) or not after:
         raise MontageError("отметка о последней правке повреждена — откат мог бы стереть "
                            "чужие изменения, поэтому отменён")
