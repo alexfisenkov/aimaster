@@ -75,8 +75,14 @@ class PrefixTests(unittest.TestCase):
             self.assertEqual(engine.tools_prefix(home=Path(home), environ={}), expected)
 
     def test_override_must_be_absolute(self):
-        self.assertNotEqual(engine.tools_prefix(environ={engine.PREFIX_ENV: "relative/dir"}),
-                            Path("relative/dir"))
+        # Слабая проверка "не равно относительному пути" была бы верна и для
+        # любого другого абсолютного пути — здесь именно дефолтная папка.
+        with tempfile.TemporaryDirectory() as home:
+            expected = platform_compat.user_data_dir(home=Path(home), environ={}) / "tools" / "hyperframes"
+            self.assertEqual(
+                engine.tools_prefix(home=Path(home),
+                                    environ={engine.PREFIX_ENV: "relative/dir"}),
+                expected)
         absolute = Path(tempfile.gettempdir()).resolve() / "hf"
         self.assertEqual(engine.tools_prefix(environ={engine.PREFIX_ENV: str(absolute)}), absolute)
 
@@ -161,11 +167,21 @@ class FindNodeTests(unittest.TestCase):
             (program_files / "nodejs").mkdir(parents=True)
             exe = program_files / "nodejs" / "node.exe"
             exe.write_text("", encoding="utf-8")
+            # "relative" должен реально существовать и содержать node.exe —
+            # иначе тест "проходит" даже если фильтр относительных путей в
+            # find_program сломан: несуществующий файл найтись и так не мог.
+            (base / "relative").mkdir()
+            (base / "relative" / "node.exe").write_text("", encoding="utf-8")
             env = {"PATH": os.pathsep.join(["relative", str(base / "npmdir")]),
                    "ProgramFiles": str(program_files)}
-            with mock.patch.object(platform_compat, "IS_WINDOWS", True), \
-                    mock.patch.object(engine, "IS_WINDOWS", True):
-                self.assertEqual(engine.find_node(environ=env), str(exe))
+            previous_cwd = os.getcwd()
+            os.chdir(base)
+            try:
+                with mock.patch.object(platform_compat, "IS_WINDOWS", True), \
+                        mock.patch.object(engine, "IS_WINDOWS", True):
+                    self.assertEqual(engine.find_node(environ=env), str(exe))
+            finally:
+                os.chdir(previous_cwd)
 
     def test_posix_needs_executable_bit(self):
         if os.name == "nt":

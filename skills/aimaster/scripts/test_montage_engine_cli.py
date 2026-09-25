@@ -41,7 +41,12 @@ def make_engine(base: Path, browser=True) -> engine.Engine:
 class EnvTests(unittest.TestCase):
     def test_env_has_quiet_flags_private_home_and_browser(self):
         base = Path("/tmp/hf")
-        env = engine_cli.engine_env(make_engine(base), {"PATH": "/usr/bin", "HOME": "/Users/me"})
+        # IS_WINDOWS пришпилен к False: без этого тест на Windows CI видит
+        # свой же хост (True) и падает на assertNotIn("USERPROFILE", env),
+        # хотя test_windows_also_moves_userprofile ниже отдельно проверяет
+        # именно этот случай через явный mock.
+        with mock.patch.object(engine_cli, "IS_WINDOWS", False):
+            env = engine_cli.engine_env(make_engine(base), {"PATH": "/usr/bin", "HOME": "/Users/me"})
         for key in ("HYPERFRAMES_NO_UPDATE_CHECK", "HYPERFRAMES_NO_AUTO_INSTALL",
                     "HYPERFRAMES_NO_TELEMETRY", "HYPERFRAMES_SKIP_SKILLS"):
             self.assertEqual(env[key], "1")
