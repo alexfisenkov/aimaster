@@ -39,6 +39,10 @@ class LockTimeoutError(TimeoutError):
     """Another process kept the lock for longer than the timeout."""
 
 
+class LockBusyError(OSError):
+    """A non-blocking acquire found the lock already held by another process."""
+
+
 def _acquire_polling(try_lock, *, timeout, poll=_LOCK_POLL_SECONDS,
                      clock=time.monotonic, sleep=time.sleep, name="the lock file") -> None:
     """Call ``try_lock`` until it succeeds; retry only while the lock is busy."""
@@ -59,14 +63,25 @@ def _acquire_polling(try_lock, *, timeout, poll=_LOCK_POLL_SECONDS,
         sleep(poll)
 
 
+_LOCK_WOULD_BLOCK_ERRNOS = frozenset({errno.EACCES, errno.EAGAIN, getattr(errno, "EWOULDBLOCK", errno.EAGAIN)})
+
+
 @contextmanager
-def file_lock(target, *, timeout: float = DEFAULT_LOCK_TIMEOUT):
+def file_lock(target, *, timeout: float = DEFAULT_LOCK_TIMEOUT, blocking: bool = True):
     """Hold an exclusive lock on an open file (or descriptor).
 
-    POSIX blocks in ``flock`` exactly as before.  Windows polls
-    ``msvcrt.locking`` for at most ``timeout`` seconds and then raises
-    ``LockTimeoutError``; a filesystem that cannot lock raises ``OSError``
-    at once instead of hanging.
+    ``blocking=True`` (default, unchanged for every existing caller): POSIX
+    blocks in ``flock`` exactly as before; Windows polls ``msvcrt.locking``
+    for at most ``timeout`` seconds and then raises ``LockTimeoutError``; a
+    filesystem that cannot lock raises ``OSError`` at once instead of
+    hanging.
+
+    ``blocking=False`` (round-fix-3/5, item A — one build lock held for a
+    whole `montage build`, not a poll-and-retry): a single attempt, no
+    ``timeout`` wait at all. POSIX adds ``LOCK_NB`` to the same ``flock``
+    call; Windows makes one ``msvcrt.locking(LK_NBLCK)`` attempt instead of
+    ``_acquire_polling``'s retry loop. Either raises ``LockBusyError``
+    immediately when another process already holds the lock.
     """
 
     descriptor = _descriptor(target)
@@ -79,9 +94,17 @@ def file_lock(target, *, timeout: float = DEFAULT_LOCK_TIMEOUT):
             os.lseek(descriptor, 0, os.SEEK_SET)
             msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
 
-        label = getattr(target, "name", None)
-        label = os.path.basename(label) if isinstance(label, str) else "the lock file"
-        _acquire_polling(lock_byte_zero, timeout=timeout, name=label)
+        if blocking:
+            label = getattr(target, "name", None)
+            label = os.path.basename(label) if isinstance(label, str) else "the lock file"
+            _acquire_polling(lock_byte_zero, timeout=timeout, name=label)
+        else:
+            try:
+                lock_byte_zero()
+            except OSError as error:
+                if error.errno not in _LOCK_BUSY_ERRNOS:
+                    raise
+                raise LockBusyError("the lock file is held by another process") from error
         try:
             yield
         finally:
@@ -90,7 +113,15 @@ def file_lock(target, *, timeout: float = DEFAULT_LOCK_TIMEOUT):
         return
     import fcntl
 
-    fcntl.flock(descriptor, fcntl.LOCK_EX)
+    if blocking:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+    else:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            if error.errno not in _LOCK_WOULD_BLOCK_ERRNOS:
+                raise
+            raise LockBusyError("the lock file is held by another process") from error
     try:
         yield
     finally:

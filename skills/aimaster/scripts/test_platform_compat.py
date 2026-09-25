@@ -67,6 +67,35 @@ class FileLockTests(unittest.TestCase):
                 with os.fdopen(descriptor, "a+b") as handle, compat.file_lock(handle.fileno()):
                     pass
 
+    def test_non_blocking_acquire_succeeds_when_free(self):
+        # Round-fix-3/5, item A: blocking=False — один build_lock на сборку,
+        # не poll-and-retry.
+        with tempfile.TemporaryDirectory() as directory:
+            lock_path = Path(directory) / ".lock"
+            with open(lock_path, "a+b") as handle, compat.file_lock(handle, blocking=False):
+                pass
+
+    def test_non_blocking_acquire_refuses_at_once_when_held(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lock_path = Path(directory) / ".state.lock"
+            holder = subprocess.Popen(
+                [sys.executable, "-c", _LOCK_HOLDER, str(_SKILL_ROOT), str(lock_path), str(_HOLD_SECONDS)],
+                stdout=subprocess.PIPE, encoding="utf-8", errors="replace",
+            )
+            try:
+                self.assertEqual(holder.stdout.readline().strip(), "locked")
+                started = time.monotonic()
+                with open(lock_path, "a+b") as handle:
+                    with self.assertRaises(compat.LockBusyError):
+                        with compat.file_lock(handle, blocking=False):
+                            pass
+                # Не ждал ни секунды: LockBusyError сразу, не через _HOLD_SECONDS.
+                self.assertLess(time.monotonic() - started, _HOLD_SECONDS / 2)
+            finally:
+                holder.stdout.close()
+                holder.wait(timeout=30)
+            self.assertEqual(holder.returncode, 0)
+
 
 class PrivacyTests(unittest.TestCase):
     def test_make_private_restricts_a_file_and_a_directory(self):
