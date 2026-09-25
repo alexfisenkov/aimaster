@@ -434,13 +434,19 @@ class BrowserInstallTests(unittest.TestCase):
 
     def test_non_windows_accepts_a_regular_browser_override(self):
         """Ограничение по имени бинарника доказано только для Windows (H2) —
-        на POSIX системный Chrome не отклоняем по имени."""
+        на POSIX системный Chrome не отклоняем по имени. IS_WINDOWS зашит
+        явно (не полагаемся на платформу, где реально идёт тест) — этот
+        самый тест сначала тихо проходил на macOS-машине разработки и
+        по-настоящему падал на windows-latest в CI, где IS_WINDOWS истинный
+        (round 3/5: без явного mock.patch.object тест проверяет платформу
+        своей CI-машины, а не заявленное поведение)."""
 
         regular = touch(self.base / "Google Chrome")
-        item = self.call("/usr/bin/node", self.prefix, PIN,
-                         install_missing=True, update=False,
-                         runner=self.runner("не должно понадобиться"),
-                         environ={"HYPERFRAMES_BROWSER_PATH": str(regular)})
+        with mock.patch.object(install_montage_browser, "IS_WINDOWS", False):
+            item = self.call("/usr/bin/node", self.prefix, PIN,
+                             install_missing=True, update=False,
+                             runner=self.runner("не должно понадобиться"),
+                             environ={"HYPERFRAMES_BROWSER_PATH": str(regular)})
         self.assertEqual(item["status"], "found")
 
     def test_stale_recorded_browser_outside_home_is_not_found(self):
