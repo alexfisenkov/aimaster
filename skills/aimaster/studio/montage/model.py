@@ -95,7 +95,13 @@ def build_model(timeline: dict, html_text: str) -> Model:
             volume=None if volume is None else _num(volume),
             fade_in=_num(mark.get("data-fade-in")), fade_out=_num(mark.get("data-fade-out")),
             scene_id=mark.get("data-am-scene") or None, asset_id=mark.get("data-am-asset") or None,
-            src=row.get("src"), text=(mark.get("_text") or None) if layer == "titles" else None))
+            # round-fix-3/5, item E: свой src-атрибут разметки, не поле
+            # timeline-строки — то самое поле, о ненадёжности которого для
+            # опознания разреза уже предупреждал round-fix-1/5, item 8
+            # (там — про data-am-asset); split_pairs.same_source сравнивает
+            # src у обоих участников через один и тот же источник данных.
+            src=mark.get("src") or None,
+            text=(mark.get("_text") or None) if layer == "titles" else None))
     order = {layer: index for index, layer in enumerate(LAYERS)}
     clips.sort(key=lambda clip: (order[clip.layer], clip.start, clip.id))
     return Model(_num((timeline.get("timeline") or {}).get("duration")), tuple(clips))

@@ -62,6 +62,20 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(model.clip("t-1").text, "Барсик идёт по саду")
         self.assertEqual(model.clip("a-voice").layer, "voice")
 
+    def test_clip_src_comes_from_markup_not_the_timeline_row(self):
+        # Round-fix-3/5, item E: Clip.src — атрибут разметки (`src=` тега),
+        # не поле `timeline --json`'s строки, которое CLI не обязан отдавать
+        # одинаково с тем, что реально в разметке (тот же риск, что уже был
+        # у data-am-asset, round-fix-1/5, item 8).
+        text = draft_html()
+        timeline = timeline_from_html(text)
+        for track in timeline["timeline"]["tracks"]:
+            for row in track["rows"]:
+                if row["id"] == "v-1":
+                    row["src"] = "не то, что в разметке"
+        model = build_model(timeline, text)
+        self.assertEqual(model.clip("v-1").src, "assets/asset-a.mp4")
+
     def test_hash_ignores_studio_ids_rows_and_doctype(self):
         text = draft_html()
         studio = set_attr(set_attr(text, "a-voice", "data-hf-id", "hf-y1f4"), "a-voice", "data-track-index", "0")
@@ -129,6 +143,31 @@ class DiffTests(unittest.TestCase):
         for attr, value in (("data-start", "0.5"), ("data-duration", "1.5"), ("data-media-start", "0.5")):
             text = set_attr(text, "v-1", attr, value)
         self.assertEqual(self.diff(text), ["клип сцены 1 «Сад»: начало обрезано на 0,5 с"])
+
+    def test_head_trim_amount_below_display_precision(self):
+        # Round-fix-3/5, item D: обрезка на 0,03 с раньше показывалась как
+        # «0,1 с» (fmt_len завышала мелкое ненулевое значение) — теперь точно.
+        text = self.text
+        for attr, value in (("data-start", "0.03"), ("data-duration", "1.97"), ("data-media-start", "0.03")):
+            text = set_attr(text, "v-1", attr, value)
+        self.assertEqual(self.diff(text), ["клип сцены 1 «Сад»: начало обрезано на 0,03 с"])
+
+    def test_root_length_precision_escalates(self):
+        # Round-fix-3/5, item D: то же самое для длины ролика (3,50 → 3,53).
+        text = set_attr(self.text, "root", "data-duration", "3.53")
+        self.assertEqual(self.diff(text), ["длина ролика изменилась на 0,03 с"])
+
+    def test_fade_precision_escalates(self):
+        base = set_attr(self.text, "a-voice", "data-fade-in", "0.5")
+        changed = set_attr(self.text, "a-voice", "data-fade-in", "0.53")
+        changes = diff_models(model_of(base), model_of(changed), names=NAMES)
+        self.assertEqual(changes, ["звук «Голос» (a-voice): плавное появление звука 0,53 с"])
+
+    def test_media_start_precision_escalates(self):
+        base = set_attr(self.text, "v-1", "data-media-start", "1.00")
+        changed = set_attr(self.text, "v-1", "data-media-start", "1.03")
+        changes = diff_models(model_of(base), model_of(changed), names=NAMES)
+        self.assertEqual(changes, ["клип сцены 1 «Сад»: из исходника берётся кусок с 0:01.03"])
 
     def test_move_and_longer_video(self):
         text = set_attr(set_attr(self.text, "v-2", "data-start", "2.5"), "root", "data-duration", "4")

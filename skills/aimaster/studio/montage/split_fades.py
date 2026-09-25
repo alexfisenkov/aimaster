@@ -7,8 +7,16 @@
 
 Пара «половина слева/справа» узнаётся общим правилом `split_pairs.
 is_split_pair`, не тем, кто её только что создал — поэтому функция чистая и
-годится и для наших правок, и для разреза, сделанного мышью в Studio (задача
-15 зовёт её перед lint/render).
+годится и для наших правок, и для разреза, сделанного мышью в Studio.
+
+Задача 15 (перед lint/render, на разрезе, сделанном мышью в Studio — наш
+собственный путь правок его не видит): звать ТОЛЬКО со scoped `only` —
+`normalize_split_fades(text, only=<id правых половин, которых нет в модели
+последней версии>)`, никогда без `only` вовсе. Без него функция чистит ЛЮБУЮ
+подходящую пару во всём документе, включая ту, что человек мог осмысленно
+поправить руками между версиями (round-fix-2/5, item 1 — тот же риск, что и
+у `edit_ops.split()`, только edit_ops сам знает свои новые id, а задача 15
+узнаёт их сравнением с моделью прошлой версии, не diff'ом текста).
 """
 
 from __future__ import annotations
@@ -32,9 +40,14 @@ def _mark(attrs: dict) -> SplitMark | None:
         return None
     tag = attrs.get("_tag")
     layer = attrs.get("data-am-layer") or ("titles" if tag == "div" else tag or "")
+    # round-fix-3/5, item E: тот же запасной атрибут, что читает model.py —
+    # `data-playback-start`, если `data-media-start` нет вовсе (model.py:94).
+    media = attrs.get("data-media-start")
+    if media is None:
+        media = attrs.get("data-playback-start")
     return SplitMark(layer=layer, asset_id=attrs.get("data-am-asset") or None,
                      src=attrs.get("src") or None, text=attrs.get("_text") or None,
-                     start=start, duration=duration, media_start=_num(attrs.get("data-media-start")) or 0.0)
+                     start=start, duration=duration, media_start=_num(media) or 0.0)
 
 
 def normalize_split_fades(text: str, only: Iterable[str] | None = None) -> tuple[str, list[str]]:

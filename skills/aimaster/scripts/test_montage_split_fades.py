@@ -118,6 +118,16 @@ class SplitFadesTests(unittest.TestCase):
         self.assertNotIn("data-fade-in", attrs["t-1-2"])
         self.assertEqual(attrs["t-1-2"]["class"], "clip am-title")
 
+    def test_data_playback_start_is_accepted_like_model_py(self):
+        # Round-fix-3/5, item E: тот же запасной атрибут, что model.py:94
+        # (`data-media-start` или, если его нет, `data-playback-start`).
+        text = STUDIO_SPLIT.replace("data-media-start", "data-playback-start")
+        result, changed = normalize_split_fades(text)
+        self.assertEqual(set(changed), {"v-1", "v-1-2"})
+        attrs = element_attrs(result)
+        self.assertNotIn("data-fade-out", attrs["v-1"])
+        self.assertNotIn("data-fade-in", attrs["v-1-2"])
+
     def test_titles_with_different_text_are_not_matched(self):
         titles = ('<div id="t-1" class="clip am-title" data-start="0" data-duration="1" '
                   'data-fade-out="0.3"><span>Привет</span></div>'
