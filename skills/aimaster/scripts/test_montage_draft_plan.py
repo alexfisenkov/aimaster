@@ -177,7 +177,18 @@ class AcceptedOnlyTests(unittest.TestCase):
         state["audio_results"].append(duplicate)
         with self.assertRaises(MontageError) as caught:
             audio_sources(state)
-        self.assertIn("звукового слоя «voice»", str(caught.exception))
+        # Fix round 3/5, item 11: по-русски название слоя, а не сырой ключ.
+        self.assertIn("звукового слоя голос", str(caught.exception))
+
+    def test_malformed_scene_is_a_montage_error_not_a_key_error(self):
+        # Fix round 3/5, item 11: position_specs() читает scene["scene_id"]
+        # без .get() — сцена без этого поля даёт KeyError, а не
+        # DomainValidationError; _position_specs должен ловить и его.
+        state = video_state(SCENES)
+        del state["scenes"][0]["scene_id"]
+        with self.assertRaises(MontageError) as caught:
+            video_sources(state, strict=False)
+        self.assertIn("проект повреждён", str(caught.exception))
 
 
 if __name__ == "__main__":

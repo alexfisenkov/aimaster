@@ -80,6 +80,28 @@ class ReferenceTests(unittest.TestCase):
         problems = composition_refs.check_composition(html, Path("/nonexistent"))
         self.assertIn("ссылка вне папки монтажа: %2e%2e/media/v.mp4", problems)
 
+    def test_percent_encoded_backslash_traversal_is_caught(self):
+        # Fix round 3/5, item 8: раскодировать НАДО раньше нормализации "\\"
+        # → "/" — "%5c" не текстовый "\\", им не станет, пока не раскодирован;
+        # старый порядок (сначала заменить "\\", потом unquote) эту форму
+        # пропускал.
+        html = ('<video src="..%5cmedia%5cv.mp4"></video>'
+                '<video src="%5cabs%5cx.mp4"></video>')
+        self.assertEqual(composition_refs.escaping_sources(html),
+                         ["..%5cmedia%5cv.mp4", "%5cabs%5cx.mp4"])
+
+    def test_percent_encoded_space_in_an_existing_file_is_not_missing(self):
+        # Fix round 3/5, item 8: missing_sources ищет файл по тому же
+        # раскодированному пути, что escaping_sources проверяет — иначе
+        # "my%20clip.mp4" ищет файл с буквальным "%20" в имени и не находит
+        # реально существующий "my clip.mp4".
+        html = '<video src="assets/my%20clip.mp4"></video>'
+        with tempfile.TemporaryDirectory() as temp:
+            current = Path(temp)
+            (current / "assets").mkdir()
+            (current / "assets" / "my clip.mp4").write_bytes(b"x")
+            self.assertEqual(composition_refs.missing_sources(html, current), [])
+
 
 if __name__ == "__main__":
     unittest.main()

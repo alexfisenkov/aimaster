@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,8 +15,8 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 
 from studio.montage import MontageError  # noqa: E402
 from studio.montage.html_doc import (  # noqa: E402
-    element_attrs, element_span, fmt_number, insert_before_root_end, read_index, root_duration,
-    set_attr, set_text, write_index)
+    element_attrs, element_span, fmt_number, insert_before_root_end, root_duration, set_attr,
+    set_text)
 from studio.montage.paths import (  # noqa: E402
     montage_paths, render_output, version_name, version_number)
 
@@ -184,20 +183,6 @@ class FixRoundTwoScanTests(unittest.TestCase):
         changed = set_attr(SCRIPT_HIDES_FAKE_COMMENT_START, "v-1", "data-start", "1")
         self.assertIn('<video id="v-1" src="assets/a.mp4" data-start="1"></video>', changed)
         self.assertIn('<!-- real comment -->', changed)
-
-
-class IndexIoTests(unittest.TestCase):
-    def test_write_then_read_round_trips_crlf(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "index.html"
-            crlf_text = SAMPLE.replace("\n", "\r\n")
-            write_index(path, crlf_text)
-            self.assertEqual(path.read_bytes(), crlf_text.encode("utf-8"))
-            self.assertEqual(read_index(path), crlf_text)
-
-    def test_read_missing_file_is_a_montage_error(self):
-        with self.assertRaises(MontageError):
-            read_index(Path("/nonexistent/index.html"))
 
 
 if __name__ == "__main__":

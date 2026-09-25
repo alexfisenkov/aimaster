@@ -78,45 +78,51 @@ def external_references(html_text: str) -> list[str]:
     return external_urls(html_text)
 
 
-def _local_path(ref: str) -> str:
-    """Ref без query/fragment, «\\» приведён к «/» — так «..\\media\\x» и
-    «C:\\x» разбираются как путь, а не как одна причудливая часть имени
-    (`PurePosixPath` иначе бэкслеш не считает разделителем)."""
+def _decoded_local_path(ref: str) -> str:
+    """Путь без query/fragment, раскодированный и ТОЛЬКО ПОТОМ приведённый
+    к «/». Порядок важен: раскодировать сначала, потом нормализовать —
+    делать наоборот означало бы искать буквальный «\\» в ещё закодированной
+    строке, а «%5c» (процентная запись бэкслеша) им не является, пока не
+    раскодирован; так же «%2e%2e» не станет «..» раньше, чем unquote его
+    раскодирует. Общий хелпер для escaping_sources и missing_sources —
+    вторая должна видеть тот же путь, что первая проверила на выход за
+    current/, а не свою отдельную (не)раскодированную версию."""
 
-    return ref.split("?", 1)[0].split("#", 1)[0].replace("\\", "/")
+    raw = ref.split("?", 1)[0].split("#", 1)[0]
+    return unquote(raw).replace("\\", "/")
 
 
 def _escapes_current(local: str) -> bool:
-    # unquote — «%2e%2e/» и «%5c» не должны обмануть лексическую проверку:
-    # то, что реально откроет рендерер после раскодирования, и есть то, что
-    # надо проверять, а не то, что написано буквально.
-    decoded = unquote(local)
-    if _DRIVE_PREFIX.match(decoded) or decoded.startswith("/"):
+    """`local` уже раскодирован и нормализован `_decoded_local_path`."""
+
+    if _DRIVE_PREFIX.match(local) or local.startswith("/"):
         return True
-    return ".." in PurePosixPath(decoded).parts
+    return ".." in PurePosixPath(local).parts
 
 
 def escaping_sources(html_text: str) -> list[str]:
     """Локальные ссылки, которые указывают вне current/: диск Windows
     (C:…/C:\\…/D:a.mp4), абсолютный путь (/…, \\…) или подъём через «..»
-    (буквально или через %2e%2e). Внешние (http:, data:) сюда не входят —
-    у них external_references."""
+    (буквально, через %2e%2e или через %5c-запись бэкслеша). Внешние
+    (http:, data:) сюда не входят — у них external_references."""
 
     return [ref for ref in references(html_text)
             if not is_external(ref) and not ref.lower().startswith("data:")
-            and _escapes_current(_local_path(ref))]
+            and _escapes_current(_decoded_local_path(ref))]
 
 
 def missing_sources(html_text: str, current_dir: Path) -> list[str]:
     """Ссылки внутри current/, для которых нет файла. Ссылка, уходящая за
     пределы current/ (см. escaping_sources), сюда не попадает — у неё своё
-    сообщение: «файла нет» и «ссылка вне папки» значат разное."""
+    сообщение: «файла нет» и «ссылка вне папки» значат разное. Путь для
+    поиска файла — тот же раскодированный (`assets/my%20clip.mp4` ищет
+    реальный файл «my clip.mp4», а не файл с буквальным «%20» в имени)."""
 
     missing = []
     for ref in references(html_text):
         if is_external(ref) or ref.lower().startswith("data:"):
             continue
-        local = _local_path(ref)
+        local = _decoded_local_path(ref)
         if _escapes_current(local):
             continue
         if not (Path(current_dir) / PurePosixPath(local)).is_file():

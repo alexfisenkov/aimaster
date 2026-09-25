@@ -16,7 +16,7 @@ from typing import Callable
 
 from ..domain import DomainValidationError
 from ..domain_positions import current_member, position_specs
-from . import AUDIO_LAYER_NAMES, MontageError
+from . import AUDIO_LAYER_NAMES, LAYER_LABELS, MontageError
 from .probe import MediaInfo
 
 TRANSITION = 0.4
@@ -45,12 +45,14 @@ class ClipPlan:
 class DraftPlan:
     duration: float
     clips: tuple[ClipPlan, ...]
-    # Слепок структуры проекта на момент сборки: `stale_clips` (refresh.py)
-    # пишет их на корень (data-am-scenes/data-am-gen-mode) и потом сравнивает
-    # с текущим проектом — так отличает добавленную/удалённую сцену и смену
-    # gen_mode от сцены, чей клип владелец сам убрал со стола.
+    # Слепок структуры проекта на момент сборки: `stale_clips` (stale.py)
+    # пишет их на корень (data-am-scenes/data-am-gen-mode/data-am-layers) и
+    # потом сравнивает с текущим проектом — так отличает добавленную/
+    # удалённую сцену, смену gen_mode и новый принятый звуковой слой от
+    # сцены/слоя, чей клип владелец сам убрал со стола.
     scene_ids: tuple[str, ...] = ()
     gen_mode: str = "per_scene"
+    layers: tuple[str, ...] = ()
 
     def media_assets(self) -> list[str]:
         return list(dict.fromkeys(clip.asset_id for clip in self.clips if clip.asset_id))
@@ -77,7 +79,7 @@ def scene_ranges(state) -> dict[str, tuple[float, float]]:
 
 def _position_label(state, spec) -> str:
     """Человеку — не голый position_id: «сцены Клубок», «звукового слоя
-    «music»», «общего видео»."""
+    голос», «общего видео»."""
 
     scene_id = spec.get("scene_id")
     if scene_id:
@@ -85,19 +87,19 @@ def _position_label(state, spec) -> str:
         return f"сцены {(scene or {}).get('title') or scene_id}"
     layer = spec.get("layer")
     if layer:
-        return f"звукового слоя «{layer}»"
+        return f"звукового слоя {LAYER_LABELS.get(layer, layer).lower()}"
     if spec.get("kind") == "oneshot":
         return "общего видео"
     return str(spec.get("position_id", "?"))
 
 
 def _position_specs(state) -> dict:
-    """{position_id: spec}; повреждённый проект (не список sцен и т. п.) —
-    MontageError, не DomainValidationError сквозь этот модуль наружу."""
+    """{position_id: spec}; повреждённый проект (не список сцен и т. п.) —
+    MontageError, не DomainValidationError/KeyError сквозь этот модуль наружу."""
 
     try:
         return {spec["position_id"]: spec for spec in position_specs(state)}
-    except DomainValidationError as error:
+    except (DomainValidationError, KeyError) as error:
         raise MontageError(f"проект повреждён: {error}") from error
 
 
@@ -193,4 +195,6 @@ def plan_draft(state: dict, media: Callable[[str], MediaInfo]) -> DraftPlan:
                               fade_out=LAYER_FADE_OUT.get(layer, 0.0), has_audio=True))
     scene_ids = tuple(scene["scene_id"] for scene in _ordered(state))
     gen_mode = state.get("gen_mode", "per_scene")
-    return DraftPlan(duration=total, clips=tuple(clips), scene_ids=scene_ids, gen_mode=gen_mode)
+    layers = tuple(layer for layer in AUDIO_LAYER_NAMES if layer in audio)
+    return DraftPlan(duration=total, clips=tuple(clips), scene_ids=scene_ids, gen_mode=gen_mode,
+                     layers=layers)

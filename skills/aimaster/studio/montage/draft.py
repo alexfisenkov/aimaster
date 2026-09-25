@@ -1,7 +1,8 @@
 """Черновой монтаж в <проект>/montage/current: создать, пересобрать.
 
-Обновление устаревших клипов (`refresh_draft`/`stale_clips`) — в `refresh.py`,
-отдельно от сборки: разные поводы меняться (fix round 2/5, ruling item 1)."""
+Обновление устаревших клипов (`refresh.refresh_draft`) и сравнение с
+проектом (`stale.stale_clips`) — в отдельных модулях, отдельно от сборки:
+разные поводы меняться (fix round 2/5 ruling item 1, round 3/5 item 3)."""
 
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ from . import MontageError
 from .canvas import Canvas, canvas_for
 from .draft_html import render_draft_html
 from .draft_plan import plan_draft
-from .html_doc import write_index, write_text_atomic
+from .index_io import write_index, write_text_atomic
 from .media_sync import sync_media
 from .paths import MontagePaths
 from .probe import MediaInfo, probe_media
@@ -33,7 +34,11 @@ class DraftResult:
     media: dict
 
 
-def _prober(resolve, probe):
+def media_prober(resolve, probe):
+    """Кеширует `probe(resolve(asset_id))` по asset_id — один и тот же
+    ассет в плане (видео и его же звук, повтор клипа) пробуется раз, а не
+    на каждое обращение. Публичная: тем же кешем пользуется `refresh.py`."""
+
     cache: dict[str, MediaInfo] = {}
 
     def media(asset_id: str) -> MediaInfo:
@@ -45,7 +50,7 @@ def _prober(resolve, probe):
 
 def build_current(paths: MontagePaths, state: dict, resolve: Callable[[str], Path], *,
                   probe=probe_media) -> DraftResult:
-    media = _prober(resolve, probe)
+    media = media_prober(resolve, probe)
     plan = plan_draft(state, media)
     first = plan.first_video_asset()
     canvas = canvas_for(media(first) if first else None)

@@ -88,6 +88,22 @@ class TypefaceTests(unittest.TestCase):
                 with self.assertRaises(MontageError):
                     typeface.sync_fonts(assets)
 
+    def test_load_manifest_wraps_a_missing_or_unreadable_file(self):
+        # Fix round 3/5, item 9: fonts.json нет/не читается/битый JSON —
+        # MontageError «пакет навыка повреждён», не голый traceback.
+        for error in (FileNotFoundError("no such file"), PermissionError("denied")):
+            with self.subTest(error=type(error).__name__):
+                with mock.patch.object(Path, "read_text", side_effect=error):
+                    with self.assertRaises(MontageError) as caught:
+                        typeface.load_manifest()
+                    self.assertIn("пакет навыка повреждён, переустановите", str(caught.exception))
+
+    def test_load_manifest_wraps_invalid_json(self):
+        with mock.patch.object(Path, "read_text", return_value="не json {"):
+            with self.assertRaises(MontageError) as caught:
+                typeface.load_manifest()
+            self.assertIn("пакет навыка повреждён, переустановите", str(caught.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

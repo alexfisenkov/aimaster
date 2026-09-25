@@ -1,13 +1,10 @@
-"""Чтение и точечная правка index.html композиции.
+"""Чтение и точечная правка текста index.html композиции — чистый разбор,
+без файлового I/O (то — в `index_io.py`).
 
 Атрибуты — по id элемента, текст титра — в его <span>, вставка — перед
 закрывающим тегом корня. Правка меняет только нужный открывающий тег или
 текст: остальная разметка (в том числе то, что переписала Studio: data-hf-id,
 <!DOCTYPE html>, <meta …>) остаётся байт в байт.
-
-Чтение/запись `index.html` — здесь же (`read_index`/`write_index`): CRLF
-файла, который правила Studio на Windows, не должен превращаться в LF при
-точечной правке, поэтому оба всегда работают с `newline=""`.
 """
 
 from __future__ import annotations
@@ -15,9 +12,7 @@ from __future__ import annotations
 import html
 import re
 from html.parser import HTMLParser
-from pathlib import Path
 
-from ..platform_compat import replace_file
 from . import MontageError
 
 ROOT_ID = "root"
@@ -207,42 +202,3 @@ def insert_before_root_end(text: str, fragment: str, root_id: str = ROOT_ID) -> 
 
 def root_duration(text: str) -> float:
     return float(element_attrs(text).get(ROOT_ID, {}).get("data-duration") or 0)
-
-
-def write_text_atomic(path: Path, text: str) -> None:
-    """Пишет текстовый файл через временный + атомарную замену, `newline=""`
-    — `text` уходит на диск как есть, без перевода строк: свежий текст,
-    собранный с `\\n`, получит `\\n`; текст, прочитанный `read_index` из
-    файла с CRLF и точечно правленный, вернёт CRLF, не перегонит весь файл
-    в LF ради пары атрибутов.
-
-    Сбой файловой системы на любом шаге (нет прав, диск занят другим
-    процессом на Windows, диск полон) — MontageError с понятным текстом, а
-    не голый traceback; временный файл за собой не оставляем."""
-
-    path = Path(path)
-    temporary = path.with_name(f".{path.name}.tmp")
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary.write_text(text, encoding="utf-8", newline="")
-        replace_file(temporary, path)
-    except OSError as error:
-        temporary.unlink(missing_ok=True)
-        raise MontageError(f"не удалось записать {path.name}: {error}") from error
-
-
-def read_index(path: Path) -> str:
-    """Читает index.html с `newline=""` — CRLF файла Studio не превращается
-    в LF уже на чтении, до того как что-то в нём поправят."""
-
-    try:
-        return Path(path).read_text(encoding="utf-8", newline="")
-    except (OSError, UnicodeDecodeError) as error:
-        raise MontageError(f"не удалось прочитать черновик: {error}") from error
-
-
-def write_index(path: Path, text: str) -> None:
-    """index.html — тот же атомарный писатель, что и для прочих файлов
-    монтажа (`hyperframes.json`); имя отдельное — для читаемости вызова."""
-
-    write_text_atomic(path, text)

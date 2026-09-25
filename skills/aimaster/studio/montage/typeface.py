@@ -25,7 +25,14 @@ ASSETS_SUBDIR = "fonts"
 
 
 def load_manifest() -> dict:
-    return json.loads((FONT_DIR / "fonts.json").read_text(encoding="utf-8"))
+    """Сбой чтения/разбора fonts.json (файла нет, не читается, битый JSON)
+    — MontageError по-русски, не голый traceback: манифест — часть пакета
+    навыка, его порча — не то, что пользователь должен разбирать сам."""
+
+    try:
+        return json.loads((FONT_DIR / "fonts.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise MontageError(f"пакет навыка повреждён, переустановите: {error}") from error
 
 
 def _sha256(path: Path) -> str:
