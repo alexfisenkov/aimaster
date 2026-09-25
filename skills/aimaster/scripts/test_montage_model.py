@@ -104,6 +104,19 @@ class DiffTests(unittest.TestCase):
     def test_formats(self):
         self.assertEqual((fmt_time(65.3), fmt_len(3.5)), ("1:05.3", "3,5 с"))
 
+    def test_format_rounding_carries_into_the_next_minute(self):
+        # Round-fix-1/5, item 4: округление секунд ДО divmod — иначе 59.97 с
+        # печаталось как «0:60.0» вместо «1:00.0».
+        self.assertEqual(fmt_time(59.97), "1:00.0")
+        self.assertEqual(fmt_time(59.94), "0:59.9")
+
+    def test_format_shows_sub_tenth_changes_as_at_least_a_tenth(self):
+        # Round-fix-1/5, item 5: изменение меньше 0,1 с не должно читаться
+        # как «без изменений» — округление к 0,1 с, ROUND_HALF_UP, не к нулю.
+        self.assertEqual(fmt_len(0.03), "0,1 с")
+        self.assertEqual(fmt_len(0.05), "0,1 с")
+        self.assertEqual(fmt_len(0.0), "0,0 с")
+
     def test_first_version(self):
         self.assertEqual(diff_models(None, model_of(bare_draft())), ["черновой монтаж: 3 клипа, 3,5 с"])
         self.assertEqual(diff_models(None, self.old), ["черновой монтаж: 5 клипов, 3,5 с"])
@@ -130,13 +143,48 @@ class DiffTests(unittest.TestCase):
             text = index.read_text(encoding="utf-8")
         self.assertEqual(self.diff(text), ["клип сцены 1 «Сад»: разрезан на 0:01.0"])
 
+    def test_split_title_is_reported_as_one_cut(self):
+        # Round-fix-1/5, item 8: у титра нет data-am-asset — разрез узнаётся
+        # по совпадающему тексту обеих половин, не по timeline-полю src.
+        with tempfile.TemporaryDirectory() as temp:
+            index = Path(temp) / "index.html"
+            index.write_text(self.text, encoding="utf-8")
+            FakeHyperframes().json(None, ["timeline", "split", "#t-1", "1", "--dir", ".", "--json"],
+                                   cwd=Path(temp), timeout=1)
+            text = index.read_text(encoding="utf-8")
+        self.assertEqual(self.diff(text), ["титр «Барсик идёт по саду»: разрезан на 0:01.0"])
+
+    def test_repeated_split_is_reported_as_cuts_not_additions(self):
+        # Round-fix-1/5, item 8: второй разрез того же клипа (родитель — сам
+        # новый кусок первого разреза, которого нет в «до») не должен
+        # превращаться в «добавлен».
+        with tempfile.TemporaryDirectory() as temp:
+            index = Path(temp) / "index.html"
+            index.write_text(self.text, encoding="utf-8")
+            runner = FakeHyperframes()
+            runner.json(None, ["timeline", "split", "#v-1", "1", "--dir", ".", "--json"],
+                       cwd=Path(temp), timeout=1)
+            runner.json(None, ["timeline", "split", "#v-1-2", "1.5", "--dir", ".", "--json"],
+                       cwd=Path(temp), timeout=1)
+            text = index.read_text(encoding="utf-8")
+        changes = self.diff(text)
+        self.assertEqual(sum(1 for line in changes if "разрезан" in line), 2)
+        self.assertTrue(all("добавлен" not in line for line in changes))
+
+    def test_missing_volume_defaults_to_full(self):
+        # Round-fix-1/5, item 6: клип без data-volume звучит на 100%, не на 0%
+        # (умолчание HyperFrames) — и diff не путает "нет атрибута" со "звук выключен".
+        text = self.text.replace(' data-volume="1"', "")
+        self.assertIsNone(model_of(text).clip("a-voice").volume)
+        self.assertEqual(self.diff(text), [])
+
     def test_sound_and_titles(self):
         text = set_attr(self.text, "a-voice", "data-volume", "0.5")
         text = set_attr(text, "a-voice", "data-fade-in", "0.5")
         text = set_text(text, "t-1", "Кот")
         self.assertEqual(self.diff(text), [
             "титр «Кот»: текст «Барсик идёт по саду» → «Кот»",
-            "звук «Голос» (a-voice): громкость 100% → 50%",
+            "звук «Голос» (a-voice): громкость 100% (0 дБ) → 50% (-6 дБ)",
             "звук «Голос» (a-voice): плавное появление звука 0,5 с"])
 
     def test_added_and_removed(self):
