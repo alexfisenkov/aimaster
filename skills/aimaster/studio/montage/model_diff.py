@@ -10,6 +10,7 @@ from typing import Mapping
 
 from . import LAYER_LABELS
 from .model import Clip, Model
+from .split_pairs import SplitMark, is_split_pair
 
 EPS = 0.01
 # HyperFrames: клип без data-volume звучит на полной громкости — тот же
@@ -37,6 +38,15 @@ def fmt_len(seconds: float) -> str:
     return f"{value:.1f}".replace(".", ",") + " с"
 
 
+def fmt_len_precise(seconds: float) -> str:
+    """Точность 0,01 с — когда обычной 0,1 с не хватает различить старое и
+    новое значение (round-fix-2/5, item 5): не «сдвинут 0:01.0 → 0:01.0»
+    для сдвига на 0,03 с, который EPS уже посчитал реальным изменением."""
+
+    value = Decimal(str(max(0.0, float(seconds)))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return f"{value:.2f}".replace(".", ",") + " с"
+
+
 def clips_count(count: int) -> str:
     if count % 10 == 1 and count % 100 != 11:
         return f"{count} клип"
@@ -55,9 +65,12 @@ def clip_name(clip: Clip, names: Mapping[str, str]) -> str:
 
 
 def _db(fraction: float) -> str:
+    # Округлённый python отрицательный int форматируется ASCII-дефисом; знак
+    # — настоящим минусом U+2212 везде (round-fix-2/5, item 8), не смесью.
     if fraction <= 0:
         return "−∞ дБ"
-    return f"{round(20 * math.log10(fraction))} дБ"
+    value = round(20 * math.log10(fraction))
+    return f"−{-value} дБ" if value < 0 else f"{value} дБ"
 
 
 def _volume_label(volume: float | None) -> str:
@@ -72,12 +85,21 @@ def _timing(old: Clip, new: Clip, name: str, split_parent: bool) -> list[str]:
         return [f"{name}: начало {verb} на {fmt_len(abs(head))}"]
     out = []
     if abs(shift) > EPS:
-        out.append(f"{name}: сдвинут {fmt_time(old.start)} → {fmt_time(new.start)}")
+        if fmt_time(old.start) == fmt_time(new.start):
+            # 0,1 с не различает старое и новое — не молчать и не врать
+            # «не изменилось», показать точный сдвиг (round-fix-2/5, item 5).
+            direction = "вперёд" if shift > 0 else "назад"
+            out.append(f"{name}: сдвинут на {fmt_len_precise(abs(shift))} {direction}")
+        else:
+            out.append(f"{name}: сдвинут {fmt_time(old.start)} → {fmt_time(new.start)}")
     if abs(head) > EPS:
         out.append(f"{name}: из исходника берётся кусок с {fmt_time(new.media_start)}")
     if abs(new.duration - old.duration) > EPS and not split_parent:
         verb = "укорочен" if new.duration < old.duration else "удлинён"
-        out.append(f"{name}: {verb} до {fmt_len(new.duration)}")
+        if fmt_len(old.duration) == fmt_len(new.duration):
+            out.append(f"{name}: {verb} на {fmt_len_precise(abs(new.duration - old.duration))}")
+        else:
+            out.append(f"{name}: {verb} до {fmt_len(new.duration)}")
     return out
 
 
@@ -101,35 +123,29 @@ def _changed(old: Clip, new: Clip, name: str, split_parent: bool) -> list[str]:
     return out
 
 
-def _same_source(parent: Clip, piece: Clip) -> bool:
-    """Общий исходник разреза: для видео/звука — общий `data-am-asset`
-    (наша метка из разметки, не поле `timeline --json`, которое CLI не всегда
-    отдаёт одинаково); у титра своего ассета нет — опознаём по тексту, тот же,
-    что CLI/Studio копируют на обе половины при разрезе."""
-
-    if parent.asset_id or piece.asset_id:
-        return bool(parent.asset_id) and parent.asset_id == piece.asset_id
-    if parent.layer == "titles" and piece.layer == "titles":
-        return parent.text == piece.text
-    return False
+def _mark(clip: Clip) -> SplitMark:
+    return SplitMark(layer=clip.layer, asset_id=clip.asset_id, src=clip.src, text=clip.text,
+                     start=clip.start, duration=clip.duration, media_start=clip.media_start)
 
 
 def _split_pieces(before: dict, after: dict) -> dict[str, str]:
-    """{новая часть: клип, из которого она появилась}. Родителем может быть
-    и клип, переживший разрез с прошлой версии, и другая новая часть — второй
-    разрез той же строки (A → A, A-2; затем A-2 → A-2, A-2-2) иначе на втором
-    шаге не находил бы родителя вовсе и уходил в «добавлен», а не «разрезан»."""
+    """{новая часть: клип, из которого она появилась} — по общему правилу
+    `split_pairs.is_split_pair` (round-fix-2/5, item 3: раньше своё, чуть
+    другое правило было в split_fades.py, и они успели разойтись). Родителем
+    может быть и клип, переживший разрез с прошлой версии, и другая новая
+    часть — второй разрез той же строки (A → A, A-2; затем A-2 → A-2, A-2-2)
+    иначе на втором шаге не находил бы родителя вовсе и уходил в «добавлен»,
+    а не «разрезан»."""
 
     pieces = {}
     for piece_id in sorted(after.keys() - before.keys()):
         piece = after[piece_id]
+        piece_mark = _mark(piece)
         for parent_id in sorted(after.keys()):
             if parent_id == piece_id:
                 continue
             parent = after[parent_id]
-            if parent.layer != piece.layer or not _same_source(parent, piece):
-                continue
-            if abs(parent.end - piece.start) > EPS:
+            if not is_split_pair(_mark(parent), piece_mark):
                 continue
             was_before = before.get(parent_id)
             if was_before is not None and was_before.end < piece.end - EPS:

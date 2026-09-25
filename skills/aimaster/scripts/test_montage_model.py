@@ -21,7 +21,8 @@ from studio.montage.draft_html import render_draft_html  # noqa: E402
 from studio.montage.draft_plan import plan_draft  # noqa: E402
 from studio.montage.html_doc import element_span, insert_before_root_end, set_attr, set_text  # noqa: E402
 from studio.montage.model import Model, build_model, layers_view, model_hash, read_model  # noqa: E402
-from studio.montage.model_diff import clips_count, diff_models, fmt_len, fmt_time  # noqa: E402
+from studio.montage.model_diff import (  # noqa: E402
+    clips_count, diff_models, fmt_len, fmt_len_precise, fmt_time)
 from studio.montage.probe import MediaInfo  # noqa: E402
 
 MEDIA = {"asset-a": MediaInfo(2.0, 108, 192, True, True),
@@ -134,6 +135,15 @@ class DiffTests(unittest.TestCase):
         self.assertEqual(self.diff(text), ["длина ролика 3,5 с → 4,0 с",
                                            "клип сцены 2 «Клубок»: сдвинут 0:02.0 → 0:02.5"])
 
+    def test_position_and_length_change_below_display_precision(self):
+        # Round-fix-2/5, item 5: 0,1 с не различает 2,00 и 2,03 — раньше
+        # печаталось «сдвинут 0:02.0 → 0:02.0», как будто ничего не случилось.
+        self.assertEqual(fmt_len_precise(0.03), "0,03 с")
+        text = set_attr(self.text, "v-2", "data-start", "2.03")
+        self.assertEqual(self.diff(text), ["клип сцены 2 «Клубок»: сдвинут на 0,03 с вперёд"])
+        text = set_attr(self.text, "v-1", "data-duration", "1.97")
+        self.assertEqual(self.diff(text), ["клип сцены 1 «Сад»: укорочен на 0,03 с"])
+
     def test_split_is_reported_once(self):
         with tempfile.TemporaryDirectory() as temp:
             index = Path(temp) / "index.html"
@@ -153,6 +163,21 @@ class DiffTests(unittest.TestCase):
                                    cwd=Path(temp), timeout=1)
             text = index.read_text(encoding="utf-8")
         self.assertEqual(self.diff(text), ["титр «Барсик идёт по саду»: разрезан на 0:01.0"])
+
+    def test_split_without_asset_marker_is_reported_as_a_cut(self):
+        # Round-fix-2/5, item 3: Studio может перетащить в клип новый файл,
+        # потеряв нашу метку data-am-asset — split всё равно узнаётся по src
+        # (общее правило split_pairs.is_split_pair, то же, что у split_fades).
+        text = self.text.replace(' data-am-asset="asset-b"', "")
+        with tempfile.TemporaryDirectory() as temp:
+            index = Path(temp) / "index.html"
+            index.write_text(text, encoding="utf-8")
+            FakeHyperframes().json(None, ["timeline", "split", "#v-2", "2.5", "--dir", ".", "--json"],
+                                   cwd=Path(temp), timeout=1)
+            after = index.read_text(encoding="utf-8")
+        changes = diff_models(model_of(text), model_of(after), names=NAMES)
+        self.assertTrue(any("разрезан" in line for line in changes), changes)
+        self.assertFalse(any("добавлен" in line or "укорочен" in line for line in changes), changes)
 
     def test_repeated_split_is_reported_as_cuts_not_additions(self):
         # Round-fix-1/5, item 8: второй разрез того же клипа (родитель — сам
@@ -182,10 +207,14 @@ class DiffTests(unittest.TestCase):
         text = set_attr(self.text, "a-voice", "data-volume", "0.5")
         text = set_attr(text, "a-voice", "data-fade-in", "0.5")
         text = set_text(text, "t-1", "Кот")
-        self.assertEqual(self.diff(text), [
+        lines = self.diff(text)
+        self.assertEqual(lines, [
             "титр «Кот»: текст «Барсик идёт по саду» → «Кот»",
-            "звук «Голос» (a-voice): громкость 100% (0 дБ) → 50% (-6 дБ)",
+            "звук «Голос» (a-voice): громкость 100% (0 дБ) → 50% (−6 дБ)",
             "звук «Голос» (a-voice): плавное появление звука 0,5 с"])
+        # Round-fix-2/5, item 8: один стиль минуса (U+2212) везде — не ASCII-дефис.
+        self.assertIn("−", lines[1])
+        self.assertNotIn("-6", lines[1])
 
     def test_added_and_removed(self):
         begin, end = element_span(self.text, "t-2")
