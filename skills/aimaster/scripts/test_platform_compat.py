@@ -15,6 +15,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _SKILL_ROOT = Path(__file__).resolve().parent.parent
 if str(_SKILL_ROOT) not in sys.path:
@@ -186,6 +187,72 @@ class Utf8StdioTests(unittest.TestCase):
             print("текст")
         self.assertEqual(out.getvalue(), "текст\n")
 
+
+
+class FindProgramTests(unittest.TestCase):
+    """find_program должен видеть то же, что install.py: псевдонимы
+    WindowsApps (реализованные через reparse points/broken symlinks) и
+    ярлыки в WinGet Links, когда программы ещё нет на PATH."""
+
+    def test_broken_link_counts_as_present_on_windows_like_a_winget_alias(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp).resolve()
+            alias = folder / "ffmpeg.exe"
+            os.symlink(folder / "nowhere.exe", alias)
+            # Сперва убеждаемся, что фикстура действительно воспроизводит
+            # ситуацию WindowsApps: isfile видит битую ссылку как отсутствие
+            # файла, lexists — как присутствие.
+            self.assertFalse(os.path.isfile(alias))
+            self.assertTrue(os.path.lexists(alias))
+            with mock.patch.object(compat, "IS_WINDOWS", True):
+                self.assertEqual(compat.find_program("ffmpeg", environ={"PATH": str(folder)}),
+                                 str(alias))
+
+    def test_a_directory_shaped_like_the_name_is_not_a_program(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp).resolve()
+            (folder / "ffmpeg.exe").mkdir()
+            with mock.patch.object(compat, "IS_WINDOWS", True):
+                self.assertIsNone(compat.find_program("ffmpeg", environ={"PATH": str(folder)}))
+
+    def test_winget_links_fallback_when_not_on_path(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            links = base / "Microsoft" / "WinGet" / "Links"
+            links.mkdir(parents=True)
+            target = links / "ffmpeg.exe"
+            target.write_text("", encoding="utf-8")
+            env = {"PATH": "", "LOCALAPPDATA": str(base)}
+            with mock.patch.object(compat, "IS_WINDOWS", True):
+                self.assertEqual(compat.find_program("ffmpeg", environ=env), str(target))
+
+    def test_path_match_wins_over_winget_links(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            on_path = base / "bin"
+            on_path.mkdir()
+            (on_path / "ffmpeg.exe").write_text("", encoding="utf-8")
+            links = base / "Microsoft" / "WinGet" / "Links"
+            links.mkdir(parents=True)
+            (links / "ffmpeg.exe").write_text("", encoding="utf-8")
+            env = {"PATH": str(on_path), "LOCALAPPDATA": str(base)}
+            with mock.patch.object(compat, "IS_WINDOWS", True):
+                self.assertEqual(compat.find_program("ffmpeg", environ=env),
+                                 str(on_path / "ffmpeg.exe"))
+
+    def test_winget_links_fallback_only_applies_on_windows(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            links = base / "Microsoft" / "WinGet" / "Links"
+            links.mkdir(parents=True)
+            (links / "ffmpeg.exe").write_text("", encoding="utf-8")
+            env = {"PATH": "", "LOCALAPPDATA": str(base)}
+            with mock.patch.object(compat, "IS_WINDOWS", False):
+                self.assertIsNone(compat.find_program("ffmpeg", environ=env))
+
+    def test_missing_localappdata_does_not_crash(self):
+        with mock.patch.object(compat, "IS_WINDOWS", True):
+            self.assertIsNone(compat.find_program("ffmpeg", environ={"PATH": ""}))
 
 
 class WindowsPathGuardTests(unittest.TestCase):

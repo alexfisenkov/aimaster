@@ -226,11 +226,23 @@ def ensure_utf8_stdio() -> None:
 
 
 def find_program(name: str, *, environ=None) -> str | None:
-    """Полный путь к программе из абсолютных элементов PATH или None.
+    """Полный путь к программе из абсолютных элементов PATH, иначе (на
+    Windows) — из WinGet Links, или None.
 
     Пустой или относительный элемент PATH означал бы текущую папку, где может
     лежать чужой файл. На Windows берём только настоящие .exe/.com: .cmd и
-    .bat запускаются через cmd.exe, а оболочку монтаж не использует.
+    .bat запускаются через cmd.exe, а оболочку монтаж не использует; кроме
+    isfile проверяем ещё lexists — так видны псевдонимы WindowsApps (точки
+    повторной обработки, которые winget создаёт для ffmpeg/git/cloudflared и
+    которые isfile иногда не распознаёт), но каталог с таким именем — не
+    программа. Если ничего не нашлось на PATH, последний шанс — ярлыки в
+    %LOCALAPPDATA%\\Microsoft\\WinGet\\Links: туда winget их тоже кладёт, но
+    PATH текущего процесса может ещё не знать об этой папке.
+
+    Зеркало этой функции — scripts/install.py: `_find_program`/`_which`.
+    Экземпляры не объединены: install.py обязан работать даже под старым
+    Python (там нет f-строк и импортов пакета studio), поэтому у него своя,
+    независимая копия той же логики.
     """
 
     environ = os.environ if environ is None else environ
@@ -243,6 +255,17 @@ def find_program(name: str, *, environ=None) -> str | None:
     for folder in folders:
         for suffix in suffixes:
             candidate = os.path.join(folder, name + suffix)
-            if os.path.isfile(candidate) and (IS_WINDOWS or os.access(candidate, os.X_OK)):
+            if not IS_WINDOWS:
+                if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                    return candidate
+                continue
+            if (os.path.isfile(candidate) or os.path.lexists(candidate)) \
+                    and not os.path.isdir(candidate):
                 return candidate
-    return None
+    if not IS_WINDOWS:
+        return None
+    local_appdata = environ.get("LOCALAPPDATA")
+    if not local_appdata:
+        return None
+    link = Path(local_appdata) / "Microsoft" / "WinGet" / "Links" / (name + ".exe")
+    return str(link) if link.is_file() else None
