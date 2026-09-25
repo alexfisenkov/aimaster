@@ -16,7 +16,12 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from studio.montage.engine import PREFIX_ENV, load_pin  # noqa: E402
+from studio.montage import MontageError  # noqa: E402
+from studio.montage.draft_html import title_fragment  # noqa: E402
+from studio.montage.engine import PREFIX_ENV, Engine, load_pin  # noqa: E402
+from studio.montage.engine_cli import EngineResult  # noqa: E402
+from studio.montage.html_doc import (  # noqa: E402
+    element_attrs, element_span, fmt_number, insert_before_root_end, root_duration, set_attr)
 from studio.platform_compat import find_program  # noqa: E402
 
 
@@ -157,3 +162,122 @@ def video_state(scenes, *, audio=None, gen_mode="per_scene", oneshot_asset=None,
             "result_id": f"result:audio:{layer}", "version_id": version, "parent_version_id": None,
             "asset_id": asset, "status": "ready", "decision": "approved"})
     return state
+
+
+TITLES = (("t-1", "Барсик идёт по саду", 0.2, 1.6), ("t-2", "Находит клубок", 2.2, 1.1))
+
+
+def with_titles(html_text: str, titles=TITLES) -> str:
+    """Черновик без титров + титры, как их добавил бы montage edit (title-add)."""
+
+    for clip_id, text, start, duration in titles:
+        html_text = insert_before_root_end(html_text, title_fragment(clip_id, text, start, duration))
+    return html_text
+
+
+def fake_engine(prefix: Path) -> Engine:
+    return Engine(node="node", script=Path(prefix) / "hyperframes.mjs", prefix=Path(prefix),
+                  version="0.8.75", browser=None)
+
+
+def timeline_from_html(html_text: str) -> dict:
+    """Вывод `hyperframes timeline --json` 0.8.75 для нашей разметки (поля, что читает model.py)."""
+
+    attrs = element_attrs(html_text)
+    tracks: dict[str, list] = {}
+    for element_id, data in attrs.items():
+        if element_id == "root" or "data-start" not in data:
+            continue
+        tag = data["_tag"]
+        kind = tag if tag in ("video", "audio", "img") else "div"
+        track = {"video": "video", "img": "video", "audio": "audio"}.get(kind, "graphics")
+        start, duration = float(data["data-start"]), float(data.get("data-duration") or 0)
+        tracks.setdefault(track, []).append({
+            "id": element_id, "elementId": element_id, "kind": kind, "trackKind": track,
+            "start": start, "duration": duration, "end": round(start + duration, 3),
+            "src": data.get("src"),
+            "volume": float(data["data-volume"]) if "data-volume" in data else None,
+            "trackIndex": int(data.get("data-track-index") or 0), "hfId": data.get("data-hf-id")})
+    return {"timeline": {"duration": float(attrs["root"]["data-duration"]),
+                         "tracks": [{"kind": kind, "rows": rows} for kind, rows in tracks.items()]},
+            "_meta": {"version": "0.8.75"}}
+
+
+def _opt(args, name):
+    return args[args.index(name) + 1] if name in args else None
+
+
+class FakeHyperframes:
+    """Подмена EngineRunner: ведёт себя как CLI HyperFrames 0.8.75 на наших композициях
+    (проба: move не выходит за корень; trim не трогает data-media-start; split ставит
+    data-media-start новой части и зовёт её <id>-2; set volume=; delete; lint; render)."""
+
+    def __init__(self, *, lint_report=None, render_bytes=None, render_log="[INFO] done", refuse=None):
+        self.calls: list[list[str]] = []
+        self.lint_report = lint_report or {"ok": True, "errorCount": 0, "findings": []}
+        self.render_bytes = render_bytes
+        self.render_log = render_log
+        self.refuse = dict(refuse or {})
+
+    def json(self, engine, args, *, cwd, timeout, ok_codes=(0,)):
+        args = [str(item) for item in args]
+        self.calls.append(args)
+        index = Path(cwd) / "index.html"
+        if args[0] == "lint":
+            return dict(self.lint_report)
+        if args == ["timeline", "--json"]:
+            return timeline_from_html(index.read_text(encoding="utf-8"))
+        if args[0] == "timeline":
+            return self._mutate(index, args[1:])
+        raise AssertionError(f"неожиданная команда {args}")
+
+    def run(self, engine, args, *, cwd, timeout):
+        args = [str(item) for item in args]
+        self.calls.append(args)
+        if args[0] != "render":
+            raise AssertionError(f"неожиданная команда {args}")
+        if self.render_bytes is None:
+            return EngineResult(1, "", "render failed: browser crashed")
+        Path(_opt(args, "--output")).write_bytes(self.render_bytes)
+        return EngineResult(0, self.render_log, "")
+
+    def _mutate(self, index: Path, args: list[str]) -> dict:
+        op, ref = args[0], args[1].lstrip("#")
+        if op in self.refuse:
+            raise MontageError(f"HyperFrames отказал: {self.refuse[op]}")
+        text = index.read_text(encoding="utf-8")
+        data = element_attrs(text)[ref]
+        start, duration = float(data["data-start"]), float(data.get("data-duration") or 0)
+        if op == "move":
+            root, at = root_duration(text), float(args[2])
+            if at + duration > root + 1e-6:
+                raise MontageError(f"HyperFrames отказал: move would end at {at + duration}, "
+                                   f"beyond composition duration {root}")
+            text = set_attr(text, ref, "data-start", args[2])
+        elif op == "trim":
+            for flag, attr in (("--start", "data-start"), ("--duration", "data-duration")):
+                if _opt(args, flag) is not None:
+                    text = set_attr(text, ref, attr, _opt(args, flag))
+        elif op == "split":
+            at = float(args[2])
+            first = round(at - start, 3)
+            media = float(data.get("data-media-start") or 0)
+            begin, end = element_span(text, ref)
+            piece = text[begin:end]
+            for attr, value in (("data-start", fmt_number(at)),
+                                ("data-duration", fmt_number(duration - first)),
+                                ("data-media-start", fmt_number(media + first)), ("id", f"{ref}-2")):
+                piece = set_attr(piece, ref, attr, value)
+            text = set_attr(text, ref, "data-duration", fmt_number(first))
+            _begin, end = element_span(text, ref)
+            text = text[:end] + piece + text[end:]
+        elif op == "delete":
+            begin, end = element_span(text, ref)
+            text = text[:begin] + text[end:]
+        elif op == "set":
+            field, value = args[2].split("=", 1)
+            text = set_attr(text, ref, f"data-{field}", value)
+        else:
+            raise AssertionError(f"неожиданная правка {op}")
+        index.write_text(text, encoding="utf-8")
+        return {"ok": True, "receipt": {"file": "index.html", "changed": True}, "file": "index.html"}
