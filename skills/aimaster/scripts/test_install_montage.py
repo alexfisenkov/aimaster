@@ -23,6 +23,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 
 import install  # noqa: E402
 import install_montage  # noqa: E402
+import install_montage_browser  # noqa: E402
 import install_montage_engine  # noqa: E402
 import install_montage_node  # noqa: E402
 from studio.montage import engine  # noqa: E402
@@ -337,7 +338,14 @@ class BrowserInstallTests(unittest.TestCase):
         оставался чистым (разбор 1/5 → 2/5, находка I)."""
 
         with redirect_stderr(io.StringIO()):
-            return install_montage_engine.browser_install(*args, **kwargs)
+            return install_montage_browser.browser_install(*args, **kwargs)
+
+    def test_old_names_still_work_from_the_engine_module(self):
+        """Разбор 4/5, находка 3: браузер переехал в install_montage_browser.py,
+        прежние имена install_montage_engine.* (интерфейс плана) — те же функции."""
+
+        self.assertIs(install_montage_engine.browser_install, install_montage_browser.browser_install)
+        self.assertIs(install_montage_engine.check_browser, install_montage_browser.check_browser)
 
     def test_downloads_into_engine_home_and_records_the_path(self):
         item = self.call("/usr/bin/node", self.prefix, PIN,
@@ -453,7 +461,7 @@ class ReportTests(unittest.TestCase):
         with mock.patch.object(engine, "find_node", return_value="/usr/bin/node"), \
                 mock.patch.object(engine, "node_major", return_value=22), \
                 mock.patch.object(install, "_run", side_effect=AssertionError("ничего не ставим")), \
-                mock.patch.object(install_montage_engine, "run_engine",
+                mock.patch.object(install_montage_browser, "run_engine",
                                   side_effect=AssertionError("ничего не качаем")):
             report = install_montage.montage_report("macos", install_missing=False, update=False,
                                                     install_node=False, home=self.base)

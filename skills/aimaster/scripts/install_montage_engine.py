@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""HyperFrames закреплённой версии и браузер для сборки видео — часть установщика
-монтажа (install_montage.py). npm запускается как `node <npm-cli.js> install
---prefix <папка движка>`, браузер качает сам HyperFrames (`browser ensure`) в HOME
-движка; путь к нему пишется в aimaster-engine.json — иначе `browser path` молча
-отдал бы системный Chrome.
+"""HyperFrames и GSAP закреплённых версий — часть установщика монтажа
+(install_montage.py). npm запускается как `node <npm-cli.js> install --prefix
+<папка движка>`. Браузер для сборки — install_montage_browser.py (имена
+browser_install/check_browser доступны и отсюда, как в плане задачи 4).
 
 `install_missing` (--install-deps) ставит то, чего нет вовсе; `install_missing`
 или `update` (--update) переустанавливают на закреплённую версию то, что уже
@@ -16,7 +15,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 _SCRIPTS = Path(__file__).resolve().parent
@@ -27,7 +25,8 @@ for _path in (str(_SCRIPTS), str(_SCRIPTS.parent)):
 import install  # noqa: E402
 from install_montage_node import item, npm_cli_js  # noqa: E402
 from studio.montage import engine  # noqa: E402
-from studio.montage.engine_cli import default_runner, run_engine  # noqa: E402
+from studio.montage.engine_cli import default_runner  # noqa: E402
+from install_montage_browser import browser_install, check_browser  # noqa: E402,F401 — прежние имена
 
 
 def _pinned(prefix: Path, pin: dict) -> bool:
@@ -118,43 +117,6 @@ def engine_install(node: str, prefix: Path, pin: dict, *, kind: str, install_mis
     return item("installed", version=engine.installed_version(prefix), path=str(prefix))
 
 
-def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool, update: bool,
-                    runner=None) -> dict:
-    """Тот же принцип, что и у engine_install: ничего не скачано — только с
-    install_missing; скачан, но для другой версии pin — install_missing ИЛИ
-    update чинят, --update один на пустом месте ничего не качает."""
-
-    record = engine.read_record(prefix)
-    have_browser = bool(record.get("browser")) and Path(record["browser"]).is_file()
-    if record.get("version") == pin["version"] and have_browser:
-        return item("found", path=record["browser"])
-    if not have_browser and not install_missing:
-        return item("missing", "браузер для сборки не скачан: поставить install.py --install-deps")
-    if have_browser and not (install_missing or update):
-        return item("found", f"стоит браузер для версии {record.get('version')}, нужна {pin['version']}: "
-                     "запустите install.py --install-deps", path=record["browser"])
-    eng = engine.Engine(node=node, script=engine.entry_script(prefix), prefix=Path(prefix),
-                        version=pin["version"], browser=None)
-    kwargs = {} if runner is None else {"runner": runner}
-    print("Качаю компонент для сборки видео (~100 МБ)…", file=sys.stderr, flush=True)
-    ensured = run_engine(eng, ["browser", "ensure"], cwd=prefix,
-                         timeout=pin["timeouts"]["browser"], **kwargs)
-    if ensured.timed_out:
-        return item("timeout", "браузер для сборки не скачался за отведённое время; повторите позже")
-    located = run_engine(eng, ["browser", "path"], cwd=prefix, timeout=pin["timeouts"]["cli"],
-                         **kwargs)
-    lines = located.stdout.strip().splitlines()
-    path = lines[-1].strip() if lines else ""
-    inside = bool(path) and install._inside(path, str(Path(prefix) / "home"))
-    if ensured.code != 0 or located.code != 0 or not inside or not Path(path).is_file():
-        detail = (ensured.stderr or ensured.stdout).strip()[-400:]
-        return item("failed", detail or "после загрузки браузер для сборки не найден в папке движка")
-    record.update(browser=path, version=pin["version"], node=node,
-                  updated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
-    engine.write_record(prefix, record)
-    return item("installed", "скачан браузер для сборки видео (~100 МБ)", path=path)
-
-
 def check_package(prefix: Path, pin: dict) -> dict:
     have = engine.installed_version(prefix)
     if have is None:
@@ -167,11 +129,3 @@ def check_package(prefix: Path, pin: dict) -> dict:
         # у обоих (report["ok"] должен стать False), а текст — нет.
         return item("missing", _gsap_message(prefix, pin), version=have, path=str(prefix))
     return item("found", version=have, path=str(prefix))
-
-
-def check_browser(prefix: Path, pin: dict) -> dict:
-    record = engine.read_record(prefix)
-    if record.get("version") == pin["version"] and record.get("browser") \
-            and Path(record["browser"]).is_file():
-        return item("found", path=record["browser"])
-    return item("missing", "скачается при install.py --install-deps")

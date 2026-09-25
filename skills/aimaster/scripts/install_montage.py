@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Монтаж для install.py: собирает раздел `montage` отчёта из трёх частей —
-Node.js 22+ (install_montage_node.py), HyperFrames и браузер для сборки
-(install_montage_engine.py), скиллы HyperFrames (install_montage_skills.py).
+"""Монтаж для install.py: собирает раздел `montage` отчёта из четырёх частей —
+Node.js 22+ (install_montage_node.py), HyperFrames (install_montage_engine.py),
+браузер для сборки (install_montage_browser.py), скиллы HyperFrames
+(install_montage_skills.py).
 
 Всё без оболочки: npm запускается как `node <npm-cli.js>`, HyperFrames — как
 `node <prefix>/node_modules/hyperframes/bin/hyperframes.mjs`. Движок живёт в
@@ -26,7 +27,8 @@ for _path in (str(_SCRIPTS), str(_SCRIPTS.parent)):
 
 import install  # noqa: E402
 from studio.montage import engine  # noqa: E402
-from install_montage_engine import browser_install, check_browser, check_package, engine_install  # noqa: E402
+from install_montage_browser import browser_install, check_browser  # noqa: E402
+from install_montage_engine import check_package, engine_install  # noqa: E402
 from install_montage_node import READY, item, node_check  # noqa: E402
 import install_montage_skills  # noqa: E402
 
