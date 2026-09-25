@@ -25,9 +25,11 @@ for _path in (str(_SCRIPTS), str(_SCRIPTS.parent)):
         sys.path.insert(0, _path)
 
 import install  # noqa: E402
+import install_montage_browser_win  # noqa: E402
 from install_montage_node import item  # noqa: E402
 from studio.montage import engine  # noqa: E402
 from studio.montage.engine_cli import run_engine  # noqa: E402
+from studio.platform_compat import IS_WINDOWS  # noqa: E402
 
 # round 1/5, находка CI windows-latest: два отдельных процесса Node (`ensure`
 # своим «Path: …», затем `browser path` своим `existsSync`) согласились, что
@@ -107,17 +109,21 @@ def _failure_detail(ensured, located, path: str, *, inside: bool, is_file: bool)
 
 
 def _env_browser_override(environ) -> str | None:
-    """round 1/5, CI windows-latest: скачивание chrome-headless-shell для
-    win64-152.0.7977.30 стабильно (три подряд попытки, включая self-heal
-    HyperFrames) кладёт пустую версийную папку — не антивирус (путь-
-    исключение и полное отключение реал-тайм защиты Defender ничего не
-    изменили, run 36137776762). Это подтверждённый способ самого HyperFrames
-    обойти скачивание вовсе: `HYPERFRAMES_BROWSER_PATH` — тот же механизм,
-    который он сам подсказывает при отказе загрузки (см. `browserPathHint`
-    в его CLI). Системный Chrome работает медленнее (без
-    HeadlessExperimental.beginFrame, скриншотный режим захвата вместо
-    перф-оптимизированного), но это ожидаемый, документированный HyperFrames
-    режим, а не костыль в обход его контракта."""
+    """Явное пользовательское `HYPERFRAMES_BROWSER_PATH` — тот же механизм,
+    который сам HyperFrames подсказывает при отказе загрузки браузера (см.
+    `browserPathHint` в его CLI). Оставлен как есть, без проверки, что путь
+    указывает именно на chrome-headless-shell: round 2/5 (владелец,
+    2026-09-25) показал прямым замером, что системный (GUI) Chrome на
+    Windows не годится для этого — `chrome.exe --version` не печатает
+    версию и не завершается вовсе (запускает полноценный браузер вместо
+    короткого ответа, run 36141827389, лог H2), поэтому CI и установщик
+    сами такой путь больше не подставляют (см. install_montage_browser_win
+    и ci.yml) — только настоящую распаковку chrome-headless-shell. Но если
+    ЧЕЛОВЕК явно задал переменную на свой рабочий бинарник (headless-shell,
+    Chromium со своей сборки — не обязательно Windows), это его выбор:
+    отклонить его здесь нечем, а если бинарник всё же не работает, дальше
+    честно откажет сам рендер HyperFrames с понятным «Chrome cannot start»,
+    а не тихая подмена на неверный браузер."""
 
     path = (environ or os.environ).get("HYPERFRAMES_BROWSER_PATH")
     return path if path and Path(path).is_file() else None
@@ -158,6 +164,16 @@ def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool
     eng = engine.Engine(node=node, script=engine.entry_script(prefix), prefix=Path(prefix),
                         version=pin["version"], browser=None)
     kwargs = {} if runner is None else {"runner": runner}
+    if IS_WINDOWS:
+        # round 2/5, H1 подтверждён CI-экспериментом (run 36141827389):
+        # встроенная распаковка @puppeteer/browsers на Windows молча теряет
+        # содержимое .zip, когда путь назначения содержит кириллицу и пробел
+        # (реальный путь движка «AI Мастерская») — install_montage_browser_win
+        # качает и распаковывает chrome-headless-shell сами, Unicode-safe,
+        # прямо в кэш, который дальше найдёт `browser ensure` и не будет
+        # перекачивать. Если не вышло (сеть, версия не прочиталась) —
+        # продолжаем как раньше, вреда от попытки нет.
+        install_montage_browser_win.preseed(prefix)
     print("Качаю компонент для сборки видео (~100 МБ)…", file=sys.stderr, flush=True)
     ensured = run_engine(eng, ["browser", "ensure"], cwd=prefix,
                          timeout=pin["timeouts"]["browser"], **kwargs)
