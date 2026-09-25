@@ -59,6 +59,15 @@ class NodeCheckTests(unittest.TestCase):
         self.assertEqual((item["status"], item["install_cmd"]), ("missing", "brew install node"))
         self.assertIn("20", item["message"])
 
+    def test_unparsable_version_does_not_say_none(self):
+        find, major = self.patch_node(["/usr/local/bin/node"], None)
+        with find, major, mock.patch.object(install, "_run") as run:
+            item = install_montage_node.node_check("macos", install_missing=False)
+        run.assert_not_called()
+        self.assertEqual(item["status"], "missing")
+        self.assertIn("версию не удалось определить", item["message"])
+        self.assertNotIn("None", item["message"])
+
     def test_windows_installs_lts_with_winget_flags(self):
         find, major = self.patch_node([None, "C:/Program Files/nodejs/node.exe"], 24)
         with find, major, mock.patch.object(install, "_find_program", return_value="C:/winget.exe"), \
@@ -106,6 +115,32 @@ class NpmCliTests(unittest.TestCase):
         base = temp_base(self)
         self.assertIsNone(install_montage_node.npm_cli_js(str(touch(base / "bin" / "node"))))
 
+    def test_shim_manager_is_resolved_via_process_exec_path(self):
+        """asdf/Volta/Scoop ставят перед Node не симлинк, а скрипт-шим —
+        os.path.realpath его не раскрывает; npm-cli.js ищем по пути, который
+        называет сам `node -p process.execPath`."""
+
+        base = temp_base(self)
+        shim = touch(base / "shims" / "node")
+        real_node = touch(base / "versions" / "22.1.0" / "bin" / "node")
+        npm = touch(base / "versions" / "22.1.0" / "lib" / "node_modules" / "npm" / "bin" / "npm-cli.js")
+
+        def fake_run(argv, **kwargs):
+            self.assertEqual(argv[:2], [str(shim), "-p"])
+            return subprocess.CompletedProcess(argv, 0, (str(real_node) + "\n").encode(), b"")
+
+        self.assertEqual(install_montage_node.npm_cli_js(str(shim), run=fake_run), npm)
+
+    def test_shim_resolution_failure_falls_back_to_the_given_path(self):
+        base = temp_base(self)
+        node = touch(base / "nodejs" / "node.exe")
+        npm = touch(base / "nodejs" / "node_modules" / "npm" / "bin" / "npm-cli.js")
+
+        def broken_run(argv, **kwargs):
+            raise OSError("не удалось запустить node")
+
+        self.assertEqual(install_montage_node.npm_cli_js(str(node), run=broken_run), npm)
+
 
 class EngineInstallTests(unittest.TestCase):
     def setUp(self):
@@ -131,8 +166,8 @@ class EngineInstallTests(unittest.TestCase):
         return run
 
     def test_runs_npm_cli_js_with_node_and_pinned_package(self):
-        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, update=False,
-                                              run=self.fake_npm())
+        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN,
+                                              install_missing=True, update=False, run=self.fake_npm())
         self.assertEqual(item["status"], "installed")
         call = self.calls[0]
         argv = call["argv"]
@@ -147,39 +182,85 @@ class EngineInstallTests(unittest.TestCase):
     def test_pinned_version_is_found_without_npm(self):
         self.fake_npm()([], None, None, None)
         self.calls.clear()
-        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, update=False,
-                                              run=self.fake_npm())
+        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN,
+                                              install_missing=True, update=False, run=self.fake_npm())
         self.assertEqual(item["status"], "found")
         self.assertEqual(self.calls, [])
 
-    def test_other_version_waits_for_update(self):
+    def test_neither_flag_only_reports_the_present_wrong_version(self):
         self.fake_npm("0.8.74")([], None, None, None)
         self.calls.clear()
-        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, update=False,
-                                              run=self.fake_npm())
+        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN,
+                                              install_missing=False, update=False, run=self.fake_npm())
         self.assertEqual(item["status"], "found")
-        self.assertIn("--update", item["message"])
+        self.assertIn("--install-deps", item["message"])
         self.assertEqual(self.calls, [])
-        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, update=True,
-                                              run=self.fake_npm())
+
+    def test_install_deps_alone_reinstalls_present_wrong_version_to_pin(self):
+        """Разбор 1/5, находка 3: --install-deps один тоже чинит версию —
+        документированная команда действительно чинит расхождение."""
+
+        self.fake_npm("0.8.74")([], None, None, None)
+        self.calls.clear()
+        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN,
+                                              install_missing=True, update=False, run=self.fake_npm())
+        self.assertEqual(item["status"], "installed")
+        argv = self.calls[0]["argv"]
+        self.assertIn(f"hyperframes@{PIN['version']}", argv)
+        self.assertEqual(item["version"], PIN["version"])
+
+    def test_update_alone_also_repairs_a_present_wrong_version(self):
+        self.fake_npm("0.8.74")([], None, None, None)
+        self.calls.clear()
+        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN,
+                                              install_missing=False, update=True, run=self.fake_npm())
         self.assertEqual(item["status"], "installed")
 
-    def test_missing_gsap_is_installed_without_update_flag(self):
+    def test_update_alone_never_installs_from_nothing(self):
+        """Разбор 1/5, находка 2: --update один на чистой машине ничего не ставит."""
+
+        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN,
+                                              install_missing=False, update=True, run=self.fake_npm())
+        self.assertEqual(item["status"], "missing")
+        self.assertIn("--install-deps", item["message"])
+        self.assertEqual(self.calls, [])
+
+    def test_missing_gsap_is_installed_with_install_deps(self):
         self.fake_npm(gsap=None)([], None, None, None)
         self.calls.clear()
-        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, update=False,
-                                                     run=self.fake_npm())
+        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN,
+                                              install_missing=True, update=False, run=self.fake_npm())
         self.assertEqual(item["status"], "installed")
         self.assertEqual(len(self.calls), 1)
 
+    def test_missing_gsap_is_repaired_by_update_alone_when_hyperframes_is_present(self):
+        self.fake_npm(gsap=None)([], None, None, None)
+        self.calls.clear()
+        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN,
+                                              install_missing=False, update=True, run=self.fake_npm())
+        self.assertEqual(item["status"], "installed")
+
     def test_npm_failure_and_timeout(self):
-        failed = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, update=False,
+        failed = install_montage_engine.engine_install(str(self.node), self.prefix, PIN,
+                                                install_missing=True, update=False,
                                                 run=self.fake_npm(code=1))
         self.assertEqual(failed["status"], "failed")
         self.assertIn("npm ERR", failed["message"])
-        slow = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, update=False,
+        slow = install_montage_engine.engine_install(str(self.node), self.prefix, PIN,
+                                              install_missing=True, update=False,
                                               run=lambda *a, **k: (install.TIMEOUT_CODE, "", ""))
         self.assertEqual(slow["status"], "timeout")
+
+    def test_default_runner_kills_the_whole_process_tree_on_timeout(self):
+        """Разбор 1/5, находка 5: по умолчанию npm запускается через
+        движковый tree-killing runner, а не голый subprocess.run."""
+
+        with mock.patch.object(install_montage_engine, "default_runner",
+                                side_effect=subprocess.TimeoutExpired(["node"], 1)) as runner:
+            item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN,
+                                                  install_missing=True, update=False)
+        runner.assert_called_once()
+        self.assertEqual(item["status"], "timeout")
 
 
 class BrowserInstallTests(unittest.TestCase):
@@ -200,6 +281,7 @@ class BrowserInstallTests(unittest.TestCase):
 
     def test_downloads_into_engine_home_and_records_the_path(self):
         item = install_montage_engine.browser_install("/usr/bin/node", self.prefix, PIN,
+                                               install_missing=True, update=False,
                                                runner=self.runner(str(self.browser)))
         self.assertEqual(item["status"], "installed")
         self.assertEqual(engine.read_record(self.prefix)["browser"], str(self.browser))
@@ -210,6 +292,7 @@ class BrowserInstallTests(unittest.TestCase):
     def test_system_chrome_is_not_accepted(self):
         outside = touch(self.base / "Google Chrome")
         item = install_montage_engine.browser_install("/usr/bin/node", self.prefix, PIN,
+                                               install_missing=True, update=False,
                                                runner=self.runner(str(outside)))
         self.assertEqual(item["status"], "failed")
         self.assertNotIn("browser", engine.read_record(self.prefix))
@@ -218,9 +301,60 @@ class BrowserInstallTests(unittest.TestCase):
         touch(self.browser)
         engine.write_record(self.prefix, {"browser": str(self.browser), "version": PIN["version"]})
         item = install_montage_engine.browser_install("/usr/bin/node", self.prefix, PIN,
+                                               install_missing=True, update=False,
                                                runner=self.runner("x"))
         self.assertEqual(item["status"], "found")
         self.assertEqual(self.calls, [])
+
+    def test_update_alone_never_downloads_from_nothing(self):
+        item = install_montage_engine.browser_install("/usr/bin/node", self.prefix, PIN,
+                                               install_missing=False, update=True,
+                                               runner=self.runner(str(self.browser)))
+        self.assertEqual(item["status"], "missing")
+        self.assertIn("--install-deps", item["message"])
+        self.assertEqual(self.calls, [])
+
+    def test_update_alone_repairs_a_stale_recorded_browser(self):
+        touch(self.browser)
+        engine.write_record(self.prefix, {"browser": str(self.browser), "version": "0.8.70"})
+        item = install_montage_engine.browser_install("/usr/bin/node", self.prefix, PIN,
+                                               install_missing=False, update=True,
+                                               runner=self.runner(str(self.browser)))
+        self.assertEqual(item["status"], "installed")
+        self.assertEqual(self.calls[0][0][2:4], ["browser", "ensure"])
+
+    def test_neither_flag_only_reports_a_stale_recorded_browser(self):
+        touch(self.browser)
+        engine.write_record(self.prefix, {"browser": str(self.browser), "version": "0.8.70"})
+        item = install_montage_engine.browser_install("/usr/bin/node", self.prefix, PIN,
+                                               install_missing=False, update=False,
+                                               runner=self.runner(str(self.browser)))
+        self.assertEqual(item["status"], "found")
+        self.assertIn("--install-deps", item["message"])
+        self.assertEqual(self.calls, [])
+
+
+class CheckPackageTests(unittest.TestCase):
+    """Разбор 1/5, находка 6: отсутствующий GSAP — missing, не found."""
+
+    def setUp(self):
+        self.base = temp_base(self)
+        self.prefix = self.base / "tools" / "hyperframes"
+        package = self.prefix / "node_modules" / "hyperframes"
+        touch(package / "bin" / "hyperframes.mjs")
+        (package / "package.json").write_text(json.dumps({"version": PIN["version"]}), encoding="utf-8")
+
+    def test_missing_gsap_is_missing_not_found(self):
+        item = install_montage_engine.check_package(self.prefix, PIN)
+        self.assertEqual(item["status"], "missing")
+        self.assertIn("GSAP", item["message"])
+
+    def test_matching_gsap_is_found(self):
+        touch(self.prefix / "node_modules" / "gsap" / "dist" / "gsap.min.js")
+        (self.prefix / "node_modules" / "gsap" / "package.json").write_text(
+            json.dumps({"version": PIN["gsap_version"]}), encoding="utf-8")
+        item = install_montage_engine.check_package(self.prefix, PIN)
+        self.assertEqual(item["status"], "found")
 
 
 class ReportTests(unittest.TestCase):
@@ -234,12 +368,13 @@ class ReportTests(unittest.TestCase):
         self.skills = skills_patch.start()
         self.addCleanup(skills_patch.stop)
 
-    def test_skills_follow_the_act_flag(self):
+    def test_skills_receive_install_missing_and_update(self):
         with mock.patch.object(engine, "find_node", return_value=None):
             report = install_montage.montage_report("linux", install_missing=True, update=False,
                                                     install_node=False, home=self.base)
         self.assertEqual(report["skills"]["status"], "found")
-        self.assertEqual(self.skills.call_args.kwargs, {"act": True, "home": self.base})
+        self.assertEqual(self.skills.call_args.kwargs,
+                         {"install_missing": True, "update": False, "home": self.base})
 
     def test_check_only_installs_nothing(self):
         with mock.patch.object(engine, "find_node", return_value="/usr/bin/node"), \
@@ -261,12 +396,26 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(report["hyperframes"]["status"], "missing")
         self.assertIn("Node.js", report["hyperframes"]["message"])
 
+    def test_update_alone_does_not_install_a_fresh_engine(self):
+        """Разбор 1/5, находка 2, на уровне отчёта целиком."""
+
+        with mock.patch.object(engine, "find_node", return_value="/usr/bin/node"), \
+                mock.patch.object(engine, "node_major", return_value=22):
+            report = install_montage.montage_report("macos", install_missing=False, update=True,
+                                                    install_node=False, home=self.base)
+        self.assertEqual(report["hyperframes"]["status"], "missing")
+        self.assertIn("--install-deps", report["hyperframes"]["message"])
+
     def test_text_lines(self):
         lines = install_montage.render_montage_lines(
             {"ok": False, "node": {"status": "missing", "message": "Node.js не найден"}})
         self.assertEqual(lines[0], "Монтаж (HyperFrames): не готов")
         self.assertIn("  Node.js 22+ — нет", lines)
         self.assertIn("      Node.js не найден", lines)
+
+    def test_text_lines_show_the_crash_guard_error(self):
+        lines = install_montage.render_montage_lines({"ok": False, "error": "неожиданный сбой"})
+        self.assertIn("  неожиданный сбой", lines)
 
 
 if __name__ == "__main__":

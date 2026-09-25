@@ -2,9 +2,12 @@
 """Скачивание скиллов HyperFrames закреплённой версии (engine.json → skills) в кеш.
 
 Список файлов — один запрос к API деревьев GitHub по закреплённому дереву
-`skills/`, содержимое — raw.githubusercontent.com по закреплённому коммиту через
-одно HTTPS-соединение. Каждый файл сверяется с git-хэшем блоба, каждый скилл —
-с хэшем набора из skills-manifest.json этой версии (studio/montage/skill_bundle.py).
+`skills/`, содержимое — raw.githubusercontent.com по закреплённому коммиту.
+Оба запроса идут через urllib.request (тот же путь, что и у fetch_tree): это
+уважает HTTPS_PROXY/NO_PROXY и следует редиректам, чего самодельное
+http.client-соединение не делало. Каждый файл сверяется с git-хэшем блоба,
+каждый скилл — с хэшем набора из skills-manifest.json этой версии
+(studio/montage/skill_bundle.py).
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ import os
 import shutil
 import ssl
 import tempfile
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -24,10 +28,12 @@ from studio.montage.skill_bundle import verify_skills
 
 API_TREE = "https://api.github.com/repos/{repo}/git/trees/{tree}?recursive=1"
 RAW_HOST = "raw.githubusercontent.com"
+RAW_BASE = f"https://{RAW_HOST}/{{repo}}/{{commit}}/skills/"
 HTTP_TIMEOUT = 60
 HEADERS = {"User-Agent": "aimaster-install", "Accept": "application/vnd.github+json"}
 CA_BUNDLES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt",
               "/etc/pki/tls/certs/ca-bundle.crt")
+DOWNLOAD_TEMP_PREFIX = ".download-"
 
 
 def ssl_context() -> ssl.SSLContext:
@@ -60,37 +66,50 @@ def fetch_tree(pin: dict, *, opener=urllib.request.urlopen) -> list[dict]:
 
 
 class RawFetcher:
-    """Одно HTTPS-соединение на все файлы: сотни мелких запросов без нового TLS."""
+    """Файлы raw.githubusercontent.com через urllib.request (см. докстринг
+    модуля): один запрос на файл, с одним повтором при обрыве соединения.
 
-    def __init__(self, pin: dict, *, factory=http.client.HTTPSConnection, context=None):
-        self.base = f"/{pin['repo']}/{pin['commit']}/skills/"
-        self.factory = factory
+    403/429 (rate limit) пробрасываются как есть — install_montage_skills.py
+    по коду HTTPError даёт понятное сообщение вместо трейсбека; обрыв чтения
+    посреди файла (http.client.HTTPException, например IncompleteRead) тоже
+    не должен ронять установщик, поэтому он тоже превращается в OSError."""
+
+    def __init__(self, pin: dict, *, opener=urllib.request.urlopen, context=None):
+        self.base = RAW_BASE.format(repo=pin["repo"], commit=pin["commit"])
+        self.opener = opener
         self.context = context or ssl_context()
-        self.connection = None
 
     def get(self, rel_path: str) -> bytes:
+        request = urllib.request.Request(self.base + urllib.parse.quote(rel_path),
+                                         headers={"User-Agent": HEADERS["User-Agent"]})
+        last_error = None
         for attempt in (1, 2):
-            if self.connection is None:
-                self.connection = self.factory(RAW_HOST, timeout=HTTP_TIMEOUT, context=self.context)
             try:
-                self.connection.request("GET", self.base + urllib.parse.quote(rel_path),
-                                        headers={"User-Agent": HEADERS["User-Agent"]})
-                response = self.connection.getresponse()
-                body = response.read()
-            except (OSError, http.client.HTTPException):
-                self.close()
-                if attempt == 2:
-                    raise
-                continue
-            if response.status != 200:
-                raise OSError(f"{RAW_HOST}: {rel_path} → HTTP {response.status}")
-            return body
-        raise OSError(f"{RAW_HOST}: {rel_path} не скачался")
+                with self.opener(request, timeout=HTTP_TIMEOUT, context=self.context) as response:
+                    return response.read()
+            except urllib.error.HTTPError as error:
+                if error.code in (403, 429):
+                    raise  # пусть install_montage_skills даст сообщение про rate limit
+                last_error = OSError(f"{RAW_HOST}: {rel_path} → HTTP {error.code}")
+            except urllib.error.URLError as error:
+                last_error = OSError(f"{RAW_HOST}: {rel_path} не скачался: {error.reason}")
+            except http.client.HTTPException as error:
+                last_error = OSError(f"{RAW_HOST}: {rel_path} — обрыв загрузки: {error}")
+        raise last_error
 
     def close(self) -> None:
-        if self.connection is not None:
-            self.connection.close()
-            self.connection = None
+        pass  # для симметрии с прежним интерфейсом; urlopen ничего не держит открытым
+
+
+def _sweep_stale(parent: Path, prefix: str) -> None:
+    """Убирает временные папки от прошлых оборванных закачек — только свои (по
+    префиксу) и только каталоги, ничего чужого не трогая."""
+
+    if not parent.is_dir():
+        return
+    for path in parent.glob(prefix + "*"):
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path, ignore_errors=True)
 
 
 def download_skills(pin: dict, dest: Path, *, tree=None, fetcher=None) -> None:
@@ -101,7 +120,8 @@ def download_skills(pin: dict, dest: Path, *, tree=None, fetcher=None) -> None:
     fetcher = RawFetcher(pin) if own else fetcher
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix=".download-", dir=str(dest.parent)))
+    _sweep_stale(dest.parent, DOWNLOAD_TEMP_PREFIX)
+    work = Path(tempfile.mkdtemp(prefix=DOWNLOAD_TEMP_PREFIX, dir=str(dest.parent)))
     try:
         for item in tree:
             data = fetcher.get(item["path"])

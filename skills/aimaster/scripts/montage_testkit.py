@@ -3,10 +3,12 @@ HyperFrames. Имя не test_* — unittest сам этот файл не за�
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _SCRIPTS = Path(__file__).resolve().parent
 _SKILL_ROOT = _SCRIPTS.parent
@@ -14,7 +16,20 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
+from studio.montage.engine import PREFIX_ENV  # noqa: E402
 from studio.platform_compat import find_program  # noqa: E402
+
+
+def isolate_hyperframes_dir(test: unittest.TestCase, root) -> None:
+    """Подменяет AIMASTER_HYPERFRAMES_DIR на пустую временную папку — иначе
+    `workspace init` (и любой другой вызов montage_report) читает настоящий
+    кеш HyperFrames пользователя: медленно, недетерминированно между машинами
+    и может скопировать реальные скиллы в тестовую рабочую папку (разбор 1/5,
+    находка 9). Звать в setUp до первого workspace init."""
+
+    patcher = mock.patch.dict(os.environ, {PREFIX_ENV: str(Path(root) / "неиспользуемый-hyperframes")})
+    patcher.start()
+    test.addCleanup(patcher.stop)
 
 
 def ffmpeg_or_skip() -> str:

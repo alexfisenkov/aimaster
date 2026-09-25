@@ -3,11 +3,18 @@
 монтажа (install_montage.py). npm запускается как `node <npm-cli.js> install
 --prefix <папка движка>`, браузер качает сам HyperFrames (`browser ensure`) в HOME
 движка; путь к нему пишется в aimaster-engine.json — иначе `browser path` молча
-отдал бы системный Chrome."""
+отдал бы системный Chrome.
+
+`install_missing` (--install-deps) ставит то, чего нет вовсе; `install_missing`
+или `update` (--update) переустанавливают на закреплённую версию то, что уже
+стоит, но разошлось с pin — pin в engine.json всегда источник истины (правило
+владельца 2026-09-25, разбор 1/5). `--update` один, без --install-deps, ничего
+не ставит с нуля на чистой машине."""
 
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,7 +27,7 @@ for _path in (str(_SCRIPTS), str(_SCRIPTS.parent)):
 import install  # noqa: E402
 from install_montage_node import item, npm_cli_js  # noqa: E402
 from studio.montage import engine  # noqa: E402
-from studio.montage.engine_cli import run_engine  # noqa: E402
+from studio.montage.engine_cli import default_runner, run_engine  # noqa: E402
 
 
 def _pinned(prefix: Path, pin: dict) -> bool:
@@ -28,15 +35,41 @@ def _pinned(prefix: Path, pin: dict) -> bool:
         and engine.package_version(prefix, "gsap") == pin["gsap_version"]
 
 
-def engine_install(node: str, prefix: Path, pin: dict, *, update: bool, run=None) -> dict:
-    """HyperFrames и GSAP (локальный файл для анимаций из скиллов HyperFrames) — одним npm."""
+def _npm_runner(argv, cwd=None, timeout=None, env=None):
+    """Как install._run, но при таймауте останавливает весь узел процессов npm
+    (POSIX: /bin/ps + SIGTERM/SIGKILL; Windows: taskkill /T /F), а не только
+    сам npm — иначе сборка нативных зависимостей оставляет висеть node."""
 
-    run = run or install._run
+    try:
+        proc = default_runner(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        decode = lambda raw: (raw or b"").decode("utf-8", errors="replace")  # noqa: E731
+        return install.TIMEOUT_CODE, decode(error.output), decode(error.stderr)
+    except OSError as error:
+        return 127, "", str(error)
+    decode = lambda raw: (raw or b"").decode("utf-8", errors="replace")  # noqa: E731
+    return proc.returncode, decode(proc.stdout), decode(proc.stderr)
+
+
+def engine_install(node: str, prefix: Path, pin: dict, *, install_missing: bool, update: bool,
+                   run=None) -> dict:
+    """HyperFrames и GSAP (локальный файл для анимаций из скиллов HyperFrames) — одним npm.
+
+    Ничего не стоит (`have is None`): ставит только с install_missing. Что-то
+    стоит, но разошлось с pin (версия HyperFrames или GSAP): чинит с
+    install_missing ИЛИ update — оба источника; pin всегда побеждает."""
+
+    run = run or _npm_runner
     have = engine.installed_version(prefix)
     if _pinned(prefix, pin):
         return item("found", version=have, path=str(prefix))
-    if have and have != pin["version"] and not update:
-        return item("found", f"стоит {have}, нужна {pin['version']}: запустите install.py --update",
+    if have is None:
+        if not install_missing:
+            return item("missing", "HyperFrames не установлен: поставить install.py --install-deps",
+                         path=str(prefix))
+    elif not (install_missing or update):
+        return item("found", f"стоит {have}, нужна {pin['version']}: запустите install.py --install-deps",
                      version=have, path=str(prefix))
     npm = npm_cli_js(node)
     if npm is None:
@@ -56,11 +89,21 @@ def engine_install(node: str, prefix: Path, pin: dict, *, update: bool, run=None
     return item("installed", version=engine.installed_version(prefix), path=str(prefix))
 
 
-def browser_install(node: str, prefix: Path, pin: dict, *, runner=None) -> dict:
+def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool, update: bool,
+                    runner=None) -> dict:
+    """Тот же принцип, что и у engine_install: ничего не скачано — только с
+    install_missing; скачан, но для другой версии pin — install_missing ИЛИ
+    update чинят, --update один на пустом месте ничего не качает."""
+
     record = engine.read_record(prefix)
-    if record.get("version") == pin["version"] and record.get("browser") \
-            and Path(record["browser"]).is_file():
+    have_browser = bool(record.get("browser")) and Path(record["browser"]).is_file()
+    if record.get("version") == pin["version"] and have_browser:
         return item("found", path=record["browser"])
+    if not have_browser and not install_missing:
+        return item("missing", "браузер для сборки не скачан: поставить install.py --install-deps")
+    if have_browser and not (install_missing or update):
+        return item("found", f"стоит браузер для версии {record.get('version')}, нужна {pin['version']}: "
+                     "запустите install.py --install-deps", path=record["browser"])
     eng = engine.Engine(node=node, script=engine.entry_script(prefix), prefix=Path(prefix),
                         version=pin["version"], browser=None)
     kwargs = {} if runner is None else {"runner": runner}
@@ -88,10 +131,10 @@ def check_package(prefix: Path, pin: dict) -> dict:
     if have is None:
         return item("missing", "поставить: install.py --install-deps", path=str(prefix))
     if have != pin["version"]:
-        return item("found", f"стоит {have}, нужна {pin['version']}: запустите install.py --update",
+        return item("found", f"стоит {have}, нужна {pin['version']}: запустите install.py --install-deps",
                      version=have, path=str(prefix))
     if engine.package_version(prefix, "gsap") != pin["gsap_version"]:
-        return item("found", "нет GSAP для анимаций: поставить install.py --install-deps",
+        return item("missing", "нет GSAP для анимаций: поставить install.py --install-deps",
                     version=have, path=str(prefix))
     return item("found", version=have, path=str(prefix))
 

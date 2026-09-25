@@ -2,10 +2,10 @@
 <ws>/.agents/skills/<имя> (Codex) — копией из кеша с пометкой «поставлено aimaster».
 
 Глобально (~/.claude/skills, ~/.agents/skills) не ставятся — решение владельца
-2026-09-25. Claude Code читает .claude/skills в папке запуска и выше до корня
-репозитория (code.claude.com/docs/en/skills), Codex — $CWD/.agents/skills и выше до
-корня репозитория (learn.chatgpt.com/docs/build-skills). Чужая папка с тем же именем
-не трогается (conflict); пересобирается только наша копия другой версии.
+2026-09-25: Claude Code читает .claude/skills в папке запуска и выше до корня
+репозитория, Codex — $CWD/.agents/skills так же. Чужая папка с тем же именем не
+трогается (conflict); пересобирается только наша копия другой версии. Рабочая
+папка не может быть самой домашней — тогда статус skipped_home, без записи.
 """
 
 from __future__ import annotations
@@ -20,6 +20,29 @@ from .engine import install_command
 from .skill_bundle import SKILL_MARKER, skills_cache, skills_pin, verify_skills
 
 AGENT_DIRS = ((".claude", "skills"), (".agents", "skills"))
+HOME_SKIP_MESSAGE = ("рабочая папка — домашняя, скиллы HyperFrames ставятся только в папку "
+                     "видеопроектов")
+
+
+def _would_write_into_home(workspace) -> bool:
+    """Рабочая папка — сама домашняя, либо <ws>/.claude или .agents ведёт (в
+    т.ч. симлинком) в настоящую глобальную папку агента."""
+
+    try:
+        home = Path.home().resolve()
+        resolved = Path(workspace).expanduser().resolve()
+    except OSError:
+        return False
+    if resolved == home:
+        return True
+    for parts in AGENT_DIRS:
+        try:
+            target_root = Path(workspace).expanduser().joinpath(*parts).resolve()
+        except OSError:
+            continue
+        if target_root == home.joinpath(*parts):
+            return True
+    return False
 
 
 def inspect_copy(target: Path, version: str) -> str:
@@ -38,10 +61,22 @@ def inspect_copy(target: Path, version: str) -> str:
     return "current" if marker.get("version") == version else "outdated"
 
 
+def _sweep_stale(parent: Path, name: str) -> None:
+    """Убирает временные папки от прошлых оборванных копий — только свои (по
+    префиксу «.<имя>-») и только каталоги, ничего чужого не трогая."""
+
+    if not parent.is_dir():
+        return
+    for path in parent.glob(f".{name}-*"):
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path, ignore_errors=True)
+
+
 def _copy(source: Path, target: Path, version: str) -> None:
     """Новая копия собирается рядом и встаёт на место; прежняя наша уходит только после."""
 
     target.parent.mkdir(parents=True, exist_ok=True)
+    _sweep_stale(target.parent, target.name)
     work = Path(tempfile.mkdtemp(prefix=f".{target.name}-", dir=str(target.parent)))
     try:
         fresh, old = work / "new", work / "old"
@@ -70,9 +105,11 @@ def _overall(statuses) -> str:
 
 def sync_workspace_skills(workspace, *, create=True, home=None, environ=None, pin=None) -> dict:
     pin = pin or skills_pin()
-    source_root = skills_cache(home=home, environ=environ, pin=pin)
     names = sorted(pin["bundles"])
     base = {"version": pin["tag"], "names": names, "items": [], "message": ""}
+    if _would_write_into_home(workspace):
+        return {**base, "status": "skipped_home", "message": HOME_SKIP_MESSAGE}
+    source_root = skills_cache(home=home, environ=environ, pin=pin)
     if verify_skills(source_root, pin):
         return {**base, "status": "missing",
                 "message": f"скиллы HyperFrames не скачаны; поставить: {install_command()}"}

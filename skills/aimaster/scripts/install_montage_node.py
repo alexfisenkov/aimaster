@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -35,7 +36,12 @@ def node_check(kind: str, install_missing: bool) -> dict:
     if node and major and major >= wanted:
         return item("found", path=node, version=major)
     command = NODE_INSTALL[kind]
-    why = "не найден" if not node else f"версии {major}, нужна {wanted}+"
+    if not node:
+        why = "не найден"
+    elif major is None:
+        why = f"версию не удалось определить, нужна {wanted}+"
+    else:
+        why = f"версии {major}, нужна {wanted}+"
     if not install_missing:
         return item("missing", f"Node.js {why}; поставить: {command}", path=node,
                      version=major, install_cmd=command)
@@ -54,15 +60,35 @@ def node_check(kind: str, install_missing: bool) -> dict:
                  f"терминал и повторите или поставьте вручную: {command}", install_cmd=command)
 
 
-def npm_cli_js(node: str) -> Path | None:
-    """npm-cli.js рядом с этим Node: Windows, tar.gz/nvm/setup-node, Homebrew."""
+def _real_node(node: str, *, run=subprocess.run) -> str:
+    """Спрашивает у самого Node, где лежит его исполняемый файл — обходит шимы
+    менеджеров версий (asdf, Volta, Scoop): это не символические ссылки, а
+    маленькие скрипты/лаунчеры, которые os.path.realpath не раскрывает.
+    Если node недоступен или не сумел ответить — возвращает исходный путь."""
 
+    try:
+        proc = run([node, "-p", "process.execPath"], stdin=subprocess.DEVNULL,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return node
+    if proc.returncode != 0:
+        return node
+    lines = (proc.stdout or b"").decode("utf-8", errors="replace").strip().splitlines()
+    return lines[-1].strip() if lines and lines[-1].strip() else node
+
+
+def npm_cli_js(node: str, *, run=subprocess.run) -> Path | None:
+    """npm-cli.js рядом с этим Node: Windows, tar.gz/nvm/setup-node, Homebrew,
+    а через _real_node — и через шимы asdf/Volta/Scoop."""
+
+    resolved = _real_node(node, run=run)
     here = Path(node).parent
-    real = Path(os.path.realpath(node)).parent
+    real = Path(os.path.realpath(resolved)).parent
     tail = Path("node_modules") / "npm" / "bin" / "npm-cli.js"
-    candidates = [here / tail, real.parent / "lib" / tail, here.parent / "lib" / tail]
+    candidates = [here / tail, real.parent / "lib" / tail, here.parent / "lib" / tail,
+                  real / tail, real.parent / tail]
     for npm in (here / "npm", real / "npm"):
-        resolved = Path(os.path.realpath(npm))
-        if resolved.suffix == ".js":
-            candidates.append(resolved)
+        candidate = Path(os.path.realpath(npm))
+        if candidate.suffix == ".js":
+            candidates.append(candidate)
     return next((path for path in candidates if path.is_file()), None)

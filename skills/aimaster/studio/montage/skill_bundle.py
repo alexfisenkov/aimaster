@@ -27,6 +27,18 @@ def skills_cache(*, home=None, environ=None, pin=None) -> Path:
     return tools_prefix(home=home, environ=environ).parent / "hyperframes-skills" / pin["tag"]
 
 
+def any_skills_cached(*, home=None, environ=None, pin=None) -> bool:
+    """True, если под hyperframes-skills/ уже что-то стоит — для любого тега,
+    не только закреплённого сейчас. Сигнал «скиллы раньше уже ставили»: им
+    пользуется --update один (без --install-deps), чтобы не тянуть скиллы с
+    нуля на чистой машине, а только перекладывать уже стоящие на новый тег."""
+
+    cache_root = skills_cache(home=home, environ=environ, pin=pin).parent
+    if not cache_root.is_dir():
+        return False
+    return any(child.is_dir() for child in cache_root.iterdir())
+
+
 def bundle_hash(skill_dir: Path) -> tuple[str, int]:
     """(хэш, число файлов) как у `hyperframes skills check`; пометка aimaster не считается."""
 
@@ -45,12 +57,19 @@ def bundle_hash(skill_dir: Path) -> tuple[str, int]:
 
 
 def verify_skills(root: Path, pin: dict) -> list[str]:
-    """Имена скиллов, которых нет в root или чей хэш не совпал с выпуском."""
+    """Имена скиллов, которых нет в root или чей хэш не совпал с выпуском.
+
+    Никогда не бросает исключение: повреждённый (не-UTF-8) файл или файл без
+    прав на чтение — тоже «скилл не совпал», а не падение установщика."""
 
     broken = []
     for name, expected in sorted(pin["bundles"].items()):
         folder = Path(root) / name
-        if not (folder / "SKILL.md").is_file() \
-                or bundle_hash(folder) != (expected["hash"], expected["files"]):
+        try:
+            ok = (folder / "SKILL.md").is_file() \
+                and bundle_hash(folder) == (expected["hash"], expected["files"])
+        except (OSError, ValueError):
+            ok = False
+        if not ok:
             broken.append(name)
     return broken

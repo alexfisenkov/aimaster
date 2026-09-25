@@ -101,6 +101,69 @@ class WorkspaceSkillsTests(unittest.TestCase):
         self.assertEqual(result["hyperframes_skills"]["status"], "missing")
         self.assertIn("--install-deps", result["hyperframes_skills"]["message"])
 
+    def test_stale_copy_temp_dirs_are_swept_before_a_new_copy(self):
+        """Разбор 1/5, находка 11: мусор от оборванной прошлой копии убирается."""
+
+        claude_skills = self.ws / ".claude" / "skills"
+        stale = claude_skills / ".demo-oldjunk"
+        stale.mkdir(parents=True)
+        (stale / "leftover.txt").write_text("мусор", encoding="utf-8")
+        keep = claude_skills / "not-a-temp-dir"
+        keep.mkdir(parents=True)
+        self.sync()
+        self.assertFalse(stale.exists())
+        self.assertTrue(keep.exists())
+
+
+class HomeGuardTests(unittest.TestCase):
+    """Разбор 1/5, находка 4: рабочая папка не может быть домашней."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.base = Path(temp.name).resolve()
+        patcher = mock.patch.dict(os.environ, {engine.PREFIX_ENV: str(self.base / "tools" / "hyperframes")})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.cache = self.base / "tools" / "hyperframes-skills" / "v9.9.9"
+        for rel, data in FILES.items():
+            (self.cache / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.cache / rel).write_bytes(data)
+        self.fake_home = self.base / "домашняя папка"
+        self.fake_home.mkdir()
+
+    def test_workspace_equal_to_home_is_skipped_not_written(self):
+        with mock.patch("pathlib.Path.home", return_value=self.fake_home):
+            report = workspace_skills.sync_workspace_skills(self.fake_home, pin=PIN)
+        self.assertEqual(report["status"], "skipped_home")
+        self.assertEqual(report["items"], [])
+        self.assertFalse((self.fake_home / ".claude").exists())
+        self.assertFalse((self.fake_home / ".agents").exists())
+
+    def test_workspace_equal_to_home_is_skipped_even_in_read_only_check(self):
+        with mock.patch("pathlib.Path.home", return_value=self.fake_home):
+            report = workspace_skills.sync_workspace_skills(self.fake_home, pin=PIN, create=False)
+        self.assertEqual(report["status"], "skipped_home")
+
+    def test_agent_dir_symlinked_into_home_is_also_skipped(self):
+        other_ws = self.base / "другая рабочая папка"
+        other_ws.mkdir()
+        (self.fake_home / ".claude").mkdir(parents=True)
+        try:
+            os.symlink(self.fake_home / ".claude", other_ws / ".claude", target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("символические ссылки недоступны")
+        with mock.patch("pathlib.Path.home", return_value=self.fake_home):
+            report = workspace_skills.sync_workspace_skills(other_ws, pin=PIN)
+        self.assertEqual(report["status"], "skipped_home")
+
+    def test_ordinary_workspace_is_unaffected_by_the_guard(self):
+        ws = self.base / "обычная рабочая папка"
+        ws.mkdir()
+        with mock.patch("pathlib.Path.home", return_value=self.fake_home):
+            report = workspace_skills.sync_workspace_skills(ws, pin=PIN)
+        self.assertEqual(report["status"], "installed")
+
 
 if __name__ == "__main__":
     unittest.main()

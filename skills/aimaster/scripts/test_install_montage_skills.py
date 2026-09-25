@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import os
@@ -52,6 +53,19 @@ class FakeFetcher:
         pass
 
 
+class BrokenFetcher:
+    """Отдаёт разрыв соединения посреди файла — как IncompleteRead у http.client."""
+
+    def __init__(self, error=None):
+        self.error = error or http.client.IncompleteRead(b"partial")
+
+    def get(self, rel_path):
+        raise self.error
+
+    def close(self):
+        pass
+
+
 class _Temp(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -81,6 +95,21 @@ class HashTests(_Temp):
         py_lf = dict(FILES, **{"demo/scripts/run.py": b"print(1)\n"})
         root = self.write(self.base / "py", py_lf)
         self.assertNotEqual(bundle_hash(root / "demo")[0], "82e2a555abf32641")
+
+
+class ResilientVerifyTests(_Temp):
+    """Разбор 1/5, находка 1: повреждённый кеш — статус, не трейсбек."""
+
+    def test_non_utf8_cache_file_is_broken_not_a_crash(self):
+        root = self.write(self.base / "skills")
+        (root / "demo" / "SKILL.md").write_bytes(b"\xff\xfe\x00bad")
+        self.assertEqual(verify_skills(root, PIN), ["demo"])
+
+    def test_unreadable_cache_file_is_broken_not_a_crash(self):
+        root = self.write(self.base / "skills")
+        with mock.patch("pathlib.Path.read_bytes", side_effect=PermissionError("нет доступа")):
+            result = verify_skills(root, PIN)
+        self.assertEqual(sorted(result), ["demo", "other"])
 
 
 class TreeTests(unittest.TestCase):
@@ -122,6 +151,53 @@ class SslTests(unittest.TestCase):
         fake.load_verify_locations.assert_not_called()
 
 
+class RawFetcherTests(unittest.TestCase):
+    """Разбор 1/5, находки 1 и 10: urllib.request вместо самодельного
+    http.client (уважает HTTPS_PROXY/редиректы), обрыв не роняет установщик."""
+
+    def _response(self, body):
+        class Response(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+        return Response(body)
+
+    def test_uses_urllib_request_opener_like_the_tree_fetch(self):
+        calls = []
+
+        def opener(request, timeout=None, context=None):
+            calls.append(request.full_url)
+            return self._response(b"hello")
+
+        fetcher = fetch.RawFetcher(PIN, opener=opener)
+        self.assertEqual(fetcher.get("demo/SKILL.md"), b"hello")
+        self.assertEqual(calls, [fetcher.base + "demo/SKILL.md"])
+
+    def test_rate_limit_status_is_propagated_as_http_error(self):
+        def opener(request, timeout=None, context=None):
+            raise fetch.urllib.error.HTTPError(request.full_url, 403, "rate limit", {}, io.BytesIO())
+
+        fetcher = fetch.RawFetcher(PIN, opener=opener)
+        with self.assertRaises(fetch.urllib.error.HTTPError) as caught:
+            fetcher.get("demo/SKILL.md")
+        self.assertEqual(caught.exception.code, 403)
+        caught.exception.close()  # HTTPError носит tempfile-обёртку — иначе ResourceWarning
+
+    def test_incomplete_read_is_retried_then_wrapped_as_oserror(self):
+        attempts = []
+
+        def opener(request, timeout=None, context=None):
+            attempts.append(1)
+            raise http.client.IncompleteRead(b"")
+
+        fetcher = fetch.RawFetcher(PIN, opener=opener)
+        with self.assertRaises(OSError):
+            fetcher.get("demo/SKILL.md")
+        self.assertEqual(len(attempts), 2)  # один повтор, как раньше у http.client-версии
+
+
 class DownloadTests(_Temp):
     def test_download_verifies_and_places_the_bundle(self):
         dest = self.base / "hyperframes-skills" / "v9.9.9"
@@ -145,6 +221,19 @@ class DownloadTests(_Temp):
             fetch.download_skills(pin, self.base / "d", tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
         self.assertIn("demo", str(caught.exception))
 
+    def test_stale_download_dirs_are_swept_before_a_new_download(self):
+        """Разбор 1/5, находка 11: мусор от оборванной прошлой закачки убирается."""
+
+        dest = self.base / "hyperframes-skills" / "v9.9.9"
+        stale = dest.parent / ".download-oldjunk"
+        stale.mkdir(parents=True)
+        (stale / "leftover.txt").write_text("мусор", encoding="utf-8")
+        keep = dest.parent / "not-a-download-dir"
+        keep.mkdir(parents=True)
+        fetch.download_skills(PIN, dest, tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
+        self.assertFalse(stale.exists())
+        self.assertTrue(keep.exists())
+
 
 class ReportTests(_Temp):
     def setUp(self):
@@ -156,23 +245,57 @@ class ReportTests(_Temp):
 
     def test_check_only_never_downloads(self):
         fetcher = FakeFetcher({})
-        report = skills.skills_report(act=False, pin=PIN, tree=[], fetcher=fetcher)
+        report = skills.skills_report(install_missing=False, update=False, pin=PIN, tree=[],
+                                      fetcher=fetcher)
         self.assertEqual((report["status"], report["path"]), ("missing", str(self.cache)))
         self.assertEqual(fetcher.gets, [])
 
-    def test_act_downloads_into_the_cache_then_finds_it(self):
-        report = skills.skills_report(act=True, pin=PIN, tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
+    def test_install_deps_downloads_into_the_cache_then_finds_it(self):
+        report = skills.skills_report(install_missing=True, update=False, pin=PIN,
+                                      tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
         self.assertEqual((report["status"], report["version"]), ("installed", "v9.9.9"))
         self.assertEqual(verify_skills(self.cache, PIN), [])
-        again = skills.skills_report(act=True, pin=PIN, tree=[], fetcher=FakeFetcher({}))
+        again = skills.skills_report(install_missing=True, update=False, pin=PIN, tree=[],
+                                     fetcher=FakeFetcher({}))
         self.assertEqual(again["status"], "found")
 
+    def test_update_alone_does_not_download_on_a_clean_machine(self):
+        """Разбор 1/5, находка 2."""
+
+        fetcher = FakeFetcher({})
+        report = skills.skills_report(install_missing=False, update=True, pin=PIN, tree=[],
+                                      fetcher=fetcher)
+        self.assertEqual(report["status"], "missing")
+        self.assertIn("--install-deps", report["message"])
+        self.assertEqual(fetcher.gets, [])
+
+    def test_update_alone_moves_a_previously_installed_cache_to_the_pinned_tag(self):
+        old_tag_dir = self.cache.parent / "v9.9.8"
+        old_tag_dir.mkdir(parents=True)
+        (old_tag_dir / "marker").write_text("старый тег когда-то ставили", encoding="utf-8")
+        report = skills.skills_report(install_missing=False, update=True, pin=PIN,
+                                      tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
+        self.assertEqual(report["status"], "installed")
+        self.assertEqual(verify_skills(self.cache, PIN), [])
+
     def test_rate_limit_message(self):
-        error = skills.urllib.error.HTTPError("https://api.github.com", 403, "rate limit", {}, None)
-        with mock.patch.object(skills, "download_skills", side_effect=error):
-            report = skills.skills_report(act=True, pin=PIN)
+        error = skills.urllib.error.HTTPError("https://api.github.com", 403, "rate limit", {},
+                                              io.BytesIO())
+        try:
+            with mock.patch.object(skills, "download_skills", side_effect=error):
+                report = skills.skills_report(install_missing=True, update=False, pin=PIN)
+        finally:
+            error.close()  # HTTPError носит tempfile-обёртку — иначе ResourceWarning
         self.assertEqual(report["status"], "failed")
         self.assertIn("через час", report["message"])
+
+    def test_incomplete_read_mid_download_becomes_a_failed_status_not_a_crash(self):
+        """Разбор 1/5, находка 1: IncompleteRead не должен ронять установщик."""
+
+        report = skills.skills_report(install_missing=True, update=False, pin=PIN,
+                                      tree=tree_for(FILES), fetcher=BrokenFetcher())
+        self.assertEqual(report["status"], "failed")
+        self.assertTrue(report["message"])
 
 
 if __name__ == "__main__":
