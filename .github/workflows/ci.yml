@@ -120,6 +120,32 @@ jobs:
             choco install googlechrome -y --no-progress
           }
 
+      - name: H2 experiment — does chrome.exe --version print at all on Windows? (Windows)
+        # round 2/5, владелец: проверить прямым прогоном, а не только чтением
+        # кода, действительно ли `chrome.exe --version` не отвечает за 5 с —
+        # HyperFrames именно так и решил, что «Chrome cannot start». Пишем
+        # прямо, не через HyperFrames — свой замер с запасом 10 с, джоб не
+        # ломаем в любом случае (снять шаг после round 2/5, когда решение по
+        # H2 принято и попало в install_montage_browser.py или ci.yml).
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $chrome = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+          Write-Host "Пробую $chrome --version с запасом 10 с..."
+          $started = Get-Date
+          $proc = Start-Process -FilePath $chrome -ArgumentList "--version" -NoNewWindow -PassThru `
+            -RedirectStandardOutput "chrome-version-out.txt" -RedirectStandardError "chrome-version-err.txt"
+          $finished = $proc.WaitForExit(10000)
+          $elapsed = (Get-Date) - $started
+          if ($finished) {
+            Write-Host "ОТВЕТИЛ за $($elapsed.TotalSeconds) с, код $($proc.ExitCode)"
+          } else {
+            Write-Host "НЕ ОТВЕТИЛ за 10 с — убиваю процесс"
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+          Write-Host "stdout: $(Get-Content chrome-version-out.txt -Raw -ErrorAction SilentlyContinue)"
+          Write-Host "stderr: $(Get-Content chrome-version-err.txt -Raw -ErrorAction SilentlyContinue)"
+
       - name: Install pinned HyperFrames, render browser and skills
         shell: bash
         env:
@@ -137,3 +163,50 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo unshare --net -- bash -c "ip link set lo up && exec setpriv --reuid=$(id -u) --regid=$(id -g) --init-groups env PATH=\"$PATH\" HOME=\"$HOME\" PYTHONUTF8=1 python skills/aimaster/scripts/montage_ci_check.py --json --offline"
+
+  # ВРЕМЕННЫЙ диагностический джоб — round 2/5, проверка H1 (владелец,
+  # 2026-09-25): «пустая версийная папка chrome-headless-shell на Windows —
+  # проблема не-ASCII пути, а не скачивания». `AIMASTER_HYPERFRAMES_DIR`
+  # подменяет весь префикс движка (studio/montage/engine.py::tools_prefix);
+  # вариант ascii даёт чистый путь без кириллицы и пробела, вариант cyrillic
+  # не трогает переменную — префикс движка ровно тот, что в проде («AI
+  # Мастерская»). HYPERFRAMES_BROWSER_PATH здесь НЕ задаём (в отличие от
+  # montage-engine) — иначе ensure/path вообще не дойдут до распаковки.
+  # Снять этот джоб после round 2/5, когда гипотеза подтверждена или
+  # опровергнута и продуктовый код (если H1) переехал в install_montage_*.
+  h1-nonascii-path-experiment:
+    name: H1 experiment · ${{ matrix.variant }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [ascii, cyrillic]
+    env:
+      PYTHONUTF8: "1"
+      AIMASTER_HYPERFRAMES_DIR: ${{ matrix.variant == 'ascii' && 'C:\hf-ascii' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: FFmpeg
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Install pinned HyperFrames, render browser and skills (no browser override)
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python skills/aimaster/scripts/install_montage.py --json > montage-install.json || true
+          cat montage-install.json
+          python -c "import json,sys; r=json.load(open('montage-install.json',encoding='utf-8')); sys.exit(0 if r['browser']['status'] in ('found','installed') else 1)"
+
+      - name: Render a 3-second clip, ffprobe, no external URLs, no network traces
+        run: python skills/aimaster/scripts/montage_ci_check.py --json
