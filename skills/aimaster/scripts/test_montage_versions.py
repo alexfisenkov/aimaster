@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -88,6 +90,41 @@ class VersionsTests(unittest.TestCase):
         self.assertFalse(has_unrendered_changes("h1", meta("v001", model_hash="h1")))
         self.assertTrue(has_unrendered_changes("h2", meta("v001", model_hash="h1")))
         self.assertTrue(has_unrendered_changes("h1", None))
+
+    def test_parallel_build_of_the_same_version_is_refused(self):
+        # Round-fix-1/5, item 2а: check-then-act («есть? снести, создать»)
+        # давал окно гонки — теперь резервация одним mkdir.
+        stage_version(self.paths, meta("v002"), MODEL)  # никто не опубликовал — «сборка ещё идёт»
+        with self.assertRaises(MontageError) as caught:
+            stage_version(self.paths, meta("v002"), MODEL)
+        self.assertIn("уже идёт", str(caught.exception))
+
+    def test_stale_staging_is_swept_and_replaced(self):
+        staging = stage_version(self.paths, meta("v002"), MODEL)
+        old = time.time() - 3700
+        os.utime(staging, (old, old))
+        fresh = stage_version(self.paths, meta("v002"), MODEL)
+        self.assertTrue(fresh.is_dir())
+        self.assertTrue((fresh / "meta.json").is_file())
+
+    def test_next_version_id_accounts_for_state_and_staging(self):
+        # Round-fix-1/5, item 2б: диск может отстать от state (снимок ещё не
+        # опубликован, но state уже знает о версии) — счётчик не должен застревать.
+        self.publish("v001")
+        self.publish("v002")
+        self.assertEqual(next_version_id(self.paths, recorded_ids=["v003"]), "v004")
+        (self.paths.versions / ".v005.staging").mkdir()
+        self.assertEqual(next_version_id(self.paths), "v006")
+
+    def test_restore_does_not_collide_on_a_fixed_temp_name(self):
+        # Round-fix-1/5, item 11: временное имя — mkstemp, не фиксированное
+        # ".index.restore.tmp"; два восстановления подряд не должны спотыкаться
+        # друг о друга или оставлять after себя фиксированное имя.
+        self.publish("v001")
+        restore_files(self.paths, "v001")
+        restore_files(self.paths, "v001")
+        self.assertFalse((self.paths.current / ".index.restore.tmp").exists())
+        self.assertEqual(self.paths.index.read_text(encoding="utf-8"), "<html>v1</html>")
 
 
 if __name__ == "__main__":
