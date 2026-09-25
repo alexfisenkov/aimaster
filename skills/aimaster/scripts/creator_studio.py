@@ -19,6 +19,10 @@ applies — both now enter `studio.chat_decisions` and then
 repair) is chat's own door onto an independent scene-description `edit`, gated by the same
 `allowed_actions` the dashboard's own `edit` decision runs through — see
 `studio/authoring_scenes.py`'s `edit_scene_block`.
+
+`montage draft|status|diff|edit|render|restore|gsap|open|close` (spec 2026-09-25)
+is the HyperFrames montage of video/mixed projects — see
+`skills/aimaster/scripts/creator_studio_montage.py` and `references/montage.md`.
 """
 
 import argparse
@@ -57,6 +61,8 @@ from studio.workspace import WorkspaceError  # noqa: E402
 from studio.autopilot import AUTOPILOT_NOTICE, stop_autopilot_spending  # noqa: E402
 from studio.library_projects import materialize as materialize_library_entry  # noqa: E402
 from creator_studio_workspace import add_workspace_subcommands  # noqa: E402
+from creator_studio_montage import add_montage_subcommands  # noqa: E402
+from studio.montage import MontageError  # noqa: E402
 
 
 def command_serve(args):
@@ -695,6 +701,7 @@ def build_parser():
     _add_mode_subcommands(subparsers)
     _add_decision_subcommands(subparsers)
     add_workspace_subcommands(subparsers)
+    add_montage_subcommands(subparsers)
 
     return parser
 
@@ -1241,6 +1248,7 @@ def main():
         # must satisfy.
         AssetError,
         QuestionError,
+        MontageError,
     ) as error:
         print(f"{parser.prog}: error: {error}", file=sys.stderr)
         raise SystemExit(DOMAIN_ERROR_EXIT_CODE)
