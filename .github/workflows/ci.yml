@@ -61,3 +61,51 @@ jobs:
         env:
           PYTHONUTF8: "0"
         run: python skills/aimaster/scripts/smoke_clean_machine.py
+
+  montage-engine:
+    name: montage · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Install pinned HyperFrames, render browser and skills
+        shell: bash
+        run: |
+          python skills/aimaster/scripts/install_montage.py --json > montage-install.json || true
+          cat montage-install.json
+          python -c "import json,sys; r=json.load(open('montage-install.json',encoding='utf-8')); sys.exit(0 if r['ok'] and r['skills']['status'] in ('found', 'installed') else 1)"
+
+      - name: Render a 3-second clip, ffprobe, no external URLs, no network traces
+        run: python skills/aimaster/scripts/montage_ci_check.py --json
+
+      - name: Render without network (Linux, empty network namespace)
+        if: runner.os == 'Linux'
+        run: |
+          sudo unshare --net -- bash -c "ip link set lo up && exec setpriv --reuid=$(id -u) --regid=$(id -g) --init-groups env PATH=\"$PATH\" HOME=\"$HOME\" PYTHONUTF8=1 python skills/aimaster/scripts/montage_ci_check.py --json --offline"
