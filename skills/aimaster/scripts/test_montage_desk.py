@@ -54,7 +54,7 @@ class _Draft(unittest.TestCase):
 
 class DeskUnitTests(_Draft):
     def popen_ready(self, argv, url_host="127.0.0.1", **kwargs):
-        self.argv, self.cwd = argv, kwargs["cwd"]
+        self.argv, self.cwd, self.env = argv, kwargs["cwd"], kwargs["env"]
         port = int(argv[argv.index("--port") + 1])
         line = {"ok": True, "result": {"port": port, "ready": True,
                                        "studioUrl": f"http://{url_host}:{port}/#project/current"}}
@@ -72,6 +72,7 @@ class DeskUnitTests(_Draft):
         self.assertTrue(first["url"].startswith("http://127.0.0.1:"))
         self.assertEqual(self.argv[2:7], ["preview", ".", "--foreground", "--json", "--no-open"])
         self.assertEqual(Path(self.cwd), self.paths.current)
+        self.assertEqual(self.env["PWD"], str(self.paths.current))  # иначе Studio: #project/<чужая папка>
         self.assertEqual(json.loads(self.paths.desk_file.read_text(encoding="utf-8"))["pid"], 4242)
         second = self.desk(lambda *a, **k: self.fail("второй процесс не нужен")).open(self.paths)
         self.assertEqual((second["url"], second["pid"]), (first["url"], 4242))

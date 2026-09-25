@@ -46,9 +46,14 @@ def frames_cache(engine: Engine) -> Path:
     return Path(engine.prefix) / "cache" / "frames"
 
 
-def engine_env(engine: Engine, base: Mapping[str, str] | None = None) -> dict[str, str]:
+def engine_env(engine: Engine, base: Mapping[str, str] | None = None, *,
+               cwd: Path | None = None) -> dict[str, str]:
     env = dict(os.environ if base is None else base)
     env.update(QUIET_FLAGS)
+    if cwd is not None:
+        # `preview .` 0.8.75 называет проект по basename($PWD): PWD вызывающего
+        # дал бы Studio адрес «#project/<его папка>» вместо папки монтажа.
+        env["PWD"] = str(cwd)
     env["HOME"] = str(engine_home(engine))
     if IS_WINDOWS:
         env["USERPROFILE"] = env["HOME"]
@@ -122,7 +127,7 @@ def run_engine(engine: Engine, args: Sequence[str], *, cwd: Path, timeout: float
                runner=default_runner) -> EngineResult:
     engine_home(engine).mkdir(parents=True, exist_ok=True)
     try:
-        proc = runner(argv_for(engine, args), cwd=str(cwd), env=engine_env(engine),
+        proc = runner(argv_for(engine, args), cwd=str(cwd), env=engine_env(engine, cwd=cwd),
                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                       stderr=subprocess.PIPE, timeout=timeout)
     except subprocess.TimeoutExpired as error:
@@ -179,7 +184,7 @@ def popen_engine(engine: Engine, args: Sequence[str], *, cwd: Path, log_path: Pa
     Path(log_path).parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "wb") as log:
         try:
-            return popen(argv_for(engine, args), cwd=str(cwd), env=engine_env(engine),
+            return popen(argv_for(engine, args), cwd=str(cwd), env=engine_env(engine, cwd=cwd),
                          stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                          **group_kwargs())
         except OSError as error:

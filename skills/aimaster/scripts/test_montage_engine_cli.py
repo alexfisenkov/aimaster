@@ -117,6 +117,19 @@ class RunTests(unittest.TestCase):
         self.assertEqual(payload, {"ok": True})
         self.assertTrue((self.base / "home").is_dir())
 
+    def test_pwd_follows_the_working_folder_not_the_caller(self):
+        # HyperFrames 0.8.75 `preview .` называет проект по basename($PWD):
+        # унаследованный PWD вызывающего дал бы Studio адрес чужой папки.
+        run = FakeRun(stdout=b'{"ok": true}')
+        with mock.patch.dict(os.environ, {"PWD": "/где-то/ещё"}):
+            engine_cli.run_engine_json(self.engine, ["lint", ".", "--json"], cwd=self.base,
+                                       timeout=5, runner=run)
+            popen = mock.Mock()
+            engine_cli.popen_engine(self.engine, ["preview", "."], cwd=self.base,
+                                    log_path=self.base / "logs" / "desk.log", popen=popen)
+        self.assertEqual(run.calls[0][1]["env"]["PWD"], str(self.base))
+        self.assertEqual(popen.call_args.kwargs["env"]["PWD"], str(self.base))
+
     def test_refusal_json_on_stderr_becomes_message(self):
         run = FakeRun(code=2, stderr=b'{"ok": false, "reason": "#s1 would overlap #s2 at 1-6",'
                                      b' "fix": "pass --overwrite or move the named neighbour"}')
