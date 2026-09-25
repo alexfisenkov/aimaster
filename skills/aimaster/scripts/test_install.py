@@ -21,8 +21,17 @@ if str(_SCRIPTS) not in sys.path:
 
 import install  # noqa: E402
 import install_montage_engine  # noqa: E402
+import install_montage_node  # noqa: E402
 
 _REAL_SYMLINK = os.symlink
+
+
+def _linux_without_node():
+    """Настоящий ответ node_check на Linux без Node.js при --install-deps —
+    не переписанная от руки строка, которая молча устаревает (разбор 4/5,
+    находка 4: в тестах жила старая подсказка без npm)."""
+    with mock.patch.object(install_montage_node.engine, "find_node", return_value=None):
+        return install_montage_node.node_check("linux", True)
 
 
 def _can_symlink(base: Path) -> bool:
@@ -115,12 +124,11 @@ class InstallTests(_TempInstall, unittest.TestCase):
         """Разбор 1/5, находка 3: без Node.js next_steps называет реальный
         затор, а не слепо повторяет --install-deps."""
 
-        self.montage.return_value = {"ok": False, "node": {"status": "missing",
-            "message": "Node.js не найден; поставить: sudo apt install nodejs. в apt часто Node.js "
-                       "старее 22 — тогда поставьте 22+ по инструкции https://nodejs.org/en/download"}}
+        self.montage.return_value = {"ok": False, "node": _linux_without_node()}
         code, report = self.run_install("--install-deps")
         text = " ".join(report["next_steps"])
         self.assertIn("nodejs.org", text)
+        self.assertIn(install_montage_node.NODE_INSTALL["linux"], text)
         self.assertNotIn("повторите: install.py --install-deps", text)
 
     def test_montage_crash_does_not_block_the_rest_of_the_report(self):
@@ -632,10 +640,9 @@ class MontageNextStepTests(unittest.TestCase):
     """Разбор 1/5, находка 3: next_steps называет реальный затор."""
 
     def test_node_blocker_is_named_directly_not_install_deps(self):
-        text = install._montage_next_step({"ok": False, "node": {"status": "missing",
-            "message": "Node.js не найден; поставить: sudo apt install nodejs. в apt часто Node.js "
-                       "старее 22 — тогда поставьте 22+ по инструкции https://nodejs.org/en/download"}})
+        text = install._montage_next_step({"ok": False, "node": _linux_without_node()})
         self.assertIn("nodejs.org", text)
+        self.assertIn(install_montage_node.NODE_INSTALL["linux"], text)
         self.assertNotIn("--install-deps", text)
 
     def test_ready_node_suggests_install_deps_for_the_rest(self):
@@ -700,7 +707,8 @@ class MontageImportFailureTests(unittest.TestCase):
     def test_text_output_survives_a_broken_montage_import(self):
         with mock.patch.dict(sys.modules, {"install_montage": None}):
             code, text = self.run_install()
-        self.assertIn("Монтаж", text)  # что-то про монтаж напечаталось, не трейсбек
+        # именно строка предохранителя render_text, а не любое слово «Монтаж»
+        self.assertIn("Монтаж (HyperFrames): не удалось показать раздел", text)
         self.assertNotIn("Traceback", text)
 
     def test_json_output_survives_a_broken_montage_import(self):

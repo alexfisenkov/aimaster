@@ -559,10 +559,14 @@ class ReportTests(unittest.TestCase):
         self.assertIn("      поставить: brew install node", lines)
 
     def test_text_lines_do_not_duplicate_an_already_embedded_install_cmd(self):
-        lines = install_montage.render_montage_lines({"ok": False, "node": {
-            "status": "missing", "message": "поставьте вручную: sudo apt install nodejs.",
-            "install_cmd": "sudo apt install nodejs"}})
-        self.assertEqual(sum(1 for line in lines if "sudo apt install nodejs" in line), 1)
+        # настоящий ответ node_check на Linux с --install-deps, не строка от руки
+        # (разбор 4/5, находка 4): команда уже внутри message
+        with mock.patch.object(engine, "find_node", return_value=None):
+            node = install_montage_node.node_check("linux", True)
+        command = install_montage_node.NODE_INSTALL["linux"]
+        self.assertEqual(node["install_cmd"], command)
+        lines = install_montage.render_montage_lines({"ok": False, "node": node})
+        self.assertEqual(sum(1 for line in lines if command in line), 1)
 
 
 class UpdateHelpTextTests(unittest.TestCase):
