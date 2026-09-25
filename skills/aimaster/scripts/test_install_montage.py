@@ -409,6 +409,23 @@ class BrowserInstallTests(unittest.TestCase):
         self.assertIn("файла нет на диске", item["message"])
         self.assertIn("decoy.txt", item["message"])
 
+    def test_missing_file_reports_the_first_existing_ancestor(self):
+        """Дословно наблюдаемое на CI windows-latest (run 36133902583): не
+        только файла нет, а WinError 3 — не читается даже родительская папка
+        («chrome-headless-shell-win64»). Диагностика идёт вверх по пути и
+        называет первый уровень, который реально есть на диске."""
+
+        chrome_root = self.prefix / "home" / ".cache" / "hyperframes" / "chrome"
+        chrome_root.mkdir(parents=True, exist_ok=True)
+        missing = chrome_root / "win64-152.0.7977.30" / "chrome-headless-shell-win64" \
+            / "chrome-headless-shell.exe"
+        item = self.call("/usr/bin/node", self.prefix, PIN,
+                         install_missing=True, update=False,
+                         runner=self.runner(str(missing)))
+        self.assertEqual(item["status"], "failed")
+        self.assertIn(f"первый существующий уровень: {chrome_root}", item["message"])
+        self.assertIn("win64-152.0.7977.30", item["message"])
+
     def test_transient_missing_file_recovers_on_retry(self):
         """Воспроизводит находку round 1/5 на CI windows-latest дословно: сам
         `ensure` напечатал «Path: …\\chrome-headless-shell.exe» и «Ready to
