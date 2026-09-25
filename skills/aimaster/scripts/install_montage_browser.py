@@ -14,6 +14,7 @@ aimaster-engine.json — иначе `browser path` молча отдал бы с
 from __future__ import annotations
 
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,6 +27,25 @@ import install  # noqa: E402
 from install_montage_node import item  # noqa: E402
 from studio.montage import engine  # noqa: E402
 from studio.montage.engine_cli import run_engine  # noqa: E402
+
+# round 1/5, находка CI windows-latest: два отдельных процесса Node (`ensure`
+# своим «Path: …», затем `browser path` своим `existsSync`) согласились, что
+# файл на диске есть — Python в третьем процессе тут же получил на ТОТ ЖЕ
+# путь `Path.is_file() is False` (OSError внутри pathlib проглочен). Классика
+# антивируса на Windows: Defender ставит только что скачанный .exe (~30+ МБ,
+# без подписи) на реал-тайм проверку и на секунду-другую держит хэндл. Опрос
+# с паузой вместо одного взгляда — не бесконечный, ограниченный.
+IS_FILE_ATTEMPTS = 10
+IS_FILE_DELAY = 0.5
+
+
+def _wait_until_file(path: str, *, attempts=IS_FILE_ATTEMPTS, delay=IS_FILE_DELAY, sleep=time.sleep) -> bool:
+    for attempt in range(attempts):
+        if Path(path).is_file():
+            return True
+        if attempt < attempts - 1:
+            sleep(delay)
+    return False
 
 
 def _failure_detail(ensured, located, path: str, *, inside: bool, is_file: bool) -> str:
@@ -44,16 +64,19 @@ def _failure_detail(ensured, located, path: str, *, inside: bool, is_file: bool)
     elif not path:
         reasons.append(f"path ничего не вывел: {located.stdout!r}")
     elif not inside:
-        reasons.append(f"путь вне папки движка: {path!r}")
+        # Путь пишем как есть (не repr): на Windows repr() удваивает «\» и
+        # ассертам/логам, читающим сообщение как обычный текст, только мешает
+        # (round 1/5: `!r` тут же сломал собственный юнит-тест на Windows).
+        reasons.append(f"путь вне папки движка: {path}")
     elif not is_file:
-        reasons.append(f"файла нет на диске: {path!r}")
+        reasons.append(f"файла нет на диске за {IS_FILE_ATTEMPTS} попыток по {IS_FILE_DELAY} с: {path}")
     detail = "; ".join(reasons) or "после загрузки браузер для сборки не найден в папке движка"
     tail = (ensured.stderr or ensured.stdout).strip()[-300:]
     return f"{detail}\n{tail}" if tail else detail
 
 
 def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool, update: bool,
-                    runner=None) -> dict:
+                    runner=None, sleep=time.sleep) -> dict:
     record = engine.read_record(prefix)
     have_browser = bool(record.get("browser")) and Path(record["browser"]).is_file()
     if record.get("version") == pin["version"] and have_browser:
@@ -76,7 +99,7 @@ def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool
     lines = located.stdout.strip().splitlines()
     path = lines[-1].strip() if lines else ""
     inside = bool(path) and install._inside(path, str(Path(prefix) / "home"))
-    is_file = bool(path) and Path(path).is_file()
+    is_file = bool(path) and inside and _wait_until_file(path, sleep=sleep)
     if ensured.code != 0 or located.code != 0 or not inside or not is_file:
         return item("failed", _failure_detail(ensured, located, path, inside=inside, is_file=is_file))
     record.update(browser=path, version=pin["version"], node=node,

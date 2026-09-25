@@ -335,8 +335,11 @@ class BrowserInstallTests(unittest.TestCase):
     def call(self, *args, **kwargs):
         """browser_install печатает «Качаю компонент…» в stderr, когда
         реально доходит до скачивания — перехватываем, чтобы тестовый вывод
-        оставался чистым (разбор 1/5 → 2/5, находка I)."""
+        оставался чистым (разбор 1/5 → 2/5, находка I). `sleep` по умолчанию
+        — заглушка: retry на отсутствующий файл (round 1/5) не должен стоить
+        тестам реальных секунд, если тест сам не хочет проверить именно паузу."""
 
+        kwargs.setdefault("sleep", lambda *_seconds: None)
         with redirect_stderr(io.StringIO()):
             return install_montage_browser.browser_install(*args, **kwargs)
 
@@ -399,6 +402,42 @@ class BrowserInstallTests(unittest.TestCase):
                          runner=self.runner(str(self.browser.parent / "нет-такого-файла.exe")))
         self.assertEqual(item["status"], "failed")
         self.assertIn("файла нет на диске", item["message"])
+
+    def test_transient_missing_file_recovers_on_retry(self):
+        """Воспроизводит находку round 1/5 на CI windows-latest дословно: сам
+        `ensure` напечатал «Path: …\\chrome-headless-shell.exe» и «Ready to
+        render.», `browser path` (отдельный процесс) вернул ТОТ ЖЕ путь кодом
+        0 — а `Path.is_file()` в третьем (нашем) процессе тут же ответил
+        False на этот же файл. Разбор объяснения: Windows Defender держит
+        реал-тайм проверку на свежескачанном .exe секунду-другую (антивирус,
+        не наш код) — retry должен пережить это и не звать «failed»."""
+
+        delayed = self.prefix / "home" / ".cache" / "hyperframes" / "chrome" / "chrome-headless-shell.exe"
+        sleeps = []
+
+        def slow_arrival(seconds):
+            sleeps.append(seconds)
+            if len(sleeps) == 2:  # файл «досматривается» антивирусом две паузы
+                touch(delayed)
+
+        item = self.call("/usr/bin/node", self.prefix, PIN,
+                         install_missing=True, update=False,
+                         runner=self.runner(str(delayed)), sleep=slow_arrival)
+        self.assertEqual(item["status"], "installed")
+        self.assertEqual(engine.read_record(self.prefix)["browser"], str(delayed))
+        self.assertEqual(sleeps, [install_montage_browser.IS_FILE_DELAY] * 2)
+
+    def test_gives_up_after_the_last_retry(self):
+        """Файл так и не появился — после `IS_FILE_ATTEMPTS` попыток «failed»,
+        а не бесконечный опрос."""
+
+        never = self.prefix / "home" / "так-и-не-скачался.exe"
+        sleeps = []
+        item = self.call("/usr/bin/node", self.prefix, PIN,
+                         install_missing=True, update=False,
+                         runner=self.runner(str(never)), sleep=sleeps.append)
+        self.assertEqual(item["status"], "failed")
+        self.assertEqual(len(sleeps), install_montage_browser.IS_FILE_ATTEMPTS - 1)
 
     def test_recorded_browser_is_found_without_download(self):
         touch(self.browser)
