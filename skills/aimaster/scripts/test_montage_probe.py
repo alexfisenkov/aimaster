@@ -38,6 +38,28 @@ class ParseTests(unittest.TestCase):
     def test_bad_duration_is_zero(self):
         self.assertEqual(probe.parse_probe({"format": {"duration": "N/A"}}).duration, 0.0)
 
+    def test_side_data_rotation_swaps_width_and_height(self):
+        # Современный способ хранить поворот: displaymatrix. Значение бывает
+        # отрицательным (типично -90 у портретной съёмки) — нормализуем %360.
+        payload = {"streams": [
+            {"codec_type": "video", "width": 1920, "height": 1080,
+             "side_data_list": [{"side_data_type": "Display Matrix", "rotation": -90}]}]}
+        info = probe.parse_probe(payload)
+        self.assertEqual((info.width, info.height), (1080, 1920))
+
+    def test_legacy_rotate_tag_is_case_insensitive(self):
+        # Старый способ — тег rotate; у Matroska он приходит как ROTATE.
+        payload = {"streams": [{"codec_type": "video", "width": 1920, "height": 1080,
+                                "tags": {"ROTATE": "270"}}]}
+        self.assertEqual((probe.parse_probe(payload).width, probe.parse_probe(payload).height),
+                         (1080, 1920))
+
+    def test_180_degrees_does_not_swap(self):
+        payload = {"streams": [{"codec_type": "video", "width": 1920, "height": 1080,
+                                "tags": {"rotate": "180"}}]}
+        info = probe.parse_probe(payload)
+        self.assertEqual((info.width, info.height), (1920, 1080))
+
 
 class ProbeTests(unittest.TestCase):
     def test_missing_ffprobe(self):
@@ -54,6 +76,27 @@ class ProbeTests(unittest.TestCase):
         self.assertIn("клип 1.mp4", str(caught.exception))
         self.assertIn("Invalid data", str(caught.exception))
 
+    def test_timeout_is_reported(self):
+        def runner(argv, **kwargs):
+            raise subprocess.TimeoutExpired(argv, kwargs.get("timeout"))
+        with self.assertRaises(MontageError) as caught:
+            probe.probe_media(Path("клип.mp4"), ffprobe="/usr/bin/ffprobe", runner=runner)
+        self.assertIn("не запустился", str(caught.exception))
+
+    def test_oserror_is_reported(self):
+        def runner(argv, **kwargs):
+            raise OSError("нет такого файла")
+        with self.assertRaises(MontageError) as caught:
+            probe.probe_media(Path("клип.mp4"), ffprobe="/несуществующий/ffprobe", runner=runner)
+        self.assertIn("не запустился", str(caught.exception))
+
+    def test_non_json_stdout_is_reported(self):
+        def runner(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 0, "это не json".encode("utf-8"), b"")
+        with self.assertRaises(MontageError) as caught:
+            probe.probe_media(Path("клип.mp4"), ffprobe="/usr/bin/ffprobe", runner=runner)
+        self.assertIn("не JSON", str(caught.exception))
+
     def test_real_clip_with_cyrillic_path(self):
         montage_testkit.ffmpeg_or_skip()
         with tempfile.TemporaryDirectory() as temp:
@@ -62,6 +105,18 @@ class ProbeTests(unittest.TestCase):
         self.assertAlmostEqual(info.duration, 1.0, delta=0.1)
         self.assertEqual((info.width, info.height, info.has_video, info.has_audio),
                          (108, 192, True, True))
+
+    def test_real_rotated_clip_reports_display_dimensions(self):
+        # Клип реально закодирован лёжа боком (192x108) с тегом rotate=90 —
+        # probe_media должен вернуть то, что покажет плеер (108x192), а не
+        # то, что физически лежит в потоке.
+        montage_testkit.ffmpeg_or_skip()
+        with tempfile.TemporaryDirectory() as temp:
+            clip = montage_testkit.make_rotated_clip(Path(temp) / "поворот.mkv", 1.0,
+                                                      size=(192, 108), rotation=90)
+            info = probe.probe_media(clip)
+        self.assertAlmostEqual(info.duration, 1.0, delta=0.2)
+        self.assertEqual((info.width, info.height, info.has_video), (108, 192, True))
 
 
 class CanvasTests(unittest.TestCase):

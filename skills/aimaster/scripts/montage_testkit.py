@@ -52,3 +52,20 @@ def make_tone(path: Path, seconds: float = 3.0, *, freq=220) -> Path:
     _ffmpeg(["-f", "lavfi", "-i", f"sine=frequency={freq}:duration={seconds}",
              "-c:a", "pcm_s16le", path])
     return path
+
+
+def make_rotated_clip(path: Path, seconds: float = 1.0, *, size=(192, 108),
+                      rotation=90) -> Path:
+    """Клип, физически закодированный лёжа боком, с тегом rotate в метаданных —
+    как отдаёт вертикальную съёмку телефон. mp4 у этой сборки ffmpeg тег молча
+    роняет, поэтому контейнер — mkv (Matroska его сохраняет, хоть и в верхнем
+    регистре: ROTATE; `probe._rotation` читает тег без учёта регистра)."""
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    width, height = size
+    args = ["-f", "lavfi", "-i", f"color=c=red:s={width}x{height}:r=30:d={seconds}",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30",
+            "-metadata:s:v:0", f"rotate={rotation}"]
+    _ffmpeg(args + [path])
+    return path
