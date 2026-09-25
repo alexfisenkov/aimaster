@@ -427,20 +427,20 @@ class BrowserInstallTests(unittest.TestCase):
         self.assertIn("win64-152.0.7977.30", item["message"])
 
     def test_transient_missing_file_recovers_on_retry(self):
-        """Воспроизводит находку round 1/5 на CI windows-latest дословно: сам
-        `ensure` напечатал «Path: …\\chrome-headless-shell.exe» и «Ready to
+        """`ensure` напечатал «Path: …\\chrome-headless-shell.exe» и «Ready to
         render.», `browser path` (отдельный процесс) вернул ТОТ ЖЕ путь кодом
         0 — а `Path.is_file()` в третьем (нашем) процессе тут же ответил
-        False на этот же файл. Разбор объяснения: Windows Defender держит
-        реал-тайм проверку на свежескачанном .exe секунду-другую (антивирус,
-        не наш код) — retry должен пережить это и не звать «failed»."""
+        False на этот же файл (round 1/5, CI windows-latest). Если файл
+        появляется в пределах короткого опроса (замок стороннего процесса,
+        не обязательно антивирус) — не звать «failed» и не перекачивать
+        заново без нужды."""
 
         delayed = self.prefix / "home" / ".cache" / "hyperframes" / "chrome" / "chrome-headless-shell.exe"
         sleeps = []
 
         def slow_arrival(seconds):
             sleeps.append(seconds)
-            if len(sleeps) == 2:  # файл «досматривается» антивирусом две паузы
+            if len(sleeps) == 2:  # файл «досматривается» две паузы
                 touch(delayed)
 
         item = self.call("/usr/bin/node", self.prefix, PIN,
@@ -449,10 +449,53 @@ class BrowserInstallTests(unittest.TestCase):
         self.assertEqual(item["status"], "installed")
         self.assertEqual(engine.read_record(self.prefix)["browser"], str(delayed))
         self.assertEqual(sleeps, [install_montage_browser.IS_FILE_DELAY] * 2)
+        # выдержало короткий опрос — принудительный перекач не понадобился
+        force_calls = [argv for argv, _kwargs in self.calls if argv[2:5] == ["browser", "ensure", "--force"]]
+        self.assertEqual(force_calls, [])
+
+    def test_incomplete_extraction_recovers_on_forced_reensure(self):
+        """Дословно найденная причина на CI windows-latest (runs 36133902583,
+        36134495655): и `ensure`, и отдельный `browser path` кодом 0
+        согласились на один и тот же путь — а версия-папка на диске
+        оказалась пустой (вложенный `chrome-headless-shell-win64/…exe`
+        распаковка не создала). Короткий опрос это не лечит — файла ждать
+        неоткуда. Второй `browser ensure --force` (чистый перекач с нуля)
+        должен получить настоящий файл и завершиться «installed»."""
+
+        real = self.prefix / "home" / ".cache" / "hyperframes" / "chrome" / "настоящий.exe"
+        calls = []
+
+        # Сценарий по порядку вызовов, а не по разбору argv: ensure #1 и path #1
+        # обещают путь, которого ещё нет на диске; ensure --force и path #2 —
+        # то же самое обещание, но на этот раз файл действительно появляется.
+        sequence = iter([
+            subprocess.CompletedProcess(["ensure"], 0, b"Ready to render.", b""),          # ensure #1
+            subprocess.CompletedProcess(["path"], 0, (str(real) + "\n").encode(), b""),     # path #1 (файла ещё нет)
+            subprocess.CompletedProcess(["ensure", "--force"], 0, b"Ready to render.", b""),  # ensure --force
+            subprocess.CompletedProcess(["path"], 0, (str(real) + "\n").encode(), b""),     # path #2
+        ])
+
+        def sequenced_runner(argv, **kwargs):
+            calls.append((argv, kwargs))
+            result = next(sequence)
+            if argv[2:4] == ["browser", "path"] and len(calls) == 4:
+                # к моменту ВТОРОГО path файл уже реально скачан force-ensure'ом
+                touch(real)
+            return result
+
+        item = self.call("/usr/bin/node", self.prefix, PIN,
+                         install_missing=True, update=False,
+                         runner=sequenced_runner)
+        self.assertEqual(item["status"], "installed")
+        self.assertEqual(engine.read_record(self.prefix)["browser"], str(real))
+        force_calls = [argv for argv, _kwargs in calls if argv[2:5] == ["browser", "ensure", "--force"]]
+        self.assertEqual(len(force_calls), 1)
 
     def test_gives_up_after_the_last_retry(self):
-        """Файл так и не появился — после `IS_FILE_ATTEMPTS` попыток «failed»,
-        а не бесконечный опрос."""
+        """Файл так и не появился ни разу — после `IS_FILE_ATTEMPTS` попыток
+        опроса, принудительного перекача (тоже безрезультатного через тот же
+        runner) и ещё стольких же попыток — «failed», а не бесконечный опрос
+        и не тихий один заход без объяснения."""
 
         never = self.prefix / "home" / "так-и-не-скачался.exe"
         sleeps = []
@@ -460,7 +503,10 @@ class BrowserInstallTests(unittest.TestCase):
                          install_missing=True, update=False,
                          runner=self.runner(str(never)), sleep=sleeps.append)
         self.assertEqual(item["status"], "failed")
-        self.assertEqual(len(sleeps), install_montage_browser.IS_FILE_ATTEMPTS - 1)
+        self.assertEqual(len(sleeps), 2 * (install_montage_browser.IS_FILE_ATTEMPTS - 1))
+        # второй заход дошёл до перекача --force, а не молча повторил первый
+        force_calls = [argv for argv, _kwargs in self.calls if argv[2:5] == ["browser", "ensure", "--force"]]
+        self.assertEqual(len(force_calls), 1)
 
     def test_recorded_browser_is_found_without_download(self):
         touch(self.browser)

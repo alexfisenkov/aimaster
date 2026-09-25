@@ -101,6 +101,18 @@ def _failure_detail(ensured, located, path: str, *, inside: bool, is_file: bool)
     return f"{detail}\n{tail}" if tail else detail
 
 
+def _locate_after_ensure(eng, prefix: Path, pin: dict, kwargs: dict, sleep):
+    """`browser path` после уже отработавшего `ensure` — резолвит путь,
+    проверяет, что он внутри папки движка, и ждёт файл на диске (с retry)."""
+
+    located = run_engine(eng, ["browser", "path"], cwd=prefix, timeout=pin["timeouts"]["cli"], **kwargs)
+    lines = located.stdout.strip().splitlines()
+    path = lines[-1].strip() if lines else ""
+    inside = bool(path) and install._inside(path, str(Path(prefix) / "home"))
+    is_file = bool(path) and inside and _wait_until_file(path, sleep=sleep)
+    return located, path, inside, is_file
+
+
 def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool, update: bool,
                     runner=None, sleep=time.sleep) -> dict:
     record = engine.read_record(prefix)
@@ -120,12 +132,22 @@ def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool
                          timeout=pin["timeouts"]["browser"], **kwargs)
     if ensured.timed_out:
         return item("timeout", "браузер для сборки не скачался за отведённое время; повторите позже")
-    located = run_engine(eng, ["browser", "path"], cwd=prefix, timeout=pin["timeouts"]["cli"],
-                         **kwargs)
-    lines = located.stdout.strip().splitlines()
-    path = lines[-1].strip() if lines else ""
-    inside = bool(path) and install._inside(path, str(Path(prefix) / "home"))
-    is_file = bool(path) and inside and _wait_until_file(path, sleep=sleep)
+    located, path, inside, is_file = _locate_after_ensure(eng, prefix, pin, kwargs, sleep)
+    if ensured.code == 0 and located.code == 0 and inside and not is_file:
+        # round 1/5, CI windows-latest (runs 36133902583, 36134495655): `ensure`
+        # отчитался кодом 0 и своей строкой «Path: …», отдельный `browser path`
+        # согласился с тем же путём — а на диске оказалась пустая папка нужной
+        # версии (└ вложенный chrome-headless-shell-win64/…exe вообще не
+        # появился). Ни _wait_until_file (истёк тем же результатом), ни
+        # исключение из Windows Defender в ci.yml это не поправили — похоже на
+        # незавершённую/битую распаковку архива, а не на замок или карантин.
+        # Один принудительный перекач с нуля («ensure --force» чистит кэш и
+        # качает заново) — до того, как сдаться финально.
+        ensured = run_engine(eng, ["browser", "ensure", "--force"], cwd=prefix,
+                             timeout=pin["timeouts"]["browser"], **kwargs)
+        if ensured.timed_out:
+            return item("timeout", "браузер для сборки не скачался за отведённое время; повторите позже")
+        located, path, inside, is_file = _locate_after_ensure(eng, prefix, pin, kwargs, sleep)
     if ensured.code != 0 or located.code != 0 or not inside or not is_file:
         return item("failed", _failure_detail(ensured, located, path, inside=inside, is_file=is_file))
     record.update(browser=path, version=pin["version"], node=node,
