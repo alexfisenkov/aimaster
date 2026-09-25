@@ -28,6 +28,7 @@ import install  # noqa: E402
 from studio.montage import engine  # noqa: E402
 from install_montage_engine import browser_install, check_browser, check_package, engine_install  # noqa: E402
 from install_montage_node import READY, item, node_check  # noqa: E402
+import install_montage_skills  # noqa: E402
 
 LABELS = (("node", "Node.js 22+"), ("hyperframes", "HyperFrames"),
           ("browser", "браузер для сборки"), ("skills", "скиллы HyperFrames"))
@@ -36,7 +37,7 @@ WORDS = {"installed": "поставлено", "found": "есть", "missing": "�
 
 
 def montage_report(kind: str, *, install_missing: bool, update: bool, install_node: bool,
-                   home: Path | None = None) -> dict:
+                   home: Path | None = None, skills=True) -> dict:
     pin = engine.load_pin()
     prefix = engine.tools_prefix(home=home)
     act = install_missing or update
@@ -54,6 +55,9 @@ def montage_report(kind: str, *, install_missing: bool, update: bool, install_no
         report["browser"] = browser_install(node, prefix, pin)
     else:
         report["browser"] = check_browser(prefix, pin)
+    if skills:
+        report["skills"] = install_montage_skills.skills_report(act=act, home=home)
+    # ok — готовность движка; статус скиллов виден в report["skills"], сборку он не блокирует
     report["ok"] = all(report[key]["status"] in READY for key in ("node", "hyperframes", "browser"))
     return report
 

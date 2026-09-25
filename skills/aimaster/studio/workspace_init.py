@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .platform_compat import IS_WINDOWS, make_private
 from .library import INDEX_NAME, KIND_FOLDERS, LIBRARY_DIR_NAME, SCHEMA_VERSION, write_index_atomic
+from .montage.workspace_skills import skills_summary
 from .workspace import PRIVATE_DIR_NAME
 
 README_TEXT = """# Рабочая папка AI Мастерской
@@ -32,6 +33,9 @@ README_TEXT = """# Рабочая папка AI Мастерской
   - `styles/` — стили;
   - `other/` — всё остальное;
   - `index.json` — список записей библиотеки (ведёт агент, руками не править).
+- `.claude/skills/`, `.agents/skills/` — скиллы HyperFrames для агента (монтаж
+  ролика). Их кладёт и обновляет aimaster; свои скиллы кладите рядом — папки
+  с чужими скиллами он не трогает.
 - `.studio/` — служебные базы студии (очередь действий, вопросы, реестр файлов).
   Скрытая папка: не удаляйте и не отправляйте её никому.
 
@@ -86,7 +90,9 @@ def init_workspace(workspace) -> dict:
     if not readme.exists():
         readme.write_text(README_TEXT, encoding="utf-8")
         created.append("README.md")
-    result = {"workspace": str(root), "created": created, "already_initialized": not created}
+    result = {"workspace": str(root), "created": created, "already_initialized": not created,
+              # без кеша — статус missing и команда установки, не ошибка
+              "hyperframes_skills": skills_summary(root)}
     if legacy:
         result["legacy_projects_in_root"] = legacy
         result["note"] = ("projects/ not created: projects live in the workspace root "

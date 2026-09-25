@@ -229,6 +229,17 @@ class ReportTests(unittest.TestCase):
         patcher = mock.patch.dict(os.environ, {engine.PREFIX_ENV: str(self.base / "hf")})
         patcher.start()
         self.addCleanup(patcher.stop)
+        skills_patch = mock.patch.object(install_montage.install_montage_skills, "skills_report",
+                                         return_value={"status": "found", "message": ""})
+        self.skills = skills_patch.start()
+        self.addCleanup(skills_patch.stop)
+
+    def test_skills_follow_the_act_flag(self):
+        with mock.patch.object(engine, "find_node", return_value=None):
+            report = install_montage.montage_report("linux", install_missing=True, update=False,
+                                                    install_node=False, home=self.base)
+        self.assertEqual(report["skills"]["status"], "found")
+        self.assertEqual(self.skills.call_args.kwargs, {"act": True, "home": self.base})
 
     def test_check_only_installs_nothing(self):
         with mock.patch.object(engine, "find_node", return_value="/usr/bin/node"), \
