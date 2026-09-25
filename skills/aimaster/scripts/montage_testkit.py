@@ -90,3 +90,55 @@ def make_rotated_clip(path: Path, seconds: float = 1.0, *, size=(192, 108),
     _ffmpeg(["-display_rotation", str(rotation), "-i", plain, "-c", "copy", path])
     plain.unlink(missing_ok=True)
     return path
+
+
+def video_state(scenes, *, audio=None, gen_mode="per_scene", oneshot_asset=None, mode="guided",
+                project_id="p") -> dict:
+    """Видеопроект на шаге «Сборка»: всё до звука одобрено, у позиций выбраны результаты.
+
+    scenes — [(scene_id, title, text, duration_ms, asset_id | None)];
+    audio — {слой: asset_id}; oneshot_asset — общее видео для gen_mode=one_shot."""
+
+    state = {
+        "revision": 0,
+        "project": {"id": project_id, "title": "Проба монтажа", "type": "video", "mode": mode,
+                    "status": "active", "order": 1},
+        "milestones": {"scenario": "approved", "image_plan": "approved",
+                       "image_results": "approved", "motion": "approved", "audio": "approved"},
+        "script": {"active_version_id": "s1", "versions": [
+            {"version_id": "s1", "parent_version_id": None, "text": "сценарий", "reason": "начало"}]},
+        "gen_mode": gen_mode, "history": [], "stage_decisions": [], "references": [],
+        "image_prompts": [], "motion_prompts": [], "image_results": [], "video_results": [],
+        "audio_layers": [], "audio_prompts": [], "audio_results": [], "applied_action_ids": [],
+        "scenes": [],
+    }
+    cursor = 0
+    for order, (scene_id, title, text, duration_ms, asset) in enumerate(scenes, start=1):
+        version = f"result:scene:{scene_id}:video-v1"
+        linked = bool(asset) and gen_mode == "per_scene"
+        state["scenes"].append({
+            "scene_id": scene_id, "order": order, "title": title, "duration_ms": duration_ms,
+            "start_ms": cursor, "end_ms": cursor + duration_ms,
+            "links": {"video_result_id": version} if linked else {},
+            "script_block": {"active_version_id": f"b-{scene_id}", "versions": [
+                {"version_id": f"b-{scene_id}", "parent_version_id": None, "text": text,
+                 "reason": "начало"}]}})
+        cursor += duration_ms
+        if linked:
+            state["video_results"].append({
+                "result_id": f"result:scene:{scene_id}:video", "version_id": version,
+                "scene_id": scene_id, "parent_version_id": None, "asset_id": asset,
+                "status": "ready", "decision": "approved"})
+    if gen_mode == "one_shot" and oneshot_asset:
+        state["oneshot"] = {"links": {"video_result_id": "result:oneshot-v1"}}
+        state["video_results"].append({
+            "result_id": "result:oneshot", "version_id": "result:oneshot-v1",
+            "parent_version_id": None, "asset_id": oneshot_asset, "status": "ready",
+            "decision": "approved"})
+    for layer, asset in (audio or {}).items():
+        version = f"result:audio:{layer}-v1"
+        state["audio_layers"].append({"layer": layer, "links": {"audio_result_id": version}})
+        state["audio_results"].append({
+            "result_id": f"result:audio:{layer}", "version_id": version, "parent_version_id": None,
+            "asset_id": asset, "status": "ready", "decision": "approved"})
+    return state
