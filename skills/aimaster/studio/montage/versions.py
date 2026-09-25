@@ -1,10 +1,10 @@
-"""Версии монтажа: неизменяемые снимки versions/vNNN/{index.html, meta.json, model.json}.
+"""Версии монтажа: что такое версия, её номер, чтение, возврат к снимку.
 
-Место снимка на диске (резервация `.vNNN.staging`, публикация переименованием,
-`reserve_version`) — в `version_staging.py`; здесь — что такое версия и её
-номер. Публичные имена оттуда переимпортированы: `from .versions import
-stage_version` (и `publish_version`/`discard_staging`/`STAGING_MAX_AGE`)
-по-прежнему работает, хотя тело живёт в другом файле.
+Снимок на диске (резервация, замок сборки, публикация) — в
+`version_staging.py`: с round-fix-3/5 (один замок на сборку вместо
+резерваций с проверкой возраста) staging больше не влияет на номер версии,
+поэтому `next_version_id` здесь больше не знает о `version_staging.py`
+вовсе — обратной зависимости, которая была в round-fix-2/5, больше нет.
 
 Версии не удаляются и не перезаписываются.
 """
@@ -24,9 +24,6 @@ from ..platform_compat import replace_file
 from . import MontageError
 from .model import Model
 from .paths import VERSION_ID, MontagePaths, version_name, version_number
-from .version_staging import (  # noqa: F401 — переимпорт: прежние имена этого модуля
-    STAGING_MAX_AGE, discard_staging, fresh_staged_numbers, publish_version,
-    recover_published_from_staging, reserve_version, stage_version)
 
 BY_VALUES = ("agent", "owner", "autopilot")
 
@@ -63,17 +60,18 @@ def _published(paths: MontagePaths) -> list[str]:
     return sorted(names, key=version_number)
 
 
-def next_version_id(paths: MontagePaths, recorded_ids: Iterable[str] = ()) -> str:
-    """Следующий свободный vNNN — по трём источникам сразу: опубликованные на
-    диске, начатые (и ещё не брошенные) сборки на диске и версии, уже
-    записанные в `state["montage"]` (round-fix-1/5, item 2б: без учёта state
-    счётчик застревал, когда версия была принята в state, а её файлы на диске
-    почему-то отставали). Брошенная `.vNNN.staging` (час и старше) не
-    считается вовсе — иначе номер оставался бы занятым навсегда, даже после
-    того как её давно вымели бы (round-fix-2/5, item 4)."""
+def next_version_id(paths: MontagePaths, *, recorded_ids: Iterable[str]) -> str:
+    """Следующий свободный vNNN — максимум среди опубликованных на диске и
+    записанных в `state["montage"]["versions"]`, плюс один. `recorded_ids`
+    — обязательный именованный аргумент (не «пусто по умолчанию», как было
+    в round-fix-1/5): вызывающий обязан явно передать то, что знает state,
+    а не тихо забыть про него.
+
+    Staging здесь не участвует вовсе (round-fix-3/5): вызывающий держит
+    `build_lock` и уже прогнал `version_staging.settle_orphans` — к этому
+    моменту `.vNNN.staging` попросту неоткуда взяться."""
 
     numbers = [version_number(name) for name in _published(paths)]
-    numbers += fresh_staged_numbers(paths)
     numbers += [version_number(rid) for rid in recorded_ids if VERSION_ID.fullmatch(str(rid))]
     return version_name(max(numbers, default=0) + 1)
 
@@ -121,8 +119,11 @@ def restore_files(paths: MontagePaths, version_id: str) -> Path | None:
         shutil.copy2(source, temporary)
         replace_file(temporary, paths.index)
     except OSError as error:
+        # round-fix-3/5, item F: без текста OSError (часто по-английски и
+        # локале-зависимый) в самом сообщении — он остаётся в цепочке
+        # исключения (`from error`) для отладки, не в тексте для человека.
         temporary.unlink(missing_ok=True)
-        raise MontageError(f"не удалось восстановить версию {version_id}: {error}") from error
+        raise MontageError(f"не удалось восстановить версию {version_id}") from error
     return backup
 
 
