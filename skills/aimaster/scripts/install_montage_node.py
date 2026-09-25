@@ -47,7 +47,11 @@ def node_check(kind: str, install_missing: bool) -> dict:
                      version=major, install_cmd=command)
     argv, reason = install._install_argv(kind, "node", command)
     if argv is None:
-        hint = f"{reason}. {LINUX_NODE_HINT}" if kind == "linux" else reason
+        # _install_argv на Linux отвечает общей фразой «командой выше» — но
+        # render_montage_lines печатает только message, самой команды «выше»
+        # в тексте не будет; поэтому для Linux строим сообщение сами, с
+        # командой внутри, а не полагаемся на generic reason.
+        hint = f"поставьте вручную: {command}. {LINUX_NODE_HINT}" if kind == "linux" else reason
         return item("missing", hint, path=node, version=major, install_cmd=command)
     ok, status, reason = install._run_installer(kind, argv, command)
     if not ok:

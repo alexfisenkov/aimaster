@@ -8,6 +8,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -102,17 +103,37 @@ class WorkspaceSkillsTests(unittest.TestCase):
         self.assertIn("--install-deps", result["hyperframes_skills"]["message"])
 
     def test_stale_copy_temp_dirs_are_swept_before_a_new_copy(self):
-        """Разбор 1/5, находка 11: мусор от оборванной прошлой копии убирается."""
+        """Разбор 1/5, находка 11: мусор от оборванной прошлой копии
+        убирается — но только старше часа (разбор 2/5, находка B): свежая
+        папка может быть рабочей папкой параллельно идущей установки."""
 
         claude_skills = self.ws / ".claude" / "skills"
-        stale = claude_skills / ".demo-oldjunk"
+        stale = claude_skills / f"{workspace_skills.TEMP_PREFIX}demo-oldjunk"
         stale.mkdir(parents=True)
         (stale / "leftover.txt").write_text("мусор", encoding="utf-8")
+        old_time = time.time() - 7200  # два часа назад
+        os.utime(stale, (old_time, old_time))
+        fresh = claude_skills / f"{workspace_skills.TEMP_PREFIX}demo-freshjunk"
+        fresh.mkdir(parents=True)  # mtime — прямо сейчас
         keep = claude_skills / "not-a-temp-dir"
         keep.mkdir(parents=True)
         self.sync()
         self.assertFalse(stale.exists())
+        self.assertTrue(fresh.exists())
         self.assertTrue(keep.exists())
+
+    def test_lookalike_user_folder_is_never_swept(self):
+        """Разбор 2/5, находка B: скилл называется «demo» — своя папка
+        пользователя «.demo-backup» не должна совпасть с точным видом
+        tempfile.mkdtemp (раньше префиксный glob «.demo-*» её бы смёл)."""
+
+        claude_skills = self.ws / ".claude" / "skills"
+        lookalike = claude_skills / ".demo-backup"
+        lookalike.mkdir(parents=True)
+        old_time = time.time() - 7200
+        os.utime(lookalike, (old_time, old_time))
+        self.sync()
+        self.assertTrue(lookalike.exists())
 
 
 class HomeGuardTests(unittest.TestCase):
@@ -163,6 +184,53 @@ class HomeGuardTests(unittest.TestCase):
         with mock.patch("pathlib.Path.home", return_value=self.fake_home):
             report = workspace_skills.sync_workspace_skills(ws, pin=PIN)
         self.assertEqual(report["status"], "installed")
+
+    def test_case_variant_path_is_recognized_via_samefile(self):
+        """Разбор 2/5, находка A: на регистронезависимой ФС (обычная APFS)
+        Path.resolve() не меняет регистр — строковое сравнение путей это
+        упускает, os.path.samefile (по st_dev/st_ino) — нет. Симулируем
+        подменой samefile, чтобы тест не зависел от ФС хоста."""
+
+        case_variant = self.base / "ДОМАШНЯЯ ПАПКА"
+        real_samefile = os.path.samefile
+
+        def fake_samefile(a, b):
+            if {str(a), str(b)} == {str(case_variant), str(self.fake_home)}:
+                return True
+            return real_samefile(a, b)
+
+        with mock.patch("pathlib.Path.home", return_value=self.fake_home), \
+                mock.patch("os.path.samefile", side_effect=fake_samefile):
+            report = workspace_skills.sync_workspace_skills(case_variant, pin=PIN)
+        self.assertEqual(report["status"], "skipped_home")
+
+    def test_no_home_env_is_treated_as_not_home(self):
+        """Path.home() может бросить RuntimeError (HOME не определить) —
+        тогда просто не можем сказать, что это она, а не падаем."""
+
+        ws = self.base / "рабочая папка без HOME"
+        ws.mkdir()
+        with mock.patch("pathlib.Path.home", side_effect=RuntimeError("нет HOME")):
+            report = workspace_skills.sync_workspace_skills(ws, pin=PIN)
+        self.assertEqual(report["status"], "installed")
+
+    def test_home_claude_itself_symlinked_elsewhere_is_still_detected(self):
+        """Разбор 2/5, находка A: ~/.claude сам может быть симлинком (типично
+        при управлении дотфайлами) — старое сравнение резолвило рабочую
+        сторону, но не домашнюю, и пропускало этот случай."""
+
+        dotfiles_claude = self.base / "dotfiles" / "claude"
+        dotfiles_claude.mkdir(parents=True)
+        try:
+            os.symlink(dotfiles_claude, self.fake_home / ".claude", target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("символические ссылки недоступны")
+        other_ws = self.base / "другая рабочая папка"
+        other_ws.mkdir()
+        os.symlink(dotfiles_claude, other_ws / ".claude", target_is_directory=True)
+        with mock.patch("pathlib.Path.home", return_value=self.fake_home):
+            report = workspace_skills.sync_workspace_skills(other_ws, pin=PIN)
+        self.assertEqual(report["status"], "skipped_home")
 
 
 if __name__ == "__main__":

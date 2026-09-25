@@ -31,12 +31,19 @@ def any_skills_cached(*, home=None, environ=None, pin=None) -> bool:
     """True, если под hyperframes-skills/ уже что-то стоит — для любого тега,
     не только закреплённого сейчас. Сигнал «скиллы раньше уже ставили»: им
     пользуется --update один (без --install-deps), чтобы не тянуть скиллы с
-    нуля на чистой машине, а только перекладывать уже стоящие на новый тег."""
+    нуля на чистой машине, а только перекладывать уже стоящие на новый тег.
+
+    Не роняет исключение при недоступной папке (PermissionError и т.п.) — это
+    просто «сигнала нет», не сбой. Точечные каталоги (в т.ч. наши временные
+    `.aimaster-tmp-download-…` от оборванной закачки) не считаются — только
+    настоящие теговые папки вида «v0.8.75»."""
 
     cache_root = skills_cache(home=home, environ=environ, pin=pin).parent
-    if not cache_root.is_dir():
+    try:
+        children = list(cache_root.iterdir())
+    except OSError:
         return False
-    return any(child.is_dir() for child in cache_root.iterdir())
+    return any(child.is_dir() and not child.name.startswith(".") for child in children)
 
 
 def bundle_hash(skill_dir: Path) -> tuple[str, int]:

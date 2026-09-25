@@ -35,6 +35,16 @@ def _pinned(prefix: Path, pin: dict) -> bool:
         and engine.package_version(prefix, "gsap") == pin["gsap_version"]
 
 
+NPM_MISSING_HINT = {
+    "linux": ("рядом с Node.js нет npm — на Debian/Ubuntu он ставится отдельным пакетом: "
+             "sudo apt install npm (или возьмите Node.js вместе с npm с "
+             "https://nodejs.org/en/download)"),
+    "macos": "рядом с Node.js нет npm — переустановите Node.js: brew reinstall node",
+    "windows": ("рядом с Node.js нет npm — переустановите Node.js: "
+               "winget install -e --id OpenJS.NodeJS.LTS"),
+}
+
+
 def _npm_runner(argv, cwd=None, timeout=None, env=None):
     """Как install._run, но при таймауте останавливает весь узел процессов npm
     (POSIX: /bin/ps + SIGTERM/SIGKILL; Windows: taskkill /T /F), а не только
@@ -52,8 +62,8 @@ def _npm_runner(argv, cwd=None, timeout=None, env=None):
     return proc.returncode, decode(proc.stdout), decode(proc.stderr)
 
 
-def engine_install(node: str, prefix: Path, pin: dict, *, install_missing: bool, update: bool,
-                   run=None) -> dict:
+def engine_install(node: str, prefix: Path, pin: dict, *, kind: str, install_missing: bool,
+                   update: bool, run=None) -> dict:
     """HyperFrames и GSAP (локальный файл для анимаций из скиллов HyperFrames) — одним npm.
 
     Ничего не стоит (`have is None`): ставит только с install_missing. Что-то
@@ -69,11 +79,16 @@ def engine_install(node: str, prefix: Path, pin: dict, *, install_missing: bool,
             return item("missing", "HyperFrames не установлен: поставить install.py --install-deps",
                          path=str(prefix))
     elif not (install_missing or update):
-        return item("found", f"стоит {have}, нужна {pin['version']}: запустите install.py --install-deps",
-                     version=have, path=str(prefix))
+        # have уже мог совпасть с pin["version"] — тогда расхождение только в
+        # GSAP, и писать «стоит 0.8.75, нужна 0.8.75» было бы бессмысленно.
+        if have != pin["version"]:
+            message = f"стоит {have}, нужна {pin['version']}: запустите install.py --install-deps"
+        else:
+            message = "нет GSAP для анимаций: запустите install.py --install-deps"
+        return item("found", message, version=have, path=str(prefix))
     npm = npm_cli_js(node)
     if npm is None:
-        return item("failed", "рядом с Node.js нет npm — переустановите Node.js")
+        return item("failed", NPM_MISSING_HINT.get(kind, NPM_MISSING_HINT["linux"]))
     Path(prefix).mkdir(parents=True, exist_ok=True)
     argv = [node, str(npm), "install", "--prefix", str(prefix),
             f"{pin['package']}@{pin['version']}", f"gsap@{pin['gsap_version']}", "--no-audit",

@@ -12,37 +12,24 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 from .engine import install_command
+from .home_guard import would_write_into_home
 from .skill_bundle import SKILL_MARKER, skills_cache, skills_pin, verify_skills
 
 AGENT_DIRS = ((".claude", "skills"), (".agents", "skills"))
 HOME_SKIP_MESSAGE = ("рабочая папка — домашняя, скиллы HyperFrames ставятся только в папку "
                      "видеопроектов")
-
-
-def _would_write_into_home(workspace) -> bool:
-    """Рабочая папка — сама домашняя, либо <ws>/.claude или .agents ведёт (в
-    т.ч. симлинком) в настоящую глобальную папку агента."""
-
-    try:
-        home = Path.home().resolve()
-        resolved = Path(workspace).expanduser().resolve()
-    except OSError:
-        return False
-    if resolved == home:
-        return True
-    for parts in AGENT_DIRS:
-        try:
-            target_root = Path(workspace).expanduser().joinpath(*parts).resolve()
-        except OSError:
-            continue
-        if target_root == home.joinpath(*parts):
-            return True
-    return False
+# ".<имя>-" совпал бы с чужой папкой вроде «.hyperframes-backup» (у скилла
+# как раз есть имя «hyperframes») — вид ниже точно совпадает с тем, что
+# создаёт tempfile.mkdtemp, и только это сверяется при уборке.
+TEMP_PREFIX = ".aimaster-tmp-"
+TEMP_MIN_AGE_SECONDS = 3600  # не трогаем то, что моложе часа — вдруг чужой параллельный запуск
 
 
 def inspect_copy(target: Path, version: str) -> str:
@@ -61,23 +48,36 @@ def inspect_copy(target: Path, version: str) -> str:
     return "current" if marker.get("version") == version else "outdated"
 
 
-def _sweep_stale(parent: Path, name: str) -> None:
-    """Убирает временные папки от прошлых оборванных копий — только свои (по
-    префиксу «.<имя>-») и только каталоги, ничего чужого не трогая."""
+def _sweep_stale(parent: Path, name: str, *, min_age=TEMP_MIN_AGE_SECONDS) -> None:
+    """Убирает СВОИ временные папки от прошлых оборванных копий: точное имя
+    вида, который создаёт tempfile.mkdtemp для этого скилла (не префиксный
+    glob), и только не моложе часа — свежая может быть рабочей папкой
+    параллельно идущей установки. Звать один раз в начале операции, до того
+    как _copy создаст СВОЮ рабочую папку — иначе можно смести и её."""
 
     if not parent.is_dir():
         return
-    for path in parent.glob(f".{name}-*"):
-        if path.is_dir() and not path.is_symlink():
+    pattern = re.compile(r"^" + re.escape(f"{TEMP_PREFIX}{name}-") + r"[A-Za-z0-9_]+$")
+    now = time.time()
+    for path in parent.iterdir():
+        if not pattern.match(path.name) or path.is_symlink() or not path.is_dir():
+            continue
+        try:
+            age = now - path.stat().st_mtime
+        except OSError:
+            continue
+        if age >= min_age:
             shutil.rmtree(path, ignore_errors=True)
 
 
 def _copy(source: Path, target: Path, version: str) -> None:
-    """Новая копия собирается рядом и встаёт на место; прежняя наша уходит только после."""
+    """Новая копия собирается рядом и встаёт на место; прежняя наша уходит
+    только после. Уборка мусора — не здесь, а один раз в начале
+    sync_workspace_skills (иначе она рисковала бы смести work/old прямо
+    посреди этой же операции)."""
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    _sweep_stale(target.parent, target.name)
-    work = Path(tempfile.mkdtemp(prefix=f".{target.name}-", dir=str(target.parent)))
+    work = Path(tempfile.mkdtemp(prefix=f"{TEMP_PREFIX}{target.name}-", dir=str(target.parent)))
     try:
         fresh, old = work / "new", work / "old"
         shutil.copytree(source, fresh, ignore=shutil.ignore_patterns(".DS_Store", "__pycache__"))
@@ -107,12 +107,19 @@ def sync_workspace_skills(workspace, *, create=True, home=None, environ=None, pi
     pin = pin or skills_pin()
     names = sorted(pin["bundles"])
     base = {"version": pin["tag"], "names": names, "items": [], "message": ""}
-    if _would_write_into_home(workspace):
+    if would_write_into_home(workspace):
         return {**base, "status": "skipped_home", "message": HOME_SKIP_MESSAGE}
     source_root = skills_cache(home=home, environ=environ, pin=pin)
     if verify_skills(source_root, pin):
         return {**base, "status": "missing",
                 "message": f"скиллы HyperFrames не скачаны; поставить: {install_command()}"}
+    if create:
+        # Уборка — один раз в начале, для всех имён и обеих папок агентов,
+        # до того как _copy создаст свою собственную рабочую папку.
+        for parts in AGENT_DIRS:
+            agent_dir = Path(workspace).joinpath(*parts)
+            for name in names:
+                _sweep_stale(agent_dir, name)
     items = []
     for parts in AGENT_DIRS:
         for name in names:

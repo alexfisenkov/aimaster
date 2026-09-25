@@ -16,9 +16,11 @@ import hashlib
 import http.client
 import json
 import os
+import re
 import shutil
 import ssl
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -33,7 +35,11 @@ HTTP_TIMEOUT = 60
 HEADERS = {"User-Agent": "aimaster-install", "Accept": "application/vnd.github+json"}
 CA_BUNDLES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt",
               "/etc/pki/tls/certs/ca-bundle.crt")
-DOWNLOAD_TEMP_PREFIX = ".download-"
+# ".download-" совпал бы с чем угодно, начинающимся так же; вид ниже —
+# ровно то, что создаёт tempfile.mkdtemp(prefix=...), и только это сверяется
+# при уборке (studio/montage/workspace_skills.py::_sweep_stale — тот же принцип).
+DOWNLOAD_TEMP_PREFIX = ".aimaster-tmp-download-"
+TEMP_MIN_AGE_SECONDS = 3600  # не трогаем то, что моложе часа — вдруг это чужой параллельный запуск
 
 
 def ssl_context() -> ssl.SSLContext:
@@ -101,14 +107,24 @@ class RawFetcher:
         pass  # для симметрии с прежним интерфейсом; urlopen ничего не держит открытым
 
 
-def _sweep_stale(parent: Path, prefix: str) -> None:
-    """Убирает временные папки от прошлых оборванных закачек — только свои (по
-    префиксу) и только каталоги, ничего чужого не трогая."""
+def _sweep_stale(parent: Path, prefix: str, *, min_age=TEMP_MIN_AGE_SECONDS) -> None:
+    """Убирает временные папки от прошлых оборванных закачек: точное имя
+    вида, который создаёт tempfile.mkdtemp (не префиксный glob — иначе,
+    скажем, чужая «.download-notes» тоже бы совпала), и только не моложе
+    часа — свежая может быть рабочей папкой параллельно идущей закачки."""
 
     if not parent.is_dir():
         return
-    for path in parent.glob(prefix + "*"):
-        if path.is_dir() and not path.is_symlink():
+    pattern = re.compile(r"^" + re.escape(prefix) + r"[A-Za-z0-9_]+$")
+    now = time.time()
+    for path in parent.iterdir():
+        if not pattern.match(path.name) or path.is_symlink() or not path.is_dir():
+            continue
+        try:
+            age = now - path.stat().st_mtime
+        except OSError:
+            continue
+        if age >= min_age:
             shutil.rmtree(path, ignore_errors=True)
 
 

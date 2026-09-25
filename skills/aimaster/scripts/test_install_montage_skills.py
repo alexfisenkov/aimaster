@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -22,7 +23,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 import install_montage_fetch as fetch  # noqa: E402
 import install_montage_skills as skills  # noqa: E402
 from studio.montage import engine  # noqa: E402
-from studio.montage.skill_bundle import bundle_hash, verify_skills  # noqa: E402
+from studio.montage.skill_bundle import any_skills_cached, bundle_hash, verify_skills  # noqa: E402
 
 FILES = {
     "demo/SKILL.md": b"---\nname: demo\n---\r\nhello\r\n",
@@ -222,17 +223,37 @@ class DownloadTests(_Temp):
         self.assertIn("demo", str(caught.exception))
 
     def test_stale_download_dirs_are_swept_before_a_new_download(self):
-        """Разбор 1/5, находка 11: мусор от оборванной прошлой закачки убирается."""
+        """Разбор 1/5, находка 11: мусор от оборванной прошлой закачки
+        убирается — но только старше часа (разбор 2/5, находка B): свежая
+        папка может быть рабочей папкой параллельно идущей закачки."""
 
         dest = self.base / "hyperframes-skills" / "v9.9.9"
-        stale = dest.parent / ".download-oldjunk"
+        stale = dest.parent / f"{fetch.DOWNLOAD_TEMP_PREFIX}oldjunk"
         stale.mkdir(parents=True)
         (stale / "leftover.txt").write_text("мусор", encoding="utf-8")
+        old_time = time.time() - 7200  # два часа назад
+        os.utime(stale, (old_time, old_time))
+        fresh = dest.parent / f"{fetch.DOWNLOAD_TEMP_PREFIX}freshjunk"
+        fresh.mkdir(parents=True)  # mtime — прямо сейчас
         keep = dest.parent / "not-a-download-dir"
         keep.mkdir(parents=True)
         fetch.download_skills(PIN, dest, tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
         self.assertFalse(stale.exists())
+        self.assertTrue(fresh.exists())
         self.assertTrue(keep.exists())
+
+    def test_lookalike_user_folder_is_never_swept(self):
+        """Разбор 2/5, находка B: «.download-notes» пользователя не должна
+        совпасть с точным видом tempfile.mkdtemp (раньше префиксный glob
+        «.download-*» её бы смёл)."""
+
+        dest = self.base / "hyperframes-skills" / "v9.9.9"
+        lookalike = dest.parent / ".download-notes"
+        lookalike.mkdir(parents=True)
+        old_time = time.time() - 7200
+        os.utime(lookalike, (old_time, old_time))
+        fetch.download_skills(PIN, dest, tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
+        self.assertTrue(lookalike.exists())
 
 
 class ReportTests(_Temp):
@@ -277,6 +298,26 @@ class ReportTests(_Temp):
                                       tree=tree_for(FILES), fetcher=FakeFetcher(FILES))
         self.assertEqual(report["status"], "installed")
         self.assertEqual(verify_skills(self.cache, PIN), [])
+
+    def test_leftover_download_temp_dir_does_not_count_as_installed(self):
+        """Разбор 2/5, находка D: одна лишь недокачанная .aimaster-tmp-…
+        папка — не сигнал «скиллы раньше ставили», иначе --update один
+        принял бы мусор от оборванной закачки за настоящую установку."""
+
+        (self.cache.parent / f"{fetch.DOWNLOAD_TEMP_PREFIX}abandoned").mkdir(parents=True)
+        self.assertFalse(any_skills_cached(pin=PIN))
+        fetcher = FakeFetcher({})
+        report = skills.skills_report(install_missing=False, update=True, pin=PIN, tree=[],
+                                      fetcher=fetcher)
+        self.assertEqual(report["status"], "missing")
+        self.assertEqual(fetcher.gets, [])
+
+    def test_unreadable_cache_root_is_not_a_crash(self):
+        """Разбор 2/5, находка D: PermissionError на iterdir — статус, не трейсбек."""
+
+        self.cache.parent.mkdir(parents=True)
+        with mock.patch("pathlib.Path.iterdir", side_effect=PermissionError("нет доступа")):
+            self.assertFalse(any_skills_cached(pin=PIN))
 
     def test_rate_limit_message(self):
         error = skills.urllib.error.HTTPError("https://api.github.com", 403, "rate limit", {},
