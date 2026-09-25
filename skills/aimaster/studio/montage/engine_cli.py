@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +18,7 @@ from typing import Mapping, Sequence
 from ..platform_compat import IS_WINDOWS
 from . import MontageError
 from .engine import Engine
+from .proc_tree import CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, group_kwargs, kill_tree
 
 QUIET_FLAGS = {
     "HYPERFRAMES_NO_UPDATE_CHECK": "1",
@@ -28,8 +28,6 @@ QUIET_FLAGS = {
     "NO_COLOR": "1",
     "FORCE_COLOR": "0",
 }
-CREATE_NEW_PROCESS_GROUP = 0x00000200
-CREATE_NO_WINDOW = 0x08000000
 
 
 @dataclass(frozen=True)
@@ -68,54 +66,53 @@ def _decode(raw) -> str:
     return (raw or b"").decode("utf-8", errors="replace")
 
 
-def _group_kwargs() -> dict:
-    """Popen-флаги, под которыми node становится корнем отдельной группы
-    процессов — без этого таймаут убивает только node, а Chrome и ffmpeg,
-    которых node запустил, остаются висеть сиротами."""
+def _close_pipes(proc) -> None:
+    """Закрывает proc.stdout/stderr, когда их больше некому дочитать —
+    иначе Python предупреждает об утечке открытого файла."""
 
-    return ({"creationflags": CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW} if IS_WINDOWS
-           else {"start_new_session": True})
-
-
-def _taskkill_path() -> str:
-    root = os.environ.get("SystemRoot") or os.environ.get("windir") or "C:\\Windows"
-    return str(Path(root) / "System32" / "taskkill.exe")
-
-
-def _kill_tree(proc) -> None:
-    """Останавливает весь узел процессов node, а не только сам node.
-
-    POSIX: node запущен лидером своей сессии (`_group_kwargs`), поэтому его
-    pgid равен его pid — killpg разом убивает node и всех его детей. Windows:
-    сигналов нет, поэтому taskkill /T (дерево) по полному пути System32, без
-    оболочки."""
-
-    if IS_WINDOWS:
-        subprocess.run([_taskkill_path(), "/T", "/F", "/PID", str(proc.pid)],
-                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL)
-        return
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass  # уже сам завершился между таймаутом и попыткой убить
+    for pipe in (getattr(proc, "stdout", None), getattr(proc, "stderr", None)):
+        if pipe is not None:
+            pipe.close()
 
 
 def default_runner(argv, *, cwd, env, stdin, stdout, stderr, timeout, popen=subprocess.Popen):
-    """Как subprocess.run, но при таймауте останавливает весь узел процессов,
-    а не только node, и сохраняет частичный вывод, накопленный до убийства.
+    """Как subprocess.run, но при таймауте (и при любом другом обрыве —
+    Ctrl+C, ошибка выше по стеку) останавливает весь узел процессов, а не
+    только node, и сохраняет частичный вывод, накопленный до убийства.
+
+    После SIGTERM/SIGKILL (POSIX) дренировать пайпы вторым communicate() без
+    таймаута небезопасно: если какой-то потомок (например, Chrome в своей
+    сессии) пережил рассылку сигналов дольше ожидаемого и всё ещё держит
+    открытым конец пайпа, communicate() зависнет уже без таймаута. На POSIX
+    берём то, что уже накопил первый communicate() к моменту TimeoutExpired
+    (это данные Python, а не что-то, что нужно дочитывать), и просто
+    дожидаемся node через proc.wait(). Windows — другое дело: `taskkill /T
+    /F` останавливает всё дерево синхронно и до возврата, поэтому дочитать
+    пайпы вторым communicate() там безопасно.
 
     `popen=` — только для тестов (как и `popen=` у popen_engine): реальные
     вызовы используют subprocess.Popen по умолчанию."""
 
     proc = popen(argv, cwd=cwd, env=env, stdin=stdin, stdout=stdout, stderr=stderr,
-                **_group_kwargs())
+                **group_kwargs())
     try:
         out, err = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _kill_tree(proc)
-        out, err = proc.communicate()  # дренируем то, что успело накопиться
+    except subprocess.TimeoutExpired as first:
+        kill_tree(proc)
+        if IS_WINDOWS:
+            out, err = proc.communicate()
+        else:
+            proc.wait()
+            out, err = first.output, first.stderr
+            _close_pipes(proc)  # communicate() их не дочитывал — закрываем сами
         raise subprocess.TimeoutExpired(argv, timeout, output=out, stderr=err) from None
+    except BaseException:
+        # Ctrl+C или любая другая ошибка в этом процессе не должны оставить
+        # HyperFrames работать дальше — как поступает сам subprocess.run().
+        kill_tree(proc)
+        proc.wait()
+        _close_pipes(proc)
+        raise
     return subprocess.CompletedProcess(argv, proc.returncode, out, err)
 
 
@@ -127,7 +124,10 @@ def run_engine(engine: Engine, args: Sequence[str], *, cwd: Path, timeout: float
                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                       stderr=subprocess.PIPE, timeout=timeout)
     except subprocess.TimeoutExpired as error:
-        return EngineResult(124, _decode(error.output), _decode(error.stderr), True)
+        reason = f"не завершился за {timeout:g} с"
+        partial = _decode(error.stderr)
+        stderr = f"{partial}\n{reason}" if partial else reason
+        return EngineResult(124, _decode(error.output), stderr, True)
     except OSError as error:
         return EngineResult(127, "", str(error))
     return EngineResult(proc.returncode, _decode(proc.stdout), _decode(proc.stderr))
@@ -179,7 +179,7 @@ def popen_engine(engine: Engine, args: Sequence[str], *, cwd: Path, log_path: Pa
         try:
             return popen(argv_for(engine, args), cwd=str(cwd), env=engine_env(engine),
                          stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                         **_group_kwargs())
+                         **group_kwargs())
         except OSError as error:
             raise MontageError(f"не удалось запустить HyperFrames: {error}") from error
 

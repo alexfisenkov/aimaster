@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -20,7 +21,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from studio.montage import MontageError, engine, engine_cli  # noqa: E402
+from studio.montage import MontageError, engine, engine_cli, proc_tree  # noqa: E402
 
 
 class FakeRun:
@@ -147,8 +148,10 @@ class PopenTests(unittest.TestCase):
         return mock.Mock(pid=4242)
 
     def test_posix_detaches_with_new_session(self):
+        # popen_engine строит свои флаги через proc_tree.group_kwargs() —
+        # именно там теперь ветвление POSIX/Windows, не в engine_cli.
         log = self.base / "logs" / "desk.log"
-        with mock.patch.object(engine_cli, "IS_WINDOWS", False):
+        with mock.patch.object(proc_tree, "IS_WINDOWS", False):
             engine_cli.popen_engine(self.engine, ["preview", "."], cwd=self.base, log_path=log,
                                     popen=self.popen)
         argv, kwargs = self.calls[0]
@@ -158,7 +161,7 @@ class PopenTests(unittest.TestCase):
         self.assertTrue(log.exists())
 
     def test_windows_hides_console_and_starts_a_new_group(self):
-        with mock.patch.object(engine_cli, "IS_WINDOWS", True):
+        with mock.patch.object(proc_tree, "IS_WINDOWS", True):
             engine_cli.popen_engine(self.engine, ["preview", "."], cwd=self.base,
                                     log_path=self.base / "desk.log", popen=self.popen)
         _, kwargs = self.calls[0]
@@ -176,23 +179,53 @@ class PopenTests(unittest.TestCase):
 
 
 class FakePopen:
-    """Имитирует subprocess.Popen: первый communicate() — таймаут (как
-    настоящий Popen, который в этот момент отдаёт то, что успел накопить),
-    второй (после «убийства») — то, что осталось от процесса."""
+    """Имитирует subprocess.Popen: первый communicate() — таймаут, и, как у
+    настоящего Popen, TimeoutExpired уже несёт то, что процесс успел
+    накопить (проверено эмпирически — см. отчёт); второй communicate()
+    (только для ветки Windows в default_runner) отдаёт то же самое."""
 
     def __init__(self, argv, **kwargs):
         self.argv = argv
         self.kwargs = kwargs
         self.pid = 777
         self.returncode = None
+        self.waited = False
         self._calls = 0
 
     def communicate(self, timeout=None):
         self._calls += 1
         if self._calls == 1:
-            raise subprocess.TimeoutExpired(self.argv, timeout)
+            raise subprocess.TimeoutExpired(self.argv, timeout, output=b"partial-out",
+                                            stderr=b"partial-err")
         self.returncode = -9
         return b"partial-out", b"partial-err"
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        self.waited = True
+        self.returncode = -9
+        return self.returncode
+
+
+class RaisingPopen:
+    """communicate() бросает не TimeoutExpired, а что угодно другое — так
+    выглядит Ctrl+C (KeyboardInterrupt) во время ожидания HyperFrames."""
+
+    def __init__(self, argv, **kwargs):
+        self.argv = argv
+        self.pid = 888
+        self.returncode = None
+        self.waited = False
+
+    def communicate(self, timeout=None):
+        raise KeyboardInterrupt
+
+    def wait(self, timeout=None):
+        self.waited = True
+        self.returncode = -15
+        return self.returncode
 
 
 class ImmediatePopen:
@@ -210,7 +243,11 @@ class ImmediatePopen:
 
 class DefaultRunnerTests(unittest.TestCase):
     """default_runner — то, что run_engine/run_engine_json используют по
-    умолчанию вместо голого subprocess.run, начиная с этого исправления."""
+    умолчанию вместо голого subprocess.run. Сама механика убийства дерева
+    (killpg/kill/taskkill, обход потомков) теперь в studio.montage.proc_tree
+    и проверена отдельно в test_montage_proc_tree.py; здесь проверяется
+    именно оркестровка default_runner: он зовёт kill_tree, по-разному
+    дренирует пайпы на POSIX/Windows и не глотает BaseException."""
 
     def test_success_path_returns_completed_process(self):
         result = engine_cli.default_runner(
@@ -219,48 +256,77 @@ class DefaultRunnerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, b'{"ok": true}')
 
-    def test_posix_timeout_kills_the_process_group(self):
-        killed = []
+    def test_posix_timeout_calls_kill_tree_and_does_not_read_pipes_twice(self):
+        created = []
+
+        def make(argv, **kwargs):
+            instance = FakePopen(argv, **kwargs)
+            created.append(instance)
+            return instance
+
         with mock.patch.object(engine_cli, "IS_WINDOWS", False), \
-                mock.patch.object(engine_cli.os, "killpg", side_effect=lambda pid, sig: killed.append((pid, sig))):
+                mock.patch.object(engine_cli, "kill_tree") as fake_kill:
             with self.assertRaises(subprocess.TimeoutExpired) as caught:
                 engine_cli.default_runner(
                     ["node", "x"], cwd="/tmp", env={}, stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1, popen=FakePopen)
-        self.assertEqual(killed, [(777, engine_cli.signal.SIGKILL)])
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1, popen=make)
+        fake_kill.assert_called_once_with(created[0])
+        # второй communicate() без таймаута на POSIX небезопасен (см. docstring
+        # default_runner) — партийные данные берём из первого TimeoutExpired
+        self.assertEqual(created[0]._calls, 1)
+        self.assertTrue(created[0].waited)
         self.assertEqual(caught.exception.output, b"partial-out")
         self.assertEqual(caught.exception.stderr, b"partial-err")
 
-    def test_windows_timeout_kills_whole_tree_via_taskkill_and_keeps_partial_output(self):
-        kills = []
+    def test_windows_timeout_calls_kill_tree_then_drains_a_second_communicate(self):
+        created = []
 
-        def fake_run(argv, **kwargs):
-            kills.append(argv)
-            return subprocess.CompletedProcess(argv, 0, b"", b"")
+        def make(argv, **kwargs):
+            instance = FakePopen(argv, **kwargs)
+            created.append(instance)
+            return instance
 
         with mock.patch.object(engine_cli, "IS_WINDOWS", True), \
-                mock.patch.object(subprocess, "run", fake_run):
+                mock.patch.object(engine_cli, "kill_tree") as fake_kill:
             with self.assertRaises(subprocess.TimeoutExpired) as caught:
                 engine_cli.default_runner(
                     ["node", "x"], cwd="/tmp", env={}, stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1, popen=FakePopen)
-        self.assertEqual(kills[0][0], engine_cli._taskkill_path())
-        self.assertEqual(kills[0][1:], ["/T", "/F", "/PID", "777"])
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1, popen=make)
+        fake_kill.assert_called_once_with(created[0])
+        self.assertEqual(created[0]._calls, 2)  # taskkill /T /F синхронный — дочитать безопасно
         self.assertEqual(caught.exception.output, b"partial-out")
         self.assertEqual(caught.exception.stderr, b"partial-err")
 
-    def test_run_engine_reports_partial_output_and_stays_timed_out(self):
+    def test_base_exception_kills_the_tree_and_reraises(self):
+        created = []
+
+        def make(argv, **kwargs):
+            instance = RaisingPopen(argv, **kwargs)
+            created.append(instance)
+            return instance
+
+        with mock.patch.object(engine_cli, "kill_tree") as fake_kill:
+            with self.assertRaises(KeyboardInterrupt):
+                engine_cli.default_runner(
+                    ["node", "x"], cwd="/tmp", env={}, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, popen=make)
+        fake_kill.assert_called_once_with(created[0])
+        self.assertTrue(created[0].waited)
+
+    def test_run_engine_reports_partial_output_and_the_timeout_reason(self):
         base = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: shutil.rmtree(base, ignore_errors=True))
         fake_engine = make_engine(base)
         runner = lambda argv, **kwargs: engine_cli.default_runner(argv, popen=FakePopen, **kwargs)  # noqa: E731
         with mock.patch.object(engine_cli, "IS_WINDOWS", False), \
-                mock.patch.object(engine_cli.os, "killpg"):
+                mock.patch.object(engine_cli, "kill_tree"):
             result = engine_cli.run_engine(fake_engine, ["render"], cwd=base, timeout=1,
                                            runner=runner)
         self.assertTrue(result.timed_out)
         self.assertEqual(result.stdout, "partial-out")
-        self.assertEqual(result.stderr, "partial-err")
+        # частичный вывод сохранён, и причина по-прежнему в сообщении
+        self.assertIn("partial-err", result.stderr)
+        self.assertIn("не завершился за 1 с", result.stderr)
 
 
 _FAKE_NODE = """
@@ -271,7 +337,11 @@ import sys
 import time
 
 pid_file = sys.argv[1]
-child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"])
+# start_new_session=True — как puppeteer/Chrome на POSIX с puppeteer-core
+# ^25 (detached=true по умолчанию не на Windows): внук сидит в СВОЕЙ,
+# отдельной от node, группе процессов.
+child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"],
+                         start_new_session=True)
 with open(pid_file, "w", encoding="utf-8") as handle:
     json.dump({"node": os.getpid(), "child": child.pid}, handle)
     handle.flush()
@@ -281,12 +351,28 @@ time.sleep(20)
 
 
 class RealTimeoutKillsTreeTests(unittest.TestCase):
-    """Настоящий узел процессов: node (тут — python-заглушка) сам порождает
-    ребёнка (как HyperFrames порождает Chrome/ffmpeg). По таймауту должны
-    погибнуть оба, не только прямой потомок run_engine."""
+    """Настоящий узел процессов через полный run_engine (не только
+    proc_tree.kill_tree изолированно, как в test_montage_proc_tree.py):
+    node (тут — python-заглушка) сам порождает ребёнка в СВОЕЙ сессии — как
+    HyperFrames порождает Chrome. По таймауту должны погибнуть оба."""
 
-    def test_posix_timeout_kills_node_and_its_child(self):
-        if os.name == "nt":
+    def _wait_for_pid_file(self, pid_file: Path, timeout=10.0) -> dict:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if pid_file.exists():
+                try:
+                    return json.loads(pid_file.read_text(encoding="utf-8"))
+                except ValueError:
+                    pass
+            time.sleep(0.05)
+        raise AssertionError(f"{pid_file} не появился за {timeout:g} с")
+
+    def test_posix_timeout_kills_node_and_its_detached_child(self):
+        # hasattr, а не os.name == "nt": именно эти два имени использует
+        # proc_tree.kill_tree на POSIX-ветке, и это ровно то, чего не будет
+        # на Windows — проверено прогоном сюиты с искусственно вырезанными
+        # os.killpg/signal.SIGKILL (см. отчёт).
+        if not (hasattr(os, "killpg") and hasattr(signal, "SIGKILL")):
             self.skipTest("процессная группа POSIX — на Windows своя ветка, см. DefaultRunnerTests")
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp).resolve()
@@ -297,7 +383,7 @@ class RealTimeoutKillsTreeTests(unittest.TestCase):
                                         version="0.8.75", browser=None)
             result = engine_cli.run_engine(fake_engine, [str(pid_file)], cwd=base, timeout=2)
             self.assertTrue(result.timed_out)
-            pids = json.loads(pid_file.read_text(encoding="utf-8"))
+            pids = self._wait_for_pid_file(pid_file)
             deadline = time.monotonic() + 5
             alive = dict(pids)
             while alive and time.monotonic() < deadline:
