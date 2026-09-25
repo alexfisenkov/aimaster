@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -20,9 +21,11 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 from studio.montage import MontageError  # noqa: E402
 from studio.montage.model import Clip, Model  # noqa: E402
 from studio.montage.paths import montage_paths  # noqa: E402
+from studio.montage.version_staging import _reserve  # noqa: E402
 from studio.montage.versions import (  # noqa: E402
     VersionMeta, discard_staging, has_unrendered_changes, list_versions, next_version_id,
-    publish_version, read_meta, read_version_model, restore_files, stage_version)
+    publish_version, read_meta, read_version_model, recover_published_from_staging,
+    reserve_version, restore_files, stage_version)
 
 MODEL = Model(1.0, (Clip(id="v-1", layer="video", kind="video", start=0.0, duration=1.0),))
 
@@ -125,6 +128,75 @@ class VersionsTests(unittest.TestCase):
         restore_files(self.paths, "v001")
         self.assertFalse((self.paths.current / ".index.restore.tmp").exists())
         self.assertEqual(self.paths.index.read_text(encoding="utf-8"), "<html>v1</html>")
+
+    def test_restore_from_two_threads_at_once_does_not_collide(self):
+        # Round-fix-2/5, item 9: прежний тест только проверял, что имя не
+        # фиксировано — здесь настоящая гонка, несколько потоков одновременно.
+        self.publish("v001")
+        errors = []
+
+        def go():
+            try:
+                restore_files(self.paths, "v001")
+            except Exception as error:  # тест обязан явно увидеть любую ошибку потока
+                errors.append(error)
+
+        threads = [threading.Thread(target=go) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(self.paths.index.read_text(encoding="utf-8"), "<html>v1</html>")
+
+    def test_reserve_version_picks_and_holds_the_next_number(self):
+        # Round-fix-2/5, item 4: next_version_id и резервация — одним вызовом,
+        # чтобы между выбором номера и резервацией не влез параллельный вызов.
+        first = reserve_version(self.paths)
+        self.assertEqual(first, "v001")
+        self.assertTrue((self.paths.versions / ".v001.staging").is_dir())
+        # v001 ещё не опубликована, но уже занята нашей же резервацией —
+        # следующий вызов должен получить следующий номер, не тот же.
+        self.assertEqual(reserve_version(self.paths), "v002")
+
+    def test_reserve_version_accounts_for_recorded_ids(self):
+        self.assertEqual(reserve_version(self.paths, recorded_ids=["v001", "v002"]), "v003")
+
+    def test_reserve_collision_on_the_same_number_is_refused(self):
+        # _reserve — общий примитив reserve_version/stage_version; гонку на
+        # ОДНОМ и том же номере (как если бы next_version_id прочли
+        # одновременно, до появления .vNNN.staging) проверяем напрямую.
+        _reserve(self.paths, "v001")
+        with self.assertRaises(MontageError) as caught:
+            _reserve(self.paths, "v001")
+        self.assertIn("уже идёт", str(caught.exception))
+
+    def test_stage_version_releases_reservation_on_failure(self):
+        # Round-fix-2/5, item 4: сбой копирования/записи снимка не должен
+        # оставлять резервацию висеть до истечения часа.
+        broken = montage_paths(self.paths.root.parent / "сломанный")
+        broken.versions.mkdir(parents=True)  # current/index.html нарочно не создаём
+        with self.assertRaises(OSError):
+            stage_version(broken, meta("v001"), MODEL)
+        self.assertEqual(list(broken.versions.iterdir()), [])
+
+    def test_recover_publishes_a_complete_orphaned_staging(self):
+        # Round-fix-2/5, item 4: сборка успела дописать снимок целиком, но
+        # процесс оборвался до publish_version — задача 15 зовёт это вместо
+        # пересборки.
+        staging = stage_version(self.paths, meta("v001"), MODEL)
+        final = recover_published_from_staging(self.paths, "v001")
+        self.assertEqual(final, self.paths.version_dir("v001"))
+        self.assertTrue((final / "meta.json").is_file())
+        self.assertFalse(staging.exists())
+
+    def test_recover_ignores_incomplete_or_already_published(self):
+        self.assertIsNone(recover_published_from_staging(self.paths, "v009"))
+        staging = stage_version(self.paths, meta("v002"), MODEL)
+        (staging / "model.json").unlink()  # неполный снимок — не публикуем
+        self.assertIsNone(recover_published_from_staging(self.paths, "v002"))
+        self.publish("v003")
+        self.assertIsNone(recover_published_from_staging(self.paths, "v003"))  # уже опубликована
 
 
 if __name__ == "__main__":

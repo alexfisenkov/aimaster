@@ -1,8 +1,12 @@
 """Версии монтажа: неизменяемые снимки versions/vNNN/{index.html, meta.json, model.json}.
 
-Снимок готовится в скрытой .vNNN.staging рядом и публикуется переименованием
-только после того, как версия записана в state, — видимая версия всегда
-согласована с разделом montage проекта. Версии не удаляются и не перезаписываются.
+Место снимка на диске (резервация `.vNNN.staging`, публикация переименованием,
+`reserve_version`) — в `version_staging.py`; здесь — что такое версия и её
+номер. Публичные имена оттуда переимпортированы: `from .versions import
+stage_version` (и `publish_version`/`discard_staging`/`STAGING_MAX_AGE`)
+по-прежнему работает, хотя тело живёт в другом файле.
+
+Версии не удаляются и не перезаписываются.
 """
 
 from __future__ import annotations
@@ -20,12 +24,11 @@ from ..platform_compat import replace_file
 from . import MontageError
 from .model import Model
 from .paths import VERSION_ID, MontagePaths, version_name, version_number
+from .version_staging import (  # noqa: F401 — переимпорт: прежние имена этого модуля
+    STAGING_MAX_AGE, discard_staging, fresh_staged_numbers, publish_version,
+    recover_published_from_staging, reserve_version, stage_version)
 
 BY_VALUES = ("agent", "owner", "autopilot")
-# Дольше часа со свежей .vNNN.staging — не параллельная сборка, а брошенная
-# попытка (тот же час, что и temp_sweep.MIN_AGE_SECONDS для прочих служебных
-# временных папок навыка).
-STAGING_MAX_AGE = 3600
 
 
 @dataclass(frozen=True)
@@ -60,29 +63,17 @@ def _published(paths: MontagePaths) -> list[str]:
     return sorted(names, key=version_number)
 
 
-def _staged(paths: MontagePaths) -> list[str]:
-    """Номера версий, для которых уже начата (но не обязательно кончена)
-    сборка: `.vNNN.staging` рядом с опубликованными — участвует в подсчёте
-    следующего номера, чтобы вторая параллельная сборка не попала на тот же."""
-
-    if not paths.versions.is_dir():
-        return []
-    names = []
-    for item in paths.versions.iterdir():
-        if item.is_dir() and item.name.startswith(".") and item.name.endswith(".staging"):
-            inner = item.name[1:-len(".staging")]
-            if VERSION_ID.fullmatch(inner):
-                names.append(inner)
-    return names
-
-
 def next_version_id(paths: MontagePaths, recorded_ids: Iterable[str] = ()) -> str:
     """Следующий свободный vNNN — по трём источникам сразу: опубликованные на
-    диске, начатые сборки на диске и версии, уже записанные в `state["montage"]`
-    (round-fix-1/5, item 2б: без учёта state счётчик застревал, когда версия
-    была принята в state, а её файлы на диске почему-то отставали)."""
+    диске, начатые (и ещё не брошенные) сборки на диске и версии, уже
+    записанные в `state["montage"]` (round-fix-1/5, item 2б: без учёта state
+    счётчик застревал, когда версия была принята в state, а её файлы на диске
+    почему-то отставали). Брошенная `.vNNN.staging` (час и старше) не
+    считается вовсе — иначе номер оставался бы занятым навсегда, даже после
+    того как её давно вымели бы (round-fix-2/5, item 4)."""
 
-    numbers = [version_number(name) for name in (*_published(paths), *_staged(paths))]
+    numbers = [version_number(name) for name in _published(paths)]
+    numbers += fresh_staged_numbers(paths)
     numbers += [version_number(rid) for rid in recorded_ids if VERSION_ID.fullmatch(str(rid))]
     return version_name(max(numbers, default=0) + 1)
 
@@ -105,55 +96,6 @@ def read_version_model(paths: MontagePaths, version_id: str) -> Model:
         return Model.from_dict(data)
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise MontageError(f"у версии {version_id} нет модели монтажа") from error
-
-
-def _write_json(path: Path, data) -> None:
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-def _reserve_staging(paths: MontagePaths, version: str) -> Path:
-    """Атомарная резервация `.vNNN.staging`: `mkdir` без `exist_ok` — та самая
-    проверка-и-действие одним системным вызовом (round-fix-1/5, item 2а: было
-    check-then-act — «есть, снести, создать» — два параллельных `montage
-    build` одной версии затирали друг друга). Папка свежее часа — чужая
-    сборка ещё идёт, отказ; часовая и старше — брошенная попытка, сносим и
-    пробуем снова."""
-
-    staging = paths.versions / f".{version}.staging"
-    try:
-        staging.mkdir(parents=True)
-        return staging
-    except FileExistsError:
-        pass
-    try:
-        age = time.time() - staging.stat().st_mtime
-    except OSError:
-        age = None  # папка исчезла между попытками — не наша забота, пробуем создать снова
-    if age is not None and age < STAGING_MAX_AGE:
-        raise MontageError(f"сборка версии {version} уже идёт")
-    shutil.rmtree(staging, ignore_errors=True)
-    staging.mkdir(parents=True)
-    return staging
-
-
-def stage_version(paths: MontagePaths, meta: VersionMeta, model: Model) -> Path:
-    if paths.version_dir(meta.version).exists():
-        raise MontageError(f"версия {meta.version} уже есть — версии не перезаписываются")
-    staging = _reserve_staging(paths, meta.version)
-    shutil.copy2(paths.index, staging / "index.html")
-    _write_json(staging / "meta.json", meta.to_dict())
-    _write_json(staging / "model.json", model.to_dict())
-    return staging
-
-
-def publish_version(paths: MontagePaths, staging: Path, version_id: str) -> Path:
-    final = paths.version_dir(version_id)
-    os.rename(staging, final)
-    return final
-
-
-def discard_staging(staging: Path) -> None:
-    shutil.rmtree(staging, ignore_errors=True)
 
 
 def restore_files(paths: MontagePaths, version_id: str) -> Path | None:
