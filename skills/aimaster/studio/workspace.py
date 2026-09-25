@@ -40,6 +40,10 @@ PRIVATE_DIR_NAME = ".studio"
 # identical size ceiling -- one constant, not two copies that could drift.
 MAX_ASSET_BYTES = 128 * 1024 * 1024
 
+# Собранный ролик монтажа (<медиа>/<проект>/montage/vNNN.mp4) длиннее любого
+# результата генерации: у него свой предел; остальные ассеты — MAX_ASSET_BYTES.
+MONTAGE_MAX_BYTES = 2 * 1024 * 1024 * 1024
+
 # Ticket 12 repair, condition 11: the one ceiling for every chat-authored
 # free-text field (spec §9, "серверные лимиты по байтам") -- shared by
 # `authoring_support.py` (every `--text`/`--reason`/`--caption`/... field)

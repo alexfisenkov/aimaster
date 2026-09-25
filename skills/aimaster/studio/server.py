@@ -21,6 +21,7 @@ from .workspace import (
     ACTIONS_DB_NAME,
     ASSETS_DB_NAME,
     MAX_ASSET_BYTES,
+    MONTAGE_MAX_BYTES,
     QUESTIONS_DB_NAME,
     resolve_workspace_paths,
 )
@@ -178,6 +179,7 @@ def serve(workspace: Path, host: str = "127.0.0.1", port: int = 0) -> RunningSer
         workspace,
         (media_root,),
         max_bytes=MAX_ASSET_BYTES,
+        montage_max_bytes=MONTAGE_MAX_BYTES,
         db_path=private_root / ASSETS_DB_NAME,
     )
     # Repair, 2026-09-16 (ticket 09, condition 1): events are read straight

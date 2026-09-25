@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import sqlite3
 import stat
 import struct
@@ -72,6 +73,10 @@ class AssetNotFound(AssetError):
 
 def _within(path: Path, root: Path) -> bool:
     return path == root or path.is_relative_to(root)
+
+
+# Собранный ролик монтажа относительно корня медиа — studio/montage/paths.render_output.
+_MONTAGE_OUTPUT = re.compile(r"[^/]+/montage/v\d{3,}\.mp4")
 
 
 def _png(data: bytes) -> tuple[str, int, int] | None:
@@ -809,7 +814,7 @@ class AssetIndex:
     contend over one held handle.
     """
 
-    def __init__(self, root, allowed_roots, max_bytes, *, db_path=None):
+    def __init__(self, root, allowed_roots, max_bytes, *, db_path=None, montage_max_bytes=None):
         self.root = Path(root).resolve(strict=True)
         if not self.root.is_dir():
             raise AssetValidationError("root must be a directory")
@@ -820,6 +825,13 @@ class AssetIndex:
         ):
             raise AssetValidationError("max_bytes must be a positive integer")
         self.max_bytes = max_bytes
+        if montage_max_bytes is not None and (
+            isinstance(montage_max_bytes, bool)
+            or not isinstance(montage_max_bytes, int)
+            or montage_max_bytes <= 0
+        ):
+            raise AssetValidationError("montage_max_bytes must be a positive integer")
+        self.montage_max_bytes = montage_max_bytes
         roots = []
         for raw_root in allowed_roots:
             candidate = Path(raw_root)
@@ -949,20 +961,32 @@ class AssetIndex:
             raise AssetValidationError("asset path must name a regular file")
         return resolved
 
+    def _size_limit(self, resolved: Path) -> int:
+        """Собранный ролик монтажа (<медиа>/<проект>/montage/vNNN.mp4) — свой предел;
+        любой другой файл, в том числе .mp4 рядом, — общий max_bytes."""
+
+        if self.montage_max_bytes:
+            for allowed in self.allowed_roots:
+                if _within(resolved, allowed) and _MONTAGE_OUTPUT.fullmatch(
+                        resolved.relative_to(allowed).as_posix()):
+                    return max(self.max_bytes, self.montage_max_bytes)
+        return self.max_bytes
+
     def _inspect_path(self, resolved: Path):
+        limit = self._size_limit(resolved)
         extension = resolved.suffix.casefold()
         if extension in _DANGEROUS_EXTENSIONS or extension not in _EXTENSION_MIME:
             raise AssetValidationError("asset extension is not allowed")
         try:
             size = resolved.stat().st_size
-            if size <= 0 or size > self.max_bytes:
+            if size <= 0 or size > limit:
                 raise AssetValidationError("asset size is outside the allowed range")
             data = resolved.read_bytes()
         except AssetValidationError:
             raise
         except OSError as error:
             raise AssetValidationError("asset file cannot be read") from error
-        if len(data) != size or len(data) > self.max_bytes:
+        if len(data) != size or len(data) > limit:
             raise AssetValidationError("asset changed while it was inspected")
         mime_type, width, height = _inspect_media(data)
         if _EXTENSION_MIME[extension] != mime_type:

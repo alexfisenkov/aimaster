@@ -1,28 +1,20 @@
 """Один замок на сборку монтажа, снимок версии на диске, публикация.
 
-Round-fix-3/5, ruling: сборка версии больше не пытается разруливать гонку
-резервациями с проверкой возраста — вместо этого один процесс за раз держит
-`build_lock` на всё время сборки; внутри него `.vNNN.staging` может быть
-только своя (чужому сборщику взяться неоткуда — замок один на проект).
-
-Поток задачи 15 (документируется здесь, а не там, — это модуль, который его
-обеспечивает):
+Один процесс за раз держит `build_lock` на всю сборку; внутри него
+`.vNNN.staging` может быть только своя. Поток сборки (`render.render_version`):
 
     with build_lock(paths):
-        settle_orphans(paths, recorded_ids=<state["montage"]["versions"] ids>)
+        settle_orphans(paths, recorded_ids=<id версий из state>)
         vid = next_version_id(paths, recorded_ids=<те же id>)
-        # ... рендер в current/ ...
-        staging = stage_version(paths, meta, model)
+        # ... рендер ...
+        staging = stage_version(paths, meta, model, index_text=<собранный текст>)
         montage_state.record_version(...)   # запись в state — граница правды
         publish_version(paths, staging, vid)
 
-Инвариант: **публикуется только после записи в state**, не раньше. Если
-процесс упадёт между `stage_version` и `record_version`, `.vNNN.staging`
-останется валяться, а `state` о версии ничего не знает — следующий
-`build_lock` найдёт эту папку в `settle_orphans` и снесёт (`recorded_ids` её
-не назовёт, раз state не в курсе). Если упадёт МЕЖДУ `record_version` и
-`publish_version` — `settle_orphans` следующего захода увидит: state знает,
-снимок цел — опубликует его без пересборки.
+Инвариант: **публикуется только после записи в state**. Упал до записи —
+state о версии не знает, и следующий `settle_orphans` сносит staging; упал
+между записью и публикацией — state знает, снимок цел, и следующий
+`settle_orphans` публикует его без пересборки.
 """
 
 from __future__ import annotations
@@ -30,11 +22,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Iterable
 
-from ..platform_compat import LockBusyError, file_lock
+from ..platform_compat import LockBusyError, file_lock, fsync_directory
 from . import MontageError
 from .model import Model
 from .paths import VERSION_ID, MontagePaths
@@ -47,25 +39,37 @@ def _staging_dir(paths: MontagePaths, version: str) -> Path:
 
 @contextmanager
 def build_lock(paths: MontagePaths):
-    """Один замок на весь `montage build` — держит его от начала (`settle_
-    orphans`) до конца (`publish_version`). Не блокирует: если кто-то уже
-    строит этот же монтаж, отказ сразу, а не ожидание — вторая параллельная
-    сборка того же проекта не имеет смысла ждать своей очереди, у неё нет
-    более новых данных, чем у первой. ОС снимает замок сама, если держатель
-    умер (аварийно или штатно) — специальной чистки не нужно."""
+    """Замок на всю сборку проекта; не ждёт — у второй параллельной сборки нет
+    данных новее, чем у первой. ОС снимает замок сама, если держатель умер.
+    Текст OSError (по-английски) остаётся только в цепочке исключения."""
 
-    paths.root.mkdir(parents=True, exist_ok=True)
-    lock_path = paths.root / ".build.lock"
-    with lock_path.open("a+", encoding="utf-8") as handle:
+    try:
+        paths.root.mkdir(parents=True, exist_ok=True)
+        handle = (paths.root / ".build.lock").open("a+", encoding="utf-8")
+    except OSError as error:
+        raise MontageError(f"не удалось открыть замок сборки в {paths.root}") from error
+    with handle, ExitStack() as held:
+        # try — только вокруг захвата: исключение из тела сборки проходит как есть.
         try:
-            with file_lock(handle, blocking=False):
-                yield
+            held.enter_context(file_lock(handle, blocking=False))
         except LockBusyError:
             raise MontageError("сборка этого монтажа уже идёт") from None
+        except OSError as error:
+            raise MontageError("не удалось взять замок сборки: файловая система папки "
+                               "проекта не поддерживает блокировки") from error
+        yield
 
 
-def _write_json(path: Path, data) -> None:
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+def _write_durable(path: Path, text: str) -> None:
+    # fsync: после сбоя питания записанная в state версия не останется с пустым снимком
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _json(data) -> str:
+    return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
 
 
 def _complete_snapshot(staging: Path, version_id: str, recorded: set[str]) -> bool:
@@ -80,20 +84,12 @@ def _complete_snapshot(staging: Path, version_id: str, recorded: set[str]) -> bo
 
 
 def settle_orphans(paths: MontagePaths, recorded_ids: Iterable[str]) -> list[str]:
-    """Разбирает КАЖДУЮ `.vNNN.staging` на диске — первым делом внутри
-    `build_lock`, до выбора номера новой версии. Раз замок один на проект,
-    чужому сборщику взяться неоткуда: любая найденная — либо от своего же
-    прошлого захода (упал между `stage_version` и `publish_version`), либо
-    от недоделанной попытки (упал раньше). Полный снимок версии, уже
-    записанной в `state` (`meta.json` целиком разбирается `VersionMeta.
-    from_dict` и его `version` совпадает с именем папки, `model.json`
-    разбирается, `index.html` на месте), — публикуется без пересборки; всё
-    остальное сносится. `versions/vNNN` (уже опубликованные) и подкаталоги
-    не по маске `.vNNN.staging` не трогает.
-
-    Возвращает id версий, которые пришлось восстановить публикацией — для
-    журнала вызывающего, не для его решений: `next_version_id` staging не
-    считает вовсе, ей уже неоткуда взяться к моменту её вызова."""
+    """Разбирает каждую `.vNNN.staging` — первым делом под `build_lock`, до
+    выбора номера. Полный снимок версии, которую state уже знает, а на диске
+    опубликованной нет, — публикуется; остальное (недоделанная попытка или
+    лишний второй снимок опубликованной версии) сносится. Не вышло
+    опубликовать — снимок ждёт следующей сборки, эта не блокируется.
+    Возвращает id опубликованных — для журнала вызывающего."""
 
     if not paths.versions.is_dir():
         return []
@@ -105,19 +101,23 @@ def settle_orphans(paths: MontagePaths, recorded_ids: Iterable[str]) -> list[str
         version_id = item.name[1:-len(".staging")]
         if not VERSION_ID.fullmatch(version_id):
             continue
-        if _complete_snapshot(item, version_id, recorded):
-            publish_version(paths, item, version_id)
-            recovered.append(version_id)
-        else:
+        if paths.version_dir(version_id).exists() or not _complete_snapshot(item, version_id, recorded):
             shutil.rmtree(item, ignore_errors=True)
+            continue
+        try:
+            publish_version(paths, item, version_id)
+        except OSError:
+            continue
+        recovered.append(version_id)
     return recovered
 
 
-def stage_version(paths: MontagePaths, meta: VersionMeta, model: Model) -> Path:
-    """Снимок версии в `.vNNN.staging`. Вызывающий держит `build_lock` и уже
-    прогнал `settle_orphans` в начале той же сборки — коллизии `mkdir` здесь
-    быть неоткуда; если она всё же случилась (внутренняя ошибка вызова, не
-    гонка процессов — замок один), отказ по-русски, не голое исключение."""
+def stage_version(paths: MontagePaths, meta: VersionMeta, model: Model, *,
+                  index_text: str | None = None) -> Path:
+    """Снимок версии в `.vNNN.staging`, каждый файл с fsync. `index_text` —
+    ровно тот текст, что собран в MP4 (Studio может записать current/ уже
+    после сборки); без него — текущий current/index.html. Коллизия `mkdir`
+    под `build_lock` — внутренняя ошибка вызова: отказ по-русски."""
 
     if paths.version_dir(meta.version).exists():
         raise MontageError(f"версия {meta.version} уже есть — версии не перезаписываются")
@@ -126,10 +126,19 @@ def stage_version(paths: MontagePaths, meta: VersionMeta, model: Model) -> Path:
         staging.mkdir(parents=True)
     except FileExistsError as error:
         raise MontageError(f"версия {meta.version} уже собирается") from error
+    except OSError as error:
+        raise MontageError(f"не удалось создать снимок версии {meta.version}") from error
     try:
-        shutil.copy2(paths.index, staging / "index.html")
-        _write_json(staging / "meta.json", meta.to_dict())
-        _write_json(staging / "model.json", model.to_dict())
+        if index_text is None:
+            with paths.index.open(encoding="utf-8", newline="") as handle:
+                index_text = handle.read()
+        _write_durable(staging / "index.html", index_text)
+        _write_durable(staging / "meta.json", _json(meta.to_dict()))
+        _write_durable(staging / "model.json", _json(model.to_dict()))
+        fsync_directory(staging)
+    except OSError as error:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise MontageError(f"не удалось записать снимок версии {meta.version}") from error
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise

@@ -36,6 +36,7 @@ from .workspace import (
     ASSETS_DB_NAME,
     MAX_ASSET_BYTES,
     MAX_TEXT_BYTES,
+    MONTAGE_MAX_BYTES,
     QUESTIONS_DB_NAME,
     resolve_workspace_paths,
 )
@@ -379,6 +380,7 @@ def open_assets(workspace) -> AssetIndex:
         workspace_path,
         (media_root,),
         max_bytes=MAX_ASSET_BYTES,
+        montage_max_bytes=MONTAGE_MAX_BYTES,
         db_path=private_root / ASSETS_DB_NAME,
     )
 
