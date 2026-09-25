@@ -642,6 +642,16 @@ class MontageNextStepTests(unittest.TestCase):
             "hyperframes": {"status": "failed", "message": "npm ERR"}})
         self.assertIn("--install-deps", text)
 
+    def test_missing_npm_blocker_is_named_directly_not_install_deps(self):
+        """Разбор 1/5 → 2/5, находка C: дистрибутивный Node.js без npm —
+        --install-deps его не допоставит, next_steps должен сказать прямо."""
+
+        text = install._montage_next_step({"ok": False, "node": {"status": "found"},
+            "hyperframes": {"status": "failed", "message": "рядом с Node.js нет npm — на "
+                            "Debian/Ubuntu он ставится отдельным пакетом: sudo apt install npm"}})
+        self.assertIn("sudo apt install npm", text)
+        self.assertNotIn("повторите: install.py --install-deps", text)
+
     def test_crash_guard_error_is_shown_verbatim(self):
         text = install._montage_next_step({"ok": False, "error": "бум"})
         self.assertIn("бум", text)

@@ -655,9 +655,9 @@ def _montage_report(kind, install_deps, update, home):
     должна ронять всю установку: подключение навыка и остальные разделы
     отчёта обязаны напечататься. Ожидаемые сбои (таймаут npm, битый файл и
     т.п.) уже приходят статусом из montage_report — сюда попадают только
-    непредвиденные исключения."""
-    import install_montage
+    непредвиденные исключения — в том числе сбой самого импорта."""
     try:
+        import install_montage
         return install_montage.montage_report(kind, install_missing=install_deps, update=update,
                                               install_node=install_deps, home=home)
     except Exception as error:  # noqa: BLE001 — намеренно широкий предохранитель
@@ -667,13 +667,19 @@ def _montage_report(kind, install_deps, update, home):
 def _montage_next_step(montage):
     """Что дописать в next_steps, если монтаж не готов — называет реальный
     затор, а не слепо повторяет --install-deps там, где это не поможет
-    (например, на Linux без Node.js установщик его сам не ставит)."""
+    (например, на Linux без Node.js установщик его сам не ставит, а
+    отсутствующий рядом с Node.js npm --install-deps не допоставит)."""
     if montage.get("error"):
         return "Монтаж не готов: %s" % montage["error"]
     node = montage.get("node") or {}
     if node.get("status") not in ("found", "installed"):
         blocker = node.get("message") or "нужен Node.js 22+"
         return "Монтаж не готов: %s" % blocker
+    hyperframes = montage.get("hyperframes") or {}
+    # именно «нет npm» — иначе обычная ошибка самого npm («npm ERR! ...»)
+    # тоже содержит подстроку «npm» и ошибочно попала бы сюда.
+    if hyperframes.get("status") == "failed" and "нет npm" in (hyperframes.get("message") or ""):
+        return "Монтаж не готов: %s" % hyperframes["message"]
     return ("Монтаж не готов — повторите: install.py --install-deps "
             "(подробности в разделе «Монтаж» выше)")
 
