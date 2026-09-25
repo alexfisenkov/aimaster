@@ -56,11 +56,29 @@ def installed_version(prefix: Path) -> str | None:
     return package_version(prefix, "hyperframes")
 
 
-def install_command() -> str:
-    """Точная команда установки монтажа на этой машине: автопилот выполняет её сам."""
+def install_argv() -> list[str]:
+    """argv установки без какой-либо кавычки под конкретную оболочку.
 
-    argv = [sys.executable, str(INSTALL_PY), "--install-deps"]
-    return subprocess.list2cmdline(argv) if IS_WINDOWS else shlex.join(argv)
+    Для прямого запуска (Popen без shell=True) — самый надёжный вид команды;
+    install_command() ниже строит из него ЧЕЛОВЕКУ читаемую строку."""
+
+    return [sys.executable, str(INSTALL_PY), "--install-deps"]
+
+
+def install_command() -> str:
+    """Точная команда установки монтажа на этой машине — для показа человеку
+    (автопилот запускает не строку, а install_argv() напрямую).
+
+    На Windows list2cmdline кавычит путь к python.exe, если в нём пробел
+    (типично для "C:\\Program Files\\Python312\\python.exe"). Такая строка
+    работает в cmd.exe как есть, но PowerShell воспринимает ведущую кавычку
+    как текстовый литерал, а не вызов команды — нужен оператор вызова `&`."""
+
+    argv = install_argv()
+    if not IS_WINDOWS:
+        return shlex.join(argv)
+    command = subprocess.list2cmdline(argv)
+    return f"& {command}" if command.startswith('"') else command
 
 
 def find_node(*, environ=None) -> str | None:
@@ -128,7 +146,7 @@ def locate(*, home=None, environ=None, run=subprocess.run) -> tuple[Engine | Non
     if version != pin["version"]:
         return None, f"стоит HyperFrames {version}, нужен {pin['version']}"
     browser = read_record(prefix).get("browser")
-    if not browser or not Path(browser).is_file():
+    if not isinstance(browser, str) or not browser or not Path(browser).is_file():
         return None, "не скачан браузер для сборки видео"
     return Engine(node=node, script=script, prefix=prefix, version=version, browser=browser), ""
 
@@ -138,7 +156,8 @@ def engine_status(*, home=None, environ=None, run=subprocess.run) -> dict:
     return {"state": "installed" if found else "missing",
             "version": found.version if found else None,
             "wanted": load_pin()["version"], "reason": reason,
-            "prefix": str(tools_prefix(home=home, environ=environ)), "install": install_command()}
+            "prefix": str(tools_prefix(home=home, environ=environ)),
+            "install": install_command(), "install_argv": install_argv()}
 
 
 def require_engine(**kwargs) -> Engine:

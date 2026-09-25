@@ -116,6 +116,16 @@ class LocateTests(_Prefix):
         self.assertIsNone(found)
         self.assertIn("браузер", reason)
 
+    def test_malformed_browser_record_is_missing_not_a_crash(self):
+        # aimaster-engine.json мог оказаться повреждён руками или сторонним
+        # процессом: "browser" не строка. locate() обязан отказать по
+        # понятной причине, а не упасть с TypeError внутри Path(browser).
+        self.install_package()
+        engine.write_record(self.prefix, {"browser": 12345, "version": "0.8.75"})
+        found, reason = self.locate()
+        self.assertIsNone(found)
+        self.assertIn("браузер", reason)
+
     def test_ready_engine(self):
         self.install_package()
         browser = self.install_browser()
@@ -130,6 +140,7 @@ class LocateTests(_Prefix):
         status = engine.engine_status(environ=self.env)
         self.assertEqual((status["state"], status["wanted"]), ("missing", "0.8.75"))
         self.assertEqual(status["install"], engine.install_command())
+        self.assertEqual(status["install_argv"], engine.install_argv())
         with mock.patch.object(engine, "find_node", return_value=None):
             with self.assertRaises(MontageError) as caught:
                 engine.require_engine(environ=self.env)
@@ -142,6 +153,32 @@ class LocateTests(_Prefix):
         self.assertTrue(command.endswith("--install-deps"))
         with mock.patch.object(engine, "IS_WINDOWS", True):
             self.assertTrue(engine.install_command().endswith("--install-deps"))
+
+    def test_install_argv_is_the_plain_argument_list(self):
+        self.assertEqual(engine.install_argv(),
+                         [sys.executable, str(_SCRIPTS / "install.py"), "--install-deps"])
+
+    def test_install_command_is_powershell_safe_when_python_path_has_spaces(self):
+        spaced = "C:\\Program Files\\Python312\\python.exe"
+        with mock.patch.object(engine.sys, "executable", spaced):
+            with mock.patch.object(engine, "IS_WINDOWS", True):
+                windows_command = engine.install_command()
+            with mock.patch.object(engine, "IS_WINDOWS", False):
+                posix_command = engine.install_command()
+        # cmd.exe кавычит первый токен как есть и прекрасно его выполняет;
+        # PowerShell без "& " перед кавычкой считает строку текстом, а не
+        # вызовом команды.
+        self.assertTrue(windows_command.startswith('& "' + spaced))
+        self.assertIn(spaced, windows_command)
+        self.assertTrue(windows_command.endswith("--install-deps"))
+        self.assertFalse(posix_command.startswith("&"))
+
+    def test_install_command_stays_plain_on_windows_when_nothing_needs_quoting(self):
+        with mock.patch.object(engine.sys, "executable", r"C:\Python312\python.exe"):
+            with mock.patch.object(engine, "IS_WINDOWS", True):
+                command = engine.install_command()
+        self.assertFalse(command.startswith("&"))
+        self.assertTrue(command.startswith(r"C:\Python312\python.exe"))
 
     def test_package_versions(self):
         self.install_package()
