@@ -67,6 +67,28 @@ class EnvTests(unittest.TestCase):
         self.assertEqual(env["USERPROFILE"], env["HOME"])
         self.assertNotIn("HYPERFRAMES_BROWSER_PATH", env)
 
+    def test_windows_also_moves_localappdata_and_appdata(self):
+        """round 1/5, CI windows-latest: системный Chrome (обход битой скачки
+        через HYPERFRAMES_BROWSER_PATH) зависал на `chrome.exe --version»,
+        когда USERPROFILE указывал в песочницу движка, а LOCALAPPDATA/APPDATA
+        молча текли из настоящего окружения раннера — рассинхрон «известных
+        папок» Windows. Обе должны переехать вместе с HOME/USERPROFILE."""
+
+        base = Path("/tmp/hf")
+        real_env = {"LOCALAPPDATA": r"C:\Users\real\AppData\Local",
+                   "APPDATA": r"C:\Users\real\AppData\Roaming"}
+        with mock.patch.object(engine_cli, "IS_WINDOWS", True):
+            env = engine_cli.engine_env(make_engine(base, browser=False), real_env)
+        self.assertEqual(env["LOCALAPPDATA"], str(base / "home" / "AppData" / "Local"))
+        self.assertEqual(env["APPDATA"], str(base / "home" / "AppData" / "Roaming"))
+
+    def test_posix_leaves_localappdata_and_appdata_alone(self):
+        base = Path("/tmp/hf")
+        with mock.patch.object(engine_cli, "IS_WINDOWS", False):
+            env = engine_cli.engine_env(make_engine(base, browser=False), {"HOME": "/Users/me"})
+        self.assertNotIn("LOCALAPPDATA", env)
+        self.assertNotIn("APPDATA", env)
+
 
 class RunTests(unittest.TestCase):
     def setUp(self):
