@@ -97,6 +97,19 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install ffmpeg -y --no-progress
 
+      - name: Exclude the engine cache from Windows Defender (Windows)
+        # round 1/5, находка CI windows-latest: два процесса Node подряд
+        # подтвердили, что файл на диске есть (тот же путь из «ensure» и
+        # «path»), а Python тут же — и после нескольких попыток с паузой —
+        # видел его отсутствие. Не «блокировка на секунду» (иначе retry бы
+        # помог — не помог), а поведение Defender-а на свежескачанный
+        # неподписанный .exe (~30+ МБ) под реал-тайм защитой: тихо удаляет.
+        # Раннер работает от администратора — Add-MpPreference не требует
+        # доп. прав. Путь — ровно studio.platform_compat.user_data_dir().
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\AI Мастерская"
+
       - name: Install pinned HyperFrames, render browser and skills
         shell: bash
         env:

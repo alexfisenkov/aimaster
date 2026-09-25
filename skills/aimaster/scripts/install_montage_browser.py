@@ -48,6 +48,20 @@ def _wait_until_file(path: str, *, attempts=IS_FILE_ATTEMPTS, delay=IS_FILE_DELA
     return False
 
 
+def _parent_listing(path: str) -> str:
+    """Диагностика на случай, если исключение из Windows Defender (ci.yml) не
+    решило находку CI windows-latest до конца: что РЕАЛЬНО лежит там, где
+    Node только что уверял, что лежит файл — доказывает или опровергает
+    «антивирус тихо удалил», а не оставляет гадать по одной строке пути."""
+
+    parent = Path(path).parent
+    try:
+        names = sorted(entry.name for entry in parent.iterdir())
+    except OSError as error:
+        return f"родитель {parent} не читается: {error}"
+    return f"родитель {parent}: {names}" if names else f"родитель {parent} пуст"
+
+
 def _failure_detail(ensured, located, path: str, *, inside: bool, is_file: bool) -> str:
     """Раньше сообщение об отказе показывало только хвост УСПЕШНОГО вывода
     `ensure` — выглядело как «всё скачалось», хотя отказал отдельный шаг
@@ -69,7 +83,8 @@ def _failure_detail(ensured, located, path: str, *, inside: bool, is_file: bool)
         # (round 1/5: `!r` тут же сломал собственный юнит-тест на Windows).
         reasons.append(f"путь вне папки движка: {path}")
     elif not is_file:
-        reasons.append(f"файла нет на диске за {IS_FILE_ATTEMPTS} попыток по {IS_FILE_DELAY} с: {path}")
+        reasons.append(f"файла нет на диске за {IS_FILE_ATTEMPTS} попыток по {IS_FILE_DELAY} с: {path}"
+                       f" | {_parent_listing(path)}")
     detail = "; ".join(reasons) or "после загрузки браузер для сборки не найден в папке движка"
     tail = (ensured.stderr or ensured.stdout).strip()[-300:]
     return f"{detail}\n{tail}" if tail else detail

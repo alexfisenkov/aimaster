@@ -395,13 +395,19 @@ class BrowserInstallTests(unittest.TestCase):
 
     def test_failure_names_a_missing_file_on_disk(self):
         """`browser path` печатает путь внутри папки движка, но файла там нет
-        (например браузер сорвался в антивирусный карантин на Windows)."""
+        (например Windows Defender тихо удалил только что скачанный .exe) —
+        сообщение показывает и путь, и что реально лежит в той же папке,
+        чтобы не гадать по одной строке пути (round 1/5, доп. диагностика)."""
 
+        self.browser.parent.mkdir(parents=True, exist_ok=True)
+        touch(self.browser.parent / "decoy.txt")
+        missing = self.browser.parent / "нет-такого-файла.exe"
         item = self.call("/usr/bin/node", self.prefix, PIN,
                          install_missing=True, update=False,
-                         runner=self.runner(str(self.browser.parent / "нет-такого-файла.exe")))
+                         runner=self.runner(str(missing)))
         self.assertEqual(item["status"], "failed")
         self.assertIn("файла нет на диске", item["message"])
+        self.assertIn("decoy.txt", item["message"])
 
     def test_transient_missing_file_recovers_on_retry(self):
         """Воспроизводит находку round 1/5 на CI windows-latest дословно: сам
