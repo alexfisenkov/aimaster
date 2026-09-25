@@ -96,13 +96,17 @@ class StateTests(unittest.TestCase):
                               asset_id="asset-not-registered", model_hash="h")
         with self.assertRaises(MontageError) as caught:
             record_version(self.store, self.assets, "p", 1, meta=missing)
-        self.assertIn("недоступен", str(caught.exception))
+        # Round-fix-2/5, item 8: без английского текста исключения AssetIndex
+        # (assets.py: "registered asset has changed" и т. п.) в отказе.
+        self.assertIn("изменился или удалён", str(caught.exception))
+        self.assertNotIn("registered asset", str(caught.exception))
 
         record_version(self.store, self.assets, "p", 1, meta=self.meta("v001", "v1.mp4"))
         (self.seed.media / "v1.mp4").write_bytes(b"changed after registration")
         with self.assertRaises(MontageError) as caught:
             record_restore(self.store, self.assets, "p", 2, version_id="v001")
-        self.assertIn("недоступен", str(caught.exception))
+        self.assertIn("изменился или удалён", str(caught.exception))
+        self.assertNotIn("registered asset", str(caught.exception))
 
     def test_refusals(self):
         record_draft(self.store, "p", 0, canvas=Canvas(108, 192))

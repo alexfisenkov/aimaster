@@ -28,18 +28,21 @@ def _history_actor(by: str) -> str:
 
 
 def _resolved_mime(assets: AssetIndex, asset_id: str) -> str:
+    # round-fix-2/5, item 8: без английского текста исключения AssetIndex
+    # (assets.py говорит "registered asset has changed" и т. п.) — один
+    # русский отказ на любую причину: не найден, изменился, не читается.
     try:
         _, mime_type = assets.resolve(asset_id)
-    except AssetError as error:
-        raise MontageError(f"актив монтажа {asset_id} недоступен: {error}") from error
+    except AssetError:
+        raise MontageError(f"файл версии {asset_id} изменился или удалён") from None
     return mime_type
 
 
 def _resolved_role(assets: AssetIndex, asset_id: str) -> str:
     try:
         return assets.role_of(asset_id)
-    except AssetError as error:
-        raise MontageError(f"актив монтажа {asset_id} недоступен: {error}") from error
+    except AssetError:
+        raise MontageError(f"файл версии {asset_id} изменился или удалён") from None
 
 
 def montage_section(state: dict) -> dict:
