@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
-from ..platform_compat import replace_file
+from ..platform_compat import IS_WINDOWS, replace_file
 from . import MontageError
 from .model import Model
 from .paths import VERSION_ID, MontagePaths, version_name, version_number
@@ -96,6 +96,20 @@ def read_version_model(paths: MontagePaths, version_id: str) -> Model:
         raise MontageError(f"у версии {version_id} нет модели монтажа") from error
 
 
+def _backup_copy(source: Path, target: Path, *, attempts: int = 20, delay: float = 0.05) -> None:
+    """Windows: пока другой процесс или поток подменяет index.html, открыть его
+    на чтение нельзя (WinError 32) — мгновение, как у replace_file, не отказ."""
+
+    for attempt in range(attempts):
+        try:
+            shutil.copy2(source, target)
+            return
+        except PermissionError:
+            if not IS_WINDOWS or attempt + 1 == attempts:
+                raise
+            time.sleep(delay)
+
+
 def restore_files(paths: MontagePaths, version_id: str) -> Path | None:
     """Кладёт снимок версии в current/index.html; прежний current — в .undo/."""
 
@@ -107,7 +121,11 @@ def restore_files(paths: MontagePaths, version_id: str) -> Path | None:
         paths.undo.mkdir(parents=True, exist_ok=True)
         backup = paths.undo / (f"before-restore-{time.strftime('%Y%m%d-%H%M%S')}"
                                f"-{time.time_ns() % 1_000_000_000:09d}.html")
-        shutil.copy2(paths.index, backup)
+        try:
+            _backup_copy(paths.index, backup)
+        except OSError as error:
+            raise MontageError(f"не удалось сохранить текущий монтаж перед возвратом к {version_id}"
+                               ) from error
     # mkstemp — не голое фиксированное имя (round-fix-1/5, item 11): два
     # параллельных restore (или недобитый временный файл прошлой попытки)
     # раньше коллизировали на одном ".index.restore.tmp".

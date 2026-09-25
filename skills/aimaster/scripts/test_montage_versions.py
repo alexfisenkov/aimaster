@@ -129,6 +129,33 @@ class VersionsTests(unittest.TestCase):
         self.assertFalse((self.paths.current / ".index.restore.tmp").exists())
         self.assertEqual(self.paths.index.read_text(encoding="utf-8"), "<html>v1</html>")
 
+    def test_windows_sharing_violation_on_the_backup_copy_is_retried(self):
+        # Windows CI (run 36178690695): пока другой поток подменяет index.html,
+        # чтение его для копии в .undo падает WinError 32 — это мгновение, не отказ.
+        self.publish("v001")
+        real_copy, failures = versions_module.shutil.copy2, []
+
+        def flaky_copy(source, target, **kwargs):
+            if Path(source) == self.paths.index and len(failures) < 2:
+                failures.append(source)
+                raise PermissionError(13, "The process cannot access the file", None, 32)
+            return real_copy(source, target, **kwargs)
+
+        with mock.patch.object(versions_module, "IS_WINDOWS", True), \
+                mock.patch.object(versions_module.time, "sleep"), \
+                mock.patch.object(versions_module.shutil, "copy2", side_effect=flaky_copy):
+            backup = restore_files(self.paths, "v001")
+        self.assertEqual(len(failures), 2)
+        self.assertTrue(backup.is_file())
+
+    def test_backup_copy_that_keeps_failing_is_a_russian_refusal(self):
+        self.publish("v001")
+        with mock.patch.object(versions_module, "IS_WINDOWS", False), \
+                mock.patch.object(versions_module.shutil, "copy2", side_effect=PermissionError(13, "denied")):
+            with self.assertRaises(MontageError) as caught:
+                restore_files(self.paths, "v001")
+        self.assertIn("v001", str(caught.exception))
+
     def test_restore_from_two_threads_at_once_does_not_collide(self):
         # Round-fix-2/5, item 9: прежний тест только проверял, что имя не
         # фиксировано — здесь настоящая гонка, несколько потоков одновременно.
