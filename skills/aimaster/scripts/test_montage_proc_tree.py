@@ -82,6 +82,7 @@ class KillTreePosixSequencingTests(unittest.TestCase):
         fake_proc.poll.return_value = 0
         with mock.patch.object(proc_tree, "IS_WINDOWS", False), \
                 mock.patch.object(proc_tree, "_descendants", return_value=[201, 202]), \
+                mock.patch.object(proc_tree, "process_started", return_value="ps:1"), \
                 mock.patch.object(proc_tree.os, "killpg",
                                   side_effect=lambda pid, sig: calls.append(("group", pid, sig))), \
                 mock.patch.object(proc_tree.os, "kill",
@@ -95,6 +96,34 @@ class KillTreePosixSequencingTests(unittest.TestCase):
                                 ("pid", 202, signal.SIGKILL)])
         # SIGTERM целиком раньше любого SIGKILL — не вперемешку
         self.assertLess(calls.index(term[-1]), calls.index(kill[0]))
+
+    def test_a_reused_pid_never_gets_sigkill(self):
+        """За паузу потомок 202 завершился, а ОС отдала его номер чужому
+        процессу (другое время запуска); 203 исчез ещё до SIGTERM."""
+
+        calls = []
+        started = {201: iter(["t201", "t201"]), 202: iter(["t202", "чужой"]), 203: iter([None])}
+        fake_proc = mock.Mock(pid=100)
+        fake_proc.poll.return_value = 0
+        with mock.patch.object(proc_tree, "IS_WINDOWS", False), \
+                mock.patch.object(proc_tree, "_descendants", return_value=[201, 202, 203]), \
+                mock.patch.object(proc_tree, "process_started", side_effect=lambda pid: next(started[pid])), \
+                mock.patch.object(proc_tree.os, "killpg"), \
+                mock.patch.object(proc_tree.os, "kill",
+                                  side_effect=lambda pid, sig: calls.append((pid, sig))):
+            proc_tree.kill_tree(fake_proc)
+        self.assertEqual(calls, [(201, signal.SIGTERM), (202, signal.SIGTERM), (201, signal.SIGKILL)])
+
+    def test_foreign_process_that_refuses_signals_does_not_stop_the_kill(self):
+        fake_proc = mock.Mock(pid=100)
+        fake_proc.poll.return_value = 0
+        with mock.patch.object(proc_tree, "IS_WINDOWS", False), \
+                mock.patch.object(proc_tree, "_descendants", return_value=[201]), \
+                mock.patch.object(proc_tree, "process_started", return_value="t"), \
+                mock.patch.object(proc_tree.os, "killpg", side_effect=PermissionError), \
+                mock.patch.object(proc_tree.os, "kill", side_effect=PermissionError) as kill:
+            proc_tree.kill_tree(fake_proc)
+        self.assertEqual(kill.call_count, 2)  # SIGTERM и SIGKILL — оба дошли до вызова
 
     def test_already_dead_pid_does_not_raise(self):
         fake_proc = mock.Mock(pid=100)

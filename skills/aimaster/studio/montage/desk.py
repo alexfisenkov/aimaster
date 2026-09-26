@@ -24,11 +24,13 @@ from .locks import held_lock
 from .paths import MontagePaths
 from .proc import PidHandle, process_alive, process_started
 from .proc_tree import kill_tree
+from .replace_target import clear_link
 from .short_paths import short_paths
 
 TELEMETRY_STORAGE_KEY = "hyperframes-studio:telemetryDisabled"
 PUBLIC_KEYS = ("url", "port", "pid", "started_at")
 DESK_LOCK_WAIT = 5.0
+LOCK_NAME = ".desk.lock"
 BUSY = "монтажный стол этого проекта сейчас открывают или закрывают — повторите через минуту"
 
 
@@ -94,7 +96,7 @@ class StudioDesk:
         desk_children.forget(paths, pid)
 
     def _lock(self, paths: MontagePaths, wait: float = DESK_LOCK_WAIT):
-        return held_lock(paths.root / ".desk.lock", wait=wait, clock=self.clock, sleep=self.sleep,
+        return held_lock(paths.root / LOCK_NAME, wait=wait, clock=self.clock, sleep=self.sleep,
                          busy=BUSY)
 
     def status(self, paths: MontagePaths) -> dict:
@@ -116,6 +118,13 @@ class StudioDesk:
     def close(self, paths: MontagePaths) -> dict:
         if not paths.root.is_dir():
             return {"state": "closed"}  # монтажа нет — и стола нет, папок не заводим
+        # Закрытие идёт мимо проверки ссылок (своё Studio остановить нужно
+        # всегда): ссылка на месте замка — долой сама, по ней замок не открыть.
+        try:
+            clear_link(paths.root / LOCK_NAME)
+        except OSError as error:
+            raise MontageError(f"не удалось убрать ссылку на месте замка {LOCK_NAME} в папке "
+                               "монтажа") from error
         with self._lock(paths):
             _text, record, seen = self._check(paths)
             if seen in (OPEN, HUNG):

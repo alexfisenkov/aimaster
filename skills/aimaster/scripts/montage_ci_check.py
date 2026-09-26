@@ -39,7 +39,8 @@ from studio.montage.draft import build_current  # noqa: E402
 from studio.montage.edit import EditContext, EditRequest  # noqa: E402
 from studio.montage.edit_ops import title_add  # noqa: E402
 from studio.montage.engine import load_pin, require_engine  # noqa: E402
-from studio.montage.engine_cli import frames_cache, run_engine, run_engine_json  # noqa: E402
+from studio.montage.engine_cli import run_engine, run_engine_json  # noqa: E402
+from studio.montage.render_run import render_args  # noqa: E402
 from studio.montage.index_io import read_index  # noqa: E402
 from studio.montage.paths import montage_paths  # noqa: E402
 from studio.montage.probe import probe_media  # noqa: E402
@@ -86,10 +87,8 @@ def video_md5(path: Path) -> str:
 def _render(engine, comp: Path, output: Path, report: dict) -> None:
     pin = load_pin()
     started = time.monotonic()
-    result = run_engine(engine, ["render", ".", "--output", str(output), "--quality",
-                                 pin["render_quality"], "--frames-cache-dir",
-                                 str(frames_cache(engine)), "--quiet", "--json"],
-                        cwd=comp, timeout=pin["timeouts"]["render"])
+    result = run_engine(engine, render_args(engine, output), cwd=comp,
+                        timeout=pin["timeouts"]["render"])
     report["render_seconds"] = round(time.monotonic() - started, 1)
     report["network_markers"] = network_markers(result.stdout + "\n" + result.stderr)
     if result.code != 0 or not output.is_file():

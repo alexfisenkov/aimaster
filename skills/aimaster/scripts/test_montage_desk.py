@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -135,6 +136,20 @@ class DeskUnitTests(_Draft):
         self.assertEqual(self.killed, [4242])
         self.assertFalse(self.paths.desk_file.exists())
         self.assertEqual(desk_children._children, {})
+
+    def test_close_stops_our_desk_even_with_a_link_planted_at_its_lock(self):
+        self.desk().open(self.paths)
+        elsewhere = self.base / "создал бы замок"
+        lock = self.paths.root / ".desk.lock"
+        lock.unlink(missing_ok=True)
+        try:
+            os.symlink(elsewhere, lock)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"симлинк здесь не создать: {error}")
+        self.assertEqual(self.desk().close(self.paths), {"state": "closed"})
+        self.assertEqual(self.killed, [4242])
+        self.assertFalse(os.path.islink(lock))
+        self.assertFalse(os.path.lexists(elsewhere))
 
     def assert_forgotten_not_killed(self, studio):
         status = studio.status(self.paths)

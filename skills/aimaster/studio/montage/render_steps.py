@@ -1,6 +1,6 @@
 """Шаги сборки версии — все под `build_lock`: подготовка index.html, проверки
-до движка, рендер MP4 с логом, проверка готового файла. Порядок шагов и
-запись версии — `render.py`."""
+до движка, проверка готового файла. Сам рендер MP4 — `render_run.py`, порядок
+шагов и запись версии — `render.py`."""
 
 from __future__ import annotations
 
@@ -11,15 +11,13 @@ from . import AUDIO_LAYER_NAMES, MontageError
 from .canvas import DEFAULT_HEIGHT, DEFAULT_WIDTH, Canvas
 from .composition_refs import check_composition
 from .engine import load_pin
-from .engine_cli import frames_cache
 from .html_doc import ROOT_ID, element_attrs
-from .index_io import read_index, write_index, write_text_atomic
+from .index_io import read_index, write_index
 from .model import Model, read_model
-from .paths import MontagePaths, render_output
+from .paths import MontagePaths
 from .short_paths import short_paths
 from .split_fades import normalize_split_fades
-from .typeface import FONT_FAMILY
-from .verify import lint_problems, lint_warnings, network_markers, output_problems
+from .verify import lint_problems, lint_warnings, output_problems
 
 
 def normalized_index(paths: MontagePaths, base: Model | None, *, trusted: bool = True) -> str:
@@ -61,67 +59,6 @@ def preflight(paths: MontagePaths, engine, runner, text: str) -> tuple[Model, li
                            + "; ".join(problems))
     warnings = [short_paths(warning, shown) for warning in lint_warnings(report)]
     return read_model(engine, paths.current, cache_dir=paths.cache, runner=runner), warnings
-
-
-def remove_output(output: Path) -> None:
-    try:
-        output.unlink(missing_ok=True)
-    except OSError:
-        pass  # уборка при уже случившейся ошибке — не подменяет её своей
-
-
-def _clear_orphan(output: Path) -> None:
-    """Номер новее всех записанных и опубликованных версий: файл с этим именем
-    может остаться только от прерванной сборки — он не версия, его заменяем."""
-
-    try:
-        output.unlink(missing_ok=True)
-        output.parent.mkdir(parents=True, exist_ok=True)
-    except OSError as error:
-        raise MontageError(f"не удалось подготовить место для {output.name}") from error
-
-
-def _write_log(paths: MontagePaths, version_id: str, text: str) -> str:
-    name = f"render-{version_id}.log"
-    try:
-        write_text_atomic(paths.logs / name, text)
-    except MontageError:
-        pass  # без лога сборка остаётся сборкой
-    return f"montage/.logs/{name}"
-
-
-def render_mp4(ctx, engine, runner, version_id: str) -> Path:
-    """MP4 версии в media/<проект>/montage/vNNN.mp4; лог — montage/.logs/render-vNNN.log.
-    Сбой или след сети в логе — MontageError, свой файл удалён."""
-
-    pin = load_pin()
-    output = render_output(ctx.media_root, ctx.project_id, version_id)
-    _clear_orphan(output)
-    # --json: без него движок на каждой сборке ходит за обновлениями (engine_cli.argv_for)
-    try:
-        result = runner.run(engine, ["render", ".", "--output", str(output), "--quality",
-                                     pin["render_quality"], "--frames-cache-dir",
-                                     str(frames_cache(engine)), "--quiet", "--json"],
-                            cwd=ctx.paths.current, timeout=pin["timeouts"]["render"])
-    except BaseException:  # Ctrl+C или сбой запуска — недописанный MP4 не оставляем
-        remove_output(output)
-        raise
-    log = f"{result.stdout}\n{result.stderr}"
-    log_name = _write_log(ctx.paths, version_id, log)
-    shown = {ctx.workspace: "<рабочая папка>", engine.prefix: "<движок>"}
-    if result.code != 0 or not output.is_file():
-        remove_output(output)
-        why = (f"не уложилась в {pin['timeouts']['render']} с" if result.timed_out
-               else short_paths(result.stderr or result.stdout, shown).strip()[-500:]
-               or f"код {result.code}")
-        raise MontageError(f"Сборка не удалась: {why} (лог: {log_name})")
-    network = network_markers(short_paths(log, shown))
-    if network:
-        remove_output(output)
-        raise MontageError(f"Сборка обращалась в сеть или к чужому шрифту: {'; '.join(network)}. "
-                           f"Текст — только шрифтом «{FONT_FAMILY}» (он в assets/fonts), скрипты — "
-                           "только локальные из assets/ (GSAP кладёт montage gsap)")
-    return output
 
 
 def _canvas(text: str, recorded) -> Canvas:

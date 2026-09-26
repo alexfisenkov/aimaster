@@ -10,8 +10,11 @@ macOS и Linux) и разослать сигналы каждому найден
 
 Порядок на POSIX: SIGTERM группе node и каждому потомку (дать puppeteer/
 Chrome шанс на штатное закрытие — как обычно и работает Ctrl+C), недолгая
-пауза, затем SIGKILL всем, кто не отреагировал. Windows: `taskkill /T /F`
-сразу останавливает всё дерево одной командой — своей эскалации не нужно.
+пауза, затем SIGKILL всем, кто не отреагировал. Номер завершившегося потомка
+ОС за эту паузу может отдать чужому процессу, поэтому у каждого потомка
+запоминается время запуска, и SIGKILL получает только тот же самый процесс.
+Windows: `taskkill /T /F` сразу останавливает всё дерево одной командой —
+своей эскалации не нужно.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ import time
 from pathlib import Path
 
 from ..platform_compat import IS_WINDOWS
+from .proc import process_started
 
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_NO_WINDOW = 0x08000000
@@ -77,15 +81,15 @@ def _descendants(root_pid: int, *, run=subprocess.run) -> list[int]:
 def _signal_group(pid: int, sig: int) -> None:
     try:
         os.killpg(pid, sig)
-    except ProcessLookupError:
-        pass
+    except (ProcessLookupError, PermissionError):
+        pass  # группы уже нет или она не наша
 
 
 def _signal_pid(pid: int, sig: int) -> None:
     try:
         os.kill(pid, sig)
-    except ProcessLookupError:
-        pass
+    except (ProcessLookupError, PermissionError):
+        pass  # процесса уже нет или он не наш
 
 
 def kill_tree(proc) -> None:
@@ -104,13 +108,16 @@ def kill_tree(proc) -> None:
         except (OSError, subprocess.SubprocessError):
             pass  # лучшее, что можно сделать — не дать чистке уронить вызывающего
         return
-    descendants = _descendants(proc.pid)
+    # (номер, время запуска); время не прочитать — процесса уже нет
+    descendants = [(pid, started) for pid in _descendants(proc.pid)
+                   if (started := process_started(pid)) is not None]
     _signal_group(proc.pid, signal.SIGTERM)
-    for pid in descendants:
+    for pid, _started in descendants:
         _signal_pid(pid, signal.SIGTERM)
     deadline = time.monotonic() + GRACE_SECONDS
     while time.monotonic() < deadline and proc.poll() is None:
         time.sleep(0.05)
     _signal_group(proc.pid, signal.SIGKILL)
-    for pid in descendants:
-        _signal_pid(pid, signal.SIGKILL)
+    for pid, started in descendants:
+        if process_started(pid) == started:  # тот же процесс, а не новый с его номером
+            _signal_pid(pid, signal.SIGKILL)

@@ -17,9 +17,11 @@ from .engine import Engine, require_engine
 from .engine_cli import EngineRunner
 from .index_io import read_index
 from .model import model_hash
-from .montage_state import check_writable, montage_section, record_version, require_revision
+from .montage_state import (check_writable, load_fresh, montage_section, record_version,
+                            require_revision)
 from .probe import probe_media
-from .render_steps import checked_output, normalized_index, preflight, remove_output, render_mp4
+from .render_run import remove_output, render_mp4
+from .render_steps import checked_output, normalized_index, preflight
 from .summary_text import auto_summary, checked_summary
 from .version_diff import base_model, changes_since
 from .version_staging import (build_lock, discard_staging, publish_version, settle_orphans,
@@ -36,15 +38,6 @@ class RenderOutcome:
     changes: list
     warnings: list
     revision: int
-
-
-def _fresh_state(ctx: ProjectContext, expected_revision: int) -> dict:
-    """State заново под замком: пока ждали, другая сборка могла записать версию."""
-
-    state = ctx.store.load(ctx.project_id)
-    require_revision(state, expected_revision)
-    check_writable(state)
-    return state
 
 
 def _drop_output(ctx: ProjectContext, output, asset_id: str | None) -> None:
@@ -133,6 +126,6 @@ def render_version(ctx: ProjectContext, expected_revision: int, *, by: str | Non
     engine = engine or require_engine()
     runner = runner or EngineRunner()
     with build_lock(ctx.paths):
-        state = _fresh_state(ctx, expected_revision)
+        state = load_fresh(ctx.store, ctx.project_id, expected_revision)
         return _build(ctx, state, expected_revision, by=by, summary=summary, engine=engine,
                       runner=runner, probe=probe)

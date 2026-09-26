@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
@@ -116,6 +117,29 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(outcome.changes, ["клип сцены 1 «Сад»: начало обрезано на 0,5 с"])
         meta = read_meta(ctx.paths, "v002")
         self.assertEqual((meta.based_on, meta.summary), ("v001", "клип сцены 1 «Сад»: начало обрезано на 0,5 с"))
+
+    def test_linked_output_folder_is_refused_and_nothing_lands_elsewhere(self):
+        elsewhere = self.seed.workspace.parent / "чужая папка"
+        elsewhere.mkdir()
+        for linked in (self.output.parent, self.output.parent.parent):  # media/p/montage, media/p
+            with self.subTest(linked=linked.name):
+                linked.parent.mkdir(parents=True, exist_ok=True)
+                if linked.is_dir() and not linked.is_symlink():
+                    linked.rmdir()  # media/p осталась пустой от прошлого шага
+                try:
+                    os.symlink(elsewhere, linked, target_is_directory=True)
+                except (OSError, NotImplementedError) as error:
+                    self.skipTest(f"симлинк здесь не создать: {error}")
+                runner = FakeHyperframes(render_bytes=tiny_mp4(b"out-1"))
+                with self.assertRaises(MontageError) as caught:
+                    self.render(runner)
+                shown = linked.relative_to(self.seed.workspace).as_posix()
+                self.assertIn(f"папка {shown} — ссылка на другое место", str(caught.exception))
+                self.assertNotIn(str(self.seed.workspace.parent), str(caught.exception))
+                self.assertFalse([call for call in runner.calls if call[0] == "render"])
+                self.assertEqual(list(elsewhere.iterdir()), [])
+                self.assertEqual(self.state()["montage"]["versions"], [])
+                os.unlink(linked)
 
     def test_lint_error_means_no_render_and_no_version(self):
         runner = FakeHyperframes(render_bytes=tiny_mp4(b"x"), lint_report={"ok": False, "findings": [

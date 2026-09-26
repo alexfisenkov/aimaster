@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import stat
 import tempfile
+import threading
 from pathlib import Path
 
 from ..platform_compat import replace_file
@@ -21,21 +22,42 @@ from . import MontageError
 from .replace_target import clear_link, regular_stat
 
 
-def _read_umask() -> int:
-    # Узнать umask можно только установив новый; читаем один раз при импорте
-    # (однопоточный момент), а не на каждой записи из потоков дашборда.
-    current = os.umask(0o022)
-    os.umask(current)
-    return current
+_MODE_LOCK = threading.Lock()
+_new_mode: int | None = None
 
 
-_UMASK = _read_umask()
+def _probe_new_mode() -> int:
+    """Права, которые ОС даёт новому файлу с запрошенными 0644. umask процесса
+    не трогаем: его можно узнать, только установив другой, а на этот миг он
+    действовал бы и на файлы, которые создают другие потоки (дашборд)."""
+
+    folder = tempfile.mkdtemp(prefix="aimaster-mode-")
+    probe = os.path.join(folder, "probe")
+    try:
+        os.close(os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644))
+        return stat.S_IMODE(os.stat(probe).st_mode)
+    except OSError:
+        return 0o644
+    finally:
+        try:
+            os.unlink(probe)
+        except OSError:
+            pass
+        try:
+            os.rmdir(folder)
+        except OSError:
+            pass
 
 
 def new_file_mode() -> int:
-    """Права нового файла монтажа: 0644 минус umask (как у обычного open)."""
+    """Права нового файла монтажа: 0644 минус umask (как у обычного open).
+    Узнаются при первой записи, а не при импорте, и один раз на процесс."""
 
-    return 0o644 & ~_UMASK
+    global _new_mode
+    with _MODE_LOCK:
+        if _new_mode is None:
+            _new_mode = _probe_new_mode()
+        return _new_mode
 
 
 def _target_mode(path: Path) -> int:

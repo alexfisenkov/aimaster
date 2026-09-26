@@ -11,7 +11,8 @@ from .context import open_context
 from .engine import require_engine
 from .index_io import read_index, write_index
 from .model import model_hash, read_model
-from .montage_state import check_writable, montage_section, record_restore, require_revision
+from .montage_state import (check_writable, load_fresh, montage_section, record_restore,
+                            require_revision)
 from .paths import VERSION_ID
 from .probe import probe_media
 from .render import render_version
@@ -77,16 +78,25 @@ def diff(workspace, project_id, *, against=None, engine=None, runner=None) -> di
                                                          current_meta(ctx.paths, current))}
 
 
+def _recorded(state: dict, version_id: str) -> list[str]:
+    recorded = [item["id"] for item in montage_section(state)["versions"]]
+    if version_id not in recorded:
+        raise MontageError(f"нет версии {version_id}")
+    return recorded
+
+
 def restore(workspace, project_id, expected_revision, version_id, *, actor="agent") -> dict:
     """Под замком сборки: не посреди чужой сборки, и снимок, который прошлая
-    сборка записала в state, но не успела опубликовать, сперва публикуется."""
+    сборка записала в state, но не успела опубликовать, сперва публикуется.
+    Список версий — из state, перечитанного под замком (как у сборки): со
+    списком до замка settle_orphans снёс бы снимок версии, которую только что
+    записала сборка, завершившаяся, пока мы ждали."""
 
     ctx = open_context(workspace, project_id)
     fresh(ctx, expected_revision)
-    recorded = [item["id"] for item in montage_section(ctx.state)["versions"]]
-    if version_id not in recorded:
-        raise MontageError(f"нет версии {version_id}")
+    _recorded(ctx.state, version_id)
     with build_lock(ctx.paths):
+        recorded = _recorded(load_fresh(ctx.store, project_id, expected_revision), version_id)
         settle_orphans(ctx.paths, recorded)
         previous = read_index(ctx.paths.index) if ctx.paths.index.is_file() else None
         backup = restore_files(ctx.paths, version_id)

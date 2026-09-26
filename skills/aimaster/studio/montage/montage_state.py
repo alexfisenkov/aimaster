@@ -84,6 +84,16 @@ def check_writable(state: dict) -> None:
     require_stage_not_approved(state, "assembly", "montage")
 
 
+def load_fresh(store, project_id: str, expected_revision: int) -> dict:
+    """State заново — под замком сборки: пока ждали замок, другая сборка могла
+    записать версию, и список версий из state, прочитанного раньше, устарел."""
+
+    state = store.load(project_id)
+    require_revision(state, expected_revision)
+    check_writable(state)
+    return state
+
+
 def record_draft(store: ProjectStore, project_id: str, expected_revision: int, *,
                  canvas: Canvas) -> dict:
     def mutator(state):

@@ -1,35 +1,26 @@
 """Запуск CLI HyperFrames: без оболочки, `node <…>/bin/hyperframes.mjs <команда>`.
 
-Окружение каждого запуска: тихие флаги HyperFrames, свой HOME движка (кэши,
-браузер, настройки не попадают в домашнюю папку человека), путь к скачанному
-браузеру и кэш кадров. В каждой команде — флаг --json (`argv_for`). Отказ CLI
-(код 2, JSON в stderr) превращается в понятный `MontageError`.
+Окружение запуска — `engine_env`, процесс и остановка его узла — `proc_runner`
+(имена оттуда доступны и отсюда). В каждой команде — флаг --json (`argv_for`).
+Отказ CLI (код 2, JSON в stderr) превращается в понятный `MontageError`.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Sequence
 
-from ..platform_compat import IS_WINDOWS, find_program
 from . import MontageError
 from .engine import Engine
-from .proc_tree import CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, group_kwargs, kill_tree
+from .engine_env import (  # noqa: F401 — прежние имена engine_cli.*
+    FF_VARIABLES, QUIET_FLAGS, engine_env, engine_home, frames_cache)
+from .proc_runner import default_runner
+from .proc_tree import CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, group_kwargs  # noqa: F401
 from .replace_target import open_fresh
 from .short_paths import short_paths
-
-QUIET_FLAGS = {
-    "HYPERFRAMES_NO_UPDATE_CHECK": "1",
-    "HYPERFRAMES_NO_AUTO_INSTALL": "1",
-    "HYPERFRAMES_NO_TELEMETRY": "1",
-    "HYPERFRAMES_SKIP_SKILLS": "1",
-    "NO_COLOR": "1",
-    "FORCE_COLOR": "0",
-}
 
 
 @dataclass(frozen=True)
@@ -38,46 +29,6 @@ class EngineResult:
     stdout: str
     stderr: str
     timed_out: bool = False
-
-
-def engine_home(engine: Engine) -> Path:
-    return Path(engine.prefix) / "home"
-
-
-def frames_cache(engine: Engine) -> Path:
-    return Path(engine.prefix) / "cache" / "frames"
-
-
-FF_VARIABLES = (("ffmpeg", "HYPERFRAMES_FFMPEG_PATH"), ("ffprobe", "HYPERFRAMES_FFPROBE_PATH"))
-
-
-def engine_env(engine: Engine, base: Mapping[str, str] | None = None, *,
-               cwd: Path | None = None, find=find_program) -> dict[str, str]:
-    env = dict(os.environ if base is None else base)
-    # ffmpeg/ffprobe — тот же, что находит монтаж (полный путь из абсолютного PATH):
-    # иначе HyperFrames ищет сам и доходит до папки запуска (current/, её .hyperframes/bin).
-    for name, variable in FF_VARIABLES:
-        env.pop(variable, None)
-        found = find(name, environ=env)
-        if found:
-            env[variable] = found
-    env.update(QUIET_FLAGS)
-    if cwd is not None:
-        # `preview .` 0.8.75 называет проект по basename($PWD): PWD вызывающего
-        # дал бы Studio адрес «#project/<его папка>» вместо папки монтажа.
-        env["PWD"] = str(cwd)
-    env["HOME"] = str(engine_home(engine))
-    if IS_WINDOWS:
-        env["USERPROFILE"] = env["HOME"]
-    env["HYPERFRAMES_EXTRACT_CACHE_DIR"] = str(frames_cache(engine))
-    # Браузер — только из записи установщика, чужой из окружения не наследуем (round 4/5).
-    env.pop("HYPERFRAMES_BROWSER_PATH", None)
-    if engine.browser:
-        env["HYPERFRAMES_BROWSER_PATH"] = engine.browser
-    # `preview` слушает HYPERFRAMES_PREVIEW_HOST (иначе 127.0.0.1): чужое значение
-    # из окружения человека выставило бы монтажный стол в сеть.
-    env["HYPERFRAMES_PREVIEW_HOST"] = "127.0.0.1"
-    return env
 
 
 JSON_FLAG = "--json"
@@ -99,56 +50,6 @@ def argv_for(engine: Engine, args: Sequence[str]) -> list[str]:
 
 def _decode(raw) -> str:
     return (raw or b"").decode("utf-8", errors="replace")
-
-
-def _close_pipes(proc) -> None:
-    """Закрывает proc.stdout/stderr, когда их больше некому дочитать —
-    иначе Python предупреждает об утечке открытого файла."""
-
-    for pipe in (getattr(proc, "stdout", None), getattr(proc, "stderr", None)):
-        if pipe is not None:
-            pipe.close()
-
-
-def default_runner(argv, *, cwd, env, stdin, stdout, stderr, timeout, popen=subprocess.Popen):
-    """Как subprocess.run, но при таймауте (и при любом другом обрыве —
-    Ctrl+C, ошибка выше по стеку) останавливает весь узел процессов, а не
-    только node, и сохраняет частичный вывод, накопленный до убийства.
-
-    После SIGTERM/SIGKILL (POSIX) дренировать пайпы вторым communicate() без
-    таймаута небезопасно: если какой-то потомок (например, Chrome в своей
-    сессии) пережил рассылку сигналов дольше ожидаемого и всё ещё держит
-    открытым конец пайпа, communicate() зависнет уже без таймаута. На POSIX
-    берём то, что уже накопил первый communicate() к моменту TimeoutExpired
-    (это данные Python, а не что-то, что нужно дочитывать), и просто
-    дожидаемся node через proc.wait(). Windows — другое дело: `taskkill /T
-    /F` останавливает всё дерево синхронно и до возврата, поэтому дочитать
-    пайпы вторым communicate() там безопасно.
-
-    `popen=` — только для тестов (как и `popen=` у popen_engine): реальные
-    вызовы используют subprocess.Popen по умолчанию."""
-
-    proc = popen(argv, cwd=cwd, env=env, stdin=stdin, stdout=stdout, stderr=stderr,
-                **group_kwargs())
-    try:
-        out, err = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired as first:
-        kill_tree(proc)
-        if IS_WINDOWS:
-            out, err = proc.communicate()
-        else:
-            proc.wait()
-            out, err = first.output, first.stderr
-            _close_pipes(proc)  # communicate() их не дочитывал — закрываем сами
-        raise subprocess.TimeoutExpired(argv, timeout, output=out, stderr=err) from None
-    except BaseException:
-        # Ctrl+C или любая другая ошибка в этом процессе не должны оставить
-        # HyperFrames работать дальше — как поступает сам subprocess.run().
-        kill_tree(proc)
-        proc.wait()
-        _close_pipes(proc)
-        raise
-    return subprocess.CompletedProcess(argv, proc.returncode, out, err)
 
 
 def run_engine(engine: Engine, args: Sequence[str], *, cwd: Path, timeout: float,

@@ -21,7 +21,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from studio.montage import MontageError, engine, engine_cli, proc_tree  # noqa: E402
+from studio.montage import MontageError, engine, engine_cli, engine_env, proc_runner, proc_tree  # noqa: E402
 
 
 class FakeRun:
@@ -50,7 +50,7 @@ class EnvTests(unittest.TestCase):
         # свой же хост (True) и падает на assertNotIn("USERPROFILE", env),
         # хотя test_windows_also_moves_userprofile ниже отдельно проверяет
         # именно этот случай через явный mock.
-        with mock.patch.object(engine_cli, "IS_WINDOWS", False):
+        with mock.patch.object(engine_env, "IS_WINDOWS", False):
             env = engine_cli.engine_env(make_engine(base), {"PATH": "/usr/bin", "HOME": "/Users/me"})
         for key in ("HYPERFRAMES_NO_UPDATE_CHECK", "HYPERFRAMES_NO_AUTO_INSTALL",
                     "HYPERFRAMES_NO_TELEMETRY", "HYPERFRAMES_SKIP_SKILLS"):
@@ -62,7 +62,7 @@ class EnvTests(unittest.TestCase):
         self.assertNotIn("USERPROFILE", env)
 
     def test_windows_also_moves_userprofile(self):
-        with mock.patch.object(engine_cli, "IS_WINDOWS", True):
+        with mock.patch.object(engine_env, "IS_WINDOWS", True):
             env = engine_cli.engine_env(make_engine(Path("/tmp/hf"), browser=False), {})
         self.assertEqual(env["USERPROFILE"], env["HOME"])
         self.assertNotIn("HYPERFRAMES_BROWSER_PATH", env)
@@ -74,7 +74,7 @@ class EnvTests(unittest.TestCase):
 
         inherited = {"HYPERFRAMES_BROWSER_PATH": "/Applications/Google Chrome"}
         base = Path("/tmp/hf")
-        with mock.patch.object(engine_cli, "IS_WINDOWS", False):
+        with mock.patch.object(engine_env, "IS_WINDOWS", False):
             without = engine_cli.engine_env(make_engine(base, browser=False), inherited)
             with_record = engine_cli.engine_env(make_engine(base), inherited)
         self.assertNotIn("HYPERFRAMES_BROWSER_PATH", without)
@@ -131,7 +131,7 @@ class EnvTests(unittest.TestCase):
         base = Path("/tmp/hf")
         real_env = {"LOCALAPPDATA": r"C:\Users\real\AppData\Local",
                    "APPDATA": r"C:\Users\real\AppData\Roaming"}
-        with mock.patch.object(engine_cli, "IS_WINDOWS", True):
+        with mock.patch.object(engine_env, "IS_WINDOWS", True):
             env = engine_cli.engine_env(make_engine(base, browser=False), real_env)
         self.assertEqual(env["LOCALAPPDATA"], r"C:\Users\real\AppData\Local")
         self.assertEqual(env["APPDATA"], r"C:\Users\real\AppData\Roaming")
@@ -318,6 +318,9 @@ class FakePopen:
     def poll(self):
         return self.returncode
 
+    def kill(self):
+        self.killed = True
+
     def wait(self, timeout=None):
         self.waited = True
         self.returncode = -9
@@ -337,6 +340,12 @@ class RaisingPopen:
     def communicate(self, timeout=None):
         raise KeyboardInterrupt
 
+    def poll(self):
+        return self.returncode
+
+    def kill(self):
+        pass
+
     def wait(self, timeout=None):
         self.waited = True
         self.returncode = -15
@@ -354,6 +363,35 @@ class ImmediatePopen:
 
     def communicate(self, timeout=None):
         return b'{"ok": true}', b""
+
+
+class StuckPopen:
+    """Windows, taskkill не сработал: node жив, пока его не остановит
+    proc.kill(), а пайп держит внук — дочитать его нельзя вовсе. Любое
+    ожидание без предела здесь — вечное зависание сборки."""
+
+    def __init__(self, argv, first, **kwargs):
+        self.argv, self.first, self.pid = argv, first, 999
+        self.returncode, self.killed, self.timeouts = None, False, []
+
+    def communicate(self, timeout=None):
+        self.timeouts.append(timeout)
+        if len(self.timeouts) == 1:
+            raise self.first
+        if timeout is None:
+            raise AssertionError("communicate() без таймаута повис бы навсегда")
+        raise subprocess.TimeoutExpired(self.argv, timeout)
+
+    def poll(self):
+        return self.returncode
+
+    def kill(self):
+        self.killed, self.returncode = True, 1
+
+    def wait(self, timeout=None):
+        if self.returncode is None and timeout is None:
+            raise AssertionError("wait() без таймаута на живом node повис бы навсегда")
+        return self.returncode
 
 
 class DefaultRunnerTests(unittest.TestCase):
@@ -379,8 +417,8 @@ class DefaultRunnerTests(unittest.TestCase):
             created.append(instance)
             return instance
 
-        with mock.patch.object(engine_cli, "IS_WINDOWS", False), \
-                mock.patch.object(engine_cli, "kill_tree") as fake_kill:
+        with mock.patch.object(proc_runner, "IS_WINDOWS", False), \
+                mock.patch.object(proc_runner, "kill_tree") as fake_kill:
             with self.assertRaises(subprocess.TimeoutExpired) as caught:
                 engine_cli.default_runner(
                     ["node", "x"], cwd="/tmp", env={}, stdin=subprocess.DEVNULL,
@@ -401,8 +439,8 @@ class DefaultRunnerTests(unittest.TestCase):
             created.append(instance)
             return instance
 
-        with mock.patch.object(engine_cli, "IS_WINDOWS", True), \
-                mock.patch.object(engine_cli, "kill_tree") as fake_kill:
+        with mock.patch.object(proc_runner, "IS_WINDOWS", True), \
+                mock.patch.object(proc_runner, "kill_tree") as fake_kill:
             with self.assertRaises(subprocess.TimeoutExpired) as caught:
                 engine_cli.default_runner(
                     ["node", "x"], cwd="/tmp", env={}, stdin=subprocess.DEVNULL,
@@ -412,6 +450,30 @@ class DefaultRunnerTests(unittest.TestCase):
         self.assertEqual(caught.exception.output, b"partial-out")
         self.assertEqual(caught.exception.stderr, b"partial-err")
 
+    def run_stuck(self, first):
+        created = []
+
+        def make(argv, **kwargs):
+            created.append(StuckPopen(argv, first))
+            return created[-1]
+        with mock.patch.object(proc_runner, "IS_WINDOWS", True), \
+                mock.patch.object(proc_runner, "kill_tree"):  # taskkill ничего не сделал
+            with self.assertRaises(type(first)):
+                proc_runner.default_runner(
+                    ["node", "x"], cwd="/tmp", env={}, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1, popen=make)
+        return created[0]
+
+    def test_windows_timeout_with_a_failed_taskkill_never_blocks(self):
+        proc = self.run_stuck(subprocess.TimeoutExpired(["node"], 1))
+        self.assertTrue(proc.killed)
+        self.assertEqual(proc.timeouts, [1, proc_runner.DRAIN_SECONDS])
+
+    def test_windows_interrupt_with_a_failed_taskkill_never_blocks(self):
+        proc = self.run_stuck(KeyboardInterrupt())
+        self.assertTrue(proc.killed)
+        self.assertEqual(proc.timeouts, [1, proc_runner.DRAIN_SECONDS])
+
     def test_base_exception_kills_the_tree_and_reraises(self):
         created = []
 
@@ -420,7 +482,8 @@ class DefaultRunnerTests(unittest.TestCase):
             created.append(instance)
             return instance
 
-        with mock.patch.object(engine_cli, "kill_tree") as fake_kill:
+        with mock.patch.object(proc_runner, "IS_WINDOWS", False), \
+                mock.patch.object(proc_runner, "kill_tree") as fake_kill:
             with self.assertRaises(KeyboardInterrupt):
                 engine_cli.default_runner(
                     ["node", "x"], cwd="/tmp", env={}, stdin=subprocess.DEVNULL,
@@ -433,8 +496,8 @@ class DefaultRunnerTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(base, ignore_errors=True))
         fake_engine = make_engine(base)
         runner = lambda argv, **kwargs: engine_cli.default_runner(argv, popen=FakePopen, **kwargs)  # noqa: E731
-        with mock.patch.object(engine_cli, "IS_WINDOWS", False), \
-                mock.patch.object(engine_cli, "kill_tree"):
+        with mock.patch.object(proc_runner, "IS_WINDOWS", False), \
+                mock.patch.object(proc_runner, "kill_tree"):
             result = engine_cli.run_engine(fake_engine, ["render"], cwd=base, timeout=1,
                                            runner=runner)
         self.assertTrue(result.timed_out)

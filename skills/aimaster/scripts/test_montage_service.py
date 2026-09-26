@@ -287,6 +287,25 @@ class ServiceTests(unittest.TestCase):
             service.restore(self.ws, "p", 1, "v009")
         self.assertIsNotNone(open_assets(self.ws))
 
+    def test_restore_reads_the_version_list_again_under_the_build_lock(self):
+        """Пока restore ждал замок, сборка записала v002 в state, но не успела
+        опубликовать снимок. Со списком версий, прочитанным до замка,
+        settle_orphans снёс бы этот снимок как «неизвестный»."""
+
+        service.draft(self.ws, "p", 0, **self.kw(probe=True))
+        service.render(self.ws, "p", 1, **self.kw(probe=True))
+        stale = service_versions.open_context(self.ws, "p")  # state до второй сборки
+        self.runner.render_bytes = tiny_mp4(b"out-2")
+        with mock.patch("studio.montage.render.publish_version", side_effect=OSError("занято")):
+            service.render(self.ws, "p", 2, summary="вторая", **self.kw(probe=True))
+        staging = self.paths.versions / ".v002.staging"
+        self.assertTrue(staging.is_dir())
+        with mock.patch.object(service_versions, "open_context", return_value=stale):
+            with self.assertRaises(RevisionConflict):
+                service.restore(self.ws, "p", 2, "v001")
+        self.assertTrue(staging.is_dir() or self.paths.version_dir("v002").is_dir(),
+                        "снимок записанной версии v002 снесён")
+
     def test_restore_waits_for_no_build(self):
         service.draft(self.ws, "p", 0, **self.kw(probe=True))
         service.render(self.ws, "p", 1, **self.kw(probe=True))

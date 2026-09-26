@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -104,6 +105,28 @@ class IndexIoModeTests(unittest.TestCase):
                 path.chmod(mode)
                 write_index(path, "новое")
                 self.assertEqual((self._mode(path), read_index(path)), (mode, "новое"))
+
+
+
+class UmaskTests(unittest.TestCase):
+    PROBE = ("import os, sys\n"
+             "sys.path.insert(0, sys.argv[1])\n"
+             "os.umask(0o027)\n"
+             "def forbidden(mask):\n"
+             "    raise AssertionError('umask процесса сменили')\n"
+             "os.umask = forbidden\n"
+             "from studio.montage import index_io\n"
+             "print(oct(index_io.new_file_mode()), oct(index_io.new_file_mode()))\n")
+
+    def test_import_and_new_file_mode_never_change_the_process_umask(self):
+        """Смена umask на миг задела бы файлы, которые в этот миг создают
+        другие потоки процесса (сервер дашборда)."""
+
+        proc = subprocess.run([sys.executable, "-c", self.PROBE, str(_SKILL_ROOT)],
+                              stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        mode = "0o666" if os.name == "nt" else "0o640"  # Windows знает только «только чтение»
+        self.assertEqual(proc.stdout.split(), [mode, mode])
 
 
 if __name__ == "__main__":

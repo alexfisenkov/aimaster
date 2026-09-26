@@ -26,6 +26,7 @@ from studio.montage.composition_refs import check_composition, external_referenc
 from studio.montage.draft_html import TIMELINE_SCRIPT  # noqa: E402
 from studio.montage.engine import Engine  # noqa: E402
 from studio.montage.engine_cli import EngineResult  # noqa: E402
+from studio.montage.render_run import render_args  # noqa: E402
 from studio.montage.html_doc import element_attrs  # noqa: E402
 from studio.montage.index_io import read_index  # noqa: E402
 from studio.montage.probe import MediaInfo  # noqa: E402
@@ -164,7 +165,9 @@ class CiCheckReportTests(FakeMediaTestCase):
         self.assertIs(report["ok"], True)
         self.assertEqual((report["problems"], report["video_md5"]), ([], "0" * 32))
         self.assertIn(montage_ci_check.TITLE, self.rendered)  # рендерится черновик с титром
-        # качество — то же, что у сборки версии (engine.json), а не отдельное
+        # команда рендера — та же, что у сборки версии (render_run.render_args)
+        output = Path(self.render_args[self.render_args.index("--output") + 1])
+        self.assertEqual(self.render_args, render_args(_fake_engine(self.prefix), output))
         self.assertEqual(self.render_args[self.render_args.index("--quality") + 1],
                          montage_ci_check.load_pin()["render_quality"])
         self.assertIn("--json", self.render_args)  # без него движок ходит за обновлениями
