@@ -6,7 +6,10 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
+
+from ..platform_compat import IS_WINDOWS
 
 
 def _variants(path) -> set[str]:
@@ -30,6 +33,9 @@ def short_paths(text: str, known: dict | None = None) -> str:
         pairs += [(value, "~") for value in _variants(Path.home())]
     except (RuntimeError, OSError):
         pass
+    flags = re.IGNORECASE if IS_WINDOWS else 0
     for value, label in sorted(pairs, key=lambda pair: -len(pair[0])):
-        text = text.replace(value, label)
+        # «/» и «\» — одно и то же: пути на Windows приходят и смешанными
+        pattern = r"[\\/]+".join(re.escape(part) for part in re.split(r"[\\/]+", value))
+        text = re.sub(pattern, lambda _match, label=label: label, text, flags=flags)
     return text

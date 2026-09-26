@@ -30,6 +30,10 @@ class ShortPathsTests(unittest.TestCase):
         self.assertEqual(short_paths(r"C:\Users\a\ws\clip.mp4", {Path(r"C:\Users\a\ws"): "<рабочая папка>"})
                          .replace("\\", "/"), "<рабочая папка>/clip.mp4")
 
+    def test_mixed_separators_are_the_same_path(self):
+        self.assertEqual(short_paths(r"D:\a\ws/projects\p/x", {Path("D:/a/ws"): "<рабочая папка>"}),
+                         r"<рабочая папка>/projects\p/x")
+
     def test_root_like_values_are_never_replaced(self):
         self.assertEqual(short_paths("a/b", {Path("/"): "X"}), "a/b")
 
