@@ -47,6 +47,24 @@ class CopyGsapTests(unittest.TestCase):
         self.assertEqual((self.assets / "gsap.min.js").read_text(encoding="utf-8"), "/* обновлён */")
         self.assertEqual(len(list(self.assets.iterdir())), 2)
 
+    def test_temp_name_is_not_fixed(self):
+        # fix round 1/5 батча 6: mkstemp, не «.gsap.min.js.part» — занятое фиксированное
+        # имя (папка, файл параллельного вызова) раньше роняло копирование.
+        prefix = fake_gsap_prefix(self.root)
+        (self.assets / ".gsap.min.js.part").mkdir(parents=True)
+        vendor.copy_gsap(prefix, self.assets)
+        self.assertEqual((self.assets / "gsap.min.js").read_bytes(),
+                         (vendor.gsap_dist(prefix) / "gsap.min.js").read_bytes())
+        self.assertEqual(sorted(p.name for p in self.assets.iterdir()),
+                         [".gsap.min.js.part", "MotionPathPlugin.min.js", "gsap.min.js"])
+
+    def test_refusals_name_no_absolute_paths(self):
+        prefix = fake_gsap_prefix(self.root, files=("gsap",))
+        for broken in (self.root / "пусто", prefix):
+            with self.assertRaises(MontageError) as caught:
+                vendor.copy_gsap(broken, self.assets)
+            self.assertNotIn(str(broken), str(caught.exception).replace(install_command(), ""))
+
     def test_missing_gsap_names_the_install_command_and_writes_nothing(self):
         with self.assertRaises(MontageError) as caught:
             vendor.copy_gsap(self.root / "пусто", self.assets)

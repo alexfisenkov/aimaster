@@ -12,7 +12,7 @@ from ..assets import AssetError, AssetIndex
 from ..authoring_qa import apply_assembly
 from ..authoring_support import (mutate, require_project, require_result_asset_role,
                                  require_stage_not_approved)
-from ..store import ProjectStore
+from ..store import ProjectStore, RevisionConflict
 from . import MontageError
 from .canvas import DEFAULT_HEIGHT, DEFAULT_WIDTH, Canvas
 from .versions import VersionMeta
@@ -21,6 +21,30 @@ from .versions import VersionMeta
 # «Вы»/«Агент»); владелец версии монтажа (VersionMeta.by) шире —
 # owner пишет её как человек («Вы»), agent/autopilot — как агент.
 _HISTORY_ACTOR_FOR_BY = {"agent": "agent", "autopilot": "agent", "owner": "you"}
+
+
+class StaleRevision(RevisionConflict):
+    """Та же RevisionConflict (дашборд и CLI ловят её как раньше), но текст —
+    человеку по-русски, а не «revision conflict: expected …»."""
+
+    def __init__(self, expected_revision, current_revision):
+        RuntimeError.__init__(self, "проект изменился — обновите номер ревизии: "
+                                    f"сейчас {current_revision}")
+        self.expected_revision, self.current_revision = expected_revision, current_revision
+
+
+def require_revision(state: dict, expected_revision: int) -> None:
+    if state.get("revision") != expected_revision:
+        raise StaleRevision(expected_revision, state.get("revision"))
+
+
+def _mutate(store, project_id, expected_revision, mutator):
+    try:
+        return mutate(store, project_id, expected_revision, mutator)
+    except StaleRevision:
+        raise
+    except RevisionConflict as error:
+        raise StaleRevision(error.expected_revision, error.current_revision) from error
 
 
 def _history_actor(by: str) -> str:
@@ -69,7 +93,7 @@ def record_draft(store: ProjectStore, project_id: str, expected_revision: int, *
         state["montage"] = section
         domain.append_history(state, "agent", "montage-drafted", "assembly")
 
-    _, new_state = mutate(store, project_id, expected_revision, mutator)
+    _, new_state = _mutate(store, project_id, expected_revision, mutator)
     return {"project_id": project_id, "revision": new_state["revision"]}
 
 
@@ -95,7 +119,7 @@ def record_version(store: ProjectStore, assets: AssetIndex, project_id: str,
         apply_assembly(state, mime_type, meta.asset_id, meta.summary or None)
         domain.append_history(state, actor, "montage-built", "assembly", target_id=meta.version)
 
-    _, new_state = mutate(store, project_id, expected_revision, mutator)
+    _, new_state = _mutate(store, project_id, expected_revision, mutator)
     return {"project_id": project_id, "revision": new_state["revision"]}
 
 
@@ -128,5 +152,5 @@ def record_restore(store: ProjectStore, assets: AssetIndex, project_id: str,
         apply_assembly(state, mime_type, entry["asset_id"], entry.get("summary") or None)
         domain.append_history(state, actor, "montage-restored", "assembly", target_id=version_id)
 
-    _, new_state = mutate(store, project_id, expected_revision, mutator)
+    _, new_state = _mutate(store, project_id, expected_revision, mutator)
     return {"project_id": project_id, "revision": new_state["revision"]}

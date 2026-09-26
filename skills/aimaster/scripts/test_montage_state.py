@@ -22,6 +22,7 @@ from studio.montage.montage_state import (  # noqa: E402
     check_writable, record_draft, record_restore, record_version)
 from studio.montage.versions import VersionMeta  # noqa: E402
 from studio.projection import ProjectionError, build_snapshot, validate_state  # noqa: E402
+from studio.store import RevisionConflict  # noqa: E402
 
 
 class StateTests(unittest.TestCase):
@@ -42,6 +43,12 @@ class StateTests(unittest.TestCase):
 
     def load(self):
         return self.store.load("p")
+
+    def test_stale_revision_inside_the_write_is_a_russian_revision_conflict(self):
+        with self.assertRaises(RevisionConflict) as caught:
+            record_draft(self.store, "p", 5, canvas=Canvas(108, 192))
+        self.assertEqual(str(caught.exception), "проект изменился — обновите номер ревизии: сейчас 0")
+        self.assertIsInstance(caught.exception.__cause__, RevisionConflict)
 
     def test_draft_records_canvas_and_history(self):
         result = record_draft(self.store, "p", 0, canvas=Canvas(108, 192))

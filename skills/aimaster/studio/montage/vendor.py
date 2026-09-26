@@ -17,7 +17,9 @@ in preview». Таймлайн на паузе длиной во весь рол
 
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 from pathlib import Path
 
 from ..platform_compat import replace_file
@@ -57,30 +59,38 @@ def gsap_sources(prefix: Path, names=DRAFT_SCRIPTS) -> list[Path]:
     if found != wanted:
         have = f"стоит {found}" if found else "не установлен"
         raise MontageError(f"Монтажный движок не готов: GSAP {wanted} для черновика {have} "
-                           f"в {prefix}. Поставьте его командой: {install_command()}")
+                           f"в папке движка. Поставьте его командой: {install_command()}")
     sources = [gsap_dist(prefix) / f"{name}.min.js" for name in names]
     missing = [source.name for source in sources if not source.is_file()]
     if missing:
-        raise MontageError(f"Монтажный движок не готов: в {gsap_dist(prefix)} нет "
-                           f"{', '.join(missing)}. Поставьте его командой: {install_command()}")
+        raise MontageError(f"Монтажный движок не готов: в GSAP движка нет {', '.join(missing)}. "
+                           f"Поставьте его командой: {install_command()}")
     return sources
 
 
 def _copy_if_changed(source: Path, target: Path) -> bool:
-    temporary = target.with_name(f".{target.name}.part")
+    """Копия через временный файл mkstemp рядом с целью (не фиксированное имя:
+    два параллельных вызова не пишут в один .part) и атомарную замену."""
+
+    temporary = None
     try:
         data = source.read_bytes()
         if target.is_file() and target.read_bytes() == data:
             return False
         target.parent.mkdir(parents=True, exist_ok=True)
-        temporary.write_bytes(data)
+        descriptor, name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".part")
+        temporary = Path(name)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
+        os.chmod(temporary, 0o644)  # mkstemp даёт 0600; скрипт монтажа читают Studio и рендер
         replace_file(temporary, target)
     except OSError as error:
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass  # чистка — best effort, не подменяет исходную ошибку
-        raise MontageError(f"не удалось положить {source.name} в assets: {error}") from error
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass  # чистка — best effort, не подменяет исходную ошибку
+        raise MontageError(f"не удалось положить {source.name} в assets монтажа") from error
     return True
 
 
@@ -105,8 +115,8 @@ def vendor_gsap(engine: Engine, paths: MontagePaths, *, plugins=()) -> dict:
     names, dist = list(DRAFT_SCRIPTS), gsap_dist(engine.prefix)
     for plugin in plugins:
         if not _PLUGIN.fullmatch(str(plugin)) or not (dist / f"{plugin}.min.js").is_file():
-            raise MontageError(f"нет плагина GSAP «{plugin}» в {dist} "
-                               "(имя — как у файла, например SplitText)")
+            raise MontageError(f"нет плагина GSAP «{plugin}» в движке "
+                               "(имя — как у файла в gsap/dist, например SplitText)")
         if plugin not in names:
             names.append(plugin)
     files, copied = [], []

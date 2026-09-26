@@ -5,10 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..assets import AssetIndex
+from ..assets import AssetError, AssetIndex
 from ..authoring_support import open_assets, open_store
-from ..store import ProjectStore
-from ..workspace import resolve_workspace_paths
+from ..store import ProjectNotFound, ProjectStore
+from ..workspace import WorkspaceError, resolve_workspace_paths
+from . import MontageError
 from .paths import MontagePaths, montage_paths
 
 
@@ -55,10 +56,21 @@ class ProjectContext:
 
 
 def open_context(workspace, project_id: str) -> ProjectContext:
-    """Открывает проект заново: state мог поменять дашборд, Studio или другой агент."""
+    """Открывает проект заново: state мог поменять дашборд, Studio или другой агент.
+    Нет папки, проекта или медиатеки — отказ по-русски, без абсолютных путей."""
 
-    workspace_path, _projects, media_root, _private = resolve_workspace_paths(workspace)
+    try:
+        workspace_path, _projects, media_root, _private = resolve_workspace_paths(workspace)
+    except (OSError, WorkspaceError) as error:
+        raise MontageError(f"нет рабочей папки «{Path(workspace).name}»") from error
     store = open_store(workspace_path)
-    return ProjectContext(workspace=workspace_path, project_id=project_id, store=store,
-                          assets=open_assets(workspace_path), state=store.load(project_id),
-                          project_dir=store.project_dir(project_id), media_root=media_root)
+    try:
+        state, project_dir = store.load(project_id), store.project_dir(project_id)
+    except ProjectNotFound as error:
+        raise MontageError(f"в рабочей папке нет проекта «{project_id}»") from error
+    try:
+        assets = open_assets(workspace_path)
+    except AssetError as error:
+        raise MontageError("в рабочей папке нет медиатеки media/ — её создаёт workspace init") from error
+    return ProjectContext(workspace=workspace_path, project_id=project_id, store=store, assets=assets,
+                          state=state, project_dir=project_dir, media_root=media_root)

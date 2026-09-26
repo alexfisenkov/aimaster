@@ -76,7 +76,7 @@ def write_text_atomic(path: Path, text: str) -> None:
                 pass  # чистка — best effort, не маскирует исходную ошибку
             raise
     except OSError as error:
-        raise MontageError(f"не удалось записать {path.name}: {error}") from error
+        raise MontageError(f"не удалось записать {path.name} (нет доступа или файл занят)") from error
 
 
 def read_index(path: Path) -> str:
@@ -87,7 +87,7 @@ def read_index(path: Path) -> str:
         with Path(path).open(encoding="utf-8", newline="") as handle:
             return handle.read()
     except (OSError, UnicodeDecodeError) as error:
-        raise MontageError(f"не удалось прочитать черновик: {error}") from error
+        raise MontageError(f"не удалось прочитать {Path(path).name} монтажа") from error
 
 
 def write_index(path: Path, text: str) -> None:

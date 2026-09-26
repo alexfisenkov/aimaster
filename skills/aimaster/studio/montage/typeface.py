@@ -32,7 +32,7 @@ def load_manifest() -> dict:
     try:
         return json.loads((FONT_DIR / "fonts.json").read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
-        raise MontageError(f"пакет навыка повреждён, переустановите: {error}") from error
+        raise MontageError("пакет навыка повреждён, переустановите (fonts.json не читается)") from error
 
 
 def _sha256(path: Path) -> str:
@@ -43,7 +43,7 @@ def _sha256(path: Path) -> str:
     try:
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
     except OSError as error:
-        raise MontageError(f"не удалось прочитать {Path(path).name}: {error}") from error
+        raise MontageError(f"не удалось прочитать {Path(path).name}") from error
 
 
 def verify_bundle(manifest=None) -> list[str]:
@@ -92,7 +92,7 @@ def sync_fonts(assets_dir: Path, manifest=None) -> list[str]:
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
     except OSError as error:
-        raise MontageError(f"не удалось создать папку шрифтов {target_dir}: {error}") from error
+        raise MontageError("не удалось создать папку assets/fonts монтажа") from error
     items = [(item["file"], item["sha256"]) for item in manifest["files"]]
     items.append((manifest["license_file"], manifest["license_sha256"]))
     copied = []
@@ -106,6 +106,6 @@ def sync_fonts(assets_dir: Path, manifest=None) -> list[str]:
             replace_file(temporary, target)
         except OSError as error:
             temporary.unlink(missing_ok=True)
-            raise MontageError(f"не удалось скопировать {name}: {error}") from error
+            raise MontageError(f"не удалось скопировать шрифт {name} в assets/fonts") from error
         copied.append(name)
     return copied

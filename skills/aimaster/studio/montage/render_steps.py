@@ -21,19 +21,26 @@ from .typeface import FONT_FAMILY
 from .verify import lint_problems, lint_warnings, network_markers, output_problems
 
 
-def normalized_index(paths: MontagePaths, base: Model | None) -> str:
+def normalized_index(paths: MontagePaths, base: Model | None, *, trusted: bool = True) -> str:
     """Текст для сборки. У половин разреза, которых не было в прошлой версии
     (разрез мышью в Studio — наш путь правок его не видит), сняты внутренние
     края звука; половины, известные прошлой версии, не трогаем — их края мог
-    поправить человек. Прошлой версии нет — новыми считаются все клипы
-    (черновик пар разреза не создаёт)."""
+    поправить человек. Версий ещё не было — новыми считаются все клипы
+    (черновик пар разреза не создаёт). Снимок прошлой версии потерян или
+    повреждён (`trusted=False`) — не знаем, что новое, и не трогаем ничего.
+    Пишем, только если файл всё ещё тот, что прочитали (Studio могла успеть)."""
 
-    text = read_index(paths.index)
+    original = read_index(paths.index)
+    if not trusted:
+        return original
     known = {clip.id for clip in base.clips} if base is not None else set()
-    scope = [element_id for element_id in element_attrs(text)
+    scope = [element_id for element_id in element_attrs(original)
              if element_id != ROOT_ID and element_id not in known]
-    text, changed = normalize_split_fades(text, only=scope)
+    text, changed = normalize_split_fades(original, only=scope)
     if changed:
+        if read_index(paths.index) != original:
+            raise MontageError("монтаж поменяли, пока сборка готовила его (например, в монтажном "
+                               "столе) — соберите ещё раз")
         write_index(paths.index, text)
     return text
 

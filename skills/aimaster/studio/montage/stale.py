@@ -25,7 +25,7 @@
 
 from __future__ import annotations
 
-from . import AUDIO_LAYER_NAMES
+from . import AUDIO_LAYER_NAMES, MontageError
 from .accepted_sources import audio_sources, video_sources
 from .html_doc import ROOT_ID, element_attrs
 
@@ -81,6 +81,15 @@ def _recorded_structure(root_attrs: dict, clips_attrs: dict) -> tuple[set | None
     return scenes, gen_mode, layers
 
 
+def _scene_ids(state: dict) -> set[str]:
+    scene_ids = set()
+    for scene in state.get("scenes") or []:
+        if not isinstance(scene, dict) or not scene.get("scene_id"):
+            raise MontageError("проект повреждён: у сцены нет scene_id")
+        scene_ids.add(scene["scene_id"])
+    return scene_ids
+
+
 def stale_clips(html_text: str, state: dict) -> list[dict]:
     """Клипы, чей исходник разошёлся с текущим проектом (см. докстроку модуля).
 
@@ -93,7 +102,7 @@ def stale_clips(html_text: str, state: dict) -> list[dict]:
     wanted_video = {scene["scene_id"] if scene else None: asset
                     for scene, asset in video_sources(state, strict=False)}
     wanted_audio = audio_sources(state)
-    scene_ids_now = {scene["scene_id"] for scene in state.get("scenes", [])}
+    scene_ids_now = _scene_ids(state)
     current_gen_mode = state.get("gen_mode", "per_scene")
 
     recorded_scenes, recorded_gen_mode, recorded_layers = _recorded_structure(

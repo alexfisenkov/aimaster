@@ -19,7 +19,7 @@ from montage_testkit import (FakeHyperframes, fake_engine, fake_gsap_prefix,  # 
                              seed_workspace, tiny_mp4, tiny_wav, video_state)
 from studio.assets import AssetIndex, AssetValidationError  # noqa: E402
 from studio.authoring_support import open_assets, open_store  # noqa: E402
-from studio.montage import MontageError, render  # noqa: E402
+from studio.montage import MontageError, render, render_steps  # noqa: E402
 from studio.montage.canvas import Canvas  # noqa: E402
 from studio.montage.context import open_context  # noqa: E402
 from studio.montage.draft import build_current  # noqa: E402
@@ -235,6 +235,33 @@ class RenderTests(unittest.TestCase):
                            runner=FakeHyperframes(render_bytes=tiny_mp4(b"x")), probe=probe)
         self.assertIn("v001.mp4", str(caught.exception))
 
+    def test_summary_words_the_dashboard_refuses_fall_back_to_neutral_text(self):
+        # projection._safe_system_text отклоняет подстроки mcp/model/cost/…: название
+        # сцены попало бы в summary версии и в assembly.summary — запись state упала бы.
+        self.render()
+        store = open_store(self.seed.workspace)
+        for number, title in enumerate(("Подключаем MCP", "Какую model выбрать", "Costa Rica"), start=2):
+            with self.subTest(title=title):
+                state = store.load("p")
+                store.transact("p", state["revision"],
+                               lambda s: s["scenes"][0].update(title=title))
+                ctx = open_context(self.seed.workspace, "p")
+                apply_edit(self.engine, ctx.paths, EditRequest(op="trim-start", clip="v-1", seconds=0.1),
+                           runner=FakeHyperframes())
+                outcome = self.render(FakeHyperframes(render_bytes=tiny_mp4(f"out-{number}".encode())))
+                meta = read_meta(ctx.paths, outcome.version)
+                self.assertEqual(meta.summary, "Пересборка: 1 изменение")
+                self.assertIn(f"«{title}»", meta.changes[0])  # подробности — в meta.json
+                self.assertEqual(self.state()["assembly"]["summary"], "Пересборка: 1 изменение")
+
+    def test_explicit_summary_the_dashboard_refuses_is_refused_before_any_work(self):
+        runner = FakeHyperframes(render_bytes=tiny_mp4(b"x"))
+        with self.assertRaises(MontageError) as caught:
+            self.render(runner, summary="Съёмка в Costa Rica")
+        self.assertIn("«Costa»", str(caught.exception))
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(self.render(summary="Съёмка у моря").version, "v001")
+
     def test_a_second_build_of_the_same_project_is_refused(self):
         with build_lock(self.paths()):
             with self.assertRaises(MontageError) as caught:
@@ -248,13 +275,47 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(self.render().version, "v001")
         self.assertEqual(self.output.read_bytes(), tiny_mp4(b"out-1"))
 
-    def test_failed_state_write_leaves_no_version_and_no_file(self):
+    def test_failed_state_write_leaves_no_version_no_file_and_no_asset_row(self):
+        registered = len(open_assets(self.seed.workspace))
         with mock.patch.object(render, "record_version", side_effect=MontageError("state занят")):
             with self.assertRaises(MontageError):
                 self.render()
         self.assertFalse(self.output.exists())
         self.assertEqual([p.name for p in self.paths().versions.iterdir()], [])
         self.assertEqual(self.state()["montage"]["versions"], [])
+        self.assertEqual(len(open_assets(self.seed.workspace)), registered)
+
+    def test_state_write_that_failed_after_recording_keeps_the_version(self):
+        real_record = render.record_version
+
+        def recorded_then_failed(*args, **kwargs):
+            real_record(*args, **kwargs)
+            raise OSError("диск отвалился после записи")
+        with mock.patch.object(render, "record_version", side_effect=recorded_then_failed):
+            with self.assertRaises(OSError):
+                self.render()
+        self.assertEqual(self.state()["montage"]["current_version"], "v001")
+        self.assertTrue(self.output.is_file())                                  # файл записанной версии цел
+        self.assertTrue((self.paths().versions / ".v001.staging").is_dir())      # снимок ждёт публикации
+        second = self.render(FakeHyperframes(render_bytes=tiny_mp4(b"out-2")))
+        self.assertEqual((second.version, second.changes), ("v002", []))
+        self.assertTrue(self.paths().version_dir("v001").is_dir())
+
+    def test_studio_write_while_the_build_prepares_the_text_is_refused(self):
+        self.split_in_studio()  # есть что нормализовать
+        real = render_steps.normalize_split_fades
+
+        def studio_writes_meanwhile(text, only=None):
+            index = self.paths().index
+            write_index(index, set_attr(read_index(index), "v-2", "data-start", "2.2"))
+            return real(text, only=only)
+        with mock.patch.object(render_steps, "normalize_split_fades", side_effect=studio_writes_meanwhile):
+            with self.assertRaises(MontageError) as caught:
+                self.render()
+        self.assertIn("пока сборка готовила", str(caught.exception))
+        after = element_attrs(read_index(self.paths().index))
+        self.assertEqual(after["v-2"]["data-start"], "2.2")      # правка Studio не затёрта
+        self.assertEqual(after["v-1-2"]["data-fade-in"], "0.4")  # и нормализация не записана
 
     def test_failed_publish_is_finished_by_the_next_build(self):
         with mock.patch.object(render, "publish_version", side_effect=OSError("занято")):
@@ -268,6 +329,20 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(read_meta(self.paths(), "v002").based_on, "v001")
         self.assertEqual(second.changes, [])
 
+    def test_lost_base_snapshot_leaves_split_fades_alone(self):
+        self.render()
+        paths = self.split_in_studio()
+        snapshot = paths.version_dir("v001")
+        snapshot.rename(snapshot.with_name("потерян"))
+        self.render(FakeHyperframes(render_bytes=tiny_mp4(b"out-2")))
+        self.assertEqual(element_attrs(read_index(paths.index))["v-1-2"]["data-fade-in"], "0.4")
+
+    def test_corrupt_base_snapshot_is_named_as_such(self):
+        self.render()
+        (self.paths().version_dir("v001") / "model.json").write_text("не json", encoding="utf-8")
+        outcome = self.render(FakeHyperframes(render_bytes=tiny_mp4(b"out-2")))
+        self.assertIn("снимок прежней версии v001 повреждён", outcome.changes[0])
+
     def test_missing_base_snapshot_does_not_block_later_builds(self):
         self.render()
         snapshot = self.paths().version_dir("v001")
@@ -275,7 +350,7 @@ class RenderTests(unittest.TestCase):
         outcome = self.render(FakeHyperframes(render_bytes=tiny_mp4(b"out-2")))
         self.assertEqual(outcome.version, "v002")
         self.assertEqual(len(outcome.changes), 1)
-        self.assertIn("v001", outcome.changes[0])
+        self.assertIn("снимка прежней версии v001 нет на диске", outcome.changes[0])
         self.assertIn("не с чем", outcome.changes[0])
 
     def split_in_studio(self):

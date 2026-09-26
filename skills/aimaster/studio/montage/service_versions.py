@@ -6,31 +6,40 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from ..store import RevisionConflict
 from . import MontageError
 from .context import open_context
 from .engine import require_engine
 from .index_io import read_index, write_index
 from .model import model_hash, read_model
-from .montage_state import check_writable, montage_section, record_restore
+from .montage_state import check_writable, montage_section, record_restore, require_revision
 from .paths import VERSION_ID
 from .probe import probe_media
 from .render import render_version
 from .version_diff import base_model, changes_since
 from .version_staging import build_lock, settle_orphans
-from .versions import has_unrendered_changes, list_versions, read_version_model, restore_files
+from .versions import current_meta, has_unrendered_changes, read_version_model, restore_files
 
 
 def fresh(ctx, expected_revision: int) -> None:
-    if ctx.revision != expected_revision:
-        raise RevisionConflict(expected_revision, ctx.revision)
+    require_revision(ctx.state, expected_revision)
     check_writable(ctx.state)
 
 
-def put_back_index(paths, previous: str | None) -> None:
-    """Запись в state не удалась — current/index.html как до вызова: иначе
-    повтор упёрся бы в «черновик уже есть», а state о нём не знает."""
+def put_back_index(paths, previous: str | None, written: str, error: BaseException) -> None:
+    """Запись в state не удалась (`error`) — вернуть current/index.html, каким он
+    был до вызова: иначе повтор упёрся бы в «черновик уже есть», а state о нём
+    не знает. Только если файл всё ещё тот, что записали мы (`written`): успели
+    Studio или агент — их вариант остаётся, а отказ говорит об этом."""
 
+    try:
+        still_ours = read_index(paths.index) == written if paths.index.is_file() else False
+    except MontageError:
+        still_ours = False
+    if not still_ours:
+        if not isinstance(error, Exception):
+            return  # Ctrl+C и подобное — пусть уходит как есть, чужой вариант не трогаем
+        raise MontageError(f"{error} — а current/index.html тем временем поменяли (например, в "
+                           "монтажном столе): оставлен этот новый вариант") from error
     if previous is not None:
         write_index(paths.index, previous)
         return
@@ -59,13 +68,13 @@ def diff(workspace, project_id, *, against=None, engine=None, runner=None) -> di
     current = montage_section(ctx.state)["current_version"]
     base = against or current
     if against:
-        old, lost = read_version_model(ctx.paths, against), False
+        old, problem = read_version_model(ctx.paths, against), None
     else:
-        old, lost = base_model(ctx.paths, base)
-    meta = next((item for item in list_versions(ctx.paths) if item.version == current), None)
+        old, problem = base_model(ctx.paths, base)
     return {"project_id": project_id, "base": base, "model_hash": model_hash(model),
-            "changes": changes_since(base, old, lost, model, ctx.scene_names()),
-            "unrendered_changes": has_unrendered_changes(model_hash(model), meta)}
+            "changes": changes_since(base, old, problem, model, ctx.scene_names()),
+            "unrendered_changes": has_unrendered_changes(model_hash(model),
+                                                         current_meta(ctx.paths, current))}
 
 
 def restore(workspace, project_id, expected_revision, version_id, *, actor="agent") -> dict:
@@ -81,11 +90,12 @@ def restore(workspace, project_id, expected_revision, version_id, *, actor="agen
         settle_orphans(ctx.paths, recorded)
         previous = read_index(ctx.paths.index) if ctx.paths.index.is_file() else None
         backup = restore_files(ctx.paths, version_id)
+        restored = read_index(ctx.paths.version_dir(version_id) / "index.html")
         try:
             written = record_restore(ctx.store, ctx.assets, project_id, expected_revision,
                                      version_id=version_id, actor=actor)
-        except BaseException:
-            put_back_index(ctx.paths, previous)
+        except BaseException as error:
+            put_back_index(ctx.paths, previous, restored, error)
             raise
     return {"project_id": project_id, "revision": written["revision"],
             "current_version": version_id, "backup": str(backup) if backup else None}

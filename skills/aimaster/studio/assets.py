@@ -1090,6 +1090,21 @@ class AssetIndex:
             raise AssetValidationError("registered asset has changed")
         return resolved, mime_type
 
+    def forget(self, asset_id) -> bool:
+        """Drop one registration; the file itself is not touched. Only for a
+        writer that registered a file moments ago and failed before anything
+        referenced it (a montage build whose state write did not happen) --
+        otherwise its dead row would outlive the file it describes."""
+
+        if not isinstance(asset_id, str) or not asset_id:
+            return False
+        connection = self._connect()
+        try:
+            cursor = connection.execute("DELETE FROM assets WHERE asset_id = ?", (asset_id,))
+            return cursor.rowcount > 0
+        finally:
+            connection.close()
+
     def role_of(self, asset_id) -> str:
         """The role `asset_id` was registered with (ticket 12 repair,
         condition 6): a plain metadata lookup, no file re-inspection --

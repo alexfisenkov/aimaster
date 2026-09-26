@@ -55,10 +55,11 @@ def draft(workspace, project_id, expected_revision, *, mode="new", engine=None, 
     else:
         result, backup = create_draft(ctx.paths, ctx.state, ctx.resolve, probe=probe,
                                       engine_prefix=engine.prefix), None
+    drafted = read_index(ctx.paths.index)
     try:
         written = record_draft(ctx.store, project_id, expected_revision, canvas=result.canvas)
-    except BaseException:
-        put_back_index(ctx.paths, previous)
+    except BaseException as error:
+        put_back_index(ctx.paths, previous, drafted, error)
         raise
     return {"project_id": project_id, "revision": written["revision"],
             "canvas": result.canvas.to_dict(), "duration": result.duration, "clips": result.clips,

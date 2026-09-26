@@ -46,7 +46,7 @@ def _position_specs(state) -> dict:
         what = "у сцены нет scene_id" if key == "scene_id" else f"нет поля «{key}»"
         raise MontageError(f"проект повреждён: {what}") from error
     except DomainValidationError as error:
-        raise MontageError(f"проект повреждён: {error}") from error
+        raise MontageError("проект повреждён: позиции сцен и слоёв не читаются") from error
 
 
 def _accepted_asset(state, spec) -> str | None:

@@ -98,5 +98,5 @@ def rebuild_draft(paths, state, resolve, *, probe=probe_media,
                                    f"-{time.time_ns() % 1_000_000_000:09d}.html")
             shutil.copy2(paths.index, backup)
         except OSError as error:
-            raise MontageError(f"не удалось сохранить прежний черновик в .undo: {error}") from error
+            raise MontageError("не удалось сохранить прежний черновик в montage/.undo") from error
     return build_current(paths, state, resolve, probe=probe, engine_prefix=prefix), backup

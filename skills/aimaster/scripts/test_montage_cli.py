@@ -145,13 +145,29 @@ class CliWorkspaceTests(unittest.TestCase):
 
     def test_refusals_exit_3(self):
         for argv, text in ((("draft", "--expected-revision", "0"), "Монтажный движок не готов"),
-                           (("draft", "--expected-revision", "5"), "revision"),
+                           (("draft", "--expected-revision", "5"),
+                            "проект изменился — обновите номер ревизии: сейчас 0"),
                            (("restore", "v001", "--expected-revision", "0"), "нет версии v001"),
                            (("diff",), "черновика ещё нет")):
             with self.subTest(argv=argv):
                 code, out, err = run_main("montage", argv[0], self.ws, "p", *argv[1:])
                 self.assertEqual((code, out), (3, ""))
                 self.assertIn(text, err)
+                self.assertNotIn("Traceback", err)
+
+    def test_missing_folder_project_and_media_are_russian_without_absolute_paths(self):
+        bare = Path(self.ws).parent / "без медиатеки"
+        (bare / "projects" / "p").mkdir(parents=True)
+        (bare / "projects" / "p" / "state.json").write_text(
+            (Path(self.ws) / "projects" / "p" / "state.json").read_text(encoding="utf-8"), encoding="utf-8")
+        for workspace, project, text in ((str(Path(self.ws).parent / "нет такой"), "p", "нет рабочей папки"),
+                                         (self.ws, "нет-проекта", "нет проекта «нет-проекта»"),
+                                         (str(bare), "p", "нет медиатеки media/")):
+            with self.subTest(text=text):
+                code, out, err = run_main("montage", "status", workspace, project)
+                self.assertEqual((code, out), (3, ""))
+                self.assertIn(text, err)
+                self.assertNotIn(str(Path(self.ws).parent), err)
                 self.assertNotIn("Traceback", err)
 
     def test_help_lists_the_nine_subcommands(self):

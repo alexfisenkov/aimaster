@@ -85,7 +85,24 @@ def read_meta(paths: MontagePaths, version_id: str) -> VersionMeta:
 
 
 def list_versions(paths: MontagePaths) -> list[VersionMeta]:
-    return [read_meta(paths, name) for name in _published(paths)]
+    """Все читаемые версии; повреждённая meta.json одной версии не роняет список."""
+
+    found = []
+    for name in _published(paths):
+        try:
+            found.append(read_meta(paths, name))
+        except MontageError:
+            continue
+    return found
+
+
+def current_meta(paths: MontagePaths, version_id: str | None) -> VersionMeta | None:
+    """meta.json текущей версии; нет версии или снимок не читается — None."""
+
+    try:
+        return read_meta(paths, version_id) if version_id else None
+    except (MontageError, ValueError):
+        return None
 
 
 def read_version_model(paths: MontagePaths, version_id: str) -> Model:

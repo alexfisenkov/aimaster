@@ -83,7 +83,7 @@ def probe_media(path: Path, *, ffprobe: str | None = None, runner=subprocess.run
         proc = runner(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                       stderr=subprocess.PIPE, timeout=PROBE_TIMEOUT)
     except (OSError, subprocess.SubprocessError) as error:
-        raise MontageError(f"ffprobe не запустился: {error}") from error
+        raise MontageError("ffprobe не запустился — переустановите ffmpeg") from error
     if proc.returncode != 0:
         tail = (proc.stderr or b"").decode("utf-8", errors="replace").strip()[-300:]
         raise MontageError(f"ffprobe не прочитал {Path(path).name}: {tail}")

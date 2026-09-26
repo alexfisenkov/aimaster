@@ -32,20 +32,20 @@ def link_or_copy(source: Path, target: Path) -> str:
 
     source, target = Path(source), Path(target)
     if not source.is_file():
-        raise MontageError(f"источника для монтажа нет: {source}")
+        raise MontageError(f"источника для монтажа нет: {source.name}")
     if target.exists():
         try:
             same = (os.path.samefile(source, target)
                     or target.stat().st_size == source.stat().st_size)
         except OSError as error:
-            raise MontageError(f"не удалось проверить {target.name} в assets: {error}") from error
+            raise MontageError(f"не удалось проверить {target.name} в assets") from error
         if same:
             return "exists"
         raise MontageError(f"в assets уже лежит другой файл {target.name}")
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
     except OSError as error:
-        raise MontageError(f"не удалось создать папку {target.parent}: {error}") from error
+        raise MontageError(f"не удалось создать папку {target.parent.name} монтажа") from error
     try:
         os.link(source, target)
         return "link"
@@ -57,7 +57,7 @@ def link_or_copy(source: Path, target: Path) -> str:
         replace_file(temporary, target)
     except OSError as error:
         temporary.unlink(missing_ok=True)
-        raise MontageError(f"не удалось скопировать {source.name} в assets: {error}") from error
+        raise MontageError(f"не удалось скопировать {source.name} в assets") from error
     return "copy"
 
 

@@ -19,9 +19,10 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 from montage_testkit import (FakeHyperframes, fake_engine, fake_gsap_prefix,  # noqa: E402
                              seed_workspace, tiny_mp4, tiny_wav, video_state)
 from studio.authoring_support import open_assets, open_store  # noqa: E402
-from studio.montage import MontageError, service  # noqa: E402
+from studio.montage import MontageError, service, service_versions  # noqa: E402
 from studio.montage.edit import EditRequest  # noqa: E402
 from studio.montage.engine import PREFIX_ENV  # noqa: E402
+from studio.montage.index_io import read_index, write_index  # noqa: E402
 from studio.montage.paths import montage_paths  # noqa: E402
 from studio.montage.probe import MediaInfo  # noqa: E402
 from studio.montage.version_staging import build_lock  # noqa: E402
@@ -118,6 +119,18 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual((status["exists"], status["layers"], status["model_hash"]), (True, [], None))
         self.assertIsNone(self.status()["model_error"])
 
+    def test_status_answers_with_a_corrupt_snapshot_and_a_broken_scene(self):
+        service.draft(self.ws, "p", 0, **self.kw(probe=True))
+        service.render(self.ws, "p", 1, **self.kw(probe=True))
+        (self.paths.version_dir("v001") / "meta.json").write_text("не json", encoding="utf-8")
+        status = self.status()
+        self.assertEqual((status["current_version"], status["unrendered_changes"]), ("v001", True))
+        store = open_store(self.ws)
+        store.transact("p", 2, lambda state: state["scenes"][0].pop("scene_id"))
+        status = self.status()
+        self.assertIn("у сцены нет scene_id", status["stale_error"])
+        self.assertEqual((status["stale_clips"], status["exists"]), ([], True))
+
     def test_draft_without_engine_refuses_and_writes_nothing(self):
         with mock.patch.object(service, "require_engine",
                                side_effect=MontageError("Монтажный движок не готов: не найден Node.js")):
@@ -132,9 +145,40 @@ class ServiceTests(unittest.TestCase):
         self.assertFalse(self.paths.index.exists())
         service.draft(self.ws, "p", 0, **self.kw(probe=True))  # повтор не упирается в «черновик уже есть»
 
+    def test_failed_state_write_keeps_a_concurrent_edit_of_the_draft(self):
+        def studio_edits_then_state_refuses(*args, **kwargs):
+            write_index(self.paths.index, "<html>правка из стола</html>")
+            raise RevisionConflict(0, 1)
+        with mock.patch.object(service, "record_draft", side_effect=studio_edits_then_state_refuses):
+            with self.assertRaises(MontageError) as caught:
+                service.draft(self.ws, "p", 0, **self.kw(probe=True))
+        self.assertIn("тем временем поменяли", str(caught.exception))
+        self.assertEqual(read_index(self.paths.index), "<html>правка из стола</html>")
+
+    def test_failed_restore_record_puts_back_only_its_own_write(self):
+        service.draft(self.ws, "p", 0, **self.kw(probe=True))
+        service.render(self.ws, "p", 1, **self.kw(probe=True))
+        service.edit(self.ws, "p", 2, EditRequest(op="delete", clip="v-2"), **self.kw())
+        edited = read_index(self.paths.index)
+        with mock.patch.object(service_versions, "record_restore", side_effect=RevisionConflict(2, 3)):
+            with self.assertRaises(RevisionConflict):
+                service.restore(self.ws, "p", 2, "v001")
+        self.assertEqual(read_index(self.paths.index), edited)  # своя запись снимка отменена
+
+        def studio_edits_then_state_refuses(*args, **kwargs):
+            write_index(self.paths.index, "<html>правка из стола</html>")
+            raise RevisionConflict(2, 3)
+        with mock.patch.object(service_versions, "record_restore", side_effect=studio_edits_then_state_refuses):
+            with self.assertRaises(MontageError) as caught:
+                service.restore(self.ws, "p", 2, "v001")
+        self.assertIn("тем временем поменяли", str(caught.exception))
+        self.assertEqual(read_index(self.paths.index), "<html>правка из стола</html>")
+
     def test_stale_revision_is_refused(self):
-        with self.assertRaises(RevisionConflict):
+        with self.assertRaises(RevisionConflict) as caught:
             service.draft(self.ws, "p", 5, **self.kw(probe=True))
+        self.assertEqual(str(caught.exception), "проект изменился — обновите номер ревизии: сейчас 0")
+        self.assertEqual((caught.exception.expected_revision, caught.exception.current_revision), (5, 0))
 
     def test_unknown_draft_mode_is_refused(self):
         with self.assertRaises(MontageError):

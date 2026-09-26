@@ -426,6 +426,15 @@ def _safe_system_text(value, context):
     return value
 
 
+def forbidden_system_word(value: str) -> str | None:
+    """The fragment `_safe_system_text` would refuse `value` for, else None --
+    for writers (the montage version summary) that must check free text
+    before it reaches state, with the one rule, not a copy of it."""
+
+    match = _FORBIDDEN_PUBLIC_RESULT_VALUE.search(value or "")
+    return match.group(0) if match else None
+
+
 def _sanitize_project(project, context="project"):
     project = _exact_keys(project, _PROJECT_KEYS, context)
     result = {}

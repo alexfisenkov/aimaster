@@ -61,7 +61,9 @@ class IndexIoTests(unittest.TestCase):
                 with mock.patch.object(Path, "unlink", side_effect=OSError("сбой чистки")):
                     with self.assertRaises(MontageError) as caught:
                         write_index(path, "текст")
-            self.assertIn("исходный сбой записи", str(caught.exception))
+            # fix round 1/5 батча 6: текст OSError (по-английски от ОС) — в цепочке, не в сообщении
+            self.assertEqual(str(caught.exception.__cause__), "исходный сбой записи")
+            self.assertIn("index.html", str(caught.exception))
             self.assertNotIn("сбой чистки", str(caught.exception))
 
     def test_write_uses_a_unique_temp_name(self):
