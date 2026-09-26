@@ -1,40 +1,102 @@
-"""Жив ли процесс монтажного стола — по номеру из montage/.desk.json.
+"""Жив ли процесс монтажного стола и тот ли это процесс — по номеру из montage/.desk.json.
 
 Остановка — только `proc_tree.kill_tree` (обход потомков: Chrome, которого
-puppeteer запускает отдельной сессией, группой не достаётся); здесь — лишь
-проверки «жив» и объект с `pid`/`poll()`, который этой функции нужен, когда
-Popen-объекта нет (стол открывал другой вызов CLI).
+puppeteer запускает отдельной сессией, группой не достаётся); здесь — проверки
+«жив», отпечаток времени запуска процесса (номер процесса ОС выдаёт заново,
+а время запуска у чужого процесса с тем же номером другое) и объект с
+`pid`/`poll()`, который `kill_tree` нужен, когда Popen-объекта нет.
 """
 
 from __future__ import annotations
 
+import ctypes
 import os
+import subprocess
+from pathlib import Path
 
 from ..platform_compat import IS_WINDOWS
 
 STILL_ACTIVE = 259
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-ERROR_ACCESS_DENIED = 5
+PS = "/bin/ps"
 
 
-def _windows_alive(pid: int) -> bool:
-    import ctypes
-    from ctypes import wintypes
+class _FileTime(ctypes.Structure):
+    _fields_ = [("low", ctypes.c_uint32), ("high", ctypes.c_uint32)]
 
+
+def _kernel32():
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
-    kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
-    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+    kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+    kernel32.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32))
+    kernel32.GetProcessTimes.argtypes = (ctypes.c_void_p,) + (ctypes.POINTER(_FileTime),) * 4
+    return kernel32
+
+
+def _windows_query(pid: int, kernel32, ask):
+    """Открыть процесс только на чтение сведений и спросить `ask(handle)`.
+    Нет доступа (чужой по правам) или нет процесса — None: не наш."""
+
     handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not handle:
-        return ctypes.get_last_error() == ERROR_ACCESS_DENIED  # есть, но чужой по правам
+        return None
     try:
-        code = wintypes.DWORD()
-        ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-        return bool(ok) and code.value == STILL_ACTIVE
+        return ask(handle)
     finally:
         kernel32.CloseHandle(handle)
+
+
+def _windows_alive(pid: int, kernel32=None) -> bool:
+    kernel32 = kernel32 or _kernel32()
+
+    def still_active(handle):
+        code = ctypes.c_uint32()
+        return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == STILL_ACTIVE
+    return bool(_windows_query(pid, kernel32, still_active))
+
+
+def _windows_started(pid: int, kernel32=None) -> str | None:
+    kernel32 = kernel32 or _kernel32()
+
+    def creation(handle):
+        times = [_FileTime() for _ in range(4)]
+        if not kernel32.GetProcessTimes(handle, *(ctypes.byref(item) for item in times)):
+            return None
+        return f"win:{(times[0].high << 32) | times[0].low}"
+    return _windows_query(pid, kernel32, creation)
+
+
+def _linux_started(stat_text: str) -> str | None:
+    """/proc/PID/stat, поле 22 (starttime, такты с загрузки). Имя процесса
+    (поле 2) в скобках может содержать пробелы и скобки — режем по последней «)»."""
+
+    fields = stat_text.rsplit(")", 1)[-1].split()
+    return f"linux:{fields[19]}" if len(fields) > 19 else None
+
+
+def _posix_started(pid: int, *, run=subprocess.run, proc_root: Path = Path("/proc")) -> str | None:
+    try:
+        return _linux_started((proc_root / str(pid) / "stat").read_text(encoding="ascii"))
+    except (OSError, UnicodeDecodeError):
+        pass
+    try:  # macOS и прочие без /proc: время запуска от ps (секунды), без локали
+        proc = run([PS, "-o", "lstart=", "-p", str(pid)], stdin=subprocess.DEVNULL,
+                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5, text=True,
+                   env={"LC_ALL": "C", "PATH": "/usr/bin:/bin"})
+    except (OSError, subprocess.SubprocessError):
+        return None
+    started = " ".join((proc.stdout or "").split())
+    return f"ps:{started}" if proc.returncode == 0 and started else None
+
+
+def process_started(pid) -> str | None:
+    """Отпечаток времени запуска процесса; None — процесса нет или прочитать нельзя."""
+
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return None
+    return _windows_started(pid) if IS_WINDOWS else _posix_started(pid)
 
 
 def process_alive(pid) -> bool:
@@ -55,24 +117,6 @@ def process_alive(pid) -> bool:
     except PermissionError:
         return True
     return True
-
-
-def own_session_alive(pid) -> bool:
-    """Жив и всё ещё лидер своей сессии — так стол запускает `popen_engine`
-    (start_new_session). Чужой процесс, получивший тот же номер после смерти
-    стола, лидером своей сессии почти никогда не бывает — его не тронем.
-    Windows сессий процессов не знает: там — просто «жив»."""
-
-    if not process_alive(pid):
-        return False
-    if IS_WINDOWS:
-        return True
-    try:
-        return os.getsid(pid) == pid
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True  # проверить нельзя — считаем живым, как process_alive
 
 
 class PidHandle:

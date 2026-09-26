@@ -22,12 +22,12 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Iterable
 
-from ..platform_compat import LockBusyError, file_lock, fsync_directory
+from ..platform_compat import fsync_directory
 from . import MontageError
+from .locks import held_lock
 from .model import Model
 from .paths import VERSION_ID, MontagePaths
 from .versions import VersionMeta
@@ -37,27 +37,11 @@ def _staging_dir(paths: MontagePaths, version: str) -> Path:
     return paths.versions / f".{version}.staging"
 
 
-@contextmanager
 def build_lock(paths: MontagePaths):
     """Замок на всю сборку проекта; не ждёт — у второй параллельной сборки нет
-    данных новее, чем у первой. ОС снимает замок сама, если держатель умер.
-    Текст OSError (по-английски) остаётся только в цепочке исключения."""
+    данных новее, чем у первой."""
 
-    try:
-        paths.root.mkdir(parents=True, exist_ok=True)
-        handle = (paths.root / ".build.lock").open("a+", encoding="utf-8")
-    except OSError as error:
-        raise MontageError(f"не удалось открыть замок сборки в {paths.root}") from error
-    with handle, ExitStack() as held:
-        # try — только вокруг захвата: исключение из тела сборки проходит как есть.
-        try:
-            held.enter_context(file_lock(handle, blocking=False))
-        except LockBusyError:
-            raise MontageError("сборка этого монтажа уже идёт") from None
-        except OSError as error:
-            raise MontageError("не удалось взять замок сборки: файловая система папки "
-                               "проекта не поддерживает блокировки") from error
-        yield
+    return held_lock(paths.root / ".build.lock", busy="сборка этого монтажа уже идёт")
 
 
 def _write_durable(path: Path, text: str) -> None:

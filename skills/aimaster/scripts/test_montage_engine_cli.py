@@ -80,6 +80,14 @@ class EnvTests(unittest.TestCase):
         self.assertNotIn("HYPERFRAMES_BROWSER_PATH", without)
         self.assertEqual(with_record["HYPERFRAMES_BROWSER_PATH"], str(base / "chrome"))
 
+    def test_preview_always_listens_on_loopback(self):
+        # `preview` 0.8.75 слушает HYPERFRAMES_PREVIEW_HOST: чужое 0.0.0.0 из окружения
+        # человека выставило бы монтажный стол в сеть — движок его не наследует.
+        env = engine_cli.engine_env(make_engine(Path("/tmp/hf")), {"HYPERFRAMES_PREVIEW_HOST": "0.0.0.0"})
+        self.assertEqual(env["HYPERFRAMES_PREVIEW_HOST"], "127.0.0.1")
+        self.assertEqual(engine_cli.engine_env(make_engine(Path("/tmp/hf")), {})["HYPERFRAMES_PREVIEW_HOST"],
+                         "127.0.0.1")
+
     def test_windows_leaves_localappdata_and_appdata_alone(self):
         """round 3/5: пробная гипотеза (LOCALAPPDATA/APPDATA переносить вместе
         с HOME) не подтвердилась прямым CI-прогоном — H2 (системный Chrome

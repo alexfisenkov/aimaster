@@ -18,7 +18,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from studio.montage import MontageError, version_staging  # noqa: E402
+from studio.montage import MontageError, locks, version_staging  # noqa: E402
 from studio.montage.model import Clip, Model  # noqa: E402
 from studio.montage.paths import montage_paths  # noqa: E402
 from studio.montage.version_staging import (  # noqa: E402
@@ -139,11 +139,12 @@ class VersionStagingTests(unittest.TestCase):
         with self.assertRaises(MontageError) as caught:
             with build_lock(montage_paths(blocker)):
                 pass
-        self.assertIn("замок сборки", str(caught.exception))
+        self.assertIn(".build.lock", str(caught.exception))
+        self.assertNotIn(str(blocker), str(caught.exception))  # без абсолютных путей
 
     def test_filesystem_without_locks_is_a_russian_refusal(self):
         unsupported = OSError(95, "Operation not supported")
-        with mock.patch.object(version_staging, "file_lock", side_effect=unsupported):
+        with mock.patch.object(locks, "file_lock", side_effect=unsupported):
             with self.assertRaises(MontageError) as caught:
                 with build_lock(self.paths):
                     pass

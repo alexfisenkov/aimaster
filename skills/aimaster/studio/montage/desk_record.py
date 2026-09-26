@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
+from . import MontageError
 from .index_io import write_text_atomic
 from .paths import MontagePaths
+
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
 def read_record(paths: MontagePaths) -> dict | None:
@@ -47,3 +52,15 @@ def ready_line(log_path) -> dict | None:
 
 def write_record(paths: MontagePaths, record: dict) -> None:
     write_text_atomic(paths.desk_file, json.dumps(record, ensure_ascii=False))
+
+
+def record_from_ready(ready: dict, *, pid: int, port: int, process_started: str | None) -> dict:
+    """Запись стола из строки готовности. Studio слушает только 127.0.0.1
+    (engine_env ставит HYPERFRAMES_PREVIEW_HOST); иной адрес — отказ."""
+
+    url = ready["studioUrl"]
+    if not {urlsplit(url).hostname, ready.get("host") or "127.0.0.1"} <= set(LOOPBACK_HOSTS):
+        raise MontageError(f"Монтажный стол открылся не на 127.0.0.1 ({url}) — остановлен")
+    return {"pid": pid, "port": int(ready.get("port") or port), "url": url,
+            "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "process_started": process_started}

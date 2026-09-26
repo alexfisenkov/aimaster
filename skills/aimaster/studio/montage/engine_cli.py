@@ -62,6 +62,9 @@ def engine_env(engine: Engine, base: Mapping[str, str] | None = None, *,
     env.pop("HYPERFRAMES_BROWSER_PATH", None)
     if engine.browser:
         env["HYPERFRAMES_BROWSER_PATH"] = engine.browser
+    # `preview` слушает HYPERFRAMES_PREVIEW_HOST (иначе 127.0.0.1): чужое значение
+    # из окружения человека выставило бы монтажный стол в сеть.
+    env["HYPERFRAMES_PREVIEW_HOST"] = "127.0.0.1"
     return env
 
 
@@ -188,7 +191,8 @@ def popen_engine(engine: Engine, args: Sequence[str], *, cwd: Path, log_path: Pa
                          stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                          **group_kwargs())
         except OSError as error:
-            raise MontageError(f"не удалось запустить HyperFrames: {error}") from error
+            raise MontageError("не удалось запустить HyperFrames — проверьте установку: "
+                               "montage status") from error
 
 
 class EngineRunner:
