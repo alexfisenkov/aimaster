@@ -129,8 +129,9 @@ class StateTests(unittest.TestCase):
         def approve(state):
             state["milestones"]["assembly"] = "approved"
         self.store.transact("p", 0, approve)
-        with self.assertRaises(AuthoringError):
+        with self.assertRaises(AuthoringError) as caught:
             record_draft(self.store, "p", 1, canvas=Canvas(108, 192))
+        self.assertEqual(str(caught.exception), "этап «assembly» уже одобрен — montage его не меняет")
 
     def test_validation_rejects_broken_sections(self):
         base = video_state([("s1", "Сад", "текст", 2000, "asset-a")])

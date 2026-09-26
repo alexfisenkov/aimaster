@@ -27,12 +27,13 @@ from . import MontageError
 from .composition_refs import references
 from .draft_html import script_tag
 from .engine import Engine, install_command, load_pin, package_version
+from .prefix_layout import DRAFT_GSAP, gsap_dist, gsap_problem
 from .index_io import read_index
 from .media_sync import ASSETS_DIR
 from .paths import MontagePaths
 from .replace_target import make_replaceable, regular_stat
 
-DRAFT_SCRIPTS = ("gsap", "MotionPathPlugin")
+DRAFT_SCRIPTS = DRAFT_GSAP
 _PLUGIN = re.compile(r"[A-Z][A-Za-z0-9]{1,40}")
 # Правила для агента, который добавляет анимации из скиллов HyperFrames.
 RULES = (
@@ -47,26 +48,17 @@ RULES = (
 )
 
 
-def gsap_dist(prefix: Path) -> Path:
-    return Path(prefix) / "node_modules" / "gsap" / "dist"
-
-
 def gsap_sources(prefix: Path, names=DRAFT_SCRIPTS) -> list[Path]:
     """Файлы `<имя>.min.js` закреплённой версии GSAP в папке движка; нет
-    пакета, не та версия или нет файла — MontageError с командой установки.
-    Ничего не пишет: черновик зовёт её до первой записи в current/."""
+    пакета, не та версия или нет файла — MontageError с командой установки
+    (та же проверка, что у engine.locate). Ничего не пишет: черновик зовёт её
+    до первой записи в current/."""
 
-    wanted, found = load_pin()["gsap_version"], package_version(prefix, "gsap")
-    if found != wanted:
-        have = f"стоит {found}" if found else "не установлен"
-        raise MontageError(f"Монтажный движок не готов: GSAP {wanted} для черновика {have} "
-                           f"в папке движка. Поставьте его командой: {install_command()}")
-    sources = [gsap_dist(prefix) / f"{name}.min.js" for name in names]
-    missing = [source.name for source in sources if not source.is_file()]
-    if missing:
-        raise MontageError(f"Монтажный движок не готов: в GSAP движка нет {', '.join(missing)}. "
+    problem = gsap_problem(prefix, load_pin()["gsap_version"], names)
+    if problem:
+        raise MontageError(f"Монтажный движок не готов: {problem}. "
                            f"Поставьте его командой: {install_command()}")
-    return sources
+    return [gsap_dist(prefix) / f"{name}.min.js" for name in names]
 
 
 def _copy_if_changed(source: Path, target: Path) -> bool:

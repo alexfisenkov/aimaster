@@ -88,7 +88,7 @@ def _render(engine, comp: Path, output: Path, report: dict) -> None:
     started = time.monotonic()
     result = run_engine(engine, ["render", ".", "--output", str(output), "--quality",
                                  pin["render_quality"], "--frames-cache-dir",
-                                 str(frames_cache(engine)), "--quiet"],
+                                 str(frames_cache(engine)), "--quiet", "--json"],
                         cwd=comp, timeout=pin["timeouts"]["render"])
     report["render_seconds"] = round(time.monotonic() - started, 1)
     report["network_markers"] = network_markers(result.stdout + "\n" + result.stderr)

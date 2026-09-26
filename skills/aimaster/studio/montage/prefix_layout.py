@@ -34,6 +34,26 @@ def installed_version(prefix: Path) -> str | None:
     return package_version(prefix, "hyperframes")
 
 
+DRAFT_GSAP = ("gsap", "MotionPathPlugin")  # черновик несёт оба (vendor.py, задача 10b)
+
+
+def gsap_dist(prefix: Path) -> Path:
+    return Path(prefix) / "node_modules" / "gsap" / "dist"
+
+
+def gsap_problem(prefix: Path, wanted: str, names=DRAFT_GSAP) -> str:
+    """Чем GSAP в папке движка не годится (не та версия, нет файла `<имя>.min.js`),
+    или "". Одна проверка на `engine.locate()` и `vendor.gsap_sources()`: движок,
+    которому черновик откажет из-за GSAP, не значится установленным."""
+
+    found = package_version(prefix, "gsap")
+    if found != wanted:
+        have = f"стоит {found}" if found else "не установлен"
+        return f"GSAP {wanted} для черновика {have} в папке движка"
+    missing = [f"{name}.min.js" for name in names if not (gsap_dist(prefix) / f"{name}.min.js").is_file()]
+    return f"в GSAP движка нет {', '.join(missing)}" if missing else ""
+
+
 def read_record(prefix: Path) -> dict:
     try:
         data = json.loads((Path(prefix) / RECORD_NAME).read_text(encoding="utf-8"))

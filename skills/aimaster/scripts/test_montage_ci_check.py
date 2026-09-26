@@ -167,6 +167,7 @@ class CiCheckReportTests(FakeMediaTestCase):
         # качество — то же, что у сборки версии (engine.json), а не отдельное
         self.assertEqual(self.render_args[self.render_args.index("--quality") + 1],
                          montage_ci_check.load_pin()["render_quality"])
+        self.assertIn("--json", self.render_args)  # без него движок ходит за обновлениями
 
     def test_engine_without_gsap_is_a_json_problem(self):
         self.prefix = Path(self.prefix).parent / "без-gsap"

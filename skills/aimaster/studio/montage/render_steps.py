@@ -95,10 +95,11 @@ def render_mp4(ctx, engine, runner, version_id: str) -> Path:
     pin = load_pin()
     output = render_output(ctx.media_root, ctx.project_id, version_id)
     _clear_orphan(output)
+    # --json: без него движок на каждой сборке ходит за обновлениями (engine_cli.argv_for)
     try:
         result = runner.run(engine, ["render", ".", "--output", str(output), "--quality",
                                      pin["render_quality"], "--frames-cache-dir",
-                                     str(frames_cache(engine)), "--quiet"],
+                                     str(frames_cache(engine)), "--quiet", "--json"],
                             cwd=ctx.paths.current, timeout=pin["timeouts"]["render"])
     except BaseException:  # Ctrl+C или сбой запуска — недописанный MP4 не оставляем
         remove_output(output)

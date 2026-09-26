@@ -101,6 +101,26 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual([h["kind"] for h in state["history"]],
                          ["montage-drafted", "montage-built", "montage-built", "montage-restored"])
 
+    def test_every_engine_call_carries_json(self):
+        # Без --json движок на каждом запуске ходит за обновлениями (engine_cli.argv_for):
+        # и lint/timeline, и правки, и сама сборка передают его явно.
+        drafted = service.draft(self.ws, "p", 0, **self.kw(probe=True))
+        for request in (EditRequest(op="move", clip="v-2", at=2.5),
+                        EditRequest(op="trim-start", clip="v-1", seconds=0.5),
+                        EditRequest(op="trim-end", clip="v-1", duration=1.0),
+                        EditRequest(op="split", clip="a-voice", at=1.0),
+                        EditRequest(op="volume", clip="a-voice", value=0.5),
+                        EditRequest(op="fade", clip="a-voice", fade_in=0.2),
+                        EditRequest(op="title-add", text="Барсик", at=0.2, duration=1.0),
+                        EditRequest(op="delete", clip="t-1")):
+            service.edit(self.ws, "p", drafted["revision"], request, **self.kw())
+        service.diff(self.ws, "p", **self.kw())
+        self.infos["v001.mp4"] = MediaInfo(self.status()["duration"], 108, 192, True, True)
+        service.render(self.ws, "p", drafted["revision"], **self.kw(probe=True))
+        commands = {call[0] if call[0] != "timeline" or len(call) < 3 else call[1] for call in self.runner.calls}
+        self.assertTrue({"lint", "render", "move", "trim", "split", "set", "delete"} <= commands, commands)
+        self.assertEqual([call for call in self.runner.calls if "--json" not in call], [])
+
     def test_status_without_engine_still_answers(self):
         status = service.status(self.ws, "p", locate=lambda: (None, "не найден Node.js"))
         self.assertEqual((status["engine"]["state"], status["engine"]["reason"], status["exists"]),

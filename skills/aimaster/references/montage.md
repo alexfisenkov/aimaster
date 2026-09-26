@@ -12,18 +12,22 @@ image (`assembly set`).
 Run the commands as `python3 scripts/creator_studio.py montage …` (the
 `python_cmd` of this machine instead of `python3`). Never run the `hyperframes`
 CLI, `npx hyperframes` or `npm` yourself: the montage commands start the pinned
-engine with its own HOME, telemetry off and the ffmpeg this skill found.
+engine with its own HOME, telemetry off, the ffmpeg this skill found and
+`--json` on every call. Without `--json` HyperFrames 0.8.75 checks for updates
+of itself and of its skills on every run (the npm registry, GitHub,
+`git ls-remote`), and no environment variable turns that off.
 
 ## When to start
 
 After every scene video (or the one-shot video) is chosen, `motion` is approved
 and `audio` is approved (an empty audio stage counts). The montage writes into
 the `assembly` stage; once `assembly` is approved, every changing command is
-refused. A build is local and free: it needs no `grant` and is not a paid
-action. The dashboard's current prompt «Собрать → чат» / «Собрать заново → чат»
-still calls the build paid and asks for a plan first; for a video or mixed
-project answer it with the flow below (show the plan if the prompt asks for it,
-and say the build costs nothing).
+refused. A build is local and free: it needs no `grant`, is not a paid action
+and needs no confirmation. «Собрать ролик» — in chat or from the dashboard — is
+`montage diff` → retell → `montage render` straight away, with no plan and no
+confirmation step. The dashboard's current prompt («Собрать → чат» /
+«Собрать заново → чат») still calls the build paid and asks to wait for a
+confirmation: that text predates the montage; do not wait.
 
 ## Engine check
 
@@ -31,12 +35,11 @@ Start with `montage status WS P`. Its `engine`:
 
 - `state: "installed"` — go on.
 - `state: "missing"` — `reason` says what is absent (Node.js 22+, HyperFrames
-  0.8.75 or its render browser) and `install` is the exact install command for
-  this machine, for example
+  0.8.75, its render browser or GSAP 3.14.2 with its MotionPathPlugin) and
+  `install` is the exact install command for this machine, for example
   `/usr/bin/python3 /…/skills/aimaster/scripts/install.py --install-deps`.
-  `montage draft` refuses with «Монтажный движок не готов: … Поставьте его
-  командой: …» naming the same command; a draft refused because GSAP is
-  missing names it too.
+  Every command that needs the engine refuses with «Монтажный движок не готов:
+  … Поставьте его командой: …» naming the same command.
 
 The command installs whatever the skill lacks on this machine. HyperFrames
 with GSAP, its render browser and the cache of HyperFrames skills go into the
@@ -71,26 +74,27 @@ creator_studio.py montage close WS P
 
 Every command prints one JSON object; `--json` is accepted and changes
 nothing. A refusal is exit code 3 and one line on stderr,
-`creator_studio.py: error: <text>`, in Russian (one English exception is in
-Refusals) and without absolute paths, except the engine folder and the install
-command in «Монтажный движок не готов»: tell the person what it means in plain
-words (see Refusals). `draft`, `edit`, `render` and `restore` need
-`--expected-revision N` — the `revision` of the last reply or of
-`montage status`. `draft` (new and `--rebuild`), `render` and `restore` return
-the next revision; `edit` and `draft --refresh` do not change it.
+`creator_studio.py: error: <text>`, in Russian and without absolute paths,
+except the engine folder and the install command in «Монтажный движок не
+готов»: tell the person what it means in plain words (see Refusals).
+`draft`, `edit`, `render` and `restore` need `--expected-revision N` — the
+`revision` of the last reply or of `montage status`. `draft` (new and
+`--rebuild`), `render` and `restore` return the next revision; `edit` and
+`draft --refresh` do not change it. Every reply also carries `project_id`.
 
 | Command | What it does | Reply |
 |---|---|---|
 | `montage draft` | first draft from the chosen scene videos and sound layers; no titles; copies the HyperFrames skills into the workspace | `revision`, `canvas`, `duration`, `clips`, `current`, `backup`, `skills` |
-| `montage draft … --refresh` | replaces the sources of clips whose scene or layer now has another chosen result; other edits stay | `refreshed`, `not_refreshed`, `skills` |
-| `montage draft … --rebuild` | builds the draft again from the project; the previous `index.html` (with titles and desk edits) goes to `montage/.undo/` | as `draft`, `backup` = that file |
+| `montage draft … --refresh` | replaces the sources of clips whose scene or layer now has another chosen result; other edits stay | `revision`, `refreshed`, `not_refreshed`, `skills` |
+| `montage draft … --rebuild` | builds the draft again from the project; the previous `index.html` (with titles and desk edits) goes to `montage/.undo/`, named in `backup` | `revision`, `canvas`, `duration`, `clips`, `current`, `backup`, `skills` |
 | `montage status` | engine, skills, versions, current version, layers, stale clips, desk, paths | see below |
 | `montage diff` | Russian list of changes since the current version (or `--against vNNN`) | `base`, `changes`, `model_hash`, `unrendered_changes` |
-| `montage edit` | one edit, below | `op`, `clip`, `model_hash_before`, `model_hash`, `duration`, `receipt` |
+| `montage edit` | one edit, below | `revision`, `op`, `clip`, `model_hash_before`, `model_hash`, `duration`, `receipt` |
 | `montage render` | reference check → lint → MP4 (its log checked for network access) → ffprobe → new version → `assembly` | `version`, `asset_id`, `path`, `duration`, `changes`, `warnings` (lint warnings), `revision` |
 | `montage restore` | makes an earlier version current again (the replaced `index.html` goes to `.undo/`) | `current_version`, `backup`, `revision` |
 | `montage gsap` | copies pinned GSAP and plugins from the engine into `current/assets/` | `version`, `files`, `copied`, `script_tags`, `missing_tags`, `rules` |
-| `montage open` / `montage close` | start / stop the montage desk (HyperFrames Studio) | `state`, `url`, `port`, `pid`, `started_at` / `state` |
+| `montage open` | starts the montage desk (HyperFrames Studio) | `state`, `url`, `port`, `pid`, `started_at` |
+| `montage close` | stops it | `state` |
 
 `montage render` without `--by` records `autopilot` in an autopilot project and
 `agent` otherwise; pass `--by owner` when the build is the person's own
@@ -107,8 +111,9 @@ dashboard; without it the caption is made from the changes.
   `asset_id`, `created_at`, `by`, `based_on`, `summary`), `canvas`.
 - `layers`: once the engine has read the draft, all six, in this order —
   `video` «Видео», `titles` «Титры», `voice` «Голос», `music` «Музыка», `fx`
-  «Шумы», `atmos` «Атмосфера»; each clip has `id`, `kind`, `start`,
-  `duration`, `media_start`, `volume`, `scene_id`, `asset_id`, `text`.
+  «Шумы», `atmos` «Атмосфера»; each has `layer`, `label` and `clips`, each
+  clip `id`, `kind`, `start`, `duration`, `media_start`, `volume`,
+  `scene_id`, `asset_id`, `text`.
 - `model_hash` and `unrendered_changes` (`true` — the montage changed after the
   current version was built); `duration`.
 - `stale_clips` (see Keeping the draft current); `desk`; `paths.current`
@@ -136,8 +141,9 @@ Without the engine, `model_hash`, `duration` and `unrendered_changes` are
 - `title-add --text T --at S --duration S` — a title on the «Титры» layer;
   the new id is in `receipt.new_clip`.
 - `title-text --clip ID --text T` — new text of a title.
-- `undo` — takes back your own last edit (repeat for earlier ones); refused when
-  the montage changed after it, for example in the desk.
+- `undo` — takes back your own last edit (repeat for earlier ones); the reply
+  has `op`, `ok` and `restored`. Refused when the montage changed after it, for
+  example in the desk, or when there is nothing to take back.
 
 Clip ids come from `status.layers`: videos `v-1`, `v-2`… in scenario order,
 titles `t-1`, `t-2`… as they are added, sound `a-voice`, `a-music`, `a-fx`,
@@ -244,9 +250,10 @@ overridden by Font and GSAP above.
    capability, or give the link: «Монтажный стол открыт: <url>. Правки
    сохраняются сами; интерфейс стола на английском. Когда закончите —
    напишите «собери»».
-3. On «собери» or the dashboard prompt: `montage diff`, retell the changes,
-   `montage render` (`--by owner` for the person's desk edits), show the new
-   version: «Готова версия v2: …».
+3. On «собери» / «Собрать ролик» or the dashboard prompt: `montage diff`,
+   retell the changes, `montage render` straight away (`--by owner` for the
+   person's desk edits) — free and local, no plan and no confirmation — then
+   show the new version: «Готова версия v2: …».
 4. «Сделай текущей v1», «верни прошлую» → `montage restore`. Versions are never
    deleted; an open desk picks up the restored montage by itself.
 5. Approval stays the person's: `stage approve` only on their word. When the
@@ -281,13 +288,16 @@ commands. Before your own edits while the desk may be open, read
 concurrent mouse edit then refuses your edit instead of being overwritten.
 `montage close` stops Studio and its browser; nothing stops the desk on its
 own yet. `montage status` → `desk.state` shows `open` or `closed` (with a
-`note` when a recorded desk no longer answers).
+`note` when a recorded desk no longer answers). `open`, `close` and `status`
+add `forgotten` when the recorded process turned out not to be this desk: it
+is left alone and only the record is dropped.
 
 ## Keeping the draft current
 
 After the person chooses another scene video or sound, `status.stale_clips`
 lists the clips (`clip`, `layer`, `scene_id`, `asset_id`, `current_asset_id`,
-`reason`, `cause`):
+`reason`, `cause`, `audio_change` — the last one is filled only in the
+`refreshed` / `not_refreshed` lists of `--refresh`):
 
 - `reason: null` — `montage draft --refresh` replaces the source; the other
   edits stay;
@@ -308,15 +318,20 @@ lists the clips (`clip`, `layer`, `scene_id`, `asset_id`, `current_asset_id`,
 | «черновика ещё нет: сначала montage draft» | make the draft |
 | «проект изменился — обновите номер ревизии: сейчас N» | repeat with that revision |
 | «монтаж изменился с тех пор, как вы его читали …» | the desk changed it: read `montage status`, repeat the edit |
-| «монтаж поменяли во время сборки …» | a desk edit landed during the build: no version, build again |
+| «монтаж поменяли во время сборки …» / «монтаж поменяли, пока сборка готовила его …» | a desk edit landed during the build: no version, build again |
 | «Монтаж нельзя собрать: …» / «Проверка монтажа (lint) нашла ошибки: …» | name the clip and the error, fix it with an edit, build again |
 | «Сборка обращалась в сеть или к чужому шрифту: …» | a foreign font or a CDN script: Font and GSAP rules, then build again |
 | «Собранный ролик не прошёл проверку: …» / «Сборка не удалась: …» | no version; `montage/.logs/render-vNNN.log` has the engine log |
+| «Ролик больше 2 ГБ — такой файл студия не примет; сократите монтаж» | shorten the video (fewer or shorter clips), build again: «Ролик вышел больше 2 ГБ — укорочу монтаж и соберу снова» |
+| «отменять нечего» | there is no edit of yours to take back |
+| «после этой правки монтаж меняли …» / «нет отметки о состоянии после последней правки …» / «отметка о последней правке повреждена …» | `undo` would erase someone else's changes (the desk): make the opposite edit instead: «Отменить не могу — после моей правки монтаж меняли на столе. Поправлю обратной правкой» |
+| «нет версии vNNN» | that version does not exist: list `versions` from `montage status` and name the real ones |
 | «в папке монтажа есть ссылки на другие места: …; монтаж не трогаю» / «в папке монтажа лежит montage/current/ffmpeg …» | the montage folder holds links or a program someone put there; nothing is touched until it is gone. Never delete it yourself: «В папке монтажа проекта лежат посторонние ссылки (или программа ffmpeg) — пока они там, монтаж не работает. Уберите их, и я продолжу» |
+| «папка montage проекта — ссылка на другое место; монтаж не трогаю» | the whole `montage` folder is a link: «Папка монтажа этого проекта — ссылка на другое место, поэтому монтаж её не трогает. Замените ссылку обычной папкой (или уберите её), и я соберу черновик заново» |
 | «у фото-проекта монтажа нет …» | photo: `assembly set` |
 | «--summary: дашборд не показывает текст с …» | the caption has a service word: rephrase it |
 | «Монтажный стол не запустился за 30 с: …» / «монтажный стол этого проекта сейчас открывают или закрывают …» | try `montage open` again in a minute; `montage/.logs/desk.log` has the details |
-| `assembly is already approved; montage cannot modify it` | the assembly is accepted and the montage no longer changes: say «Сборка уже принята — монтаж этого ролика больше не меняется» |
+| «этап «assembly» уже одобрен — montage его не меняет» | the assembly is accepted and the montage no longer changes: say «Сборка уже принята — монтаж этого ролика больше не меняется» |
 
 ## Rules
 
@@ -336,9 +351,10 @@ lists the clips (`clip`, `layer`, `scene_id`, `asset_id`, `current_asset_id`,
   key `hyperframes-studio:telemetryDisabled` is set to `1` in the page's local
   storage before it first loads; a desk opened from chat does not set it. The
   engine's own telemetry is off.
-- On `render`, HyperFrames asks the npm registry for its latest version at
-  most once a day. It installs nothing (auto-update is off) and the build does
-  not depend on the answer.
+- The engine is kept offline by `--json` on every call, not by a setting:
+  with it, render, lint, timeline edits and the desk make no outbound request
+  and start no `git` (checked through a logging proxy). The desk page in the
+  browser is outside that (Studio's analytics above).
 - The engine is pinned: a newer HyperFrames is used only after a skill
   release. After a skill update that pins another version, `montage status`
   says `missing` («стоит HyperFrames …, нужен …») and `engine.install` brings

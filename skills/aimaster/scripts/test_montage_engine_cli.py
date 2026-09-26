@@ -156,6 +156,19 @@ class RunTests(unittest.TestCase):
         self.assertEqual(payload, {"ok": True})
         self.assertTrue((self.base / "home").is_dir())
 
+    def test_every_command_carries_json(self):
+        # HyperFrames 0.8.75 без --json на каждом запуске проверяет обновления
+        # (registry.npmjs.org, git ls-remote github.com) — флаг добавляется
+        # сам, если вызвавший его забыл, и не дублируется.
+        for args, tail in ((["render", ".", "--quiet"], ["render", ".", "--quiet", "--json"]),
+                           (["browser", "path"], ["browser", "path", "--json"]),
+                           (["lint", ".", "--json"], ["lint", ".", "--json"])):
+            self.assertEqual(engine_cli.argv_for(self.engine, args),
+                             [self.engine.node, str(self.engine.script), *tail])
+        run = FakeRun(stdout=b"")
+        engine_cli.run_engine(self.engine, ["render", "."], cwd=self.base, timeout=5, runner=run)
+        self.assertEqual(run.calls[0][0][-1], "--json")
+
     def test_pwd_follows_the_working_folder_not_the_caller(self):
         # HyperFrames 0.8.75 `preview .` называет проект по basename($PWD):
         # унаследованный PWD вызывающего дал бы Studio адрес чужой папки.
@@ -246,7 +259,7 @@ class PopenTests(unittest.TestCase):
             engine_cli.popen_engine(self.engine, ["preview", "."], cwd=self.base, log_path=log,
                                     popen=self.popen)
         argv, kwargs = self.calls[0]
-        self.assertEqual(argv[:2], [self.engine.node, str(self.engine.script)])
+        self.assertEqual(argv, [self.engine.node, str(self.engine.script), "preview", ".", "--json"])
         self.assertIs(kwargs["start_new_session"], True)
         self.assertNotIn("creationflags", kwargs)
         self.assertTrue(log.exists())

@@ -11,11 +11,9 @@
 add/match → проект в автопилоте → сценарий → сцены → одобрение стадии →
 референс из библиотеки → платное действие в очередь → переход в guided
 (очередь отменяется) → монтаж → сервер на свободном порту и три HTTP-запроса →
-остановка → detect_tools.py --json. Монтаж: на чистой машине движка нет —
-`montage status` и отказ `montage draft` (код 3) называют одну и ту же команду
-установки; с --with-engine смоук берёт движок, уже поставленный на этой машине
-(engine.locate до подмены HOME), доводит второй проект через CLI до сборки
-(клипы — ffmpeg) и проходит montage draft → render v001 → status. Провайдеры
+остановка → detect_tools.py --json. Шаг «монтаж» — smoke_montage.py (без
+движка — команда установки в статусе и в отказе; с --with-engine — сборка v001
+уже поставленным движком), общие запуск и проверки — smoke_kit.py. Провайдеры
 не вызываются, сеть — только 127.0.0.1. Любое расхождение — код 1 и понятная
 строка в логе.
 """
@@ -23,41 +21,21 @@ add/match → проект в автопилоте → сценарий → сц
 from __future__ import annotations
 
 import json
-import locale
 import os
 import shutil
 import signal
-import struct
 import subprocess
 import sys
 import tempfile
 import threading
 import urllib.request
-import zlib
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parent
-SKILL = SCRIPTS.parent
-REPO = SKILL.parent.parent
-CLI = SCRIPTS / "creator_studio.py"
+from smoke_kit import (CLI, REPO, SCRIPTS, SKILL, SmokeError, cli, decode, expect, log,
+                       python_argv, run_json, write_png)
+from smoke_montage import ENGINE_ENV, installed_engine_prefix, step_montage
+
 PROJECT = "smoke-autopilot"
-MONTAGE_PROJECT = "smoke-montage"
-ENGINE_ENV = "AIMASTER_HYPERFRAMES_DIR"
-
-
-class SmokeError(Exception):
-    pass
-
-
-def log(message: str) -> None:
-    print(message, flush=True)
-
-
-def decode(raw: bytes) -> str:
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return raw.decode(locale.getpreferredencoding(False), errors="replace")
 
 
 def clean_env(home: Path) -> dict:
@@ -74,64 +52,6 @@ def clean_env(home: Path) -> dict:
     if os.name == "nt":
         env["HOMEDRIVE"], env["HOMEPATH"] = os.path.splitdrive(str(home))
     return env
-
-
-def python_argv() -> list:
-    argv = [sys.executable]
-    if sys.flags.utf8_mode:
-        argv += ["-X", "utf8"]
-    return argv
-
-
-def run(env: dict, *argv, expect_code: int = 0) -> str:
-    cmd = python_argv() + [str(item) for item in argv]
-    proc = subprocess.run(cmd, env=env, cwd=str(SKILL), stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, timeout=180)
-    out, err = decode(proc.stdout), decode(proc.stderr)
-    if proc.returncode != expect_code:
-        raise SmokeError("команда %s завершилась с кодом %s (ожидали %s)\nstdout: %s\nstderr: %s"
-                         % (" ".join(str(a) for a in argv[:3]), proc.returncode, expect_code,
-                            out.strip()[-1500:], err.strip()[-1500:]))
-    return out
-
-
-def run_json(env: dict, *argv) -> dict:
-    out = run(env, *argv)
-    try:
-        return json.loads(out)
-    except ValueError:
-        raise SmokeError("не JSON в выводе %s: %r" % (" ".join(map(str, argv[:3])), out[:500]))
-
-
-def cli(env: dict, *argv) -> dict:
-    return run_json(env, CLI, *argv)
-
-
-def run_refused(env: dict, *argv) -> str:
-    """Команда должна отказать кодом 3 (доменный отказ) без traceback; возвращает stderr."""
-
-    cmd = python_argv() + [str(item) for item in argv]
-    proc = subprocess.run(cmd, env=env, cwd=str(SKILL), stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, timeout=180)
-    err = decode(proc.stderr)
-    expect(proc.returncode == 3 and "Traceback" not in err,
-           "команда %s: ждали отказ с кодом 3, получили код %s; stderr: %s"
-           % (" ".join(str(a) for a in argv[1:4]), proc.returncode, err[-800:]))
-    return err
-
-
-def expect(condition, message: str) -> None:
-    if not condition:
-        raise SmokeError(message)
-
-
-def write_png(path: Path) -> None:
-    def chunk(tag: bytes, data: bytes) -> bytes:
-        body = tag + data
-        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
-    raw = b"".join(b"\x00" + b"\x20\x80\xc0" * 8 for _ in range(8))
-    path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 8, 8, 8, 2, 0, 0, 0))
-                     + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
 # ---------- шаги ----------
@@ -195,110 +115,6 @@ def step_autopilot(env: dict, workspace: Path, media: Path, library_id: str) -> 
     expect(action["action_id"] in switched.get("cancelled_actions", []),
            "переход в guided не отменил очередь: %s" % switched)
     log("  автопилот: действие %s поставлено и отменено переходом в guided" % action["action_id"])
-
-
-def montage_without_engine(env: dict, workspace: Path, status: dict) -> None:
-    install = status["engine"].get("install") or ""
-    expect(install.endswith("--install-deps") and "install.py" in install,
-           "montage status: без движка нет команды установки: %s" % status["engine"])
-    expect(status["skills"].get("status") == "missing",
-           "montage status: скиллов HyperFrames на чистой машине быть не может: %s" % status["skills"])
-    err = run_refused(env, CLI, "montage", "draft", workspace, PROJECT,
-                      "--expected-revision", status["revision"])
-    expect("Монтажный движок не готов" in err and install in err,
-           "montage draft: ждали отказ с командой установки «%s», получили %s" % (install, err[-800:]))
-    log("  монтаж: движка нет — status и отказ montage draft называют одну команду установки")
-
-
-def make_clip(ffmpeg: str, path: Path, seconds: float, color: str, freq: int) -> None:
-    subprocess.run([ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i",
-                    "color=c=%s:s=180x320:r=30:d=%s" % (color, seconds), "-f", "lavfi", "-i",
-                    "sine=frequency=%s:duration=%s" % (freq, seconds), "-c:v", "libx264",
-                    "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-shortest", str(path)],
-                   check=True, stdin=subprocess.DEVNULL, timeout=120)
-
-
-def project_ready_for_assembly(env: dict, workspace: Path) -> int:
-    """Видеопроект в автопилоте, доведённый через CLI до сборки: две сцены с
-    принятыми картинками и видео (клипы — ffmpeg); возвращает ревизию."""
-
-    ffmpeg = shutil.which("ffmpeg")
-    expect(ffmpeg, "движок монтажа стоит, а ffmpeg нет — нечем сделать клипы для черновика")
-    folder = workspace / "media" / "монтаж"
-    folder.mkdir(parents=True, exist_ok=True)
-    write_png(folder / "кадр.png")
-    make_clip(ffmpeg, folder / "клип 1.mp4", 2.0, "red", 440)
-    make_clip(ffmpeg, folder / "клип 2.mp4", 1.0, "blue", 660)
-    ids = {name: cli(env, "asset", "register", workspace, "--path", "media/монтаж/" + name,
-                     "--role", "result")["asset_id"] for name in ("кадр.png", "клип 1.mp4", "клип 2.mp4")}
-    p = MONTAGE_PROJECT
-    rev = cli(env, "project", "create", workspace, p, "--title", "Проба «монтаж»", "--type", "video",
-              "--mode", "autopilot")["revision"]
-    rev = cli(env, "script", "add-version", workspace, p, "--text", "Кот Барсик находит клубок.",
-              "--reason", "смоук", "--expected-revision", rev)["revision"]
-    scenes = folder / "сцены.json"
-    scenes.write_text(json.dumps([{"scene_id": "s1", "title": "Сад", "text": "Барсик идёт по саду",
-                                   "duration_ms": 2000},
-                                  {"scene_id": "s2", "title": "Клубок", "text": "Находит клубок",
-                                   "duration_ms": 1000}], ensure_ascii=False), encoding="utf-8")
-    rev = cli(env, "scenes", "set", workspace, p, "--file", scenes, "--expected-revision", rev)["revision"]
-    rev = cli(env, "stage", "approve", workspace, p, "--expected-revision", rev)["revision"]
-    for kind in ("image", "motion"):
-        for scene in ("s1", "s2"):
-            rev = cli(env, "prompt", "add-version", workspace, p, "--scene", scene, "--kind", kind,
-                      "--text", "кадр " + scene, "--reason", "смоук", "--expected-revision", rev)["revision"]
-    rev = cli(env, "stage", "approve", workspace, p, "--expected-revision", rev)["revision"]
-    for kind, files in (("image", ("кадр.png", "кадр.png")), ("video", ("клип 1.mp4", "клип 2.mp4"))):
-        for scene, name in zip(("s1", "s2"), files):
-            rev = cli(env, "result", "add-version", workspace, p, "--scene", scene, "--kind", kind,
-                      "--asset-id", ids[name], "--expected-revision", rev)["revision"]
-        for scene in ("s1", "s2"):
-            rev = cli(env, "decide", workspace, p, "approve", "--target",
-                      "result:scene:%s:%s-v1" % (scene, kind), "--expected-revision", rev)["revision"]
-        rev = cli(env, "stage", "approve", workspace, p, "--expected-revision", rev)["revision"]
-    return cli(env, "stage", "approve", workspace, p, "--expected-revision", rev)["revision"]  # звук
-
-
-def montage_with_engine(env: dict, workspace: Path) -> None:
-    rev = project_ready_for_assembly(env, workspace)
-    p = MONTAGE_PROJECT
-    drafted = cli(env, "montage", "draft", workspace, p, "--expected-revision", rev)
-    expect(drafted.get("clips") == 2 and drafted.get("duration") == 3.0,
-           "montage draft: неожиданный черновик %s" % json.dumps(drafted, ensure_ascii=False)[:800])
-    built = cli(env, "montage", "render", workspace, p, "--expected-revision", drafted["revision"])
-    expect(built.get("version") == "v001" and built.get("warnings") == [] and Path(built["path"]).is_file(),
-           "montage render: неожиданная сборка %s" % json.dumps(built, ensure_ascii=False)[:800])
-    status = cli(env, "montage", "status", workspace, p, "--json")
-    expect((status.get("current_version"), status.get("unrendered_changes")) == ("v001", False)
-           and status["paths"].get("output") == built["path"],
-           "montage status после сборки: %s" % json.dumps(status, ensure_ascii=False)[:800])
-    log("  монтаж: движок %s, черновик → v001 (%s с), скиллы HyperFrames: %s"
-        % (status["engine"]["version"], built["duration"], drafted["skills"]["status"]))
-
-
-def step_montage(env: dict, workspace: Path, with_engine: bool) -> None:
-    status = cli(env, "montage", "status", workspace, PROJECT, "--json")
-    expect(status.get("exists") is False and status.get("current_version") is None
-           and status.get("layers") == [],
-           "montage status: неожиданная форма %s" % json.dumps(status, ensure_ascii=False)[:800])
-    state = status["engine"]["state"]
-    expect(state == ("installed" if with_engine else "missing"),
-           "montage status: engine.state=%s, а смоук %s движка" % (state, "с" if with_engine else "без"))
-    if with_engine:
-        montage_with_engine(env, workspace)
-    else:
-        montage_without_engine(env, workspace, status)
-
-
-def installed_engine_prefix() -> str:
-    """--with-engine: движок, уже поставленный на этой машине, — до подмены HOME."""
-
-    sys.path.insert(0, str(SKILL))
-    from studio.montage.engine import locate
-    found, reason = locate()
-    if found is None:
-        raise SmokeError("--with-engine: монтажный движок не найден: %s" % reason)
-    return str(found.prefix)
 
 
 def _read_first_line(proc, box):
@@ -388,7 +204,7 @@ def main() -> int:
         ("библиотека", lambda: box.__setitem__("lib", step_library(env, workspace, media))),
         ("автопилотный проект", lambda: step_autopilot(env, workspace, media, box["lib"])),
         ("монтаж: %s" % ("черновик и сборка v001" if with_engine else "статус и отказ без движка"),
-         lambda: step_montage(env, workspace, with_engine)),
+         lambda: step_montage(env, workspace, PROJECT, with_engine)),
         ("сервер serve --port 0", lambda: step_serve(env, workspace)),
         ("detect_tools на пустом HOME", lambda: step_detect_tools(env)),
     )

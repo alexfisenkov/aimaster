@@ -357,6 +357,8 @@ class BrowserInstallTests(unittest.TestCase):
         argv, kwargs = self.calls[0]
         self.assertEqual(argv[2:4], ["browser", "ensure"])
         self.assertEqual(kwargs["env"]["HOME"], str(self.prefix / "home"))
+        # --json в каждом запуске движка: без него он ходит за обновлениями (engine_cli.argv_for)
+        self.assertEqual([call[0][-1] for call in self.calls], ["--json"] * len(self.calls))
 
     # --- HYPERFRAMES_BROWSER_PATH: не поддерживается (round 4/5) ---
 
@@ -366,6 +368,10 @@ class BrowserInstallTests(unittest.TestCase):
         touch(engine.entry_script(self.prefix))
         manifest = self.prefix / "node_modules" / "hyperframes" / "package.json"
         manifest.write_text(json.dumps({"version": PIN["version"]}), encoding="utf-8")
+        gsap = self.prefix / "node_modules" / "gsap"
+        for name in ("gsap", "MotionPathPlugin"):  # GSAP черновика — часть движка (engine.locate)
+            touch(gsap / "dist" / f"{name}.min.js")
+        (gsap / "package.json").write_text(json.dumps({"version": PIN["gsap_version"]}), encoding="utf-8")
 
     def locate(self):
         env = {engine.PREFIX_ENV: str(self.prefix), "PATH": ""}

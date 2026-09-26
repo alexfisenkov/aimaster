@@ -21,8 +21,8 @@ from pathlib import Path
 from ..platform_compat import IS_WINDOWS, find_program, user_data_dir
 from . import MontageError
 from .prefix_layout import (  # noqa: F401 — прежние имена engine.* (интерфейс плана)
-    RECORD_NAME, browser_inside_home, entry_script, installed_version, package_version,
-    read_record, recorded_browser, write_record)
+    RECORD_NAME, browser_inside_home, entry_script, gsap_problem, installed_version,
+    package_version, read_record, recorded_browser, write_record)
 
 PIN_FILE = Path(__file__).with_name("engine.json")
 INSTALL_PY = Path(__file__).resolve().parents[2] / "scripts" / "install.py"
@@ -122,6 +122,9 @@ def locate(*, home=None, environ=None, run=subprocess.run) -> tuple[Engine | Non
     browser = recorded_browser(prefix, version=pin["version"])
     if browser is None:
         return None, "не скачан браузер для сборки видео"
+    gsap = gsap_problem(prefix, pin["gsap_version"])  # без него черновик откажет (vendor.py)
+    if gsap:
+        return None, gsap
     return Engine(node=node, script=script, prefix=prefix, version=version, browser=browser), ""
 
 

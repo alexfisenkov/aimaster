@@ -71,7 +71,7 @@ def _locate_after_ensure(eng, prefix: Path, pin: dict, kwargs: dict):
     """`browser path` после уже отработавшего `ensure` — резолвит путь и
     проверяет, что он внутри папки движка и существует на диске."""
 
-    located = run_engine(eng, ["browser", "path"], cwd=prefix, timeout=pin["timeouts"]["cli"], **kwargs)
+    located = run_engine(eng, ["browser", "path", "--json"], cwd=prefix, timeout=pin["timeouts"]["cli"], **kwargs)
     lines = located.stdout.strip().splitlines()
     path = lines[-1].strip() if lines else ""
     inside = bool(path) and engine.browser_inside_home(path, prefix)
@@ -111,7 +111,7 @@ def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool
     budget = pin["timeouts"]["browser"]
     preseed_reason, ensure_timeout = _preseed_on_windows(prefix, budget) if IS_WINDOWS else ("", budget)
     also = f"\nсвой скачиватель тоже не справился: {preseed_reason}" if preseed_reason else ""
-    ensured = run_engine(eng, ["browser", "ensure"], cwd=prefix, timeout=ensure_timeout, **kwargs)
+    ensured = run_engine(eng, ["browser", "ensure", "--json"], cwd=prefix, timeout=ensure_timeout, **kwargs)
     if ensured.timed_out:
         return item("timeout", "браузер для сборки не скачался за отведённое время; повторите позже" + also)
     located, path, inside, is_file = _locate_after_ensure(eng, prefix, pin, kwargs)

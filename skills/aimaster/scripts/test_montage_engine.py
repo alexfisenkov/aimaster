@@ -43,6 +43,14 @@ class _Prefix(unittest.TestCase):
         (package / "package.json").write_text(
             json.dumps({"name": "hyperframes", "version": version}), encoding="utf-8")
 
+    def install_gsap(self, version="3.14.2", files=("gsap", "MotionPathPlugin")):
+        package = self.prefix / "node_modules" / "gsap"
+        (package / "dist").mkdir(parents=True, exist_ok=True)
+        (package / "package.json").write_text(json.dumps({"name": "gsap", "version": version}),
+                                              encoding="utf-8")
+        for name in files:
+            (package / "dist" / f"{name}.min.js").write_text("/* gsap */\n", encoding="utf-8")
+
     def install_browser(self):
         browser = self.prefix / "home" / ".cache" / "hyperframes" / "chrome" / "chrome-headless-shell"
         browser.parent.mkdir(parents=True)
@@ -142,9 +150,32 @@ class LocateTests(_Prefix):
         self.assertIsNone(found)
         self.assertIn("браузер", reason)
 
+    def test_gsap_of_the_pin_is_part_of_the_engine(self):
+        # Черновик без GSAP закреплённой версии не собирается (vendor.py), значит
+        # и движок без него не «установлен»: status даёт команду установки, а не
+        # «installed» с отказом черновика потом.
+        self.install_package()
+        self.install_browser()
+        for setup, wanted in ((lambda: None, "GSAP 3.14.2 для черновика не установлен"),
+                              (lambda: self.install_gsap(files=("gsap",)), "MotionPathPlugin.min.js"),
+                              (lambda: self.install_gsap("3.13.0"), "стоит 3.13.0")):
+            setup()
+            found, reason = self.locate()
+            self.assertIsNone(found)
+            self.assertIn(wanted, reason)
+        with mock.patch.object(engine, "find_node", return_value="/usr/local/bin/node"), \
+                mock.patch.object(engine, "node_major", return_value=22):
+            status = engine.engine_status(environ=self.env)
+            with self.assertRaises(MontageError) as caught:
+                engine.require_engine(environ=self.env)
+        self.assertEqual(status["state"], "missing")
+        self.assertIn("стоит 3.13.0", status["reason"])
+        self.assertIn(engine.install_command(), str(caught.exception))
+
     def test_ready_engine(self):
         self.install_package()
         browser = self.install_browser()
+        self.install_gsap()
         found, reason = self.locate("v24.1.0")
         self.assertEqual(reason, "")
         self.assertEqual(found.version, "0.8.75")

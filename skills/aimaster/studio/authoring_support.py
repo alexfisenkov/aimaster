@@ -246,7 +246,8 @@ def require_stage_not_approved(state: dict, stage: str, label: str) -> None:
     if not isinstance(milestones, dict):
         raise AuthoringError("milestones must be an object")
     if milestones.get(stage, "draft") == "approved":
-        raise AuthoringError(f"{stage} is already approved; {label} cannot modify it")
+        # По-русски: отказ доходит до человека (montage, assembly set, …).
+        raise AuthoringError(f"этап «{stage}» уже одобрен — {label} его не меняет")
 
 
 def require_image_mime(mime_type: str, label: str) -> None:

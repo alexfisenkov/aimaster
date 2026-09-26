@@ -2,8 +2,8 @@
 
 Окружение каждого запуска: тихие флаги HyperFrames, свой HOME движка (кэши,
 браузер, настройки не попадают в домашнюю папку человека), путь к скачанному
-браузеру и кэш кадров. Отказ CLI (код 2, JSON в stderr) превращается в
-понятный `MontageError`.
+браузеру и кэш кадров. В каждой команде — флаг --json (`argv_for`). Отказ CLI
+(код 2, JSON в stderr) превращается в понятный `MontageError`.
 """
 
 from __future__ import annotations
@@ -80,8 +80,21 @@ def engine_env(engine: Engine, base: Mapping[str, str] | None = None, *,
     return env
 
 
+JSON_FLAG = "--json"
+
+
 def argv_for(engine: Engine, args: Sequence[str]) -> list[str]:
-    return [engine.node, str(engine.script), *map(str, args)]
+    """argv запуска движка; --json добавляется, если его нет. HyperFrames 0.8.75
+    (dist/cli.js, `hasJsonFlag`) без --json на каждом запуске проверяет
+    обновления — свои (registry.npmjs.org) и своих скиллов (`git ls-remote`
+    github.com и raw.githubusercontent.com), — и никакая переменная окружения
+    этого не отключает. `render` и `browser` флаг принимают, их вывод не меняется
+    (у `render` он действует только с --batch)."""
+
+    items = [str(item) for item in args]
+    if JSON_FLAG not in items:
+        items.append(JSON_FLAG)
+    return [engine.node, str(engine.script), *items]
 
 
 def _decode(raw) -> str:
