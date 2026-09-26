@@ -35,11 +35,20 @@ Start with `montage status WS P`. Its `engine`:
 
 - `state: "installed"` — go on.
 - `state: "missing"` — `reason` says what is absent (Node.js 22+, HyperFrames
-  0.8.75, its render browser or GSAP 3.14.2 with its MotionPathPlugin) and
-  `install` is the exact install command for this machine, for example
+  0.8.75, its render browser or GSAP 3.14.2 with its MotionPathPlugin);
+  `install_argv` is the exact install command for this machine as a list of
+  arguments and `install` is the same command as one line, for example
   `/usr/bin/python3 /…/skills/aimaster/scripts/install.py --install-deps`.
   Every command that needs the engine refuses with «Монтажный движок не готов:
   … Поставьте его командой: …» naming the same command.
+
+Run it as `install_argv` when your tool starts a program with a list of
+arguments (no shell). Otherwise run the line `install` in the shell: it works
+as it is in bash or zsh (macOS, Linux) and in Git Bash (the shell of Claude
+Code on Windows). On Windows the line has forward slashes and quotes only
+around a path that needs them; in PowerShell a line that starts with a quote
+needs the call operator in front: `& "C:/Program Files/Python312/python.exe"
+"C:/…/install.py" --install-deps`.
 
 The command installs whatever the skill lacks on this machine. HyperFrames
 with GSAP, its render browser and the cache of HyperFrames skills go into the
@@ -49,7 +58,7 @@ Linux the report names the commands to run with `sudo` instead. It is free; the
 engine is about 330 MB (npm packages about 130 MB, headless Chrome about
 190 MB) and takes a few minutes.
 
-- `autopilot`: run `engine.install` yourself, without asking, then
+- `autopilot`: run the install command yourself, without asking, then
   `montage status` again. Still `missing` — an allowed stop: report
   `engine.reason`, the installer's montage lines and the command
   ([autopilot](autopilot.md#allowed-stops)).
@@ -104,7 +113,7 @@ dashboard; without it the caption is made from the changes.
 ### Reading `montage status`
 
 - `engine`: `state` (`installed` | `missing`), `version`, `wanted`, `reason`,
-  `install` (`null` when installed).
+  `install` and `install_argv` (both `null` when installed).
 - `skills`: HyperFrames skills in this workspace — `status` (`found`,
   `missing`, `conflict`, `failed`, `skipped_home`), `version`, `message`.
 - `exists` (is there a draft), `current_version`, `versions` (`id`,

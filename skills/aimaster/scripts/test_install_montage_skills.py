@@ -417,7 +417,8 @@ class ReportTests(_Temp):
             result = any_skills_cached(pin=PIN)
         finally:
             root.chmod(0o700)
-        self.assertIn(result, (True, False))  # главное — без исключения
+        # имена видны, а папкой ни одну не проверить — «скиллов не ставили», без исключения
+        self.assertFalse(result)
 
     def test_unreadable_cache_root_is_not_a_crash(self):
         """Разбор 2/5, находка D: PermissionError на iterdir — статус, не трейсбек."""

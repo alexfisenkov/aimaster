@@ -43,8 +43,9 @@ Autopilot mode is the owner's standing authorization, for this project, to
 (references, frames, voices, previous clips) to the selected verified route
 when a generation needs them. It also covers the free local install the
 montage needs: when `montage status` reports `engine.state: missing`, run its
-`engine.install` command yourself; it adds whatever else the skill lacks on
-this machine too (see [montage](montage.md#engine-check)).
+install command yourself (`engine.install_argv` or `engine.install`); it adds
+whatever else the skill lacks on this machine too (see
+[montage](montage.md#engine-check)).
 Nothing else is authorized: no account changes, no publishing, no uploads of
 files outside the project or library.
 
@@ -158,8 +159,10 @@ task (image, scene motion, one-shot, audio).
    enqueue → … → `decide approve`, then `stage approve`.
 6. **`assembly`.** Photo: `assembly set` with the accepted image, review it,
    then the final report. Video/mixed: the [montage](montage.md).
-   `montage status`; if `engine.state` is `missing`, run its `engine.install`
-   command yourself (free, local; no question) and check again. Then
+   `montage status`; if `engine.state` is `missing`, run its install command
+   yourself (`engine.install_argv`, or the line `engine.install` in the shell —
+   [montage](montage.md#engine-check); free, local; no question) and check
+   again. Then
    `montage draft`, titles only where the meaning needs them
    (`montage edit … title-add`), `montage render`. Review the MP4: duration,
    frame size, sound and the absence of network access are checked by the

@@ -9,7 +9,7 @@ from __future__ import annotations
 from . import MontageError
 from .context import ProjectContext
 from .desk import StudioDesk
-from .engine import Engine, install_command, load_pin
+from .engine import Engine, engine_view
 from .index_io import read_index
 from .model import layers_view, model_hash, read_model
 from .montage_state import montage_section
@@ -26,10 +26,7 @@ def _base(ctx: ProjectContext, engine: Engine | None, reason: str) -> dict:
     section = montage_section(ctx.state) if "montage" in ctx.state else None
     return {
         "project_id": ctx.project_id, "revision": ctx.revision,
-        "engine": {"state": "installed" if engine else "missing",
-                   "version": engine.version if engine else None,
-                   "wanted": load_pin()["version"], "reason": reason,
-                   "install": None if engine else install_command()},
+        "engine": engine_view(engine, reason),
         "skills": skills_summary(ctx.workspace, create=False),
         "exists": ctx.paths.index.is_file(),
         "current_version": section["current_version"] if section else None,

@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -21,8 +20,10 @@ from pathlib import Path
 from ..platform_compat import IS_WINDOWS, find_program, user_data_dir
 from . import MontageError
 from .prefix_layout import (  # noqa: F401 — прежние имена engine.* (интерфейс плана)
-    RECORD_NAME, browser_inside_home, entry_script, gsap_problem, installed_version,
-    package_version, read_record, recorded_browser, write_record)
+    RECORD_NAME, browser_inside_home, entry_script, gsap_problem, hyperframes_problem,
+    installed_version, package_problem, package_version, read_record, recorded_browser,
+    write_record)
+from .shell_line import command_line
 
 PIN_FILE = Path(__file__).with_name("engine.json")
 INSTALL_PY = Path(__file__).resolve().parents[2] / "scripts" / "install.py"
@@ -43,28 +44,18 @@ def tools_prefix(*, home=None, environ=None) -> Path:
 
 
 def install_argv() -> list[str]:
-    """argv установки без какой-либо кавычки под конкретную оболочку.
-
-    Для прямого запуска (Popen без shell=True) — самый надёжный вид команды;
-    install_command() ниже строит из него ЧЕЛОВЕКУ читаемую строку."""
+    """argv установки — список без кавычек под какую-либо оболочку. Самый
+    надёжный вид команды: агент, чей инструмент запускает программу со
+    списком аргументов, берёт его (`engine.install_argv` в montage status)."""
 
     return [sys.executable, str(INSTALL_PY), "--install-deps"]
 
 
 def install_command() -> str:
-    """Точная команда установки монтажа на этой машине — для показа человеку
-    (автопилот запускает не строку, а install_argv() напрямую).
+    """Точная команда установки монтажа на этой машине — строкой, для показа
+    и для оболочки (`engine.install` в montage status; вид — shell_line)."""
 
-    На Windows list2cmdline кавычит путь к python.exe, если в нём пробел
-    (типично для "C:\\Program Files\\Python312\\python.exe"). Такая строка
-    работает в cmd.exe как есть, но PowerShell воспринимает ведущую кавычку
-    как текстовый литерал, а не вызов команды — нужен оператор вызова `&`."""
-
-    argv = install_argv()
-    if not IS_WINDOWS:
-        return shlex.join(argv)
-    command = subprocess.list2cmdline(argv)
-    return f"& {command}" if command.startswith('"') else command
+    return command_line(install_argv(), windows=IS_WINDOWS)
 
 
 def find_node(*, environ=None) -> str | None:
@@ -100,7 +91,10 @@ class Engine:
 
 
 def locate(*, home=None, environ=None, run=subprocess.run) -> tuple[Engine | None, str]:
-    """(движок, "") если всё на месте, иначе (None, причина по-русски)."""
+    """(движок, "") если всё на месте, иначе (None, причина по-русски, без
+    абсолютных путей). Пакеты проверяются теми же `hyperframes_problem` и
+    `gsap_problem`, что и у установщика (`package_problem`): установщик не
+    сочтёт готовым движок, которому здесь откажут, и наоборот."""
 
     pin = load_pin()
     prefix = tools_prefix(home=home, environ=environ)
@@ -111,30 +105,30 @@ def locate(*, home=None, environ=None, run=subprocess.run) -> tuple[Engine | Non
     if major is None or major < pin["node_min_major"]:
         return None, (f"нужен Node.js {pin['node_min_major']} или новее "
                       f"(найден {major if major is not None else 'неизвестной версии'})")
-    script = entry_script(prefix)
-    version = installed_version(prefix)
-    if not script.is_file() or version is None:
-        return None, f"HyperFrames не установлен в {prefix}"
-    if version != pin["version"]:
-        return None, f"стоит HyperFrames {version}, нужен {pin['version']}"
-    # Та же проверка, что у check_browser установщика (round 4/5): оба
-    # согласны, иначе автопилот крутил бы команду установки по кругу.
+    problem = hyperframes_problem(prefix, pin["version"])
+    if problem:
+        return None, problem
+    # Та же проверка, что у check_browser установщика: оба согласны, иначе
+    # автопилот крутил бы команду установки по кругу.
     browser = recorded_browser(prefix, version=pin["version"])
     if browser is None:
         return None, "не скачан браузер для сборки видео"
     gsap = gsap_problem(prefix, pin["gsap_version"])  # без него черновик откажет (vendor.py)
     if gsap:
         return None, gsap
-    return Engine(node=node, script=script, prefix=prefix, version=version, browser=browser), ""
+    return Engine(node=node, script=entry_script(prefix), prefix=prefix, version=pin["version"],
+                  browser=browser), ""
 
 
-def engine_status(*, home=None, environ=None, run=subprocess.run) -> dict:
-    found, reason = locate(home=home, environ=environ, run=run)
+def engine_view(found: Engine | None, reason: str) -> dict:
+    """`engine` в ответе montage status: одна форма на все места, где её
+    показывают. `install`/`install_argv` — только когда движка нет."""
+
     return {"state": "installed" if found else "missing",
             "version": found.version if found else None,
             "wanted": load_pin()["version"], "reason": reason,
-            "prefix": str(tools_prefix(home=home, environ=environ)),
-            "install": install_command(), "install_argv": install_argv()}
+            "install": None if found else install_command(),
+            "install_argv": None if found else install_argv()}
 
 
 def require_engine(**kwargs) -> Engine:

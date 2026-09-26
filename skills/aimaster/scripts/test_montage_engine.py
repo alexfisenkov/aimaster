@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -165,12 +167,22 @@ class LocateTests(_Prefix):
             self.assertIn(wanted, reason)
         with mock.patch.object(engine, "find_node", return_value="/usr/local/bin/node"), \
                 mock.patch.object(engine, "node_major", return_value=22):
-            status = engine.engine_status(environ=self.env)
+            status = engine.engine_view(*engine.locate(environ=self.env))
             with self.assertRaises(MontageError) as caught:
                 engine.require_engine(environ=self.env)
         self.assertEqual(status["state"], "missing")
         self.assertIn("стоит 3.13.0", status["reason"])
         self.assertIn(engine.install_command(), str(caught.exception))
+
+    def test_entry_script_is_part_of_the_package(self):
+        self.install_package()
+        self.install_browser()
+        self.install_gsap()
+        engine.entry_script(self.prefix).unlink()
+        found, reason = self.locate()
+        self.assertIsNone(found)
+        self.assertEqual(reason, "HyperFrames не установлен в папке движка")
+        self.assertNotIn(str(self.base), reason)
 
     def test_ready_engine(self):
         self.install_package()
@@ -183,20 +195,27 @@ class LocateTests(_Prefix):
         self.assertEqual(found.script,
                          self.prefix / "node_modules" / "hyperframes" / "bin" / "hyperframes.mjs")
 
-    def test_status_and_require_name_the_exact_install_command(self):
-        status = engine.engine_status(environ=self.env)
-        self.assertEqual((status["state"], status["wanted"]), ("missing", "0.8.75"))
-        self.assertEqual(status["install"], engine.install_command())
-        self.assertEqual(status["install_argv"], engine.install_argv())
+    def test_view_and_require_name_the_exact_install_command(self):
+        view = engine.engine_view(*engine.locate(environ=self.env))
+        self.assertEqual((view["state"], view["wanted"]), ("missing", "0.8.75"))
+        self.assertEqual(view["install"], engine.install_command())
+        self.assertEqual(view["install_argv"], engine.install_argv())
         with mock.patch.object(engine, "find_node", return_value=None):
             with self.assertRaises(MontageError) as caught:
                 engine.require_engine(environ=self.env)
         self.assertIn(engine.install_command(), str(caught.exception))
 
+    def test_view_of_a_ready_engine_has_no_install_command(self):
+        ready = engine.Engine(node="node", script=Path("x"), prefix=self.prefix, version="0.8.75",
+                              browser=None)
+        view = engine.engine_view(ready, "")
+        self.assertEqual((view["state"], view["version"], view["install"], view["install_argv"]),
+                         ("installed", "0.8.75", None, None))
+
     def test_install_command_is_this_python_and_this_install_py(self):
         command = engine.install_command()
-        self.assertIn(sys.executable, command)
-        self.assertIn(str(_SCRIPTS / "install.py"), command)
+        for part in (sys.executable, str(_SCRIPTS / "install.py")):
+            self.assertIn(part.replace("\\", "/") if os.name == "nt" else part, command)
         self.assertTrue(command.endswith("--install-deps"))
         with mock.patch.object(engine, "IS_WINDOWS", True):
             self.assertTrue(engine.install_command().endswith("--install-deps"))
@@ -204,28 +223,6 @@ class LocateTests(_Prefix):
     def test_install_argv_is_the_plain_argument_list(self):
         self.assertEqual(engine.install_argv(),
                          [sys.executable, str(_SCRIPTS / "install.py"), "--install-deps"])
-
-    def test_install_command_is_powershell_safe_when_python_path_has_spaces(self):
-        spaced = "C:\\Program Files\\Python312\\python.exe"
-        with mock.patch.object(engine.sys, "executable", spaced):
-            with mock.patch.object(engine, "IS_WINDOWS", True):
-                windows_command = engine.install_command()
-            with mock.patch.object(engine, "IS_WINDOWS", False):
-                posix_command = engine.install_command()
-        # cmd.exe кавычит первый токен как есть и прекрасно его выполняет;
-        # PowerShell без "& " перед кавычкой считает строку текстом, а не
-        # вызовом команды.
-        self.assertTrue(windows_command.startswith('& "' + spaced))
-        self.assertIn(spaced, windows_command)
-        self.assertTrue(windows_command.endswith("--install-deps"))
-        self.assertFalse(posix_command.startswith("&"))
-
-    def test_install_command_stays_plain_on_windows_when_nothing_needs_quoting(self):
-        with mock.patch.object(engine.sys, "executable", r"C:\Python312\python.exe"):
-            with mock.patch.object(engine, "IS_WINDOWS", True):
-                command = engine.install_command()
-        self.assertFalse(command.startswith("&"))
-        self.assertTrue(command.startswith(r"C:\Python312\python.exe"))
 
     def test_package_versions(self):
         self.install_package()
@@ -235,6 +232,105 @@ class LocateTests(_Prefix):
         self.assertEqual((engine.package_version(self.prefix, "gsap"), engine.installed_version(self.prefix)),
                          ("3.14.2", "0.8.75"))
         self.assertIsNone(engine.package_version(self.prefix, "nope"))
+
+
+class WindowsCommandLineTests(unittest.TestCase):
+    """Строка команды на Windows: одна на Git Bash (оболочка Claude Code) и
+    PowerShell (Codex). Пути с «/», кавычки — только у слова, где они нужны."""
+
+    PYTHON = r"C:\Program Files\Python312\python.exe"
+    SCRIPT = r"C:\Users\Алекс Ф\AI Мастерская\aimaster\scripts\install.py"
+
+    def command(self, python=PYTHON, script=SCRIPT) -> str:
+        with mock.patch.object(engine.sys, "executable", python), \
+                mock.patch.object(engine, "INSTALL_PY", Path(script)), \
+                mock.patch.object(engine, "IS_WINDOWS", True):
+            return engine.install_command()
+
+    def test_paths_with_spaces_are_double_quoted_with_forward_slashes(self):
+        command = self.command()
+        self.assertEqual(command, '"C:/Program Files/Python312/python.exe" '
+                                  '"C:/Users/Алекс Ф/AI Мастерская/aimaster/scripts/install.py" '
+                                  "--install-deps")
+
+    def test_git_bash_reads_the_same_three_arguments(self):
+        # shlex (POSIX) разбирает так же, как bash: кавычки сняты, «/» на месте.
+        self.assertEqual(shlex.split(self.command()),
+                         [self.PYTHON.replace("\\", "/"), self.SCRIPT.replace("\\", "/"),
+                          "--install-deps"])
+
+    def test_no_background_operator_and_no_backslashes(self):
+        # «& "…"» PowerShell понимает, а bash падает на разборе строки;
+        # «\» bash съел бы как экранирование. Оператор вызова для PowerShell
+        # добавляет агент (references/montage.md).
+        command = self.command()
+        self.assertFalse(command.startswith("&"))
+        self.assertNotIn("\\", command)
+
+    def test_nothing_to_quote_stays_bare_for_both_shells(self):
+        command = self.command(r"C:\Python312\python.exe", r"D:\a\aimaster\scripts\install.py")
+        self.assertEqual(command, "C:/Python312/python.exe D:/a/aimaster/scripts/install.py --install-deps")
+
+    def test_dollar_and_backtick_are_single_quoted(self):
+        # В двойных кавычках «$x» и «`» подставляют и bash, и PowerShell.
+        command = self.command(script=r"C:\Users\$dev\install.py")
+        self.assertIn("'C:/Users/$dev/install.py'", command)
+        self.assertEqual(shlex.split(command)[1], "C:/Users/$dev/install.py")
+
+    def test_brackets_and_apostrophe_are_quoted(self):
+        command = self.command(r"C:\Program Files (x86)\Python\python.exe",
+                               r"C:\Users\O'Brien\install.py")
+        self.assertTrue(command.startswith('"C:/Program Files (x86)/Python/python.exe" '
+                                           '"C:/Users/O\'Brien/install.py"'))
+
+    def test_posix_keeps_shlex_quoting(self):
+        with mock.patch.object(engine.sys, "executable", "/opt/my python/bin/python3"), \
+                mock.patch.object(engine, "IS_WINDOWS", False):
+            command = engine.install_command()
+        self.assertTrue(command.startswith("'/opt/my python/bin/python3' "))
+
+
+@unittest.skipUnless(os.name == "nt", "настоящие Git Bash и PowerShell есть только на Windows")
+class WindowsShellsRunTheCommandTests(unittest.TestCase):
+    """Строку команды выполняют настоящие Git Bash и PowerShell: программа и
+    скрипт — в папках с пробелом и кириллицей, как у «AI Мастерская»."""
+
+    def setUp(self):
+        import venv
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        base = Path(temp.name).resolve() / "папка с пробелом"
+        venv.create(base / "venv", with_pip=False)
+        self.python = base / "venv" / "Scripts" / "python.exe"
+        self.script = base / "AI Мастерская" / "install.py"
+        self.script.parent.mkdir(parents=True)
+        self.script.write_text("import json, os, sys\n"
+                               "with open(os.environ['AIMASTER_ARGV_OUT'], 'w', encoding='utf-8') as f:\n"
+                               "    json.dump(sys.argv, f)\n", encoding="utf-8")
+        self.out = base / "argv.json"
+        self.line = engine.command_line([str(self.python), str(self.script), "--install-deps"],
+                                        windows=True)
+
+    def assert_ran(self, argv) -> None:
+        env = {**os.environ, "AIMASTER_ARGV_OUT": str(self.out)}
+        proc = subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, capture_output=True,
+                              timeout=120)
+        self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8", errors="replace"))
+        seen = json.loads(self.out.read_text(encoding="utf-8"))
+        self.out.unlink()
+        self.assertEqual(os.path.normcase(os.path.abspath(seen[0])), os.path.normcase(str(self.script)))
+        self.assertEqual(seen[1:], ["--install-deps"])
+
+    def test_git_bash(self):
+        bash = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin" / "bash.exe"
+        if not bash.is_file():
+            self.skipTest("Git Bash не установлен")
+        self.assert_ran([str(bash), "-c", self.line])
+
+    def test_powershell_with_call_operator_before_a_quoted_program(self):
+        line = f"& {self.line}" if self.line.startswith(("\"", "'")) else self.line
+        encoded = base64.b64encode(line.encode("utf-16-le")).decode("ascii")
+        self.assert_ran(["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded])
 
 
 class FindNodeTests(unittest.TestCase):

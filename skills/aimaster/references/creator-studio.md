@@ -353,7 +353,9 @@ creator_studio.py montage close WS P
 
 `OP` is one of `move`, `trim-start`, `trim-end`, `split`, `delete`, `volume`,
 `fade`, `title-add`, `title-text`, `undo`. Without the engine, `montage status`
-returns `engine.install`, the exact install command.
+returns the exact install command: `engine.install_argv` (a list of arguments)
+and `engine.install` (one line; see [montage](montage.md#engine-check) for
+running it in PowerShell).
 
 ## Jobs, grants and the active operator
 

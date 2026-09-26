@@ -4,7 +4,7 @@
 HOME движка (кэши и скачанный chrome-headless-shell), `aimaster-engine.json` —
 запись установщика с путём к этому браузеру. Запись — единственный источник
 правды о браузере: переменную HYPERFRAMES_BROWSER_PATH из окружения человека
-ни установщик, ни поиск движка не читают (round 4/5). Имена отсюда
+ни установщик, ни поиск движка не читают. Имена отсюда
 переэкспортирует engine.py — снаружи их зовут как `engine.<имя>`.
 """
 
@@ -41,6 +41,16 @@ def gsap_dist(prefix: Path) -> Path:
     return Path(prefix) / "node_modules" / "gsap" / "dist"
 
 
+def hyperframes_problem(prefix: Path, wanted: str) -> str:
+    """Чем HyperFrames в папке движка не годится (нет входного скрипта или
+    package.json, не та версия), или ""."""
+
+    version = installed_version(prefix)
+    if version is None or not entry_script(prefix).is_file():
+        return "HyperFrames не установлен в папке движка"
+    return f"стоит HyperFrames {version}, нужен {wanted}" if version != wanted else ""
+
+
 def gsap_problem(prefix: Path, wanted: str, names=DRAFT_GSAP) -> str:
     """Чем GSAP в папке движка не годится (не та версия, нет файла `<имя>.min.js`),
     или "". Одна проверка на `engine.locate()` и `vendor.gsap_sources()`: движок,
@@ -52,6 +62,14 @@ def gsap_problem(prefix: Path, wanted: str, names=DRAFT_GSAP) -> str:
         return f"GSAP {wanted} для черновика {have} в папке движка"
     missing = [f"{name}.min.js" for name in names if not (gsap_dist(prefix) / f"{name}.min.js").is_file()]
     return f"в GSAP движка нет {', '.join(missing)}" if missing else ""
+
+
+def package_problem(prefix: Path, pin: dict) -> str:
+    """Пакеты npm движка целиком — HyperFrames и GSAP закреплённых версий со
+    всеми нужными файлами, или "". Готовность пакетов для установщика
+    (`_pinned`, `check_package`) — ровно та, что проверяет `engine.locate()`."""
+
+    return hyperframes_problem(prefix, pin["version"]) or gsap_problem(prefix, pin["gsap_version"])
 
 
 def read_record(prefix: Path) -> dict:

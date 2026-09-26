@@ -146,7 +146,8 @@ class CanonMatchesCliTests(DocsTestCase):
             self.assertMentions(text, self.canon)
 
     def test_rules_the_agent_must_keep(self):
-        for text in ("engine.install", "--expected-model-hash", "stale_clips", "unrendered_changes",
+        for text in ("engine.install", "`install_argv`", "Git Bash", "call operator",
+                     "--expected-model-hash", "stale_clips", "unrendered_changes",
                      "paths.output", 'font-family: "AM Inter", sans-serif', ".claude/skills",
                      ".agents/skills", 'window.__timelines["main"]', "never add `data-no-timeline`",
                      "Never register a second `main`", "`missing_tags`", "`--json` on every call",

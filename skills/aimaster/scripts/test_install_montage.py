@@ -44,6 +44,15 @@ def touch(path: Path) -> Path:
     return path
 
 
+def install_gsap(prefix: Path, version: str, files=("gsap", "MotionPathPlugin")) -> None:
+    """GSAP в папке движка так, как его кладёт npm: package.json и файлы dist."""
+
+    for name in files:
+        touch(prefix / "node_modules" / "gsap" / "dist" / f"{name}.min.js")
+    (prefix / "node_modules" / "gsap" / "package.json").write_text(
+        json.dumps({"version": version}), encoding="utf-8")
+
+
 class NodeCheckTests(unittest.TestCase):
     def patch_node(self, paths, major):
         sequence = iter(paths)
@@ -174,9 +183,7 @@ class EngineInstallTests(unittest.TestCase):
             touch(package / "bin" / "hyperframes.mjs")
             (package / "package.json").write_text(json.dumps({"version": version}), encoding="utf-8")
             if gsap:
-                touch(self.prefix / "node_modules" / "gsap" / "dist" / "gsap.min.js")
-                (self.prefix / "node_modules" / "gsap" / "package.json").write_text(
-                    json.dumps({"version": gsap}), encoding="utf-8")
+                install_gsap(self.prefix, gsap)
             return 0, "added 70 packages", ""
         return run
 
@@ -209,7 +216,8 @@ class EngineInstallTests(unittest.TestCase):
         self.calls.clear()
         item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, kind="macos",
                                               install_missing=False, update=False, run=self.fake_npm())
-        self.assertEqual(item["status"], "found")
+        self.assertEqual(item["status"], "missing")  # не той версии — не готов
+        self.assertIn("стоит HyperFrames 0.8.74", item["message"])
         self.assertIn("--install-deps", item["message"])
         self.assertEqual(self.calls, [])
 
@@ -221,7 +229,7 @@ class EngineInstallTests(unittest.TestCase):
         self.calls.clear()
         item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, kind="macos",
                                               install_missing=False, update=False, run=self.fake_npm())
-        self.assertEqual(item["status"], "found")
+        self.assertEqual(item["status"], "missing")
         self.assertIn("GSAP", item["message"])
         self.assertNotIn(f"стоит {PIN['version']}, нужна {PIN['version']}", item["message"])
 
@@ -232,7 +240,7 @@ class EngineInstallTests(unittest.TestCase):
         self.calls.clear()
         item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, kind="macos",
                                               install_missing=False, update=False, run=self.fake_npm())
-        self.assertEqual(item["status"], "found")
+        self.assertEqual(item["status"], "missing")
         self.assertIn("3.14.1", item["message"])
         self.assertIn(PIN["gsap_version"], item["message"])
         self.assertNotIn("нет GSAP", item["message"])
@@ -280,6 +288,28 @@ class EngineInstallTests(unittest.TestCase):
         item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, kind="macos",
                                               install_missing=False, update=True, run=self.fake_npm())
         self.assertEqual(item["status"], "installed")
+
+    def test_missing_gsap_dist_file_is_reinstalled(self):
+        """package.json GSAP той версии, а MotionPathPlugin.min.js нет —
+        engine.locate() такой движок не примет, значит и установщик не «found»."""
+
+        self.fake_npm()([], None, None, None)
+        (self.prefix / "node_modules" / "gsap" / "dist" / "MotionPathPlugin.min.js").unlink()
+        self.calls.clear()
+        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, kind="macos",
+                                              install_missing=True, update=False, run=self.fake_npm())
+        self.assertEqual(item["status"], "installed")
+        self.assertEqual(len(self.calls), 1)
+
+    def test_npm_that_leaves_a_file_out_is_a_failure_naming_it(self):
+        def partial(argv, cwd=None, timeout=None, env=None):
+            self.fake_npm(gsap=None)(argv, cwd, timeout, env)
+            install_gsap(self.prefix, PIN["gsap_version"], files=("gsap",))
+            return 0, "added 70 packages", ""
+        item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, kind="macos",
+                                              install_missing=True, update=False, run=partial)
+        self.assertEqual(item["status"], "failed")
+        self.assertIn("MotionPathPlugin.min.js", item["message"])
 
     def test_npm_failure_and_timeout(self):
         failed = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, kind="macos",
@@ -616,7 +646,7 @@ class BrowserInstallTests(unittest.TestCase):
 
 
 class CheckPackageTests(unittest.TestCase):
-    """Разбор 1/5, находка 6: отсутствующий GSAP — missing, не found."""
+    """Проверка без установки: всё, что не примет engine.locate(), — missing."""
 
     def setUp(self):
         self.base = temp_base(self)
@@ -631,24 +661,48 @@ class CheckPackageTests(unittest.TestCase):
         self.assertIn("GSAP", item["message"])
 
     def test_matching_gsap_is_found(self):
-        touch(self.prefix / "node_modules" / "gsap" / "dist" / "gsap.min.js")
-        (self.prefix / "node_modules" / "gsap" / "package.json").write_text(
-            json.dumps({"version": PIN["gsap_version"]}), encoding="utf-8")
+        install_gsap(self.prefix, PIN["gsap_version"])
         item = install_montage_engine.check_package(self.prefix, PIN)
         self.assertEqual(item["status"], "found")
 
     def test_gsap_at_wrong_version_says_the_version_not_that_it_is_missing(self):
-        """Разбор 3/5, находка 5: GSAP стоит, но не той версии — сообщение
-        должно назвать расхождение версий, а не соврать «нет GSAP»."""
-
-        touch(self.prefix / "node_modules" / "gsap" / "dist" / "gsap.min.js")
-        (self.prefix / "node_modules" / "gsap" / "package.json").write_text(
-            json.dumps({"version": "3.14.1"}), encoding="utf-8")
+        install_gsap(self.prefix, "3.14.1")
         item = install_montage_engine.check_package(self.prefix, PIN)
         self.assertEqual(item["status"], "missing")
         self.assertIn("3.14.1", item["message"])
         self.assertIn(PIN["gsap_version"], item["message"])
         self.assertNotIn("нет GSAP", item["message"])
+
+    def test_missing_gsap_dist_file_is_not_ready(self):
+        install_gsap(self.prefix, PIN["gsap_version"], files=("gsap",))
+        item = install_montage_engine.check_package(self.prefix, PIN)
+        self.assertEqual(item["status"], "missing")
+        self.assertIn("MotionPathPlugin.min.js", item["message"])
+
+    def test_wrong_hyperframes_version_is_not_ready(self):
+        install_gsap(self.prefix, PIN["gsap_version"])
+        (self.prefix / "node_modules" / "hyperframes" / "package.json").write_text(
+            json.dumps({"version": "0.8.74"}), encoding="utf-8")
+        item = install_montage_engine.check_package(self.prefix, PIN)
+        self.assertEqual((item["status"], item["version"]), ("missing", "0.8.74"))
+        self.assertIn(f"нужен {PIN['version']}", item["message"])
+
+    def test_missing_entry_script_is_not_ready(self):
+        install_gsap(self.prefix, PIN["gsap_version"])
+        (self.prefix / "node_modules" / "hyperframes" / "bin" / "hyperframes.mjs").unlink()
+        self.assertEqual(install_montage_engine.check_package(self.prefix, PIN)["status"], "missing")
+
+    def test_installer_and_locate_agree(self):
+        """Одна проверка на обоих: что «found» у установщика, то пакеты для locate."""
+
+        for files in (("gsap", "MotionPathPlugin"), ("gsap",)):
+            with self.subTest(files=files):
+                install_gsap(self.prefix, PIN["gsap_version"], files=files)
+                found = install_montage_engine.check_package(self.prefix, PIN)["status"] == "found"
+                self.assertEqual(found, engine.package_problem(self.prefix, PIN) == "")
+                self.assertEqual(found, engine.gsap_problem(self.prefix, PIN["gsap_version"]) == "")
+                for name in files:
+                    (self.prefix / "node_modules" / "gsap" / "dist" / f"{name}.min.js").unlink()
 
 
 class ReportTests(unittest.TestCase):

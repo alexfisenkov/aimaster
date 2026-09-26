@@ -25,7 +25,7 @@ import creator_studio_montage  # noqa: E402
 from montage_testkit import seed_workspace, tiny_mp4, video_state  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
 from studio.montage.edit import EditRequest  # noqa: E402
-from studio.montage.engine import PREFIX_ENV  # noqa: E402
+from studio.montage.engine import INSTALL_PY, PREFIX_ENV  # noqa: E402
 
 SUBCOMMANDS = ("draft", "status", "diff", "edit", "render", "restore", "gsap", "open", "close")
 
@@ -142,6 +142,8 @@ class CliWorkspaceTests(unittest.TestCase):
         self.assertEqual(len(out.strip().splitlines()), 1)
         self.assertEqual(payload["engine"]["state"], "missing")
         self.assertIn("--install-deps", payload["engine"]["install"])
+        self.assertEqual(payload["engine"]["install_argv"],
+                         [sys.executable, str(INSTALL_PY), "--install-deps"])
 
     def test_refusals_exit_3(self):
         for argv, text in ((("draft", "--expected-revision", "0"), "Монтажный движок не готов"),
