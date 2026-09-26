@@ -190,7 +190,9 @@ class EngineInstallTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--prefix") + 1], str(self.prefix))
         self.assertIn("hyperframes@0.8.75", argv)
         self.assertIn("gsap@3.14.2", argv)
-        self.assertFalse(any("npx" in str(part) for part in argv))
+        # Ни одна часть argv — не программа npx (по имени файла: случайное имя
+        # временной папки вроде «tmpk2npxq1» в путях — не npx).
+        self.assertFalse({Path(str(part)).name.lower() for part in argv} & {"npx", "npx.cmd", "npx.exe"})
         self.assertEqual(call["timeout"], PIN["timeouts"]["npm_install"])
         self.assertTrue(call["env"]["PATH"].startswith(str(self.node.parent)))
 
