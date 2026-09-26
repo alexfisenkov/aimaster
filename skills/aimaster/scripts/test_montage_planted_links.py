@@ -115,7 +115,7 @@ class PlantedLinkTests(_Planted):
     def test_model_cache_never_writes_through_a_planted_link(self):
         engine, current, cache = fake_engine(self.base), self.project / "current", self.project / ".cache"
         current.mkdir(parents=True)
-        (current / "index.html").write_text(draft_html(), encoding="utf-8")
+        (current / "index.html").write_bytes(draft_html().encode("utf-8"))  # без CRLF Windows: имя кэша — по тексту
         key = hashlib.sha256(f"{engine.version}\0{draft_html()}".encode("utf-8")).hexdigest()[:24]
         link = self.plant(cache / f"model-{key}.json")  # имя кэша предсказуемо по index.html
         runner = FakeHyperframes()
