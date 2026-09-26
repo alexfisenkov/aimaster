@@ -21,6 +21,7 @@ from typing import Iterable
 from ..platform_compat import replace_file
 from . import MontageError
 from .index_io import new_file_mode
+from .replace_target import clear_link, make_replaceable
 
 ASSETS_DIR = "assets"
 
@@ -35,14 +36,15 @@ def link_or_copy(source: Path, target: Path) -> str:
     source, target = Path(source), Path(target)
     if not source.is_file():
         raise MontageError(f"источника для монтажа нет: {source.name}")
-    if target.exists():
-        try:
-            same = (os.path.samefile(source, target)
-                    or target.stat().st_size == source.stat().st_size)
-        except OSError as error:
-            raise MontageError(f"не удалось проверить {target.name} в assets") from error
-        if same:
-            return "exists"
+    try:  # симлинк на месте файла — долой сам, не глядя, куда он ведёт (replace_target)
+        existing = clear_link(target)
+        same = existing is not None and (os.path.samefile(source, target)
+                                         or existing.st_size == source.stat().st_size)
+    except OSError as error:
+        raise MontageError(f"не удалось проверить {target.name} в assets") from error
+    if same:
+        return "exists"
+    if existing is not None or os.path.lexists(target):
         raise MontageError(f"в assets уже лежит другой файл {target.name}")
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -65,8 +67,8 @@ def copy_via_temp(source: Path, target: Path, *, keep_mode: bool = True) -> None
     «.имя.part»: его мог занять параллельный вызов или остаток прошлого) и
     атомарную замену; сбой — временный файл убран, OSError наружу.
     `keep_mode=False` — содержимое без прав источника (файлы пакета навыка
-    бывают только для чтения — копия и её замена не должны от этого ломаться,
-    на Windows замена файла «только чтение» отказывает): права 0644 − umask."""
+    бывают только для чтения): права 0644 − umask. Цель — через
+    `make_replaceable`: симлинк удаляется сам, по нему ничего не меняется."""
 
     descriptor, name = tempfile.mkstemp(dir=Path(target).parent, prefix=f".{Path(target).name}.",
                                         suffix=".part")
@@ -78,8 +80,7 @@ def copy_via_temp(source: Path, target: Path, *, keep_mode: bool = True) -> None
         else:
             shutil.copyfile(source, temporary)
             os.chmod(temporary, new_file_mode())
-            if Path(target).exists():
-                os.chmod(target, new_file_mode())  # прежняя копия «только чтение» — снять
+        make_replaceable(target)
         replace_file(temporary, target)
     except OSError:
         try:

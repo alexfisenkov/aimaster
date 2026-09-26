@@ -16,8 +16,8 @@ from urllib.parse import urlsplit
 
 from . import MontageError, desk_children
 from .desk_identity import FOREIGN, GONE, HUNG, OPEN, fetch_config, verdict
-from .desk_record import (forget_record, read_record, ready_line, record_from_ready, record_text,
-                          write_record)
+from .desk_record import (FORGET_TEXT, FORGOTTEN, KEPT, KEPT_NOTE, REPLACED, forget_record,
+                          read_record, ready_line, record_from_ready, record_text, write_record)
 from .engine import Engine, load_pin
 from .engine_cli import popen_engine
 from .locks import held_lock
@@ -64,12 +64,14 @@ def _public(record: dict) -> dict:
     return {key: record[key] for key in PUBLIC_KEYS if key in record}
 
 
-def _forgotten_note(record: dict | None, seen: str, forgotten: bool = True) -> dict:
+def _forgotten_note(record: dict | None, seen: str, outcome: str | None) -> dict:
+    """Чужой процесс — что стало с записью (итог `forget_record`); свой — только
+    если запись не удалилась."""
+
     if seen != FOREIGN:
-        return {}
-    done = "запись забыта" if forgotten else "запись будет забыта при следующей проверке"
+        return {"note": KEPT_NOTE} if outcome == KEPT else {}
     return {"forgotten": f"процесс {record['pid']} на порту {record['port']} — уже не монтажный стол "
-                         f"этого проекта: {done}, ничего не остановлено"}
+                         f"этого проекта: {FORGET_TEXT[outcome]}, ничего не остановлено"}
 
 
 class StudioDesk:
@@ -102,14 +104,14 @@ class StudioDesk:
         if seen == HUNG:  # свой, но молчит: запись — чтобы open/close его остановили
             return {"state": "closed", "note": "монтажный стол не отвечает — его остановит "
                                                "montage open или montage close"}
-        forgotten = False
+        outcome = None if text is not None else FORGOTTEN
         if text is not None:
             try:  # open/close идут прямо сейчас — запись им, status её не трогает
                 with self._lock(paths, wait=0):
-                    forgotten = forget_record(paths, if_text=text)
+                    outcome = forget_record(paths, if_text=text)
             except MontageError:
                 pass
-        return {"state": "closed", **_forgotten_note(record, seen, forgotten)}
+        return {"state": "closed", **_forgotten_note(record, seen, outcome)}
 
     def close(self, paths: MontagePaths) -> dict:
         if not paths.root.is_dir():
@@ -118,8 +120,7 @@ class StudioDesk:
             _text, record, seen = self._check(paths)
             if seen in (OPEN, HUNG):
                 self._stop(paths, record["pid"])
-            forget_record(paths)
-            return {"state": "closed", **_forgotten_note(record, seen)}
+            return {"state": "closed", **_forgotten_note(record, seen, forget_record(paths))}
 
     def open(self, paths: MontagePaths) -> dict:
         if not paths.index.is_file():
@@ -130,10 +131,11 @@ class StudioDesk:
                 return {"state": "open", **_public(record)}
             if seen == HUNG:
                 self._stop(paths, record["pid"])  # зависший свой стол — остановить, прежде чем поднимать новый
-            forget_record(paths)
+            outcome = forget_record(paths)
             if self.engine is None:
                 raise MontageError("Монтажный движок не готов: монтажный стол не запустить")
-            return {**self._launch(paths), **_forgotten_note(record, seen)}
+            opened = self._launch(paths)  # не удалённую прежнюю запись заменила запись нового стола
+            return {**opened, **_forgotten_note(record, seen, REPLACED if outcome == KEPT else outcome)}
 
     def _launch(self, paths: MontagePaths) -> dict:
         port, log = free_port(), paths.logs / "desk.log"

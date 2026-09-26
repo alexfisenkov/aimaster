@@ -54,6 +54,22 @@ class ShortPathsTests(unittest.TestCase):
         self.assertEqual(short_paths("in /Users/alex/proj.", ws), "in <рабочая папка>.")
         self.assertEqual(short_paths("(/Users/alex/proj)", ws), "(<рабочая папка>)")
 
+    def test_url_schemes_keep_their_slashes(self):
+        with mock.patch.object(Path, "home", return_value=Path("/app")):
+            for url in ("http://app:3000/x", "file:///app/x", "see file:///app/x.js:12:3", "x:/app/y"):
+                self.assertEqual(short_paths(url), url)
+            self.assertEqual(short_paths("open /app/x and //app/y"), "open ~/x and ~/y")
+        with mock.patch.object(Path, "home", return_value=Path(r"C:\Users\al")):
+            self.assertEqual(short_paths("file:///C:/Users/al/x"), "file:///C:/Users/al/x")
+
+    def test_paths_before_closing_punctuation_are_shortened(self):
+        ws = {Path("/Users/alex/proj"): "<рабочая папка>"}
+        for tail in (">", "}", "!", "?", "...", ".)", ".]", '."'):
+            with self.subTest(tail=tail):
+                self.assertEqual(short_paths(f"<in /Users/alex/proj{tail}", ws), f"<in <рабочая папка>{tail}")
+        self.assertEqual(short_paths("{/Users/alex/proj}", ws), "{<рабочая папка>}")
+        self.assertEqual(short_paths("/Users/alex/proj.v2/x", ws), "/Users/alex/proj.v2/x")
+
 
 if __name__ == "__main__":
     unittest.main()

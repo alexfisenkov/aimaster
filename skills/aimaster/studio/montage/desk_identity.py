@@ -11,7 +11,10 @@
   свой pid и папку проекта: наш, только если pid из записи и папка — current/;
 - молчит — наш, только если это Popen этого же процесса для этого же проекта
   с тем же временем запуска (`desk_children`) или время запуска процесса
-  совпало с записанным при открытии (`proc.process_started`).
+  совпало с записанным при открытии (`proc.process_started`);
+- свой живой Popen (то же время запуска) — наш и тогда, когда на порту
+  отвечает другой pid или другая папка: он считается зависшим (hung) и
+  останавливается по своему pid; отвечающий на порту сервер не трогается.
 
 Любое несовпадение или непроверяемость — запись забывается, никто не
 останавливается («foreign»).
@@ -29,7 +32,6 @@ from .desk_children import EXITED, RUNNING, root_key
 OPEN, HUNG, GONE, FOREIGN = "open", "hung", "gone", "foreign"
 CONFIG_PATH = "/__hyperframes_config"
 CONFIG_DEADLINE = 2.0
-_REQUEST = (f"GET {CONFIG_PATH} HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").encode()
 _LIMIT = 65536
 
 
@@ -37,8 +39,10 @@ def _receive(port, deadline: float, clock) -> bytes | None:
     """Ответ целиком за общий срок: и подключение, и каждое чтение урезаются до
     остатка — сервер, отдающий по байту, не растянет проверку."""
 
-    with socket.create_connection(("127.0.0.1", int(port)), timeout=max(deadline - clock(), 0.01)) as sock:
-        sock.sendall(_REQUEST)
+    port = int(port)
+    with socket.create_connection(("127.0.0.1", port), timeout=max(deadline - clock(), 0.01)) as sock:
+        sock.sendall(f"GET {CONFIG_PATH} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n"
+                     "Connection: close\r\n\r\n".encode("ascii"))
         data = b""
         while len(data) <= _LIMIT:
             remaining = deadline - clock()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
@@ -41,18 +42,29 @@ def read_record(paths: MontagePaths, text: str | None = None) -> dict | None:
     return record if valid else None
 
 
-def forget_record(paths: MontagePaths, *, if_text: str | None = None) -> bool:
-    """Удалить запись; с `if_text` — только если файл всё ещё этот текст
-    (иначе её успел переписать параллельный open — она уже не наша).
-    True — записи больше нет."""
+FORGOTTEN, REPLACED, KEPT = "forgotten", "replaced", "kept"
+FORGET_TEXT = {FORGOTTEN: "запись забыта", REPLACED: "запись уже заменена новой",
+               KEPT: "запись забыть не удалось (montage/.desk.json не удаляется)",
+               None: "запись будет забыта при следующей проверке"}  # None: open/close держат замок
+KEPT_NOTE = "запись montage/.desk.json удалить не удалось — montage status проверит её снова"
+
+
+def forget_record(paths: MontagePaths, *, if_text: str | None = None) -> str:
+    """Удалить запись. FORGOTTEN — записи больше нет; REPLACED — с `if_text`:
+    файл уже не этот текст, его переписал параллельный open (новая запись не
+    наша, не трогаем); KEPT — удалить не вышло (нет прав, файл занят) — запись
+    без процесса безвредна, status её снова проверит."""
 
     try:
-        if if_text is not None and record_text(paths) != if_text:
-            return False
+        now = record_text(paths) if if_text is not None else None
+        if if_text is not None and now != if_text:
+            if now is None:  # убрал параллельный close — или файл не читается
+                return KEPT if os.path.lexists(paths.desk_file) else FORGOTTEN
+            return REPLACED
         paths.desk_file.unlink(missing_ok=True)
     except OSError:
-        return False  # запись без процесса безвредна: status её снова проверит
-    return True
+        return KEPT
+    return FORGOTTEN
 
 
 def ready_line(log_path) -> dict | None:

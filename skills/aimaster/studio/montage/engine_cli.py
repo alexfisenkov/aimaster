@@ -19,6 +19,7 @@ from ..platform_compat import IS_WINDOWS
 from . import MontageError
 from .engine import Engine
 from .proc_tree import CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, group_kwargs, kill_tree
+from .replace_target import open_fresh
 from .short_paths import short_paths
 
 QUIET_FLAGS = {
@@ -186,8 +187,11 @@ def popen_engine(engine: Engine, args: Sequence[str], *, cwd: Path, log_path: Pa
     процессов и скрытая консоль, чтобы Chrome и ffmpeg не открывали окна."""
 
     engine_home(engine).mkdir(parents=True, exist_ok=True)
-    Path(log_path).parent.mkdir(parents=True, exist_ok=True)
-    with open(log_path, "wb") as log:
+    try:  # журнал — не по симлинку: «wb» по ссылке обнулил бы чужой файл (replace_target)
+        log = open_fresh(log_path)
+    except OSError as error:
+        raise MontageError(f"не удалось открыть журнал {Path(log_path).name} монтажного стола") from error
+    with log:
         try:
             return popen(argv_for(engine, args), cwd=str(cwd), env=engine_env(engine, cwd=cwd),
                          stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,

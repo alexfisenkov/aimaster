@@ -30,6 +30,7 @@ from .engine import Engine, install_command, load_pin, package_version
 from .index_io import read_index
 from .media_sync import ASSETS_DIR
 from .paths import MontagePaths
+from .replace_target import make_replaceable, regular_stat
 
 DRAFT_SCRIPTS = ("gsap", "MotionPathPlugin")
 _PLUGIN = re.compile(r"[A-Z][A-Za-z0-9]{1,40}")
@@ -70,12 +71,14 @@ def gsap_sources(prefix: Path, names=DRAFT_SCRIPTS) -> list[Path]:
 
 def _copy_if_changed(source: Path, target: Path) -> bool:
     """Копия через временный файл mkstemp рядом с целью (не фиксированное имя:
-    два параллельных вызова не пишут в один .part) и атомарную замену."""
+    два параллельных вызова не пишут в один .part) и атомарную замену. Цель
+    сравнивается, только если это обычный файл: симлинк (хоть на тот же GSAP)
+    заменяется своим файлом, не читается и не меняется (`replace_target`)."""
 
     temporary = None
     try:
         data = source.read_bytes()
-        if target.is_file() and target.read_bytes() == data:
+        if regular_stat(target) is not None and target.read_bytes() == data:
             return False
         target.parent.mkdir(parents=True, exist_ok=True)
         descriptor, name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".part")
@@ -83,6 +86,7 @@ def _copy_if_changed(source: Path, target: Path) -> bool:
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(data)
         os.chmod(temporary, 0o644)  # mkstemp даёт 0600; скрипт монтажа читают Studio и рендер
+        make_replaceable(target)
         replace_file(temporary, target)
     except OSError as error:
         if temporary is not None:

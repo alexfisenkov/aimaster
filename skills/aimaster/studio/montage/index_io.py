@@ -18,6 +18,7 @@ from pathlib import Path
 
 from ..platform_compat import replace_file
 from . import MontageError
+from .replace_target import clear_link, regular_stat
 
 
 def _read_umask() -> int:
@@ -38,15 +39,14 @@ def new_file_mode() -> int:
 
 
 def _target_mode(path: Path) -> int:
-    """Права файла после замены: как у заменяемого (владелец мог их задать),
-    у нового — 0644 минус umask. mkstemp создаёт временный файл 0600, и без
-    этого index.html/hyperframes.json после записи не читал бы никто, кроме
-    владельца процесса."""
+    """Права файла после замены: как у заменяемого обычного файла (владелец
+    мог их задать), у нового — 0644 минус umask. mkstemp создаёт временный
+    файл 0600, и без этого index.html/hyperframes.json после записи не читал
+    бы никто, кроме владельца процесса. Симлинк на месте файла — «нового»:
+    права его цели (чужого файла вне проекта) нашему не передаются."""
 
-    try:
-        return stat.S_IMODE(path.stat().st_mode)
-    except FileNotFoundError:
-        return new_file_mode()
+    info = regular_stat(path)
+    return stat.S_IMODE(info.st_mode) if info is not None else new_file_mode()
 
 
 def write_text_atomic(path: Path, text: str) -> None:
@@ -74,6 +74,7 @@ def write_text_atomic(path: Path, text: str) -> None:
             with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
                 handle.write(text)
             os.chmod(temporary, _target_mode(path))
+            clear_link(path)  # симлинк заменяется своим файлом, не его цель
             replace_file(temporary, path)
         except OSError:
             try:

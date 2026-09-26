@@ -187,14 +187,20 @@ class DeskUnitTests(_Draft):
         self.assertEqual(desk_children._children, {})  # завершившийся Popen выброшен
 
     def test_one_process_with_desks_of_two_projects_never_crosses_them(self):
-        # дашборд плана Б: стол проекта A жив (pid 4242), у проекта B — запись со
-        # старым pid 4242 от прежнего процесса, которого давно нет
+        # дашборд плана Б: стол проекта A жив (pid 4242, «запуск-1»). У проекта B —
+        # своя запись (montage_root — папка B) от прежнего стола с тем же pid и тем же
+        # временем запуска (часы ps — секундные), а время запуска ОС сейчас не
+        # прочитать. Popen стола A — доказательство только для A: ключ — (папка, pid).
         self.desk().open(self.paths)
         other = montage_paths(self.base / "другой проект")
         other.current.mkdir(parents=True)
         other.desk_file.write_text(json.dumps({"pid": 4242, "port": 1, "url": "http://127.0.0.1:1/",
-                                               "process_started": "запуск-старый"}), encoding="utf-8")
-        studio_b = self.desk(config=lambda port: None)  # запущенный процесс 4242 — «запуск-1»
+                                               "process_started": "запуск-1",
+                                               "montage_root": desk_children.root_key(other)}),
+                                   encoding="utf-8")
+        self.assertEqual(desk_children.own(self.paths, read_record(self.paths)), desk_children.RUNNING)
+        self.assertIsNone(desk_children.own(other, read_record(other)))
+        studio_b = self.desk(config=lambda port: None, started=None)
         self.assertIn("ничего не остановлено", studio_b.close(other)["forgotten"])
         self.assertEqual(self.killed, [])
         self.assertEqual(self.desk().status(self.paths)["state"], "open")  # стол A цел
@@ -282,6 +288,51 @@ class DeskUnitTests(_Draft):
         self.assertIn("запись забыта", foreign.status(self.paths)["forgotten"])
         self.assertFalse(self.paths.desk_file.exists())
 
+    def test_foreign_status_says_a_record_rewritten_meanwhile_is_already_replaced(self):
+        self.opened_elsewhere()
+        fresh = {"pid": 5151, "port": 2, "url": "http://127.0.0.1:2/", "process_started": "новый"}
+
+        def open_elsewhere_meanwhile(port):
+            self.paths.desk_file.write_text(json.dumps(fresh), encoding="utf-8")
+            return None
+        status = self.desk(config=open_elsewhere_meanwhile, started="другой запуск").status(self.paths)
+        self.assertIn("запись уже заменена новой", status["forgotten"])
+        self.assertNotIn("забыта", status["forgotten"])
+        self.assertEqual(read_record(self.paths)["pid"], 5151)
+
+    def test_a_record_that_cannot_be_removed_is_reported_not_claimed_forgotten(self):
+        self.opened_elsewhere()
+        refuse = mock.patch.object(Path, "unlink", side_effect=PermissionError("занят"))
+        foreign = self.desk(config=lambda port: None, started="другой запуск")
+        with refuse:
+            status = foreign.status(self.paths)["forgotten"]
+            closed = foreign.close(self.paths)
+        self.assertIn("забыть не удалось", status)
+        self.assertIn("забыть не удалось", closed["forgotten"])
+        self.assertEqual(self.killed, [])
+        self.desk().close(self.paths)  # своя запись удалилась — стол закрыт, записи нет
+        self.opened_elsewhere()
+        with refuse:
+            mine = self.desk().close(self.paths)
+        self.assertEqual((mine["state"], self.killed[-1]), ("closed", 4242))
+        self.assertIn("удалить не удалось", mine["note"])
+        self.assertTrue(self.paths.desk_file.exists())
+
+    def test_open_over_a_foreign_record_it_could_not_remove_says_it_replaced_it(self):
+        self.opened_elsewhere()
+        foreign = self.desk(config=lambda port: None, started="другой запуск")
+        real_unlink = Path.unlink
+
+        def refuse_desk_file(path, *args, **kwargs):
+            if path.name == ".desk.json":
+                raise PermissionError("занят")
+            return real_unlink(path, *args, **kwargs)
+        with mock.patch.object(Path, "unlink", refuse_desk_file):
+            reopened = foreign.open(self.paths)
+        self.assertEqual(reopened["state"], "open")
+        self.assertIn("запись уже заменена новой", reopened["forgotten"])
+        self.assertEqual(read_record(self.paths)["process_started"], "другой запуск")
+
     def test_start_timeout_kills_and_explains(self):
         ticks = iter([0, 0, 0, 100, 100, 100])
         silent = lambda argv, **kwargs: mock.Mock(pid=77, poll=mock.Mock(return_value=None))  # noqa: E731
@@ -362,6 +413,7 @@ class _RawServer:
         self.sock.settimeout(0.2)
         self.port = self.sock.getsockname()[1]
         self.stopped = threading.Event()
+        self.requests: list[bytes] = []
         threading.Thread(target=self._serve, args=(payload, chunk or len(payload), delay),
                          daemon=True).start()
 
@@ -373,7 +425,7 @@ class _RawServer:
                 continue
             with connection:
                 try:
-                    connection.recv(4096)
+                    self.requests.append(connection.recv(4096))
                     for index in range(0, len(payload), step):
                         if self.stopped.is_set():
                             break
@@ -414,6 +466,24 @@ class FetchConfigTests(unittest.TestCase):
     def test_bad_ports_are_not_answers(self):
         for port in (70000, -1, "x", None):
             self.assertIsNone(fetch_config(port))
+
+    def test_the_answer_is_capped_at_64_kib(self):
+        def padded(total: int) -> bytes:
+            head = b'HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{"pid": 7, "pad": "'
+            return head + b"x" * (total - len(head) - 2) + b'"}'
+        limit = 64 * 1024
+        self.assertEqual(len(padded(limit)), limit)
+        self.assertEqual(fetch_config(self.serve(padded(limit)))["pid"], 7)  # ровно предел — ответ
+        for total in (limit + 1, 4 * limit):  # верный JSON-объект, но длиннее предела
+            with self.subTest(total=total):
+                answer = fetch_config(self.serve(padded(total)))
+                self.assertTrue(answer is None, f"принят ответ в {total} байт")
+
+    def test_host_names_the_port(self):
+        server = _RawServer(b'HTTP/1.0 200 OK\r\n\r\n{"pid": 7}')
+        self.addCleanup(server.close)
+        self.assertEqual(fetch_config(server.port), {"pid": 7})
+        self.assertIn(f"\r\nHost: 127.0.0.1:{server.port}\r\n".encode(), server.requests[0])
 
 
 class _FakeKernel32:

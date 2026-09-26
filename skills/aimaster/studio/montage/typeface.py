@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import MontageError
 from .media_sync import copy_via_temp
+from .replace_target import regular_stat
 
 FONT_DIR = Path(__file__).with_name("fonts")
 FONT_FAMILY = "AM Inter"
@@ -97,7 +98,11 @@ def sync_fonts(assets_dir: Path, manifest=None) -> list[str]:
     copied = []
     for name, sha256 in items:
         target = target_dir / name
-        if target.is_file() and _sha256(target) == sha256:
+        try:  # симлинк не читается и не сверяется — заменяется своим файлом (replace_target)
+            present = regular_stat(target) is not None
+        except OSError as error:
+            raise MontageError(f"не удалось проверить шрифт {name} в assets/fonts") from error
+        if present and _sha256(target) == sha256:
             continue
         try:
             copy_via_temp(FONT_DIR / name, target, keep_mode=False)
