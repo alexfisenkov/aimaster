@@ -17,6 +17,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
         sys.path.insert(0, _path)
 
 import montage_ci_check  # noqa: E402
+from studio.montage import composition_refs  # noqa: E402
 from studio.montage.external_urls import external_urls  # noqa: E402
 
 
@@ -92,9 +93,13 @@ class LocalTests(unittest.TestCase):
                 '.b { background-image: image-set("assets/c.png" 1x, url(assets/d.png) 2x); }</style>')
         self.assertEqual(external_urls(html), [])
 
-    def test_ci_fixture_is_clean_and_ci_check_uses_this_scanner(self):
-        self.assertIs(montage_ci_check.external_urls, external_urls)
-        self.assertEqual(external_urls(montage_ci_check.COMPOSITION), [])
+    def test_ci_check_uses_the_build_scanner(self):
+        # CI проверяет черновик навыка тем же разбором, что и сборка версии
+        # (composition_refs → этот external_urls); своего сканера у неё нет.
+        # Что сам черновик чист — test_montage_ci_check.py.
+        self.assertIs(montage_ci_check.check_composition, composition_refs.check_composition)
+        self.assertIs(montage_ci_check.external_references, composition_refs.external_references)
+        self.assertIs(composition_refs.external_urls, external_urls)
 
 
 if __name__ == "__main__":

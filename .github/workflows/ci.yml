@@ -123,10 +123,26 @@ jobs:
           cat montage-install.json
           python -c "import json,sys; r=json.load(open('montage-install.json',encoding='utf-8')); sys.exit(0 if r['ok'] and r['skills']['status'] in ('found', 'installed') else 1)"
 
-      - name: Render a 3-second clip, ffprobe, no external URLs, no network traces
-        run: python skills/aimaster/scripts/montage_ci_check.py --json
+      # shell: bash — это `bash -eo pipefail`: без pipefail tee спрятал бы код выхода проверки.
+      - name: Render the skill's draft with a Cyrillic title, ffprobe, no external URLs, no network traces
+        shell: bash
+        run: python skills/aimaster/scripts/montage_ci_check.py --json | tee montage-online.json
+
+      - name: Montage end-to-end on the real engine (draft, render, edit, diff, foreign font, gsap, restore, desk)
+        env:
+          AIMASTER_REQUIRE_ENGINE: "1"
+        run: python -m unittest discover -s skills/aimaster/scripts -p "test_montage_e2e.py" -v
+
+      - name: Clean-machine smoke with the installed engine (montage draft, render v001)
+        run: python skills/aimaster/scripts/smoke_clean_machine.py --with-engine
 
       - name: Render without network (Linux, empty network namespace)
         if: runner.os == 'Linux'
+        shell: bash
         run: |
-          sudo unshare --net -- bash -c "ip link set lo up && exec setpriv --reuid=$(id -u) --regid=$(id -g) --init-groups env PATH=\"$PATH\" HOME=\"$HOME\" PYTHONUTF8=1 python skills/aimaster/scripts/montage_ci_check.py --json --offline"
+          sudo unshare --net -- bash -c "ip link set lo up && exec setpriv --reuid=$(id -u) --regid=$(id -g) --init-groups env PATH=\"$PATH\" HOME=\"$HOME\" PYTHONUTF8=1 python skills/aimaster/scripts/montage_ci_check.py --json --offline" | tee montage-offline.json
+
+      - name: Same video with and without network (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          python -c "import json; a, b = (json.load(open(n, encoding='utf-8')) for n in ('montage-online.json', 'montage-offline.json')); assert a['video_md5'] and a['video_md5'] == b['video_md5'], (a.get('video_md5'), b.get('video_md5')); print('video_md5', a['video_md5'])"

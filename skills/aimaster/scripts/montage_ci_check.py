@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Проверка монтажного движка на CI: ролик 3 с из клипов ffmpeg.
+"""Проверка монтажного движка на CI: черновик навыка из клипов ffmpeg и его сборка.
 
     python skills/aimaster/scripts/montage_ci_check.py --json [--offline]
 
-Берёт движок, поставленный install_montage.py; в папке с кириллицей и
-пробелами собирает композицию из двух клипов и голоса (без текста) того же
-вида, что черновик: локальный GSAP из движка и таймлайн main (задача 10b —
-звук в превью Studio), без data-no-timeline. Прогоняет lint, рендер и
-ffprobe, ищет в композиции внешние ссылки, а в логе рендера —
-следы сетевых запросов (шрифты Google, CDN). --offline только помечает запуск:
-сеть отрезают снаружи (см. .github/workflows/ci.yml). Поиск внешних ссылок —
-общий с проверкой черновика: studio/montage/external_urls.py.
+Черновик строит та же функция, что `montage draft` (`draft.build_current`:
+клипы и звук по плану, локальный GSAP из движка и таймлайн main на паузе,
+шрифт «AM Inter»), в папке с кириллицей и пробелами; кириллический титр
+добавляет та же функция, что `montage edit title-add`. Дальше — как перед
+сборкой версии: ссылки композиции, lint, рендер с качеством навыка, ffprobe и
+следы сети в логе рендера (`verify.network_markers`: любой след — ошибка);
+в отчёте — md5 декодированного видео, на Linux CI его сравнивают у запусков
+с сетью и без. --offline только помечает запуск: сеть отрезают снаружи (см.
+.github/workflows/ci.yml).
 """
 
 from __future__ import annotations
@@ -32,98 +33,90 @@ for _path in (str(_SCRIPTS.parent), str(_SCRIPTS)):
 
 import montage_testkit  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
-from studio.montage.draft_html import TIMELINE_SCRIPT, script_tag  # noqa: E402
-from studio.montage.engine import require_engine  # noqa: E402
+from studio.montage.canvas import Canvas  # noqa: E402
+from studio.montage.composition_refs import check_composition, external_references  # noqa: E402
+from studio.montage.draft import build_current  # noqa: E402
+from studio.montage.edit import EditContext, EditRequest  # noqa: E402
+from studio.montage.edit_ops import title_add  # noqa: E402
+from studio.montage.engine import load_pin, require_engine  # noqa: E402
 from studio.montage.engine_cli import frames_cache, run_engine, run_engine_json  # noqa: E402
-from studio.montage.external_urls import external_urls  # noqa: E402 — montage_ci_check.external_urls (план)
+from studio.montage.index_io import read_index  # noqa: E402
+from studio.montage.paths import montage_paths  # noqa: E402
 from studio.montage.probe import probe_media  # noqa: E402
-from studio.montage.vendor import DRAFT_SCRIPTS, copy_gsap  # noqa: E402
-from studio.platform_compat import ensure_utf8_stdio  # noqa: E402
+from studio.montage.verify import lint_problems, network_markers, output_problems  # noqa: E402
+from studio.platform_compat import ensure_utf8_stdio, find_program  # noqa: E402
 
 SIZE = (540, 960)
 DURATION = 3.0
-# Любой след сети в логе рендера — ошибка: CDN-скрипт или шрифт с Google Fonts.
-NETWORK_MARKERS = ("Inlined CDN script", "Failed to download CDN script", "from Google Fonts",
-                   "fonts.googleapis.com")
-
-COMPOSITION = """<!doctype html>
-<html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=540, height=960" />
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      html, body { width: 540px; height: 960px; overflow: hidden; background: #000; }
-      #root { position: relative; width: 540px; height: 960px; overflow: hidden; background: #000; }
-      .am-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
-      .am-fade-in { animation: am-fade-in 0.4s linear both; }
-      @keyframes am-fade-in { from { opacity: 0; } to { opacity: 1; } }
-    </style>
-@SCRIPTS@
-  </head>
-  <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="3" data-width="540" data-height="960">
-      <video id="v-1" class="am-video" src="assets/clip-1.mp4" data-start="0" data-duration="1.5" data-media-start="0" data-track-index="0" data-has-audio="true" data-volume="0.3" playsinline></video>
-      <video id="v-2" class="am-video am-fade-in" src="assets/clip-2.mp4" data-start="1.5" data-duration="1.5" data-media-start="0" data-track-index="0" data-has-audio="true" data-volume="0.3" playsinline></video>
-      <audio id="a-voice" src="assets/voice.wav" data-start="0" data-duration="3" data-media-start="0" data-track-index="2" data-volume="1"></audio>
-    </div>
-@TIMELINE@
-  </body>
-</html>
-""".replace("@SCRIPTS@", "\n".join(f"    {script_tag(f'assets/{name}.min.js')}" for name in DRAFT_SCRIPTS)
-            ).replace("@TIMELINE@", "\n".join(f"    {line}" for line in TIMELINE_SCRIPT.split("\n")))
+TITLE = "Проверка шрифта: Ёжик и кот 2026"
+SCENES = (("s1", "Сад", "Проверка монтажа", 2000, "clip-1"), ("s2", "Клубок", "Без сети", 1000, "clip-2"))
 
 
-def _build(comp: Path, engine_prefix: Path) -> None:
-    assets = comp / "assets"
-    copy_gsap(engine_prefix, assets)
-    montage_testkit.make_clip(assets / "clip-1.mp4", 1.5, size=SIZE, color="red", freq=440)
-    montage_testkit.make_clip(assets / "clip-2.mp4", 1.5, size=SIZE, color="blue", freq=660)
-    montage_testkit.make_tone(assets / "voice.wav", DURATION, freq=220)
-    (comp / "hyperframes.json").write_text('{\n  "media": {"autoProxy": true}\n}\n', encoding="utf-8")
-    (comp / "index.html").write_text(COMPOSITION, encoding="utf-8")
+def build_draft(project_dir: Path, engine_prefix: Path) -> Path:
+    """Черновик навыка с титром в <project_dir>/montage/current; возвращает эту папку.
+    GSAP — из `engine_prefix` (как у `montage draft`), клипы — ffmpeg."""
+
+    sources = Path(project_dir) / "исходники"
+    files = {
+        "clip-1": montage_testkit.make_clip(sources / "clip-1.mp4", 2.0, size=SIZE, color="red", freq=440),
+        "clip-2": montage_testkit.make_clip(sources / "clip-2.mp4", 1.0, size=SIZE, color="blue", freq=660),
+        "voice": montage_testkit.make_tone(sources / "voice.wav", DURATION, freq=220),
+    }
+    state = montage_testkit.video_state(list(SCENES), audio={"voice": "voice"})
+    paths = montage_paths(project_dir)
+    build_current(paths, state, files.__getitem__, probe=lambda path: probe_media(path),
+                  engine_prefix=engine_prefix)
+    title_add(EditContext(None, paths, None),
+              EditRequest(op="title-add", text=TITLE, at=0.2, duration=2.6))
+    return paths.current
+
+
+def video_md5(path: Path) -> str:
+    """md5 декодированного видеопотока: ролик с сетью и без сети обязан совпасть."""
+
+    ffmpeg = find_program("ffmpeg")
+    if ffmpeg is None:
+        raise OSError("нет ffmpeg для md5 видео")
+    proc = subprocess.run([ffmpeg, "-v", "error", "-i", str(path), "-map", "0:v", "-f", "md5", "-"],
+                          stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True,
+                          timeout=300)
+    return proc.stdout.strip().rsplit("=", 1)[-1]
+
+
+def _render(engine, comp: Path, output: Path, report: dict) -> None:
+    pin = load_pin()
+    started = time.monotonic()
+    result = run_engine(engine, ["render", ".", "--output", str(output), "--quality",
+                                 pin["render_quality"], "--frames-cache-dir",
+                                 str(frames_cache(engine)), "--quiet"],
+                        cwd=comp, timeout=pin["timeouts"]["render"])
+    report["render_seconds"] = round(time.monotonic() - started, 1)
+    report["network_markers"] = network_markers(result.stdout + "\n" + result.stderr)
+    if result.code != 0 or not output.is_file():
+        tail = (result.stderr or result.stdout).strip()[-600:]
+        report["problems"].append(f"рендер завершился с кодом {result.code}: {tail}")
+        return
+    info = probe_media(output)
+    report["probe"] = asdict(info)
+    report["video_md5"] = video_md5(output)
+    report["problems"] += output_problems(info, duration=DURATION, canvas=Canvas(*SIZE),
+                                          needs_audio=True)
 
 
 def check(offline: bool) -> dict:
-    report = {"ok": False, "offline": offline, "problems": []}
+    report = {"ok": False, "offline": offline, "problems": [], "network_markers": []}
     engine = require_engine()
     report["engine"] = engine.version
     with tempfile.TemporaryDirectory(prefix="aimaster-montage-", ignore_cleanup_errors=True) as temp:
-        comp = Path(temp) / "проверка монтажа" / "ролик 1"
-        _build(comp, engine.prefix)
-        report["external_urls"] = external_urls((comp / "index.html").read_text(encoding="utf-8"))
-        lint = run_engine_json(engine, ["lint", ".", "--json"], cwd=comp, timeout=120, ok_codes=(0, 1))
-        report["lint_errors"] = [f"{f.get('code')}: {f.get('message')}"
-                                 for f in lint.get("findings", []) if f.get("severity") == "error"]
-        if "error" in lint:
-            # HyperFrames иногда падает ВНУТРИ самого lint (не находка, а отказ
-            # инструмента): {"ok": false, "error": "…", "findings": [], "errorCount": 0}.
-            # round 3/5: `ok.is False` одна — это ЛЮБОЙ прошедший lint с
-            # находками ({"ok": false, "errorCount": N, "findings": […]}) —
-            # не крэш, а обычный результат, уже учтённый строкой выше.
-            # Признак настоящего крэша — сам ключ "error".
-            report["lint_errors"].append(f"lint не смог проверить: {lint['error']}")
-        output = comp.parent / "итог ролика.mp4"
-        started = time.monotonic()
-        result = run_engine(engine, ["render", ".", "--output", str(output), "--quality", "draft",
-                                     "--frames-cache-dir", str(frames_cache(engine)), "--quiet"],
-                            cwd=comp, timeout=900)
-        report["render_seconds"] = round(time.monotonic() - started, 1)
-        log = result.stdout + "\n" + result.stderr
-        report["network_markers"] = [line.strip()[:300] for line in log.splitlines()
-                                     if any(marker in line for marker in NETWORK_MARKERS)]
-        if result.code != 0 or not output.is_file():
-            report["problems"].append(f"рендер завершился с кодом {result.code}: {log.strip()[-600:]}")
-        else:
-            info = probe_media(output)
-            report["probe"] = asdict(info)
-            if abs(info.duration - DURATION) > 0.1:
-                report["problems"].append(f"длительность {info.duration} с вместо {DURATION} с")
-            if (info.width, info.height) != SIZE:
-                report["problems"].append(f"кадр {info.width}×{info.height} вместо {SIZE[0]}×{SIZE[1]}")
-            if not info.has_audio:
-                report["problems"].append("в ролике нет звука")
-    report["problems"] += [f"внешняя ссылка: {url}" for url in report["external_urls"]]
+        comp = build_draft(Path(temp) / "проверка монтажа" / "ролик 1", engine.prefix)
+        text = read_index(comp / "index.html")
+        report["external_urls"] = external_references(text)
+        report["composition_problems"] = check_composition(text, comp)
+        lint = run_engine_json(engine, ["lint", ".", "--json"], cwd=comp,
+                               timeout=load_pin()["timeouts"]["cli"], ok_codes=(0, 1))
+        report["lint_errors"] = lint_problems(lint)
+        _render(engine, comp, comp.parent.parent / "итог ролика.mp4", report)
+    report["problems"] += [f"композиция: {problem}" for problem in report["composition_problems"]]
     report["problems"] += [f"lint: {error}" for error in report["lint_errors"]]
     report["problems"] += [f"сеть: {line}" for line in report["network_markers"]]
     report["ok"] = not report["problems"]
