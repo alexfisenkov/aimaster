@@ -334,6 +334,27 @@ neutral count and sends the user back to chat; it does not render question text
 or options. Telegram is available only through an explicitly launched,
 owner-configured controller.
 
+For `video` and `mixed` projects the assembly is made by the montage commands —
+read [montage](montage.md) before the `assembly` stage. `assembly set` stays for
+photo projects. A montage build is local and free: no `grant`, no paid action.
+
+```bash
+creator_studio.py montage draft WS P --expected-revision N [--refresh | --rebuild]
+creator_studio.py montage status WS P
+creator_studio.py montage diff WS P [--against vNNN]
+creator_studio.py montage edit WS P OP [--clip ID] [--at S] [--seconds S] [--duration S] \
+  [--value V] [--fade-in S] [--fade-out S] [--text T] --expected-revision N [--expected-model-hash H]
+creator_studio.py montage render WS P --expected-revision N [--by agent|owner|autopilot] [--summary "…"]
+creator_studio.py montage restore WS P vNNN --expected-revision N
+creator_studio.py montage gsap WS P [--plugin NAME]...
+creator_studio.py montage open WS P
+creator_studio.py montage close WS P
+```
+
+`OP` is one of `move`, `trim-start`, `trim-end`, `split`, `delete`, `volume`,
+`fade`, `title-add`, `title-text`, `undo`. Without the engine, `montage status`
+returns `engine.install`, the exact install command.
+
 ## Jobs, grants and the active operator
 
 Before preparing a generation job, follow [model selection](model-selection.md).

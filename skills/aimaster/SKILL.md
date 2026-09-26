@@ -129,7 +129,8 @@ In an `autopilot` project the only user decision is approval of the
 idea/brief. After it, ask no questions until the finished video: choose guides,
 generation method, model, references, variants and stage approvals yourself,
 queue paid actions with `action enqueue` without a `grant` (the engine issues
-it), and show the `notice` returned on enabling autopilot once. The full order, the allowed stops and the final
+it), install the free montage engine yourself when `montage status` says it is
+missing, and show the `notice` returned on enabling autopilot once. The full order, the allowed stops and the final
 report are in [autopilot](references/autopilot.md), which overrides every
 "ask", "offer" and "wait" rule in this file for such projects.
 
@@ -137,6 +138,9 @@ report are in [autopilot](references/autopilot.md), which overrides every
 
 - Video stages: `scenario → image_plan → image_results → motion → audio
   → assembly`. Photo skips `motion` and `audio`.
+- The assembly of `video`/`mixed` projects is a montage on HyperFrames: read
+  [montage](references/montage.md) before the `assembly` stage. Photo projects
+  keep `assembly set` with the accepted image.
 - After the workspace is known or created, start the dashboard immediately with
   `python3 scripts/creator_studio.py serve <workspace> --port 0`. Open the
   returned loopback URL with `?project=<project-id>` through the host capability when available; otherwise

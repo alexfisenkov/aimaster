@@ -41,8 +41,12 @@ not re-queue them under `guided` without that mode's approval.
 Autopilot mode is the owner's standing authorization, for this project, to
 **spend** on paid actions (no limit) and to **upload** the project's own assets
 (references, frames, voices, previous clips) to the selected verified route
-when a generation needs them. Nothing else is authorized: no account changes,
-no publishing, no uploads of files outside the project or library.
+when a generation needs them. It also covers the free local install the
+montage needs: when `montage status` reports `engine.state: missing`, run its
+`engine.install` command yourself; it adds whatever else the skill lacks on
+this machine too (see [montage](montage.md#engine-check)).
+Nothing else is authorized: no account changes, no publishing, no uploads of
+files outside the project or library.
 
 - Do not run `grant` and do not ask for spending approval. Queue each paid
   action with
@@ -152,8 +156,16 @@ task (image, scene motion, one-shot, audio).
    If the brief needs no separate sound, create nothing and `stage approve`
    the empty stage. Otherwise, per layer: model rule, guide rule, prompt,
    enqueue → … → `decide approve`, then `stage approve`.
-6. **`assembly`.** Produce the assembly (`assembly set`), review it, then the
-   final report.
+6. **`assembly`.** Photo: `assembly set` with the accepted image, review it,
+   then the final report. Video/mixed: the [montage](montage.md).
+   `montage status`; if `engine.state` is `missing`, run its `engine.install`
+   command yourself (free, local; no question) and check again. Then
+   `montage draft`, titles only where the meaning needs them
+   (`montage edit … title-add`), `montage render`. Review the MP4: duration,
+   frame size, sound and the absence of network access are checked by the
+   render; look at frames when a viewer is available, otherwise say the visual
+   check was not performed. Fix a visible defect with `montage edit` and render
+   again. Then `stage approve` and the final report.
 
 Photo projects skip `motion` and `audio`. Each command belongs to the stage
 listed in [Creator Studio](creator-studio.md) and the completion-loop stage
@@ -203,7 +215,14 @@ Stop only when continuing is physically impossible:
   retry it blindly);
 - a binding, collection or revision blocker that you could not fix;
 - `action enqueue` returned `needs_chat` although `project.mode` is
-  `autopilot`.
+  `autopilot`;
+- the montage engine could not be installed: `engine.install` ran and
+  `montage status` still reports `engine.state: missing` (for example Linux
+  without Node.js 22). Report `engine.reason`, the installer's montage lines
+  and the command;
+- the montage refuses the project folder («… монтаж не трогаю»: links or a
+  program such as `ffmpeg` inside `montage/`). Do not delete them yourself;
+  report what the refusal names.
 
 Then write a report, not a question: what is done (with dashboard link), what
 blocked, which routes were checked, and the exact command or action that
@@ -215,5 +234,6 @@ mediocre variant — is decided by you.
 At the end, list the decisions you made: guides used or skipped, generation
 method, frame plan, continuity strategies (and any fallback with its reason),
 models and why, library items reused, uploads, regenerations and why, every
-provider switch, and an available skill update if one was found. Keep
-technical, visual and self-approved checks separate.
+provider switch, the montage (engine installed or not, versions built, titles
+added and why, the path of the final MP4), and an available skill update if
+one was found. Keep technical, visual and self-approved checks separate.
