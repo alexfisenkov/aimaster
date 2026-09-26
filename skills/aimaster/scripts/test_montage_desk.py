@@ -29,9 +29,15 @@ from studio.montage.paths import montage_paths  # noqa: E402
 
 # Как `preview --foreground --json` 0.8.75: строка готовности и /__hyperframes_config.
 FAKE_PREVIEW = r'''
-import json, os, sys
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json, os, socketserver, sys
+from http.server import BaseHTTPRequestHandler
 port = int(sys.argv[sys.argv.index("--port") + 1])
+
+# Не http.server.HTTPServer: его server_bind зовёт socket.getfqdn(), а на
+# раннерах macOS обратный DNS висит дольше тайм-аута запуска стола.
+class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -46,7 +52,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+server = Server(("127.0.0.1", port), Handler)
 print(json.dumps({"schemaVersion": 1, "operation": "start", "ok": True, "result": {
     "state": "started", "host": "127.0.0.1", "port": port, "pid": os.getpid(),
     "studioUrl": f"http://127.0.0.1:{port}/#project/current", "ready": True}}), flush=True)
