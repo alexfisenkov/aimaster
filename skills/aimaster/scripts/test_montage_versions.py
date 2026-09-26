@@ -103,6 +103,17 @@ class VersionsTests(unittest.TestCase):
         self.assertNotIn("boom-english-text", str(caught.exception))
         self.assertIsInstance(caught.exception.__cause__, OSError)
 
+    def test_undo_folder_or_temp_file_that_cannot_be_made_is_a_russian_refusal(self):
+        self.publish("v001")
+        for target, name in ((Path, "mkdir"), (versions_module.tempfile, "mkstemp")):
+            with self.subTest(name), mock.patch.object(target, name,
+                                                       side_effect=PermissionError(13, "denied", "/abs")):
+                with self.assertRaises(MontageError) as caught:
+                    restore_files(self.paths, "v001")
+                self.assertIn("v001", str(caught.exception))
+                self.assertNotIn("/abs", str(caught.exception))
+                self.assertNotIn("denied", str(caught.exception))
+
     def test_unrendered_changes(self):
         self.assertFalse(has_unrendered_changes("h1", meta("v001", model_hash="h1")))
         self.assertTrue(has_unrendered_changes("h2", meta("v001", model_hash="h1")))

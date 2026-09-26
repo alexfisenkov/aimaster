@@ -54,11 +54,13 @@ def preflight(paths: MontagePaths, engine, runner, text: str) -> tuple[Model, li
         raise MontageError("Монтаж нельзя собрать: " + "; ".join(problems))
     report = runner.json(engine, ["lint", ".", "--json"], cwd=paths.current,
                          timeout=load_pin()["timeouts"]["cli"], ok_codes=(0, 1))
-    problems = [short_paths(problem, {paths.root: "montage", engine.prefix: "<движок>"})
-                for problem in lint_problems(report)]
+    shown = {paths.root: "montage", engine.prefix: "<движок>"}
+    problems = [short_paths(problem, shown) for problem in lint_problems(report)]
     if problems:
-        raise MontageError("Проверка монтажа (lint) нашла ошибки: " + "; ".join(problems))
-    return read_model(engine, paths.current, cache_dir=paths.cache, runner=runner), lint_warnings(report)
+        raise MontageError("Проверка монтажа (lint) нашла ошибки (текст движка, по-английски): "
+                           + "; ".join(problems))
+    warnings = [short_paths(warning, shown) for warning in lint_warnings(report)]
+    return read_model(engine, paths.current, cache_dir=paths.cache, runner=runner), warnings
 
 
 def remove_output(output: Path) -> None:

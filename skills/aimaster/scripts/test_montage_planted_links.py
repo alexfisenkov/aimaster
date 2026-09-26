@@ -22,6 +22,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 
 from montage_testkit import FakeHyperframes, fake_engine, fake_gsap_prefix, seed_workspace  # noqa: E402
 from studio.authoring_support import open_store  # noqa: E402
+from studio.store import StoreError  # noqa: E402
 from studio.montage import MontageError, engine_cli, index_io, media_sync, replace_target, typeface, vendor  # noqa: E402
 from studio.montage.locks import held_lock  # noqa: E402
 from studio.montage.model import read_model  # noqa: E402
@@ -150,8 +151,10 @@ class LockTests(_Planted):
         store = open_store(seed.workspace)
         elsewhere = self.outside.parent / "создал бы замок state"
         link = self.plant(seed.workspace / "projects" / "p" / ".state.lock", elsewhere)
-        with self.assertRaises(OSError):
+        with self.assertRaises(StoreError) as caught:
             store.transact("p", 0, lambda state: state.update(note="x"))
+        self.assertIn("не удалось открыть замок .state.lock проекта «p»", str(caught.exception))
+        self.assertNotIn(str(self.base), str(caught.exception))
         self.assertFalse(os.path.lexists(elsewhere))
         self.assertEqual(store.load("p")["revision"], 0)
         link.unlink()

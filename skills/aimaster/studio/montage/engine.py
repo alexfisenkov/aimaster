@@ -29,6 +29,7 @@ PIN_FILE = Path(__file__).with_name("engine.json")
 INSTALL_PY = Path(__file__).resolve().parents[2] / "scripts" / "install.py"
 PREFIX_ENV = "AIMASTER_HYPERFRAMES_DIR"
 _VERSION = re.compile(r"v?(\d+)\.(\d+)\.(\d+)")
+INSTALL_HINT = "Команда установки — engine.install в ответе montage status"
 
 
 def load_pin() -> dict:
@@ -131,9 +132,15 @@ def engine_view(found: Engine | None, reason: str) -> dict:
             "install_argv": None if found else install_argv()}
 
 
+def not_ready(reason: str) -> MontageError:
+    """Отказ «движок не готов». Без самой команды: в ней абсолютные пути (python,
+    навык), а отказ показывают человеку; команда — в `engine.install`."""
+
+    return MontageError(f"Монтажный движок не готов: {reason}. {INSTALL_HINT}")
+
+
 def require_engine(**kwargs) -> Engine:
     found, reason = locate(**kwargs)
     if found is None:
-        raise MontageError(f"Монтажный движок не готов: {reason}. Поставьте его командой: "
-                           f"{install_command()}")
+        raise not_ready(reason)
     return found

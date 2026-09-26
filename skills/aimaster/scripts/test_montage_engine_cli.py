@@ -199,6 +199,17 @@ class RunTests(unittest.TestCase):
                                        timeout=5, runner=run)
         self.assertIn("would overlap", str(caught.exception))
         self.assertIn("--overwrite", str(caught.exception))
+        self.assertTrue(str(caught.exception).startswith(
+            "HyperFrames отказал выполнить «timeline trim» — причина словами движка, по-английски: "))
+
+    def test_node_that_does_not_start_is_russian_without_its_path(self):
+        def missing(argv, **kwargs):
+            raise FileNotFoundError(2, "No such file or directory", argv[0])
+        result = engine_cli.run_engine(self.engine, ["lint"], cwd=self.base, timeout=5, runner=missing)
+        self.assertEqual(result.code, 127)
+        self.assertIn("не удалось запустить Node.js движка", result.stderr)
+        self.assertNotIn(self.engine.node, result.stderr)
+        self.assertNotIn("No such file", result.stderr)
 
     def test_timeout_is_a_clear_message(self):
         with self.assertRaises(MontageError) as caught:

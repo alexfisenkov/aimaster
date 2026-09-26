@@ -212,6 +212,10 @@ def _opt(args, name):
     return args[args.index(name) + 1] if name in args else None
 
 
+# Как run_engine_json передаёт отказ движка (engine_cli): русское начало, слова движка.
+REFUSED = "HyperFrames отказал выполнить «timeline {op}» — причина словами движка, по-английски: "
+
+
 class FakeHyperframes:
     """Подмена EngineRunner: ведёт себя как CLI HyperFrames 0.8.75 на наших композициях
     (проба: move не выходит за корень; trim не трогает data-media-start; split ставит
@@ -249,14 +253,14 @@ class FakeHyperframes:
     def _mutate(self, index: Path, args: list[str]) -> dict:
         op, ref = args[0], args[1].lstrip("#")
         if op in self.refuse:
-            raise MontageError(f"HyperFrames отказал: {self.refuse[op]}")
+            raise MontageError(f"{REFUSED.format(op=op)}{self.refuse[op]}")
         text = read_index(index)
         data = element_attrs(text)[ref]
         start, duration = float(data["data-start"]), float(data.get("data-duration") or 0)
         if op == "move":
             root, at = root_duration(text), float(args[2])
             if at + duration > root + 1e-6:
-                raise MontageError(f"HyperFrames отказал: move would end at {at + duration}, "
+                raise MontageError(f"{REFUSED.format(op=op)}move would end at {at + duration}, "
                                    f"beyond composition duration {root}")
             text = set_attr(text, ref, "data-start", args[2])
         elif op == "trim":

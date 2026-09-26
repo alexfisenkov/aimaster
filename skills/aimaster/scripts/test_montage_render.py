@@ -215,6 +215,22 @@ class RenderTests(unittest.TestCase):
             {"severity": "warning", "code": "media_without_id", "message": "у клипа нет id"}]})
         self.assertEqual(self.render(runner).warnings, ["media_without_id: у клипа нет id"])
 
+    def test_lint_text_carries_no_absolute_paths(self):
+        current = str(self.paths().current)
+        for severity in ("warning", "error"):
+            runner = FakeHyperframes(render_bytes=tiny_mp4(b"x"), lint_report={
+                "ok": severity == "warning", "findings": [
+                    {"severity": severity, "code": "missing_file", "message": f"{current}/assets/a.png"}]})
+            with self.subTest(severity):
+                if severity == "warning":
+                    self.assertEqual(self.render(runner).warnings,
+                                     ["missing_file: montage/current/assets/a.png"])
+                    continue
+                with self.assertRaises(MontageError) as caught:
+                    self.render(runner)
+                self.assertIn("(текст движка, по-английски): missing_file: montage/current/assets/a.png",
+                              str(caught.exception))
+
     def test_autopilot_projects_sign_versions_as_autopilot(self):
         store = open_store(self.seed.workspace)
 

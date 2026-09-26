@@ -79,7 +79,11 @@ def settle_orphans(paths: MontagePaths, recorded_ids: Iterable[str]) -> list[str
         return []
     recorded = set(recorded_ids)
     recovered = []
-    for item in sorted(paths.versions.iterdir()):
+    try:
+        items = sorted(paths.versions.iterdir())
+    except OSError as error:
+        raise MontageError("не удалось прочитать папку montage/versions") from error
+    for item in items:
         if not (item.is_dir() and item.name.startswith(".") and item.name.endswith(".staging")):
             continue
         version_id = item.name[1:-len(".staging")]

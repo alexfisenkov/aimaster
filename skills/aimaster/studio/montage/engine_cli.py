@@ -163,8 +163,10 @@ def run_engine(engine: Engine, args: Sequence[str], *, cwd: Path, timeout: float
         partial = _decode(error.stderr)
         stderr = f"{partial}\n{reason}" if partial else reason
         return EngineResult(124, _decode(error.output), stderr, True)
-    except OSError as error:
-        return EngineResult(127, "", str(error))
+    except OSError:
+        # текст OSError — по-английски и с путём к node; он не для человека
+        return EngineResult(127, "", "не удалось запустить Node.js движка — проверьте установку: "
+                                     "montage status")
     return EngineResult(proc.returncode, _decode(proc.stdout), _decode(proc.stderr))
 
 
@@ -193,7 +195,9 @@ def run_engine_json(engine: Engine, args: Sequence[str], *, cwd: Path, timeout: 
         shown = {cwd: ".", engine.prefix: "<движок>"}
         if isinstance(refusal, dict) and refusal.get("reason"):
             fix = f" ({refusal['fix']})" if refusal.get("fix") else ""
-            raise MontageError(short_paths(f"HyperFrames отказал: {refusal['reason']}{fix}", shown))
+            raise MontageError(short_paths(f"HyperFrames отказал выполнить «{command}» — причина "
+                                           f"словами движка, по-английски: {refusal['reason']}{fix}",
+                                           shown))
         tail = short_paths(result.stderr or result.stdout, shown).strip()[-600:]
         raise MontageError(f"HyperFrames «{command}» завершился с кодом {result.code}: {tail}")
     payload = _json_payload(result.stdout)

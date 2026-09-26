@@ -172,6 +172,33 @@ class CliWorkspaceTests(unittest.TestCase):
                 self.assertNotIn(str(Path(self.ws).parent), err)
                 self.assertNotIn("Traceback", err)
 
+    def test_engine_refusal_points_to_engine_install_without_absolute_paths(self):
+        code, _out, err = run_main("montage", "draft", self.ws, "p", "--expected-revision", "0")
+        self.assertEqual(code, 3)
+        self.assertIn("Монтажный движок не готов: HyperFrames не установлен в папке движка", err)
+        self.assertIn("engine.install в ответе montage status", err)
+        for path in (sys.executable, str(INSTALL_PY), os.environ[PREFIX_ENV]):
+            self.assertNotIn(path, err)
+
+    def test_assembly_set_is_refused_when_the_montage_owns_the_assembly(self):
+        state_path = Path(self.ws) / "projects" / "p" / "state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        asset = self.seed.ids["a.mp4"]
+        argv = ("assembly", "set", self.ws, "p", "--asset-id", asset, "--expected-revision", "0")
+        state["montage"] = {"current_version": None, "versions": [],
+                            "canvas": {"width": 1080, "height": 1920}}
+        state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        code, out, err = run_main(*argv)
+        self.assertEqual((code, out), (3, ""))
+        self.assertIn("сборку ведёт монтаж", err)
+        self.assertIn("montage render", err)
+        self.assertNotIn("Traceback", err)
+        del state["montage"]  # без монтажа прежний путь открыт
+        state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        code, out, err = run_main(*argv)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["revision"], 1)
+
     def test_help_lists_the_nine_subcommands(self):
         proc = subprocess.run([sys.executable, str(_SCRIPTS / "creator_studio.py"), "montage", "--help"],
                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,

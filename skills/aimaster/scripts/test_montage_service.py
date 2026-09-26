@@ -249,7 +249,7 @@ class ServiceTests(unittest.TestCase):
         bare = fake_engine(self.temp / "движок без gsap")
         with self.assertRaises(MontageError) as caught:
             service.gsap(self.ws, "p", engine=bare)
-        self.assertIn("--install-deps", str(caught.exception))
+        self.assertIn("engine.install в ответе montage status", str(caught.exception))
         with self.assertRaises(MontageError) as caught:
             service.gsap(self.ws, "p", engine=self.engine)
         self.assertIn("черновика ещё нет", str(caught.exception))

@@ -1,7 +1,8 @@
 """Шаг «монтаж» смоука чистой машины (`smoke_clean_machine.py`).
 
-Без движка (чистая машина): `montage status` и отказ `montage draft` (код 3)
-называют одну и ту же команду установки. С движком (`--with-engine`: движок,
+Без движка (чистая машина): `montage status` отдаёт команду установки
+(`engine.install`, `engine.install_argv`), а отказ `montage draft` (код 3)
+отсылает к ней, не повторяя абсолютных путей. С движком (`--with-engine`: движок,
 уже поставленный на этой машине, находится до подмены HOME) — второй проект
 доводится через CLI до сборки (клипы — ffmpeg) и проходит montage draft →
 render v001 → status. Имя не test_* — unittest этот файл не запускает."""
@@ -21,16 +22,18 @@ ENGINE_ENV = "AIMASTER_HYPERFRAMES_DIR"
 
 
 def montage_without_engine(env: dict, workspace: Path, project: str, status: dict) -> None:
-    install = status["engine"].get("install") or ""
+    install, argv = status["engine"].get("install") or "", status["engine"].get("install_argv") or []
     expect(install.endswith("--install-deps") and "install.py" in install,
            "montage status: без движка нет команды установки: %s" % status["engine"])
+    expect(argv[-1:] == ["--install-deps"] and Path(argv[0]).name.lower().startswith("python"),
+           "montage status: без движка нет install_argv: %s" % status["engine"])
     expect(status["skills"].get("status") == "missing",
            "montage status: скиллов HyperFrames на чистой машине быть не может: %s" % status["skills"])
     err = run_refused(env, CLI, "montage", "draft", workspace, project,
                       "--expected-revision", status["revision"])
-    expect("Монтажный движок не готов" in err and install in err,
-           "montage draft: ждали отказ с командой установки «%s», получили %s" % (install, err[-800:]))
-    log("  монтаж: движка нет — status и отказ montage draft называют одну команду установки")
+    expect("Монтажный движок не готов" in err and "engine.install" in err and argv[1] not in err,
+           "montage draft: ждали отказ со ссылкой на engine.install без путей, получили %s" % err[-800:])
+    log("  монтаж: движка нет — status отдаёт команду установки, отказ montage draft отсылает к ней")
 
 
 def make_clip(ffmpeg: str, path: Path, seconds: float, color: str, freq: int) -> None:

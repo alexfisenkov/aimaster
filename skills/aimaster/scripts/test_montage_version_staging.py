@@ -157,6 +157,13 @@ class VersionStagingTests(unittest.TestCase):
         self.assertFalse(staging.exists())
         self.assertTrue(self.paths.version_dir("v001").is_dir())
 
+    def test_settle_orphans_on_an_unreadable_versions_folder_is_a_russian_refusal(self):
+        self.paths.versions.mkdir(parents=True, exist_ok=True)
+        with mock.patch.object(Path, "iterdir", side_effect=PermissionError(13, "denied", "/abs")):
+            with self.assertRaises(MontageError) as caught:
+                settle_orphans(self.paths, recorded_ids=[])
+        self.assertEqual(str(caught.exception), "не удалось прочитать папку montage/versions")
+
     def test_settle_orphans_discards_unrecorded_staging(self):
         staging = stage_version(self.paths, meta("v001"), MODEL)
         recovered = settle_orphans(self.paths, recorded_ids=[])  # state не знает о v001

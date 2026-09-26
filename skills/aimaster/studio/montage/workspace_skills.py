@@ -16,7 +16,6 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from .engine import install_command
 from .home_guard import would_write_into_home
 from .skill_bundle import SKILL_MARKER, skills_cache, skills_pin, verify_skills
 from .temp_sweep import sweep_stale
@@ -79,6 +78,12 @@ def _copy(source: Path, target: Path, version: str) -> None:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def _shown(workspace, path: str) -> str:
+    """Путь для сообщения — от рабочей папки (.claude/skills/<имя>), не абсолютный."""
+
+    return Path(path).relative_to(Path(workspace)).as_posix()
+
+
 def _overall(statuses) -> str:
     for status in ("failed", "conflict", "missing", "installed"):
         if status in statuses:
@@ -95,7 +100,8 @@ def sync_workspace_skills(workspace, *, create=True, home=None, environ=None, pi
     source_root = skills_cache(home=home, environ=environ, pin=pin)
     if verify_skills(source_root, pin):
         return {**base, "status": "missing",
-                "message": f"скиллы HyperFrames не скачаны; поставить: {install_command()}"}
+                "message": "скиллы HyperFrames не скачаны — их ставит команда установки движка "
+                           "(engine.install в ответе montage status)"}
     if create:
         # Уборка — один раз в начале, для всех имён и обеих папок агентов,
         # до того как _copy создаст свою собственную рабочую папку.
@@ -119,11 +125,13 @@ def sync_workspace_skills(workspace, *, create=True, home=None, environ=None, pi
                 try:
                     _copy(source_root / name, target, pin["tag"])
                     item["status"] = "installed"
-                except (OSError, shutil.Error) as error:
-                    item.update(status="failed", message=str(error)[:300])
+                except (OSError, shutil.Error):
+                    # текст OSError — по-английски и с абсолютными путями
+                    item.update(status="failed", message="не удалось скопировать скилл (нет "
+                                                         "доступа, диск полон или файл занят)")
             items.append(item)
     status = _overall({item["status"] for item in items})
-    conflicts = [item["path"] for item in items if item["status"] == "conflict"]
+    conflicts = [_shown(workspace, item["path"]) for item in items if item["status"] == "conflict"]
     if conflicts:
         message = "чужие папки с теми же именами не тронуты: " + ", ".join(conflicts)
     elif status == "missing":

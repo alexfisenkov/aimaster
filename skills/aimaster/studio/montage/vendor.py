@@ -26,7 +26,7 @@ from ..platform_compat import replace_file
 from . import MontageError
 from .composition_refs import references
 from .draft_html import script_tag
-from .engine import Engine, install_command, load_pin, package_version
+from .engine import Engine, load_pin, not_ready, package_version
 from .prefix_layout import DRAFT_GSAP, gsap_dist, gsap_problem
 from .index_io import read_index
 from .media_sync import ASSETS_DIR
@@ -50,14 +50,13 @@ RULES = (
 
 def gsap_sources(prefix: Path, names=DRAFT_SCRIPTS) -> list[Path]:
     """Файлы `<имя>.min.js` закреплённой версии GSAP в папке движка; нет
-    пакета, не та версия или нет файла — MontageError с командой установки
-    (та же проверка, что у engine.locate). Ничего не пишет: черновик зовёт её
+    пакета, не та версия или нет файла — отказ «движок не готов» (та же
+    проверка, что у engine.locate). Ничего не пишет: черновик зовёт её
     до первой записи в current/."""
 
     problem = gsap_problem(prefix, load_pin()["gsap_version"], names)
     if problem:
-        raise MontageError(f"Монтажный движок не готов: {problem}. "
-                           f"Поставьте его командой: {install_command()}")
+        raise not_ready(problem)
     return [gsap_dist(prefix) / f"{name}.min.js" for name in names]
 
 

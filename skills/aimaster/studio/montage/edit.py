@@ -1,20 +1,13 @@
-"""Правка монтажа агентом: снимок для отката, проверка «монтаж не менялся», undo.
-
-Перед каждой правкой current/index.html копируется в .undo/, после неё рядом
-пишется хэш получившегося файла. `undo` возвращает последний снимок, только если
-файл с тех пор не меняли (например, мышью в монтажном столе). Откатить можно
-`UNDO_DEPTH` последних правок: более старые снимки с отметками удаляются."""
+"""Правка монтажа агентом: проверка «монтаж не менялся», одна операция, снимок
+для отката до неё и отметка после (`edit_undo`)."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-import time
 from dataclasses import dataclass
-from pathlib import Path
 
 from . import MontageError
 from .edit_ops import CLIP_OPS, need, title_add
+from .edit_undo import prune_snapshots, snapshot_before, undo_last, write_note
 from .engine import Engine
 from .engine_cli import EngineRunner
 from .index_io import read_index, write_index
@@ -23,7 +16,6 @@ from .paths import MontagePaths
 
 OPS = ("move", "trim-start", "trim-end", "split", "delete", "volume", "fade", "title-add",
        "title-text", "undo")
-UNDO_DEPTH = 50
 
 
 @dataclass(frozen=True)
@@ -46,65 +38,6 @@ class EditContext:
     runner: object
 
 
-def _sha(path: Path) -> str:
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
-def _snapshot(paths: MontagePaths) -> Path:
-    paths.undo.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%d-%H%M%S") + f"-{time.time_ns() % 1_000_000_000:09d}"
-    target = paths.undo / f"edit-{stamp}.html"
-    target.write_bytes(paths.index.read_bytes())
-    return target
-
-
-def _edit_snapshots(paths: MontagePaths) -> list[Path]:
-    """Снимки правок по порядку: имя начинается со времени создания."""
-
-    return sorted(paths.undo.glob("edit-*.html")) if paths.undo.is_dir() else []
-
-
-def _prune_snapshots(paths: MontagePaths) -> None:
-    """Снимки старше UNDO_DEPTH последних — вместе с отметками. Последний, по
-    которому работает undo, всегда в числе оставленных."""
-
-    for old in _edit_snapshots(paths)[:-UNDO_DEPTH]:
-        for path in (old, old.with_suffix(".json")):
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                pass  # уборка не мешает правке, которая уже сделана
-
-
-def undo_last(paths: MontagePaths) -> dict:
-    snapshots = _edit_snapshots(paths)
-    if not snapshots:
-        raise MontageError("отменять нечего")
-    latest, note = snapshots[-1], snapshots[-1].with_suffix(".json")
-    # Гвардия — по умолчанию закрыта (round-fix-1/5, item 3): нет отметки или
-    # она повреждена — значит нельзя проверить, что монтаж с тех пор не
-    # трогали (например, мышью в столе); раньше это молча пропускало
-    # проверку и стирало чужую правку, теперь — явный отказ.
-    try:
-        data = json.loads(note.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        raise MontageError("нет отметки о состоянии после последней правки — откат мог бы "
-                           "стереть чужие изменения, поэтому отменён") from None
-    # round-fix-2/5, item 6: валидный JSON, но не объект (список, число,
-    # строка, null) — .get() на нём падал бы AttributeError'ом мимо отказа.
-    after = data.get("after") if isinstance(data, dict) else None
-    if not isinstance(after, str) or not after:
-        raise MontageError("отметка о последней правке повреждена — откат мог бы стереть "
-                           "чужие изменения, поэтому отменён")
-    if after != _sha(paths.index):
-        raise MontageError("после этой правки монтаж меняли (например, в монтажном столе) — "
-                           "откат стёр бы и те изменения")
-    write_index(paths.index, read_index(latest))
-    latest.unlink()
-    note.unlink(missing_ok=True)
-    return {"ok": True, "restored": latest.name}
-
-
 def apply_edit(engine: Engine, paths: MontagePaths, request: EditRequest, *,
                expected_model_hash: str | None = None, runner=None) -> dict:
     if request.op not in OPS:
@@ -120,16 +53,15 @@ def apply_edit(engine: Engine, paths: MontagePaths, request: EditRequest, *,
         raise MontageError("монтаж изменился с тех пор, как вы его читали (например, в монтажном "
                            "столе): прочитайте montage status и повторите")
     clip = None if request.op == "title-add" else model.clip(need(request.clip, "clip", request.op))
-    snapshot = _snapshot(paths)
+    snapshot = snapshot_before(paths)
     try:
         receipt = title_add(ctx, request) if clip is None else CLIP_OPS[request.op](ctx, clip, request)
     except BaseException:
         write_index(paths.index, read_index(snapshot))
         snapshot.unlink(missing_ok=True)
         raise
-    snapshot.with_suffix(".json").write_text(
-        json.dumps({"after": _sha(paths.index), "op": request.op}), encoding="utf-8")
-    _prune_snapshots(paths)
+    write_note(paths, snapshot, request.op)
+    prune_snapshots(paths)
     after = read_model(engine, paths.current, cache_dir=paths.cache, runner=ctx.runner)
     return {"op": request.op, "clip": request.clip, "model_hash_before": before,
             "model_hash": model_hash(after), "duration": after.duration, "receipt": receipt}

@@ -75,9 +75,8 @@ def parse_probe(payload: dict) -> MediaInfo:
 def probe_media(path: Path, *, ffprobe: str | None = None, runner=subprocess.run) -> MediaInfo:
     ffprobe = ffprobe or find_ffprobe()
     if ffprobe is None:
-        from .engine import install_command  # отложенный импорт: не создавать цикл engine<->probe
-
-        raise MontageError(f"Не найден ffprobe (ставится вместе с ffmpeg): {install_command()}")
+        raise MontageError("Не найден ffprobe — он ставится вместе с ffmpeg командой установки "
+                           "движка (engine.install в ответе montage status)")
     argv = [ffprobe, "-v", "error", "-print_format", "json", "-show_format", "-show_streams",
             str(path)]
     try:

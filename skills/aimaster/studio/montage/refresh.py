@@ -45,6 +45,18 @@ def _restate_video_audio(text: str, clip_id: str, info: MediaInfo, under_layers:
     return text, None
 
 
+def _seconds(attrs: dict, name: str, clip: str) -> float:
+    """Число секунд из атрибута клипа; пусто — 0. Не число — отказ по-русски."""
+
+    value = attrs.get(name) or 0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise MontageError(f"повреждённое значение {name} у клипа {clip}: «{str(value)[:40]}» — "
+                           "поправьте его в монтаже или соберите черновик заново "
+                           "(montage draft --rebuild)") from None
+
+
 def refresh_draft(paths, state, resolve: Callable[[str], Path], *, probe=probe_media) -> list[dict]:
     """Меняет исходник только у устаревших клипов (`reason` не задан). Место
     на дорожке не трогает; если новый исходник короче — укорачивает клип до
@@ -68,13 +80,13 @@ def refresh_draft(paths, state, resolve: Callable[[str], Path], *, probe=probe_m
         clip, asset = item["clip"], item["current_asset_id"]
         info = media(asset)
         attrs = element_attrs(text)[clip]
-        media_start = float(attrs.get("data-media-start") or 0)
+        media_start = _seconds(attrs, "data-media-start", clip)
         if media_start >= info.duration:
             media_start = 0.0
             text = set_attr(text, clip, "data-media-start", "0")
         text = set_attr(text, clip, "src", synced[asset]["src"])
         text = set_attr(text, clip, "data-am-asset", asset)
-        if float(attrs.get("data-duration") or 0) > info.duration - media_start:
+        if _seconds(attrs, "data-duration", clip) > info.duration - media_start:
             text = set_attr(text, clip, "data-duration", fmt_number(info.duration - media_start))
         if item["layer"] == "video":
             text, change = _restate_video_audio(text, clip, info, under_layers)

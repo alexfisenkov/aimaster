@@ -76,6 +76,8 @@ class ProbeTests(unittest.TestCase):
             with self.assertRaises(MontageError) as caught:
                 probe.probe_media(Path("x.mp4"))
         self.assertIn("ffprobe", str(caught.exception))
+        self.assertIn("engine.install в ответе montage status", str(caught.exception))
+        self.assertNotIn(sys.executable, str(caught.exception))
 
     def test_failure_names_the_file(self):
         def runner(argv, **kwargs):

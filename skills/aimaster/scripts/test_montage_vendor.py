@@ -17,7 +17,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 from montage_testkit import fake_gsap_prefix  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
 from studio.montage import vendor  # noqa: E402
-from studio.montage.engine import install_command, load_pin  # noqa: E402
+from studio.montage.engine import load_pin  # noqa: E402
 
 PIN = load_pin()["gsap_version"]
 
@@ -63,14 +63,14 @@ class CopyGsapTests(unittest.TestCase):
         for broken in (self.root / "пусто", prefix):
             with self.assertRaises(MontageError) as caught:
                 vendor.copy_gsap(broken, self.assets)
-            self.assertNotIn(str(broken), str(caught.exception).replace(install_command(), ""))
+            self.assertNotIn(str(self.root), str(caught.exception))
 
-    def test_missing_gsap_names_the_install_command_and_writes_nothing(self):
+    def test_missing_gsap_points_to_the_install_command_and_writes_nothing(self):
         with self.assertRaises(MontageError) as caught:
             vendor.copy_gsap(self.root / "пусто", self.assets)
         message = str(caught.exception)
         self.assertIn(f"GSAP {PIN}", message)
-        self.assertIn(install_command(), message)
+        self.assertIn("engine.install в ответе montage status", message)
         self.assertFalse(self.assets.exists())
 
     def test_wrong_version_is_named(self):
@@ -78,7 +78,7 @@ class CopyGsapTests(unittest.TestCase):
         with self.assertRaises(MontageError) as caught:
             vendor.copy_gsap(prefix, self.assets)
         self.assertIn("3.14.1", str(caught.exception))
-        self.assertIn(install_command(), str(caught.exception))
+        self.assertIn("engine.install в ответе montage status", str(caught.exception))
         self.assertFalse(self.assets.exists())
 
     def test_missing_dist_file_is_named(self):
@@ -86,7 +86,7 @@ class CopyGsapTests(unittest.TestCase):
         with self.assertRaises(MontageError) as caught:
             vendor.copy_gsap(prefix, self.assets)
         self.assertIn("MotionPathPlugin.min.js", str(caught.exception))
-        self.assertIn(install_command(), str(caught.exception))
+        self.assertIn("engine.install в ответе montage status", str(caught.exception))
         self.assertFalse(self.assets.exists())
 
 

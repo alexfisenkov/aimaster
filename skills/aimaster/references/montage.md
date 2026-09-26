@@ -40,7 +40,8 @@ Start with `montage status WS P`. Its `engine`:
   arguments and `install` is the same command as one line, for example
   `/usr/bin/python3 /…/skills/aimaster/scripts/install.py --install-deps`.
   Every command that needs the engine refuses with «Монтажный движок не готов:
-  … Поставьте его командой: …» naming the same command.
+  …. Команда установки — engine.install в ответе montage status»: the refusal
+  itself carries no paths, the command is in `montage status`.
 
 Run it as `install_argv` when your tool starts a program with a list of
 arguments (no shell). Otherwise run the line `install` in the shell: it works
@@ -83,9 +84,11 @@ creator_studio.py montage close WS P
 
 Every command prints one JSON object; `--json` is accepted and changes
 nothing. A refusal is exit code 3 and one line on stderr,
-`creator_studio.py: error: <text>`, in Russian and without absolute paths,
-except the engine folder and the install command in «Монтажный движок не
-готов»: tell the person what it means in plain words (see Refusals).
+`creator_studio.py: error: <text>`, in Russian and without absolute paths
+(folders the person knows are named `montage/…`, `<движок>`, `<рабочая
+папка>`); where it quotes the engine (lint, «HyperFrames отказал выполнить …»)
+the engine's own words stay English after a Russian lead-in. Tell the person
+what it means in plain words (see Refusals).
 `draft`, `edit`, `render` and `restore` need `--expected-revision N` — the
 `revision` of the last reply or of `montage status`. `draft` (new and
 `--rebuild`), `render` and `restore` return the next revision; `edit` and
@@ -328,7 +331,11 @@ lists the clips (`clip`, `layer`, `scene_id`, `asset_id`, `current_asset_id`,
 | «проект изменился — обновите номер ревизии: сейчас N» | repeat with that revision |
 | «монтаж изменился с тех пор, как вы его читали …» | the desk changed it: read `montage status`, repeat the edit |
 | «монтаж поменяли во время сборки …» / «монтаж поменяли, пока сборка готовила его …» | a desk edit landed during the build: no version, build again |
-| «Монтаж нельзя собрать: …» / «Проверка монтажа (lint) нашла ошибки: …» | name the clip and the error, fix it with an edit, build again |
+| «Монтаж нельзя собрать: …» / «Проверка монтажа (lint) нашла ошибки (текст движка, по-английски): …» | name the clip and the error in Russian, fix it with an edit, build again |
+| «HyperFrames отказал выполнить «…» — причина словами движка, по-английски: …» | the engine refused one edit (for example, clips would overlap): retell the reason in Russian, choose another time or clip |
+| «повреждённое значение … у клипа …» | a number in the montage is broken (a hand edit): fix that clip in the desk or rebuild the draft (`montage draft --rebuild`, the old one goes to `.undo/`) |
+| «не удалось сохранить снимок для отката …» / «не удалось записать отметку для отката …» / «не удалось восстановить версию …» / «не удалось прочитать папку montage/versions» | the disk refused (no access, full, a file busy): nothing changed; say so and try again later |
+| «не удалось открыть замок .state.lock проекта …» | a link sits where the project's lock file should be: the same as links in the montage folder — ask the person to remove it |
 | «Сборка обращалась в сеть или к чужому шрифту: …» | a foreign font or a CDN script: Font and GSAP rules, then build again |
 | «Собранный ролик не прошёл проверку: …» / «Сборка не удалась: …» | no version; `montage/.logs/render-vNNN.log` has the engine log |
 | «Ролик больше 2 ГБ — такой файл студия не примет; сократите монтаж» | shorten the video (fewer or shorter clips), build again: «Ролик вышел больше 2 ГБ — укорочу монтаж и соберу снова» |
@@ -338,6 +345,7 @@ lists the clips (`clip`, `layer`, `scene_id`, `asset_id`, `current_asset_id`,
 | «в папке монтажа есть ссылки на другие места: …; монтаж не трогаю» / «в папке монтажа лежит montage/current/ffmpeg …» | the montage folder holds links or a program someone put there; nothing is touched until it is gone. Never delete it yourself: «В папке монтажа проекта лежат посторонние ссылки (или программа ffmpeg) — пока они там, монтаж не работает. Уберите их, и я продолжу» |
 | «папка montage проекта — ссылка на другое место; монтаж не трогаю» | the whole `montage` folder is a link: «Папка монтажа этого проекта — ссылка на другое место, поэтому монтаж её не трогает. Замените ссылку обычной папкой (или уберите её), и я соберу черновик заново» |
 | «у фото-проекта монтажа нет …» | photo: `assembly set` |
+| «у этого проекта сборку ведёт монтаж: assembly set её не меняет …» | a video or mixed project with a montage: build with `montage render`, go back with `montage restore` |
 | «--summary: дашборд не показывает текст с …» | the caption has a service word: rephrase it |
 | «Монтажный стол не запустился за 30 с: …» / «монтажный стол этого проекта сейчас открывают или закрывают …» | try `montage open` again in a minute; `montage/.logs/desk.log` has the details |
 | «этап «assembly» уже одобрен — montage его не меняет» | the assembly is accepted and the montage no longer changes: say «Сборка уже принята — монтаж этого ролика больше не меняется» |

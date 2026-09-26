@@ -153,6 +153,19 @@ class ProjectStore:
         finally:
             temporary.unlink(missing_ok=True)
 
+    @staticmethod
+    def _open_lock(project_id, lock_path):
+        """The lock file, never through a link planted in its place. The
+        OSError text (English, absolute path) stays in the chain only."""
+
+        try:
+            return open_text_nofollow(lock_path)
+        except OSError as error:
+            raise StoreError(
+                f"не удалось открыть замок {lock_path.name} проекта «{project_id}»: на его месте "
+                "ссылка на другое место или нет доступа — уберите ссылку, и запись пройдёт"
+            ) from error
+
     def transact(self, project_id, expected_revision, mutation) -> dict:
         if (
             isinstance(expected_revision, bool)
@@ -166,7 +179,7 @@ class ProjectStore:
         state_path = project_path / "state.json"
         lock_path = project_path / ".state.lock"
         with _thread_lock(project_path):
-            with open_text_nofollow(lock_path) as lock_handle, file_lock(lock_handle):
+            with self._open_lock(project_id, lock_path) as lock_handle, file_lock(lock_handle):
                 current = self._read(project_path)
                 current_revision = current.get("revision")
                 if (

@@ -68,7 +68,8 @@ class WorkspaceSkillsTests(unittest.TestCase):
         (foreign / "SKILL.md").write_text("чужое", encoding="utf-8")
         report = self.sync()
         self.assertEqual(report["status"], "conflict")
-        self.assertIn(str(foreign), report["message"])
+        self.assertIn(".claude/skills/other", report["message"])
+        self.assertNotIn(str(self.ws), report["message"])
         self.assertEqual((foreign / "SKILL.md").read_text(encoding="utf-8"), "чужое")
         self.assertTrue((self.ws / ".claude" / "skills" / "demo" / "SKILL.md").is_file())
 
@@ -93,14 +94,14 @@ class WorkspaceSkillsTests(unittest.TestCase):
         shutil.rmtree(self.cache)
         report = self.sync()
         self.assertEqual(report["status"], "missing")
-        self.assertIn("--install-deps", report["message"])
+        self.assertIn("engine.install в ответе montage status", report["message"])
         self.assertFalse((self.ws / ".claude").exists())
 
     def test_workspace_init_reports_skills_and_never_fails(self):
         result = init_workspace(self.base / "новая папка")
         self.assertIn("projects/", result["created"])
         self.assertEqual(result["hyperframes_skills"]["status"], "missing")
-        self.assertIn("--install-deps", result["hyperframes_skills"]["message"])
+        self.assertIn("engine.install в ответе montage status", result["hyperframes_skills"]["message"])
 
     def test_stale_copy_temp_dirs_are_swept_before_a_new_copy(self):
         """Разбор 1/5, находка 11: мусор от оборванной прошлой копии
@@ -172,6 +173,16 @@ class WorkspaceSkillsTests(unittest.TestCase):
         failed = [item for item in report["items"] if item["path"].startswith(str(claude_skills))]
         self.assertEqual({item["status"] for item in failed}, {"failed"})
         self.assertTrue(stale.exists())  # недоступное не тронуто
+
+    def test_failed_copy_message_is_russian_without_paths(self):
+        with mock.patch.object(workspace_skills, "_copy",
+                               side_effect=OSError(28, "No space left on device", str(self.ws))):
+            report = self.sync()
+        self.assertEqual({item["status"] for item in report["items"]}, {"failed"})
+        for item in report["items"]:
+            self.assertIn("не удалось скопировать скилл", item["message"])
+            self.assertNotIn("No space", item["message"])
+            self.assertNotIn(str(self.ws), item["message"])
 
     def test_unstatable_target_is_a_failed_item_not_a_crash(self):
         """То же без chmod — переносимо на любую ОС и версию Python."""

@@ -172,7 +172,8 @@ class LocateTests(_Prefix):
                 engine.require_engine(environ=self.env)
         self.assertEqual(status["state"], "missing")
         self.assertIn("стоит 3.13.0", status["reason"])
-        self.assertIn(engine.install_command(), str(caught.exception))
+        self.assertEqual(str(caught.exception),
+                         f"Монтажный движок не готов: {status['reason']}. {engine.INSTALL_HINT}")
 
     def test_entry_script_is_part_of_the_package(self):
         self.install_package()
@@ -195,15 +196,22 @@ class LocateTests(_Prefix):
         self.assertEqual(found.script,
                          self.prefix / "node_modules" / "hyperframes" / "bin" / "hyperframes.mjs")
 
-    def test_view_and_require_name_the_exact_install_command(self):
+    def test_view_names_the_exact_install_command_and_the_refusal_points_to_it(self):
         view = engine.engine_view(*engine.locate(environ=self.env))
         self.assertEqual((view["state"], view["wanted"]), ("missing", "0.8.75"))
         self.assertEqual(view["install"], engine.install_command())
         self.assertEqual(view["install_argv"], engine.install_argv())
-        with mock.patch.object(engine, "find_node", return_value=None):
+        self.assertNotIn(str(self.base), view["reason"])
+        self.install_package()
+        with mock.patch.object(engine, "find_node", return_value="/usr/local/bin/node"), \
+                mock.patch.object(engine, "node_major", return_value=22):
             with self.assertRaises(MontageError) as caught:
                 engine.require_engine(environ=self.env)
-        self.assertIn(engine.install_command(), str(caught.exception))
+        text = str(caught.exception)
+        self.assertIn("Монтажный движок не готов: не скачан браузер", text)
+        self.assertIn("engine.install в ответе montage status", text)
+        for path in (sys.executable, str(engine.INSTALL_PY), str(self.base)):
+            self.assertNotIn(path, text)
 
     def test_view_of_a_ready_engine_has_no_install_command(self):
         ready = engine.Engine(node="node", script=Path("x"), prefix=self.prefix, version="0.8.75",

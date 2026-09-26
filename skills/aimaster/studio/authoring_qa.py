@@ -28,6 +28,7 @@ from __future__ import annotations
 from . import domain
 from .assets import AssetIndex
 from .authoring_support import (
+    AuthoringError,
     mutate,
     optional_bounded_text,
     require_image_mime,
@@ -54,6 +55,18 @@ def apply_assembly(state: dict, mime_type: str, asset_id: str, caption: str | No
     if caption is not None:
         payload["summary"] = caption
     state["assembly"] = payload
+
+
+def require_no_montage(state: dict) -> None:
+    """Видео- или смешанный проект с разделом `montage`: сборку ведёт монтаж
+    (версии, «сделать текущей»), и `assembly set` в обход него разошёлся бы с
+    `montage.current_version`. Фото-проекты монтажа не знают."""
+
+    if require_project(state).get("type") != "photo" and "montage" in state:
+        raise AuthoringError(
+            "у этого проекта сборку ведёт монтаж: assembly set её не меняет — "
+            "новую версию собирает montage render, прежнюю возвращает montage restore"
+        )
 
 
 def set_assembly(
@@ -97,6 +110,7 @@ def set_assembly(
     require_result_asset_role(assets_index.role_of(asset_id), "an assembly asset")
 
     def mutator(state):
+        require_no_montage(state)
         apply_assembly(state, mime_type, asset_id, caption)
         domain.append_history(state, "agent", "assembly-ready", "assembly")
 

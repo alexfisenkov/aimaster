@@ -135,29 +135,28 @@ def restore_files(paths: MontagePaths, version_id: str) -> Path | None:
         raise MontageError(f"нет версии {version_id}")
     backup = None
     if paths.index.is_file():
-        paths.undo.mkdir(parents=True, exist_ok=True)
         backup = paths.undo / (f"before-restore-{time.strftime('%Y%m%d-%H%M%S')}"
                                f"-{time.time_ns() % 1_000_000_000:09d}.html")
         try:
+            paths.undo.mkdir(parents=True, exist_ok=True)
             _backup_copy(paths.index, backup)
         except OSError as error:
             raise MontageError(f"не удалось сохранить текущий монтаж перед возвратом к {version_id}"
                                ) from error
-    # mkstemp — не голое фиксированное имя (round-fix-1/5, item 11): два
-    # параллельных restore (или недобитый временный файл прошлой попытки)
-    # раньше коллизировали на одном ".index.restore.tmp".
-    descriptor, temp_name = tempfile.mkstemp(
-        dir=paths.index.parent, prefix=f".{paths.index.name}.", suffix=".restore.tmp")
-    os.close(descriptor)
-    temporary = Path(temp_name)
+    # mkstemp, не фиксированное имя: два параллельных restore или недобитый
+    # временный файл прошлой попытки не столкнутся на одном имени.
+    temporary = None
     try:
+        descriptor, temp_name = tempfile.mkstemp(
+            dir=paths.index.parent, prefix=f".{paths.index.name}.", suffix=".restore.tmp")
+        os.close(descriptor)
+        temporary = Path(temp_name)
         shutil.copy2(source, temporary)
         replace_file(temporary, paths.index)
     except OSError as error:
-        # round-fix-3/5, item F: без текста OSError (часто по-английски и
-        # локале-зависимый) в самом сообщении — он остаётся в цепочке
-        # исключения (`from error`) для отладки, не в тексте для человека.
-        temporary.unlink(missing_ok=True)
+        # Текст OSError (по-английски, с путями) — только в цепочке исключения.
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
         raise MontageError(f"не удалось восстановить версию {version_id}") from error
     return backup
 

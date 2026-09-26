@@ -42,7 +42,12 @@ REFUSALS = ("Монтажный движок не готов", "не приня�
             "дашборд не показывает текст с", "Монтажный стол не запустился за",
             "монтажный стол этого проекта сейчас открывают или закрывают", "уже одобрен —",
             "отменять нечего", "после этой правки монтаж меняли", "нет отметки о состоянии после последней правки",
-            "отметка о последней правке повреждена", "нет версии", "нет принятого", "нужен --rebuild")
+            "отметка о последней правке повреждена", "нет версии", "нет принятого", "нужен --rebuild",
+            "Команда установки — engine.install в ответе montage status",
+            "причина словами движка, по-английски", "повреждённое значение",
+            "не удалось сохранить снимок для отката", "не удалось записать отметку для отката",
+            "не удалось восстановить версию", "не удалось прочитать папку montage/versions",
+            "не удалось открыть замок", "сборку ведёт монтаж: assembly set её не меняет")
 LEGACY_ASSEMBLY = ("Enter only after all active motion revisions are approved. Preview the intended "
                    "assembly. With an available montage adapter and fresh permission, assemble;")
 CODE_SPAN = re.compile(r"`([^`]+)`")
@@ -63,11 +68,12 @@ def _montage_parsers() -> dict[str, argparse.ArgumentParser]:
 
 
 def _literals() -> str:
-    """Все строковые литералы кода монтажа (и authoring_support), без docstring."""
+    """Все строковые литералы кода монтажа (и отказов хранилища и assembly set), без docstring."""
 
     found = []
     files = sorted((_SKILL_ROOT / "studio" / "montage").glob("*.py"))
-    for path in files + [_SKILL_ROOT / "studio" / "authoring_support.py"]:
+    for path in files + [_SKILL_ROOT / "studio" / name
+                         for name in ("authoring_support.py", "authoring_qa.py", "store.py")]:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         docstrings = {id(node.body[0].value) for node in ast.walk(tree)
                       if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))

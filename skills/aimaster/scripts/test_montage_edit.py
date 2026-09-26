@@ -18,7 +18,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 
 from montage_testkit import FakeHyperframes, fake_engine, video_state, with_titles  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
-from studio.montage import edit as edit_module  # noqa: E402
+from studio.montage import edit_undo  # noqa: E402
 from studio.montage.canvas import Canvas  # noqa: E402
 from studio.montage.draft_html import render_draft_html  # noqa: E402
 from studio.montage.draft_plan import plan_draft  # noqa: E402
@@ -250,7 +250,7 @@ class EditTests(unittest.TestCase):
             self.edit(op="undo")
 
     def test_undo_folder_keeps_the_newest_edits_only(self):
-        with mock.patch.object(edit_module, "UNDO_DEPTH", 3):
+        with mock.patch.object(edit_undo, "UNDO_DEPTH", 3):
             for at in (0.1, 0.2, 0.3, 0.4, 0.5):
                 self.edit(op="move", clip="t-1", at=at)
             snapshots = sorted(self.paths.undo.glob("edit-*.html"))
@@ -263,6 +263,40 @@ class EditTests(unittest.TestCase):
             with self.assertRaises(MontageError) as caught:
                 self.edit(op="undo")
         self.assertIn("отменять нечего", str(caught.exception))
+
+    def test_undo_folder_that_cannot_be_written_is_a_russian_refusal(self):
+        before = self.text()
+        with mock.patch.object(Path, "write_bytes", side_effect=OSError(28, "No space", "/abs/x")):
+            with self.assertRaises(MontageError) as caught:
+                self.edit(op="delete", clip="t-2")
+        self.assertIn("не удалось сохранить снимок для отката в montage/.undo", str(caught.exception))
+        self.assertNotIn("/abs/x", str(caught.exception))
+        self.assertEqual(self.text(), before)
+
+    def test_note_that_cannot_be_written_takes_the_edit_back(self):
+        before = self.text()
+        with mock.patch.object(Path, "write_text", side_effect=OSError(13, "denied", "/abs/n")):
+            with self.assertRaises(MontageError) as caught:
+                self.edit(op="delete", clip="t-2")
+        self.assertIn("правка отменена, монтаж прежний", str(caught.exception))
+        self.assertEqual(self.text(), before)
+        self.assertEqual(list(self.paths.undo.glob("edit-*")), [])
+
+    def test_undo_whose_snapshot_cannot_be_removed_says_so_in_russian(self):
+        before = self.text()
+        self.edit(op="delete", clip="t-2")
+        real = Path.unlink
+
+        def unlink(path, missing_ok=False):
+            if path.suffix == ".html":
+                raise PermissionError(13, "busy", str(path))
+            return real(path, missing_ok=missing_ok)
+        with mock.patch.object(Path, "unlink", unlink):
+            with self.assertRaises(MontageError) as caught:
+                self.edit(op="undo")
+        self.assertIn("монтаж возвращён к снимку", str(caught.exception))
+        self.assertNotIn(str(self.paths.root), str(caught.exception))
+        self.assertEqual(self.text(), before)
 
     def test_unknown_op_and_missing_clip_flag(self):
         with self.assertRaises(MontageError):

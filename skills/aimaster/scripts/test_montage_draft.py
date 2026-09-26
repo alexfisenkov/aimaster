@@ -26,7 +26,7 @@ from studio.montage.composition_refs import (check_composition, external_referen
                                              missing_sources)
 from studio.montage.draft import create_draft, rebuild_draft  # noqa: E402
 from studio.montage.draft_html import title_fragment  # noqa: E402
-from studio.montage.engine import PREFIX_ENV, install_command  # noqa: E402
+from studio.montage.engine import PREFIX_ENV  # noqa: E402
 from studio.montage.html_doc import element_attrs, element_span, set_attr  # noqa: E402
 from studio.montage.paths import montage_paths  # noqa: E402
 from studio.montage.probe import MediaInfo  # noqa: E402
@@ -114,14 +114,15 @@ class DraftTests(unittest.TestCase):
         config = json.loads((self.paths.current / "hyperframes.json").read_text(encoding="utf-8"))
         self.assertEqual(config, {"media": {"autoProxy": True}})
 
-    def test_draft_without_gsap_names_the_install_command_and_writes_nothing(self):
-        # Задача 10b: черновик без GSAP закреплённой версии не собирается —
-        # отказ называет ту же команду установки, что и require_engine.
+    def test_draft_without_gsap_points_to_the_install_command_and_writes_nothing(self):
+        # Черновик без GSAP закреплённой версии не собирается — отказ тот же,
+        # что у require_engine: «движок не готов», команда — в engine.install.
         with self.assertRaises(MontageError) as caught:
             create_draft(self.paths, video_state(SCENES), self.resolve, probe=self.probe,
                          engine_prefix=self.paths.root / "нет-движка")
         self.assertIn("GSAP", str(caught.exception))
-        self.assertIn(install_command(), str(caught.exception))
+        self.assertIn("engine.install в ответе montage status", str(caught.exception))
+        self.assertNotIn(str(self.paths.root), str(caught.exception))
         self.assertFalse(self.paths.current.exists())
 
     def test_rebuild_without_gsap_keeps_the_draft_and_makes_no_backup(self):
@@ -162,6 +163,17 @@ class DraftTests(unittest.TestCase):
                          ("assets/asset-c.mp4", "asset-c", "1"))
         self.assertEqual(after["v-1"], before["v-1"])
         self.assertEqual(stale_clips(self.paths.index.read_text(encoding="utf-8"), newer), [])
+
+    def test_refresh_refuses_a_broken_number_in_russian(self):
+        self.draft(video_state(SCENES))
+        text = self.paths.index.read_text(encoding="utf-8")
+        self.paths.index.write_text(set_attr(text, "v-2", "data-media-start", "полсекунды"),
+                                    encoding="utf-8")
+        newer = video_state([SCENES[0], ("s2", "Клубок", "Находит клубок", 2000, "asset-c")])
+        with self.assertRaises(MontageError) as caught:
+            refresh_draft(self.paths, newer, self.resolve, probe=self.probe)
+        self.assertEqual(str(caught.exception).split(" — ")[0],
+                         "повреждённое значение data-media-start у клипа v-2: «полсекунды»")
 
     def test_rebuild_keeps_the_old_draft_in_undo(self):
         self.draft(video_state(SCENES))
