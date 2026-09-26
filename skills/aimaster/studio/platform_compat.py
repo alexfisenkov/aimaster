@@ -211,6 +211,16 @@ def open_nofollow(path, flags, mode=0o600) -> int:
     return os.open(path, flags | extra | getattr(os, "O_BINARY", 0), mode)
 
 
+def open_text_nofollow(path, mode="a+", *, encoding="utf-8"):
+    """Built-in ``open`` whose descriptor comes from ``open_nofollow``: a
+    symlink at ``path`` — even a dangling one — is refused, not followed (a
+    lock file opened "a+" through a planted link would create or lock a file
+    elsewhere). Permissions of a new file as with ``open`` (0666 − umask)."""
+
+    return open(path, mode, encoding=encoding,
+                opener=lambda name, flags: open_nofollow(name, flags, 0o666))
+
+
 def _home(home=None) -> Path:
     return Path(home) if home is not None else Path.home()
 

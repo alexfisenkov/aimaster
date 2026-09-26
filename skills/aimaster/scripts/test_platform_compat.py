@@ -163,6 +163,29 @@ class FilesystemTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 os.close(compat.open_nofollow(link, os.O_WRONLY | os.O_CREAT | os.O_TRUNC))
 
+    def test_open_text_nofollow_is_open_a_plus_that_refuses_even_a_dangling_link(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "замок.lock"
+            with compat.open_text_nofollow(path) as handle:
+                handle.write("раз")
+            with compat.open_text_nofollow(path) as handle:
+                handle.write("два")
+                handle.seek(0)
+                self.assertEqual(handle.read(), "раздва")
+            if os.name != "nt":
+                umask = os.umask(0o022)
+                os.umask(umask)
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o666 & ~umask)
+            elsewhere = Path(directory) / "чужое место"
+            link = Path(directory) / "ссылка.lock"
+            try:
+                os.symlink(elsewhere, link)
+            except (OSError, NotImplementedError):
+                self.skipTest("this account cannot create symlinks")
+            with self.assertRaises(OSError):
+                compat.open_text_nofollow(link)
+            self.assertFalse(elsewhere.exists())
+
 
 class UserDirectoryTests(unittest.TestCase):
     def test_directories_follow_each_platform_convention(self):

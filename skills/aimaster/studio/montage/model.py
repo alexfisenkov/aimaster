@@ -15,12 +15,11 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from . import LAYER_LABELS, LAYERS, MontageError
+from . import LAYER_LABELS, LAYERS, MontageError, model_cache
 from .engine import Engine
 from .engine_cli import EngineRunner
 from .html_doc import element_attrs
-from .index_io import read_index, write_text_atomic
-from .replace_target import regular_stat
+from .index_io import read_index
 
 CLI_TIMEOUT = 120
 _FALLBACK_LAYER = {"video": "video", "img": "video", "image": "video", "audio": "music"}
@@ -115,24 +114,21 @@ def model_hash(model: Model) -> str:
 
 def read_model(engine: Engine, current_dir: Path, *, cache_dir: Path | None = None,
                runner=None) -> Model:
-    """Модель текущего монтажа; кэш — по содержимому index.html и версии движка."""
+    """Модель текущего монтажа; кэш — по тексту index.html и версии движка
+    (`model_cache`: чужой или подложенный файл кэша — промах)."""
 
     runner = runner or EngineRunner()
     html_text = read_index(Path(current_dir) / "index.html")
-    key = hashlib.sha256(f"{engine.version}\0{html_text}".encode("utf-8")).hexdigest()[:24]
-    cached = Path(cache_dir) / f"model-{key}.json" if cache_dir else None
-    try:  # имя кэша предсказуемо по index.html: симлинк на его месте не читается (replace_target)
-        if cached is not None and regular_stat(cached) is not None:
-            return Model.from_dict(json.loads(cached.read_text(encoding="utf-8")))
-    except (OSError, ValueError, TypeError, KeyError):
-        pass
+    hit = model_cache.load(cache_dir, engine.version, html_text) if cache_dir else None
+    if hit is not None:
+        try:
+            return Model.from_dict(hit)
+        except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
+            pass
     timeline = runner.json(engine, ["timeline", "--json"], cwd=Path(current_dir), timeout=CLI_TIMEOUT)
     model = build_model(timeline, html_text)
-    if cached is not None:
-        try:  # кэш — ускорение: атомарно, ссылка заменяется своим файлом; не записался — не беда
-            write_text_atomic(cached, json.dumps(model.to_dict(), ensure_ascii=False))
-        except MontageError:
-            pass
+    if cache_dir:
+        model_cache.save(cache_dir, engine.version, html_text, model.to_dict())
     return model
 
 

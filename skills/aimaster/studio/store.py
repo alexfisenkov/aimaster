@@ -9,7 +9,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-from .platform_compat import file_lock, fsync_directory, replace_file
+from .platform_compat import file_lock, fsync_directory, open_text_nofollow, replace_file
 
 
 class StoreError(RuntimeError):
@@ -166,7 +166,7 @@ class ProjectStore:
         state_path = project_path / "state.json"
         lock_path = project_path / ".state.lock"
         with _thread_lock(project_path):
-            with lock_path.open("a+", encoding="utf-8") as lock_handle, file_lock(lock_handle):
+            with open_text_nofollow(lock_path) as lock_handle, file_lock(lock_handle):
                 current = self._read(project_path)
                 current_revision = current.get("revision")
                 if (

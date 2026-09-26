@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from ..platform_compat import IS_WINDOWS
+from ..platform_compat import IS_WINDOWS, find_program
 from . import MontageError
 from .engine import Engine
 from .proc_tree import CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, group_kwargs, kill_tree
@@ -48,9 +48,19 @@ def frames_cache(engine: Engine) -> Path:
     return Path(engine.prefix) / "cache" / "frames"
 
 
+FF_VARIABLES = (("ffmpeg", "HYPERFRAMES_FFMPEG_PATH"), ("ffprobe", "HYPERFRAMES_FFPROBE_PATH"))
+
+
 def engine_env(engine: Engine, base: Mapping[str, str] | None = None, *,
-               cwd: Path | None = None) -> dict[str, str]:
+               cwd: Path | None = None, find=find_program) -> dict[str, str]:
     env = dict(os.environ if base is None else base)
+    # ffmpeg/ffprobe — тот же, что находит монтаж (полный путь из абсолютного PATH):
+    # иначе HyperFrames ищет сам и доходит до папки запуска (current/, её .hyperframes/bin).
+    for name, variable in FF_VARIABLES:
+        env.pop(variable, None)
+        found = find(name, environ=env)
+        if found:
+            env[variable] = found
     env.update(QUIET_FLAGS)
     if cwd is not None:
         # `preview .` 0.8.75 называет проект по basename($PWD): PWD вызывающего

@@ -10,6 +10,7 @@ from ..authoring_support import open_assets, open_store
 from ..store import ProjectNotFound, ProjectStore
 from ..workspace import WorkspaceError, resolve_workspace_paths
 from . import MontageError
+from .link_guard import check_montage_folder
 from .paths import MontagePaths, montage_paths
 
 
@@ -55,9 +56,11 @@ class ProjectContext:
         return scene_names(self.state)
 
 
-def open_context(workspace, project_id: str) -> ProjectContext:
+def open_context(workspace, project_id: str, *, guard: bool = True) -> ProjectContext:
     """Открывает проект заново: state мог поменять дашборд, Studio или другой агент.
-    Нет папки, проекта или медиатеки — отказ по-русски, без абсолютных путей."""
+    Нет папки, проекта или медиатеки — отказ по-русски, без абсолютных путей.
+    `guard` — папка montage без ссылок наружу и своего ffmpeg (`link_guard`);
+    выключает его только закрытие стола: своё Studio остановить нужно всегда."""
 
     try:
         workspace_path, _projects, media_root, _private = resolve_workspace_paths(workspace)
@@ -72,5 +75,7 @@ def open_context(workspace, project_id: str) -> ProjectContext:
         assets = open_assets(workspace_path)
     except AssetError as error:
         raise MontageError("в рабочей папке нет медиатеки media/ — её создаёт workspace init") from error
+    if guard:
+        check_montage_folder(montage_paths(project_dir).root)
     return ProjectContext(workspace=workspace_path, project_id=project_id, store=store, assets=assets,
                           state=state, project_dir=project_dir, media_root=media_root)

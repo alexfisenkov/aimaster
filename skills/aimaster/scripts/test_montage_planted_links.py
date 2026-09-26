@@ -20,8 +20,10 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from montage_testkit import FakeHyperframes, fake_engine, fake_gsap_prefix  # noqa: E402
-from studio.montage import engine_cli, index_io, media_sync, replace_target, typeface, vendor  # noqa: E402
+from montage_testkit import FakeHyperframes, fake_engine, fake_gsap_prefix, seed_workspace  # noqa: E402
+from studio.authoring_support import open_store  # noqa: E402
+from studio.montage import MontageError, engine_cli, index_io, media_sync, replace_target, typeface, vendor  # noqa: E402
+from studio.montage.locks import held_lock  # noqa: E402
 from studio.montage.model import read_model  # noqa: E402
 from test_montage_model import draft_html  # noqa: E402
 
@@ -129,6 +131,31 @@ class PlantedLinkTests(_Planted):
         engine_cli.popen_engine(fake_engine(self.base / "движок"), ["preview", "."], cwd=self.base,
                                 log_path=log, popen=mock.Mock(return_value=mock.Mock(pid=4242)))
         self.assert_untouched(log, content=SECRET)
+
+
+class LockTests(_Planted):
+    def test_montage_lock_never_opens_through_a_planted_link(self):
+        elsewhere = self.outside.parent / "создал бы замок"
+        lock = self.plant(self.project / "montage" / ".desk.lock", elsewhere)  # висячая ссылка
+        with self.assertRaises(MontageError) as caught:
+            with held_lock(lock, busy="занято"):
+                self.fail("замок взят по ссылке")
+        self.assertIn(".desk.lock", str(caught.exception))
+        self.assertFalse(os.path.lexists(elsewhere))
+        with held_lock(self.project / "montage" / ".build.lock", busy="занято"):
+            pass  # обычный замок — как раньше
+
+    def test_state_lock_never_opens_through_a_planted_link(self):
+        seed = seed_workspace(self.base, {}, lambda ids: {"revision": 0, "project": {"id": "p"}})
+        store = open_store(seed.workspace)
+        elsewhere = self.outside.parent / "создал бы замок state"
+        link = self.plant(seed.workspace / "projects" / "p" / ".state.lock", elsewhere)
+        with self.assertRaises(OSError):
+            store.transact("p", 0, lambda state: state.update(note="x"))
+        self.assertFalse(os.path.lexists(elsewhere))
+        self.assertEqual(store.load("p")["revision"], 0)
+        link.unlink()
+        self.assertEqual(store.transact("p", 0, lambda state: state.update(note="x"))["revision"], 1)
 
 
 class ReplaceTargetTests(_Planted):

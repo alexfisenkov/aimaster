@@ -8,7 +8,7 @@ import time
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
-from ..platform_compat import LockBusyError, file_lock
+from ..platform_compat import LockBusyError, file_lock, open_text_nofollow
 from . import MontageError
 
 POLL_SECONDS = 0.1
@@ -23,7 +23,7 @@ def held_lock(lock_path: Path, *, busy: str, wait: float = 0.0, clock=time.monot
 
     try:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        handle = lock_path.open("a+", encoding="utf-8")
+        handle = open_text_nofollow(lock_path)  # ссылка на месте замка — отказ, не чужой файл
     except OSError as error:
         raise MontageError(f"не удалось открыть замок {lock_path.name} в папке монтажа") from error
     with handle, ExitStack() as held:

@@ -88,6 +88,37 @@ class EnvTests(unittest.TestCase):
         self.assertEqual(engine_cli.engine_env(make_engine(Path("/tmp/hf")), {})["HYPERFRAMES_PREVIEW_HOST"],
                          "127.0.0.1")
 
+    def test_ffmpeg_and_ffprobe_are_the_ones_montage_finds(self):
+        # HyperFrames без HYPERFRAMES_FFMPEG_PATH/FFPROBE_PATH ищет сам — и доходит до
+        # папки запуска (current/: на Windows раньше PATH, и current/.hyperframes/bin)
+        inherited = {"PATH": "/usr/bin", "HYPERFRAMES_FFMPEG_PATH": "/чужой/ffmpeg",
+                     "HYPERFRAMES_FFPROBE_PATH": "/чужой/ffprobe"}
+        seen = []
+
+        def find(name, *, environ):
+            seen.append((name, environ.get("PATH")))
+            return f"/opt/ff/bin/{name}"
+        env = engine_cli.engine_env(make_engine(Path("/tmp/hf")), inherited, find=find)
+        self.assertEqual((env["HYPERFRAMES_FFMPEG_PATH"], env["HYPERFRAMES_FFPROBE_PATH"]),
+                         ("/opt/ff/bin/ffmpeg", "/opt/ff/bin/ffprobe"))
+        self.assertEqual(seen, [("ffmpeg", "/usr/bin"), ("ffprobe", "/usr/bin")])
+        missing = engine_cli.engine_env(make_engine(Path("/tmp/hf")), inherited,
+                                        find=lambda name, *, environ: None)
+        self.assertNotIn("HYPERFRAMES_FFMPEG_PATH", missing)  # не нашли — пусть движок откажет сам
+        self.assertNotIn("HYPERFRAMES_FFPROBE_PATH", missing)
+
+    def test_ffmpeg_paths_come_from_absolute_path_entries(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp).resolve() / "ff bin"
+            folder.mkdir()
+            suffix = ".exe" if os.name == "nt" else ""
+            for name in ("ffmpeg", "ffprobe"):
+                (folder / f"{name}{suffix}").write_bytes(b"")
+                os.chmod(folder / f"{name}{suffix}", 0o755)
+            env = engine_cli.engine_env(make_engine(Path("/tmp/hf")), {"PATH": f".{os.pathsep}{folder}"})
+            self.assertEqual(Path(env["HYPERFRAMES_FFMPEG_PATH"]), folder / f"ffmpeg{suffix}")
+            self.assertEqual(Path(env["HYPERFRAMES_FFPROBE_PATH"]), folder / f"ffprobe{suffix}")
+
     def test_windows_leaves_localappdata_and_appdata_alone(self):
         """round 3/5: пробная гипотеза (LOCALAPPDATA/APPDATA переносить вместе
         с HOME) не подтвердилась прямым CI-прогоном — H2 (системный Chrome

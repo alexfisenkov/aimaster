@@ -96,5 +96,5 @@ def open_desk(workspace, project_id, *, engine=None, desk=None) -> dict:
 
 
 def close_desk(workspace, project_id, *, desk=None) -> dict:
-    ctx = open_context(workspace, project_id)
+    ctx = open_context(workspace, project_id, guard=False)  # своё Studio — остановить и в «грязной» папке
     return {"project_id": project_id, **(desk or StudioDesk(None)).close(ctx.paths)}

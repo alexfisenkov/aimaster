@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sys
 import tempfile
 import unittest
@@ -20,6 +22,7 @@ from studio.montage.canvas import Canvas  # noqa: E402
 from studio.montage.draft_html import render_draft_html  # noqa: E402
 from studio.montage.draft_plan import plan_draft  # noqa: E402
 from studio.montage.html_doc import element_span, insert_before_root_end, set_attr, set_text  # noqa: E402
+from studio.montage import model_cache  # noqa: E402
 from studio.montage.model import Model, build_model, layers_view, model_hash, read_model  # noqa: E402
 from studio.montage.model_diff import (  # noqa: E402
     clips_count, diff_models, fmt_len, fmt_len_precise, fmt_time)
@@ -106,6 +109,51 @@ class ModelTests(unittest.TestCase):
             second = read_model(fake_engine(base), base / "current", cache_dir=base / ".cache", runner=runner)
         self.assertEqual(first, second)
         self.assertEqual(runner.calls, [["timeline", "--json"]])
+
+
+class ModelCacheTests(unittest.TestCase):
+    """Кэш верится, только если в нём версия движка и sha256 ровно этого index.html."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.base = Path(temp.name)
+        self.engine, self.current, self.cache = fake_engine(self.base), self.base / "current", self.base / ".cache"
+        self.current.mkdir()
+        self.html = draft_html()
+        (self.current / "index.html").write_bytes(self.html.encode("utf-8"))
+        self.real = read_model(self.engine, self.current, runner=FakeHyperframes())
+        self.path = model_cache.cache_file(self.cache, self.engine.version, self.html)
+        self.path.parent.mkdir()
+
+    def read(self) -> tuple[Model, list]:
+        runner = FakeHyperframes()
+        return read_model(self.engine, self.current, cache_dir=self.cache, runner=runner), runner.calls
+
+    def record(self, **fields) -> str:
+        sha = hashlib.sha256(self.html.encode("utf-8")).hexdigest()
+        return json.dumps({"engine_version": self.engine.version, "index_sha256": sha,
+                           "model": {**self.real.to_dict(), "duration": 999.0}, **fields})
+
+    def test_a_foreign_file_at_the_cache_name_is_ignored(self):
+        other_sha = hashlib.sha256(b"<html>other</html>").hexdigest()
+        for label, text in (("голая модель", json.dumps({**self.real.to_dict(), "duration": 999.0})),
+                            ("чужая версия движка", self.record(engine_version="0.0.1")),
+                            ("другой index.html", self.record(index_sha256=other_sha)),
+                            ("модель не объект", self.record(model=[1, 2])),
+                            ("битая модель", self.record(model={"clips": "x"})),
+                            ("глубокий JSON", "[" * 100000 + "]" * 100000)):
+            with self.subTest(label):
+                self.path.write_text(text, encoding="utf-8")
+                model, calls = self.read()
+                self.assertEqual((model, calls), (self.real, [["timeline", "--json"]]))
+                self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["model"],
+                                 self.real.to_dict())  # перезаписан своей записью
+
+    def test_a_record_of_this_text_and_engine_is_trusted(self):
+        self.path.write_text(self.record(), encoding="utf-8")
+        model, calls = self.read()
+        self.assertEqual((model.duration, calls), (999.0, []))
 
 
 class DiffTests(unittest.TestCase):
