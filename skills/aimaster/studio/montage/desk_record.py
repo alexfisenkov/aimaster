@@ -13,18 +13,41 @@ from .paths import MontagePaths
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
-def read_record(paths: MontagePaths) -> dict | None:
+MAX_PID = 2 ** 31 - 1
+
+
+def _number(value, low: int, high: int) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+
+def record_text(paths: MontagePaths) -> str | None:
     try:
-        record = json.loads(paths.desk_file.read_text(encoding="utf-8"))
+        return paths.desk_file.read_text(encoding="utf-8")
     except (OSError, ValueError):
         return None
-    valid = (isinstance(record, dict) and isinstance(record.get("pid"), int)
-             and isinstance(record.get("port"), int) and isinstance(record.get("url"), str))
+
+
+def read_record(paths: MontagePaths, text: str | None = None) -> dict | None:
+    """Запись стола или None — нет, битая или с номерами вне допустимого
+    (pid и порт из файла потом уходят в ОС и в сокет)."""
+
+    text = record_text(paths) if text is None else text
+    try:
+        record = json.loads(text) if text is not None else None
+    except (ValueError, RecursionError):
+        return None
+    valid = (isinstance(record, dict) and _number(record.get("pid"), 1, MAX_PID)
+             and _number(record.get("port"), 1, 65535) and isinstance(record.get("url"), str))
     return record if valid else None
 
 
-def forget_record(paths: MontagePaths) -> None:
+def forget_record(paths: MontagePaths, *, if_text: str | None = None) -> None:
+    """Удалить запись; с `if_text` — только если файл всё ещё этот текст
+    (иначе её успел переписать параллельный open — она уже не наша)."""
+
     try:
+        if if_text is not None and record_text(paths) != if_text:
+            return
         paths.desk_file.unlink(missing_ok=True)
     except OSError:
         pass  # запись без процесса безвредна: status её снова проверит

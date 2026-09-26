@@ -12,11 +12,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 from pathlib import Path
 
-from ..platform_compat import replace_file
 from . import MontageError
+from .media_sync import copy_via_temp
 
 FONT_DIR = Path(__file__).with_name("fonts")
 FONT_FAMILY = "AM Inter"
@@ -100,12 +99,9 @@ def sync_fonts(assets_dir: Path, manifest=None) -> list[str]:
         target = target_dir / name
         if target.is_file() and _sha256(target) == sha256:
             continue
-        temporary = target.with_name(f".{target.name}.part")
         try:
-            shutil.copyfile(FONT_DIR / name, temporary)
-            replace_file(temporary, target)
+            copy_via_temp(FONT_DIR / name, target)
         except OSError as error:
-            temporary.unlink(missing_ok=True)
             raise MontageError(f"не удалось скопировать шрифт {name} в assets/fonts") from error
         copied.append(name)
     return copied

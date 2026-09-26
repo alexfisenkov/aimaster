@@ -15,7 +15,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from studio.montage import MontageError, typeface  # noqa: E402
+from studio.montage import MontageError, media_sync, typeface  # noqa: E402
 
 
 class TypefaceTests(unittest.TestCase):
@@ -51,6 +51,14 @@ class TypefaceTests(unittest.TestCase):
             self.assertEqual(damaged.read_bytes(),
                              (typeface.FONT_DIR / "inter-latin-400-normal.woff2").read_bytes())
 
+    def test_sync_does_not_depend_on_a_fixed_temp_name(self):
+        with tempfile.TemporaryDirectory() as temp:
+            fonts = Path(temp) / "assets" / "fonts"
+            (fonts / ".inter-latin-400-normal.woff2.part").mkdir(parents=True)
+            self.assertEqual(len(typeface.sync_fonts(Path(temp) / "assets")), 5)
+            self.assertEqual(sorted(p.name for p in fonts.iterdir() if p.name.endswith(".part")),
+                             [".inter-latin-400-normal.woff2.part"])
+
     def test_verify_bundle_also_checks_the_license(self):
         manifest = dict(typeface.load_manifest())
         manifest["license_sha256"] = "0" * 64
@@ -70,9 +78,11 @@ class TypefaceTests(unittest.TestCase):
     def test_sync_wraps_filesystem_failure(self):
         with tempfile.TemporaryDirectory() as temp:
             assets = Path(temp) / "assets"
-            with mock.patch.object(typeface.shutil, "copyfile", side_effect=OSError("disk full")):
+            # копия идёт через media_sync.copy_via_temp (mkstemp + copy2 + замена)
+            with mock.patch.object(media_sync.shutil, "copy2", side_effect=OSError("disk full")):
                 with self.assertRaises(MontageError):
                     typeface.sync_fonts(assets)
+            self.assertEqual(list((assets / "fonts").glob(".*.part")), [])  # временный файл убран
 
     def test_verify_bundle_wraps_a_read_failure(self):
         # Fix round 2/5, item 4: OSError на чтении файла бандла (не «его

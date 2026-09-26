@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ..platform_compat import find_program
 from . import MontageError
+from .short_paths import short_paths
 
 PROBE_TIMEOUT = 60
 
@@ -85,7 +86,8 @@ def probe_media(path: Path, *, ffprobe: str | None = None, runner=subprocess.run
     except (OSError, subprocess.SubprocessError) as error:
         raise MontageError("ffprobe не запустился — переустановите ffmpeg") from error
     if proc.returncode != 0:
-        tail = (proc.stderr or b"").decode("utf-8", errors="replace").strip()[-300:]
+        tail = short_paths((proc.stderr or b"").decode("utf-8", errors="replace"),
+                           {Path(path).parent: "<папка файла>"}).strip()[-300:]
         raise MontageError(f"ffprobe не прочитал {Path(path).name}: {tail}")
     try:
         payload = json.loads((proc.stdout or b"").decode("utf-8", errors="replace"))

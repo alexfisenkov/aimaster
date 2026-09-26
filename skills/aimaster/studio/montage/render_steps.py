@@ -16,6 +16,7 @@ from .html_doc import ROOT_ID, element_attrs
 from .index_io import read_index, write_index, write_text_atomic
 from .model import Model, read_model
 from .paths import MontagePaths, render_output
+from .short_paths import short_paths
 from .split_fades import normalize_split_fades
 from .typeface import FONT_FAMILY
 from .verify import lint_problems, lint_warnings, network_markers, output_problems
@@ -53,7 +54,8 @@ def preflight(paths: MontagePaths, engine, runner, text: str) -> tuple[Model, li
         raise MontageError("Монтаж нельзя собрать: " + "; ".join(problems))
     report = runner.json(engine, ["lint", ".", "--json"], cwd=paths.current,
                          timeout=load_pin()["timeouts"]["cli"], ok_codes=(0, 1))
-    problems = lint_problems(report)
+    problems = [short_paths(problem, {paths.root: "montage", engine.prefix: "<движок>"})
+                for problem in lint_problems(report)]
     if problems:
         raise MontageError("Проверка монтажа (lint) нашла ошибки: " + "; ".join(problems))
     return read_model(engine, paths.current, cache_dir=paths.cache, runner=runner), lint_warnings(report)
@@ -103,12 +105,14 @@ def render_mp4(ctx, engine, runner, version_id: str) -> Path:
         raise
     log = f"{result.stdout}\n{result.stderr}"
     log_name = _write_log(ctx.paths, version_id, log)
+    shown = {ctx.workspace: "<рабочая папка>", engine.prefix: "<движок>"}
     if result.code != 0 or not output.is_file():
         remove_output(output)
         why = (f"не уложилась в {pin['timeouts']['render']} с" if result.timed_out
-               else (result.stderr or result.stdout).strip()[-500:] or f"код {result.code}")
+               else short_paths(result.stderr or result.stdout, shown).strip()[-500:]
+               or f"код {result.code}")
         raise MontageError(f"Сборка не удалась: {why} (лог: {log_name})")
-    network = network_markers(log)
+    network = network_markers(short_paths(log, shown))
     if network:
         remove_output(output)
         raise MontageError(f"Сборка обращалась в сеть или к чужому шрифту: {'; '.join(network)}. "

@@ -19,6 +19,7 @@ from ..platform_compat import IS_WINDOWS
 from . import MontageError
 from .engine import Engine
 from .proc_tree import CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, group_kwargs, kill_tree
+from .short_paths import short_paths
 
 QUIET_FLAGS = {
     "HYPERFRAMES_NO_UPDATE_CHECK": "1",
@@ -165,10 +166,11 @@ def run_engine_json(engine: Engine, args: Sequence[str], *, cwd: Path, timeout: 
         raise MontageError(f"HyperFrames «{command}» не ответил за {timeout:g} с")
     if result.code not in ok_codes:
         refusal = _json_payload(result.stderr) or _json_payload(result.stdout)
+        shown = {cwd: ".", engine.prefix: "<движок>"}
         if isinstance(refusal, dict) and refusal.get("reason"):
             fix = f" ({refusal['fix']})" if refusal.get("fix") else ""
-            raise MontageError(f"HyperFrames отказал: {refusal['reason']}{fix}")
-        tail = (result.stderr or result.stdout).strip()[-600:]
+            raise MontageError(short_paths(f"HyperFrames отказал: {refusal['reason']}{fix}", shown))
+        tail = short_paths(result.stderr or result.stdout, shown).strip()[-600:]
         raise MontageError(f"HyperFrames «{command}» завершился с кодом {result.code}: {tail}")
     payload = _json_payload(result.stdout)
     if not isinstance(payload, dict):

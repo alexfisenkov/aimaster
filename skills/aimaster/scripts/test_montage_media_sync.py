@@ -52,6 +52,13 @@ class SyncTests(unittest.TestCase):
         self.assertFalse(os.path.samefile(self.source, self.assets / "asset-1.mp4"))
         self.assertEqual(list(self.assets.glob(".*.part")), [])
 
+    def test_copy_does_not_depend_on_a_fixed_temp_name(self):
+        (self.assets / ".asset-1.mp4.part").mkdir(parents=True)  # старое фиксированное имя занято
+        with mock.patch.object(media_sync.os, "link", side_effect=OSError(errno.EXDEV, "cross-device")):
+            self.assertEqual(media_sync.link_or_copy(self.source, self.assets / "asset-1.mp4"), "copy")
+        self.assertEqual((self.assets / "asset-1.mp4").read_bytes(), b"video-bytes")
+        self.assertEqual(sorted(p.name for p in self.assets.iterdir()), [".asset-1.mp4.part", "asset-1.mp4"])
+
     def test_other_file_with_same_name_is_refused(self):
         self.assets.mkdir(parents=True)
         (self.assets / "asset-1.mp4").write_bytes(b"something else entirely")

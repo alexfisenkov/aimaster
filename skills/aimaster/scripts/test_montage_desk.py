@@ -20,9 +20,10 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
         sys.path.insert(0, _path)
 
 from montage_testkit import fake_engine  # noqa: E402
-from studio.montage import MontageError, desk, proc, proc_tree  # noqa: E402
+from studio.montage import MontageError, desk, desk_children, desk_identity, proc, proc_tree  # noqa: E402
 from studio.montage.desk import StudioDesk, studio_origin  # noqa: E402
 from studio.montage.desk_identity import fetch_config  # noqa: E402
+from studio.montage.desk_record import read_record  # noqa: E402
 from studio.montage.engine import Engine  # noqa: E402
 from studio.montage.locks import held_lock  # noqa: E402
 from studio.montage.paths import montage_paths  # noqa: E402
@@ -69,7 +70,7 @@ class _Draft(unittest.TestCase):
         self.paths.current.mkdir(parents=True)
         self.paths.index.write_text("<html></html>", encoding="utf-8")
         self.killed = []
-        children = mock.patch.dict(desk._children, clear=True)  # реестр своих Popen — у каждого теста свой
+        children = mock.patch.dict(desk_children._children, clear=True)  # реестр своих Popen — у каждого теста свой
         children.start()
         self.addCleanup(children.stop)
 
@@ -97,7 +98,7 @@ class DeskUnitTests(_Draft):
         """Стол открыт другим вызовом CLI: своего Popen у этого процесса нет."""
 
         self.desk().open(self.paths)
-        desk._children.clear()
+        desk_children._children.clear()
 
     def test_open_writes_the_record_and_reuses_it(self):
         first = self.desk().open(self.paths)
@@ -130,7 +131,7 @@ class DeskUnitTests(_Draft):
         self.assertEqual(self.desk().close(self.paths), {"state": "closed"})
         self.assertEqual(self.killed, [4242])
         self.assertFalse(self.paths.desk_file.exists())
-        self.assertNotIn(4242, desk._children)
+        self.assertEqual(desk_children._children, {})
 
     def assert_forgotten_not_killed(self, studio):
         status = studio.status(self.paths)
@@ -180,6 +181,90 @@ class DeskUnitTests(_Draft):
         self.child.poll.return_value = 0
         self.assertEqual(self.desk().close(self.paths), {"state": "closed"})
         self.assertEqual(self.killed, [])
+        self.assertEqual(desk_children._children, {})  # завершившийся Popen выброшен
+
+    def test_one_process_with_desks_of_two_projects_never_crosses_them(self):
+        # дашборд плана Б: стол проекта A жив (pid 4242), у проекта B — запись со
+        # старым pid 4242 от прежнего процесса, которого давно нет
+        self.desk().open(self.paths)
+        other = montage_paths(self.base / "другой проект")
+        other.current.mkdir(parents=True)
+        other.desk_file.write_text(json.dumps({"pid": 4242, "port": 1, "url": "http://127.0.0.1:1/",
+                                               "process_started": "запуск-старый"}), encoding="utf-8")
+        studio_b = self.desk(config=lambda port: None)  # запущенный процесс 4242 — «запуск-1»
+        self.assertIn("ничего не остановлено", studio_b.close(other)["forgotten"])
+        self.assertEqual(self.killed, [])
+        self.assertEqual(self.desk().status(self.paths)["state"], "open")  # стол A цел
+
+    def test_own_popen_with_another_start_time_proves_nothing(self):
+        self.desk().open(self.paths)
+        record = json.loads(self.paths.desk_file.read_text(encoding="utf-8"))
+        self.paths.desk_file.write_text(json.dumps({**record, "process_started": "чужой"}), encoding="utf-8")
+        self.assert_forgotten_not_killed(self.desk(config=lambda port: None, started="чужой-2"))
+
+    def test_status_does_not_forget_a_record_a_concurrent_open_just_wrote(self):
+        self.opened_elsewhere()
+        fresh = {"pid": 5151, "port": 2, "url": "http://127.0.0.1:2/", "process_started": "новый"}
+
+        def open_elsewhere_meanwhile(port):
+            self.paths.desk_file.write_text(json.dumps(fresh), encoding="utf-8")
+            return None
+        self.assertEqual(self.desk(alive=False, config=open_elsewhere_meanwhile).status(self.paths),
+                         {"state": "closed"})
+        self.assertEqual(read_record(self.paths)["pid"], 5151)
+
+    def test_status_leaves_the_record_while_open_or_close_holds_the_lock(self):
+        self.opened_elsewhere()
+        with held_lock(self.paths.root / ".desk.lock", busy="занято"):
+            self.desk(alive=False, config=lambda port: None).status(self.paths)
+        self.assertTrue(self.paths.desk_file.exists())
+
+    def test_project_without_montage_is_left_untouched(self):
+        bare = montage_paths(self.base / "без монтажа")
+        self.assertEqual(self.desk().close(bare), {"state": "closed"})
+        self.assertEqual(self.desk().status(bare), {"state": "closed"})
+        self.assertFalse(bare.root.exists())
+
+    def test_open_over_a_foreign_record_says_it_forgot_it(self):
+        self.opened_elsewhere()
+        reopened = self.desk(config=lambda port: None, started="другой запуск").open(self.paths)
+        self.assertEqual(reopened["state"], "open")
+        self.assertIn("ничего не остановлено", reopened["forgotten"])
+        self.assertEqual(self.killed, [])
+
+    def test_crafted_answers_and_records_are_not_ours_and_never_a_traceback(self):
+        self.opened_elsewhere()
+        record = read_record(self.paths)
+        weird = {"isHyperframes": True, "pid": 4242, "projectDir": "/tmp/a\x00b"}
+        self.assertEqual(desk_identity.verdict(record, self.paths, config=lambda port: weird,
+                                               alive=lambda pid: True, started=lambda pid: None,
+                                               own=None), desk_identity.FOREIGN)
+        for bad in ({"pid": 4242, "port": 70000, "url": "u"}, {"pid": 2 ** 40, "port": 1, "url": "u"},
+                    {"pid": True, "port": 1, "url": "u"}):
+            self.paths.desk_file.write_text(json.dumps(bad), encoding="utf-8")
+            self.assertIsNone(read_record(self.paths), bad)
+            self.assertEqual(self.desk().status(self.paths), {"state": "closed"})
+        self.paths.desk_file.write_text("[" * 100000 + "]" * 100000, encoding="utf-8")
+        self.assertIsNone(read_record(self.paths))
+        self.assertIsNone(fetch_config(70000))
+        self.assertFalse(proc.process_alive(2 ** 40))
+        self.assertIsNone(proc.process_started(2 ** 40))
+
+    def test_nested_json_from_the_port_is_not_an_answer(self):
+        class Connection:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def request(self, *args):
+                pass
+
+            def getresponse(self):
+                return mock.Mock(status=200, read=lambda size: b"[" * 50000 + b"]" * 50000)
+
+            def close(self):
+                pass
+        with mock.patch.object(desk_identity.http.client, "HTTPConnection", Connection):
+            self.assertIsNone(fetch_config(1234))
 
     def test_start_timeout_kills_and_explains(self):
         ticks = iter([0, 0, 0, 100, 100, 100])
@@ -189,7 +274,16 @@ class DeskUnitTests(_Draft):
         self.assertIn("не запустился", str(caught.exception))
         self.assertEqual(self.killed, [77])
         self.assertFalse(self.paths.desk_file.exists())
-        self.assertNotIn(77, desk._children)
+        self.assertEqual(desk_children._children, {})
+
+    def test_start_failure_tail_carries_no_absolute_paths(self):
+        def crashing(argv, **kwargs):
+            kwargs["stdout"].write(f"Error: cannot read {self.paths.current}/index.html\n".encode())
+            return mock.Mock(pid=78, poll=mock.Mock(return_value=1))
+        with self.assertRaises(MontageError) as caught:
+            self.desk(crashing, alive=False).open(self.paths)
+        self.assertIn("montage/current/index.html", str(caught.exception).replace("\\", "/"))
+        self.assertNotIn(str(self.base), str(caught.exception))
 
     def test_studio_listening_beyond_loopback_is_refused(self):
         # engine_env не пускает чужой HYPERFRAMES_PREVIEW_HOST; строка готовности — вторая проверка
@@ -287,9 +381,11 @@ class ProcessStartTests(unittest.TestCase):
         self.assertEqual(proc._windows_started(4242, kernel32), f"win:{(1 << 32) | 5}")
         self.assertEqual(kernel32.closed, [7])
         self.assertIsNone(proc._windows_started(4242, _FakeKernel32(handle=0)))  # нет доступа — не наш
-        self.assertTrue(proc._windows_alive(4242, _FakeKernel32()))
-        self.assertFalse(proc._windows_alive(4242, _FakeKernel32(exit_code=1)))
-        self.assertFalse(proc._windows_alive(4242, _FakeKernel32(handle=0)))
+        self.assertTrue(proc._windows_alive(4242, _FakeKernel32(), last_error=lambda: 0))
+        self.assertFalse(proc._windows_alive(4242, _FakeKernel32(exit_code=1), last_error=lambda: 0))
+        # нет доступа — процесс есть (жив), но время запуска не прочитать: итог — FOREIGN с запиской
+        self.assertTrue(proc._windows_alive(4242, _FakeKernel32(handle=0), last_error=lambda: 5))
+        self.assertFalse(proc._windows_alive(4242, _FakeKernel32(handle=0), last_error=lambda: 87))
 
     def test_real_process_start_time_is_stable_and_personal(self):
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
@@ -313,7 +409,7 @@ class DeskRealProcessTests(_Draft):
         opened = studio.open(self.paths)
         try:
             self.assertEqual(fetch_config(opened["port"])["pid"], opened["pid"])
-            with mock.patch.dict(desk._children, clear=True):  # как из другого вызова CLI
+            with mock.patch.dict(desk_children._children, clear=True):  # как из другого вызова CLI
                 self.assertEqual(StudioDesk(None).status(self.paths)["state"], "open")
                 silent = StudioDesk(None, config=lambda port: None)  # молчит — по времени запуска
                 self.assertIn("не отвечает", silent.status(self.paths)["note"])

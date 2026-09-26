@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Iterable
 
@@ -51,14 +52,31 @@ def link_or_copy(source: Path, target: Path) -> str:
         return "link"
     except OSError:
         pass
-    temporary = target.with_name(f".{target.name}.part")
+    try:
+        copy_via_temp(source, target)
+    except OSError as error:
+        raise MontageError(f"не удалось скопировать {source.name} в assets") from error
+    return "copy"
+
+
+def copy_via_temp(source: Path, target: Path) -> None:
+    """Копия через временный файл mkstemp рядом с целью (не фиксированное
+    «.имя.part»: его мог занять параллельный вызов или остаток прошлого) и
+    атомарную замену; сбой — временный файл убран, OSError наружу."""
+
+    descriptor, name = tempfile.mkstemp(dir=Path(target).parent, prefix=f".{Path(target).name}.",
+                                        suffix=".part")
+    os.close(descriptor)
+    temporary = Path(name)
     try:
         shutil.copy2(source, temporary)
         replace_file(temporary, target)
-    except OSError as error:
-        temporary.unlink(missing_ok=True)
-        raise MontageError(f"не удалось скопировать {source.name} в assets") from error
-    return "copy"
+    except OSError:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass  # уборка — best effort, не подменяет исходную ошибку
+        raise
 
 
 def sync_media(items: Iterable[tuple[str, Path]], assets_dir: Path) -> dict[str, dict]:

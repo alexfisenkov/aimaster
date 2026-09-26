@@ -85,6 +85,15 @@ class ProbeTests(unittest.TestCase):
         self.assertIn("клип 1.mp4", str(caught.exception))
         self.assertIn("Invalid data", str(caught.exception))
 
+    def test_tool_output_carries_no_absolute_paths(self):
+        clip = Path.home() / "Проекты" / "клип 1.mp4"
+        def runner(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 1, b"", f"{clip}: Invalid data".encode())
+        with self.assertRaises(MontageError) as caught:
+            probe.probe_media(clip, ffprobe="/usr/bin/ffprobe", runner=runner)
+        self.assertIn("<папка файла>/клип 1.mp4: Invalid data", str(caught.exception).replace("\\", "/"))
+        self.assertNotIn(str(Path.home()), str(caught.exception))
+
     def test_timeout_is_reported(self):
         def runner(argv, **kwargs):
             raise subprocess.TimeoutExpired(argv, kwargs.get("timeout"))

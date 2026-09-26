@@ -24,6 +24,7 @@ from studio.montage.canvas import Canvas  # noqa: E402
 from studio.montage.context import open_context  # noqa: E402
 from studio.montage.draft import build_current  # noqa: E402
 from studio.montage.edit import EditRequest, apply_edit  # noqa: E402
+from studio.montage.engine_cli import EngineResult  # noqa: E402
 from studio.montage.html_doc import element_attrs, set_attr  # noqa: E402
 from studio.montage.index_io import read_index, write_index  # noqa: E402
 from studio.montage.montage_state import record_draft  # noqa: E402
@@ -150,6 +151,18 @@ class RenderTests(unittest.TestCase):
             self.render(FakeHyperframes(render_bytes=None))
         self.assertIn("Сборка не удалась", str(caught.exception))
         self.assertTrue((self.paths().logs / "render-v001.log").is_file())
+
+    def test_failure_text_shows_no_absolute_paths(self):
+        class _Crashes(FakeHyperframes):
+            def run(self, engine, args, *, cwd, timeout):
+                self.calls.append(list(map(str, args)))
+                return EngineResult(1, "", f"cannot open {Path(cwd) / 'index.html'} (home {Path.home()})")
+        with self.assertRaises(MontageError) as caught:
+            self.render(_Crashes(render_bytes=tiny_mp4(b"x")))
+        message = str(caught.exception).replace("\\", "/")
+        self.assertIn("<рабочая папка>/projects/p/montage/current/index.html", message)
+        self.assertIn("(home ~)", message)
+        self.assertNotIn(str(self.seed.workspace), str(caught.exception))
 
     def test_stale_revision_is_refused_before_any_work(self):
         ctx = open_context(self.seed.workspace, "p")

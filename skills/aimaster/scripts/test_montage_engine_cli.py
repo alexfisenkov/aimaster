@@ -138,6 +138,15 @@ class RunTests(unittest.TestCase):
         self.assertEqual(run.calls[0][1]["env"]["PWD"], str(self.base))
         self.assertEqual(popen.call_args.kwargs["env"]["PWD"], str(self.base))
 
+    def test_raw_failure_text_carries_no_absolute_paths(self):
+        run = FakeRun(code=1, stderr=f"cannot read {self.base}/index.html under {self.base}/node_modules"
+                      .encode())
+        with self.assertRaises(MontageError) as caught:
+            engine_cli.run_engine_json(self.engine, ["lint", "."], cwd=self.base / "current", timeout=5,
+                                       runner=run)
+        self.assertNotIn(str(self.base), str(caught.exception))
+        self.assertIn("<движок>/index.html", str(caught.exception).replace("\\", "/"))
+
     def test_refusal_json_on_stderr_becomes_message(self):
         run = FakeRun(code=2, stderr=b'{"ok": false, "reason": "#s1 would overlap #s2 at 1-6",'
                                      b' "fix": "pass --overwrite or move the named neighbour"}')

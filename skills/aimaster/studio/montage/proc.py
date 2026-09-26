@@ -18,6 +18,8 @@ from ..platform_compat import IS_WINDOWS
 
 STILL_ACTIVE = 259
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+ERROR_ACCESS_DENIED = 5
+MAX_PID = 2 ** 31 - 1
 PS = "/bin/ps"
 
 
@@ -48,13 +50,20 @@ def _windows_query(pid: int, kernel32, ask):
         kernel32.CloseHandle(handle)
 
 
-def _windows_alive(pid: int, kernel32=None) -> bool:
+def _windows_alive(pid: int, kernel32=None, last_error=None) -> bool:
+    """Жив. Нет доступа (ERROR_ACCESS_DENIED) — процесс есть, но чужой: жив,
+    а «наш ли» решит время запуска (его без доступа не прочитать — не наш)."""
+
     kernel32 = kernel32 or _kernel32()
+    last_error = last_error or ctypes.get_last_error  # есть только на Windows
 
     def still_active(handle):
         code = ctypes.c_uint32()
         return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == STILL_ACTIVE
-    return bool(_windows_query(pid, kernel32, still_active))
+    answer = _windows_query(pid, kernel32, still_active)
+    if answer is None:
+        return last_error() == ERROR_ACCESS_DENIED
+    return bool(answer)
 
 
 def _windows_started(pid: int, kernel32=None) -> str | None:
@@ -94,13 +103,19 @@ def _posix_started(pid: int, *, run=subprocess.run, proc_root: Path = Path("/pro
 def process_started(pid) -> str | None:
     """Отпечаток времени запуска процесса; None — процесса нет или прочитать нельзя."""
 
-    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+    if not _valid_pid(pid):
         return None
     return _windows_started(pid) if IS_WINDOWS else _posix_started(pid)
 
 
+def _valid_pid(pid) -> bool:
+    """Номер из файла записи уходит в waitpid/kill/OpenProcess: вне диапазона — OverflowError."""
+
+    return isinstance(pid, int) and not isinstance(pid, bool) and 0 < pid <= MAX_PID
+
+
 def process_alive(pid) -> bool:
-    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+    if not _valid_pid(pid):
         return False
     if IS_WINDOWS:
         return _windows_alive(pid)
