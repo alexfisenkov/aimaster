@@ -246,14 +246,17 @@ class RenderTests(unittest.TestCase):
                 "ok": severity == "warning", "findings": [
                     {"severity": severity, "code": "missing_file", "message": f"{current}/assets/a.png"}]})
             with self.subTest(severity):
+                # разделитель после метки — как в тексте движка («\\» на Windows)
                 if severity == "warning":
-                    self.assertEqual(self.render(runner).warnings,
+                    warnings = self.render(runner).warnings
+                    self.assertEqual([item.replace("\\", "/") for item in warnings],
                                      ["missing_file: montage/current/assets/a.png"])
                     continue
                 with self.assertRaises(MontageError) as caught:
                     self.render(runner)
                 self.assertIn("(текст движка, по-английски): missing_file: montage/current/assets/a.png",
-                              str(caught.exception))
+                              str(caught.exception).replace("\\", "/"))
+                self.assertNotIn(current, str(caught.exception))
 
     def test_autopilot_projects_sign_versions_as_autopilot(self):
         store = open_store(self.seed.workspace)
