@@ -41,7 +41,7 @@ class _FakeEntry:
         return self._info
 
 
-class GuardTests(unittest.TestCase):
+class _GuardCase(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -70,6 +70,8 @@ class GuardTests(unittest.TestCase):
         self.assertNotIn(str(self.base), text)
         return text
 
+
+class GuardTests(_GuardCase):
     def test_a_clean_folder_and_a_missing_one_pass(self):
         (self.root / "current" / ".hyperframes").mkdir()  # кэш движка без bin — законен
         check_montage_folder(self.root)
@@ -148,6 +150,87 @@ class GuardTests(unittest.TestCase):
             return real(path)
         with mock.patch.object(link_guard.os, "scandir", scandir):
             self.refused("не удалось проверить папку монтажа montage/versions")
+
+
+class _Folder:
+    """Запись os.scandir: обычная папка (тип известен без stat, как на POSIX)."""
+
+    def __init__(self, folder: Path, name: str):
+        self.name, self.path = name, str(folder / name)
+
+    def is_symlink(self):
+        return False
+
+    def is_dir(self, follow_symlinks=True):
+        return True
+
+    def stat(self, follow_symlinks=True):
+        return SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_reparse_tag=0)
+
+
+class WalkTests(_GuardCase):
+    def test_depth_is_not_limited_by_recursion(self):
+        depth, top = sys.getrecursionlimit() + 500, len(str(self.root))
+
+        def scandir(path):
+            level = (len(str(path)) - top) // 2  # каждый уровень — «/d»
+            return [_Folder(Path(path), "d")] if level < depth else []
+        with mock.patch.object(link_guard.os, "scandir", scandir):
+            check_montage_folder(self.root)
+
+    def staging_denied(self, windows: bool):
+        staging = self.root / "versions" / ".v002.staging"
+        staging.mkdir()
+        real = os.scandir
+
+        def scandir(path):
+            if Path(path) == staging:
+                raise PermissionError(13, "папка ожидает удаления")
+            return real(path)
+        return mock.patch.object(link_guard, "IS_WINDOWS", windows), \
+            mock.patch.object(link_guard.os, "scandir", scandir)
+
+    def test_windows_staging_pending_deletion_is_skipped(self):
+        system, scandir = self.staging_denied(windows=True)
+        with system, scandir:
+            check_montage_folder(self.root)
+
+    def test_staging_denied_elsewhere_is_still_a_refusal(self):
+        system, scandir = self.staging_denied(windows=False)
+        with system, scandir:
+            self.refused("не удалось проверить папку монтажа montage/versions/.v002.staging")
+
+    def test_denied_version_folder_is_a_refusal_on_windows_too(self):
+        real = os.scandir
+
+        def scandir(path):
+            if Path(path).name == "v001":
+                raise PermissionError(13, "нет доступа")
+            return real(path)
+        with mock.patch.object(link_guard, "IS_WINDOWS", True), \
+                mock.patch.object(link_guard.os, "scandir", scandir):
+            self.refused("montage/versions/v001")
+
+
+@unittest.skipUnless(os.name == "nt", "junction — только на Windows")
+class RealJunctionTests(_GuardCase):
+    """Настоящий junction (создаётся без прав администратора), не подмена stat."""
+
+    def junction(self, link: Path, target: Path) -> None:
+        import _winapi
+        _winapi.CreateJunction(str(target), str(link))
+        self.addCleanup(lambda: os.path.lexists(link) and os.rmdir(link))  # только ссылку, не цель
+
+    def test_junction_inside_montage_is_refused_and_never_entered(self):
+        self.junction(self.root / "current" / "assets2", self.outside)
+        text = self.refused("montage/current/assets2", "монтаж не трогаю")
+        self.assertNotIn("секрет.key", text)
+
+    def test_montage_folder_as_a_junction_is_refused(self):
+        moved = self.base / "настоящий монтаж"
+        self.root.rename(moved)
+        self.junction(self.root, moved)
+        self.refused("папка montage проекта — ссылка")
 
 
 class ServiceGuardTests(unittest.TestCase):

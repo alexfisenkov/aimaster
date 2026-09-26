@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -154,6 +155,22 @@ class ModelCacheTests(unittest.TestCase):
         self.path.write_text(self.record(), encoding="utf-8")
         model, calls = self.read()
         self.assertEqual((model.duration, calls), (999.0, []))
+
+    def test_folder_keeps_only_the_newest_files(self):
+        """Каждая правка — новый текст и новый файл кэша: папка не растёт без конца."""
+
+        old = []
+        for index in range(model_cache.KEEP + 5):
+            path = self.cache / f"model-{index:024d}.json"
+            path.write_text("{}", encoding="utf-8")
+            os.utime(path, (1_000_000 + index, 1_000_000 + index))
+            old.append(path)
+        (self.cache / "заметка.txt").write_text("чужое", encoding="utf-8")
+        self.read()  # промах — модель собрана и записана
+        left = {item.name for item in self.cache.glob("model-*.json")}
+        newest = {path.name for path in old[-(model_cache.KEEP - 1):]}  # и свежий файл этой записи
+        self.assertEqual(left, newest | {self.path.name})
+        self.assertTrue((self.cache / "заметка.txt").is_file())
 
 
 class DiffTests(unittest.TestCase):

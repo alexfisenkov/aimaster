@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _SCRIPTS = Path(__file__).resolve().parent
 _SKILL_ROOT = _SCRIPTS.parent
@@ -17,6 +18,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 
 from montage_testkit import FakeHyperframes, fake_engine, video_state, with_titles  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
+from studio.montage import edit as edit_module  # noqa: E402
 from studio.montage.canvas import Canvas  # noqa: E402
 from studio.montage.draft_html import render_draft_html  # noqa: E402
 from studio.montage.draft_plan import plan_draft  # noqa: E402
@@ -246,6 +248,21 @@ class EditTests(unittest.TestCase):
         self.paths.index.write_text(self.text() + " ", encoding="utf-8")  # правка мышью в столе
         with self.assertRaises(MontageError):
             self.edit(op="undo")
+
+    def test_undo_folder_keeps_the_newest_edits_only(self):
+        with mock.patch.object(edit_module, "UNDO_DEPTH", 3):
+            for at in (0.1, 0.2, 0.3, 0.4, 0.5):
+                self.edit(op="move", clip="t-1", at=at)
+            snapshots = sorted(self.paths.undo.glob("edit-*.html"))
+            notes = sorted(self.paths.undo.glob("edit-*.json"))
+            self.assertEqual(len(snapshots), 3)
+            self.assertEqual([path.with_suffix(".json") for path in snapshots], notes)
+            for _ in range(3):  # три последние правки откатываются по одной
+                self.edit(op="undo")
+            self.assertEqual(self.attrs()["t-1"]["data-start"], "0.2")
+            with self.assertRaises(MontageError) as caught:
+                self.edit(op="undo")
+        self.assertIn("отменять нечего", str(caught.exception))
 
     def test_unknown_op_and_missing_clip_flag(self):
         with self.assertRaises(MontageError):

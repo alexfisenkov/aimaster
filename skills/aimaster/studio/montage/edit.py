@@ -2,7 +2,8 @@
 
 Перед каждой правкой current/index.html копируется в .undo/, после неё рядом
 пишется хэш получившегося файла. `undo` возвращает последний снимок, только если
-файл с тех пор не меняли (например, мышью в монтажном столе)."""
+файл с тех пор не меняли (например, мышью в монтажном столе). Откатить можно
+`UNDO_DEPTH` последних правок: более старые снимки с отметками удаляются."""
 
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ from .paths import MontagePaths
 
 OPS = ("move", "trim-start", "trim-end", "split", "delete", "volume", "fade", "title-add",
        "title-text", "undo")
+UNDO_DEPTH = 50
 
 
 @dataclass(frozen=True)
@@ -56,8 +58,26 @@ def _snapshot(paths: MontagePaths) -> Path:
     return target
 
 
+def _edit_snapshots(paths: MontagePaths) -> list[Path]:
+    """Снимки правок по порядку: имя начинается со времени создания."""
+
+    return sorted(paths.undo.glob("edit-*.html")) if paths.undo.is_dir() else []
+
+
+def _prune_snapshots(paths: MontagePaths) -> None:
+    """Снимки старше UNDO_DEPTH последних — вместе с отметками. Последний, по
+    которому работает undo, всегда в числе оставленных."""
+
+    for old in _edit_snapshots(paths)[:-UNDO_DEPTH]:
+        for path in (old, old.with_suffix(".json")):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass  # уборка не мешает правке, которая уже сделана
+
+
 def undo_last(paths: MontagePaths) -> dict:
-    snapshots = sorted(paths.undo.glob("edit-*.html")) if paths.undo.is_dir() else []
+    snapshots = _edit_snapshots(paths)
     if not snapshots:
         raise MontageError("отменять нечего")
     latest, note = snapshots[-1], snapshots[-1].with_suffix(".json")
@@ -109,6 +129,7 @@ def apply_edit(engine: Engine, paths: MontagePaths, request: EditRequest, *,
         raise
     snapshot.with_suffix(".json").write_text(
         json.dumps({"after": _sha(paths.index), "op": request.op}), encoding="utf-8")
+    _prune_snapshots(paths)
     after = read_model(engine, paths.current, cache_dir=paths.cache, runner=ctx.runner)
     return {"op": request.op, "clip": request.clip, "model_hash_before": before,
             "model_hash": model_hash(after), "duration": after.duration, "receipt": receipt}
