@@ -6,6 +6,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _SCRIPTS = Path(__file__).resolve().parent
 _SKILL_ROOT = _SCRIPTS.parent
@@ -36,6 +37,22 @@ class ShortPathsTests(unittest.TestCase):
 
     def test_root_like_values_are_never_replaced(self):
         self.assertEqual(short_paths("a/b", {Path("/"): "X"}), "a/b")
+        for root in ("D:\\", "D:/", "D:"):
+            self.assertEqual(short_paths(r"D:\clip.mp4 D:/x", {root: "X"}), r"D:\clip.mp4 D:/x", root)
+
+    def test_only_whole_path_components_are_replaced(self):
+        with mock.patch.object(Path, "home", return_value=Path("/Users/al")):
+            self.assertEqual(short_paths("open /Users/alex/f.mp4"), "open /Users/alex/f.mp4")
+            self.assertEqual(short_paths("open /Users/al/f.mp4"), "open ~/f.mp4")
+        with mock.patch.object(Path, "home", return_value=Path("/app")):
+            self.assertEqual(short_paths("fetch https://cdn.example/app/x.js"),
+                             "fetch https://cdn.example/app/x.js")
+            self.assertEqual(short_paths('cache "/app/.cache"'), 'cache "~/.cache"')
+        ws = {Path("/Users/alex/proj"): "<рабочая папка>"}
+        self.assertEqual(short_paths("/Users/alex/proj-old/a.mp4", ws), "/Users/alex/proj-old/a.mp4")
+        self.assertEqual(short_paths("/Users/alex/proj.bak/a.mp4", ws), "/Users/alex/proj.bak/a.mp4")
+        self.assertEqual(short_paths("in /Users/alex/proj.", ws), "in <рабочая папка>.")
+        self.assertEqual(short_paths("(/Users/alex/proj)", ws), "(<рабочая папка>)")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import stat
 import sys
 import tempfile
 import unittest
@@ -15,7 +18,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from studio.montage import MontageError, media_sync, typeface  # noqa: E402
+from studio.montage import MontageError, index_io, media_sync, typeface  # noqa: E402
 
 
 class TypefaceTests(unittest.TestCase):
@@ -59,6 +62,31 @@ class TypefaceTests(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in fonts.iterdir() if p.name.endswith(".part")),
                              [".inter-latin-400-normal.woff2.part"])
 
+    def test_read_only_package_files_do_not_make_read_only_copies(self):
+        # установка навыка «только для чтения»: копия шрифта не наследует права
+        # файла пакета, иначе на Windows повторная синхронизация не заменит её
+        with tempfile.TemporaryDirectory() as temp:
+            package = Path(temp) / "пакет"
+            shutil.copytree(typeface.FONT_DIR, package)
+            for item in package.iterdir():
+                os.chmod(item, 0o444)
+            assets = Path(temp) / "assets"
+            try:
+                with mock.patch.object(typeface, "FONT_DIR", package):
+                    self.assertEqual(len(typeface.sync_fonts(assets)), 5)
+                    font = assets / "fonts" / "inter-latin-400-normal.woff2"
+                    self.assertTrue(os.access(font, os.W_OK))
+                    if os.name != "nt":
+                        self.assertEqual(stat.S_IMODE(font.stat().st_mode), index_io.new_file_mode())
+                    font.write_bytes(b"broken")
+                    os.chmod(font, 0o444)  # повреждённая копия прежней версии — «только чтение»
+                    self.assertEqual(typeface.sync_fonts(assets), [font.name])
+                    self.assertTrue(os.access(font, os.W_OK))
+                    self.assertEqual(font.read_bytes(), (package / font.name).read_bytes())
+            finally:
+                for item in package.iterdir():
+                    os.chmod(item, 0o644)
+
     def test_verify_bundle_also_checks_the_license(self):
         manifest = dict(typeface.load_manifest())
         manifest["license_sha256"] = "0" * 64
@@ -78,8 +106,8 @@ class TypefaceTests(unittest.TestCase):
     def test_sync_wraps_filesystem_failure(self):
         with tempfile.TemporaryDirectory() as temp:
             assets = Path(temp) / "assets"
-            # копия идёт через media_sync.copy_via_temp (mkstemp + copy2 + замена)
-            with mock.patch.object(media_sync.shutil, "copy2", side_effect=OSError("disk full")):
+            # копия идёт через media_sync.copy_via_temp (mkstemp + copyfile + замена)
+            with mock.patch.object(media_sync.shutil, "copyfile", side_effect=OSError("disk full")):
                 with self.assertRaises(MontageError):
                     typeface.sync_fonts(assets)
             self.assertEqual(list((assets / "fonts").glob(".*.part")), [])  # временный файл убран

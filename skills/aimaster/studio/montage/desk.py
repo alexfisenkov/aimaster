@@ -64,11 +64,12 @@ def _public(record: dict) -> dict:
     return {key: record[key] for key in PUBLIC_KEYS if key in record}
 
 
-def _forgotten_note(record: dict | None, seen: str) -> dict:
+def _forgotten_note(record: dict | None, seen: str, forgotten: bool = True) -> dict:
     if seen != FOREIGN:
         return {}
+    done = "запись забыта" if forgotten else "запись будет забыта при следующей проверке"
     return {"forgotten": f"процесс {record['pid']} на порту {record['port']} — уже не монтажный стол "
-                         "этого проекта: запись забыта, ничего не остановлено"}
+                         f"этого проекта: {done}, ничего не остановлено"}
 
 
 class StudioDesk:
@@ -101,13 +102,14 @@ class StudioDesk:
         if seen == HUNG:  # свой, но молчит: запись — чтобы open/close его остановили
             return {"state": "closed", "note": "монтажный стол не отвечает — его остановит "
                                                "montage open или montage close"}
+        forgotten = False
         if text is not None:
             try:  # open/close идут прямо сейчас — запись им, status её не трогает
                 with self._lock(paths, wait=0):
-                    forget_record(paths, if_text=text)
+                    forgotten = forget_record(paths, if_text=text)
             except MontageError:
                 pass
-        return {"state": "closed", **_forgotten_note(record, seen)}
+        return {"state": "closed", **_forgotten_note(record, seen, forgotten)}
 
     def close(self, paths: MontagePaths) -> dict:
         if not paths.root.is_dir():
@@ -139,9 +141,9 @@ class StudioDesk:
         process = popen_engine(self.engine, ["preview", ".", "--foreground", "--json", "--no-open",
                                              "--port", str(port)],
                                cwd=paths.current, log_path=log, **extra)
-        started = self.started(process.pid)
-        desk_children.remember(paths, process, started)
-        try:
+        try:  # с первой строки после запуска: Ctrl+C здесь не оставит Studio и Chrome без записи
+            started = self.started(process.pid)
+            desk_children.remember(paths, process, started)
             return self._await_ready(paths, process, port, log, started)
         except BaseException:
             self._stop(paths, process.pid)
@@ -153,7 +155,8 @@ class StudioDesk:
         while self.clock() < deadline:
             ready = ready_line(log)
             if ready:
-                record = record_from_ready(ready, pid=process.pid, port=port, process_started=started)
+                record = record_from_ready(ready, pid=process.pid, port=port, process_started=started,
+                                           montage_root=desk_children.root_key(paths))
                 write_record(paths, record)
                 return {"state": "open", **_public(record)}
             if process.poll() is not None:

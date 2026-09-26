@@ -13,8 +13,14 @@ RUNNING, EXITED = "running", "exited"
 _children: dict[tuple[str, int], tuple[subprocess.Popen, str | None]] = {}
 
 
+def root_key(paths) -> str:
+    """Папка montage проекта в одном виде — ключ реестра и отметка в записи стола."""
+
+    return os.path.normcase(os.path.realpath(str(paths.root)))
+
+
 def _key(paths, pid: int) -> tuple[str, int]:
-    return os.path.normcase(os.path.realpath(str(paths.root))), pid
+    return root_key(paths), pid
 
 
 def remember(paths, process, started: str | None) -> None:

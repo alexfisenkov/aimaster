@@ -41,16 +41,18 @@ def read_record(paths: MontagePaths, text: str | None = None) -> dict | None:
     return record if valid else None
 
 
-def forget_record(paths: MontagePaths, *, if_text: str | None = None) -> None:
+def forget_record(paths: MontagePaths, *, if_text: str | None = None) -> bool:
     """Удалить запись; с `if_text` — только если файл всё ещё этот текст
-    (иначе её успел переписать параллельный open — она уже не наша)."""
+    (иначе её успел переписать параллельный open — она уже не наша).
+    True — записи больше нет."""
 
     try:
         if if_text is not None and record_text(paths) != if_text:
-            return
+            return False
         paths.desk_file.unlink(missing_ok=True)
     except OSError:
-        pass  # запись без процесса безвредна: status её снова проверит
+        return False  # запись без процесса безвредна: status её снова проверит
+    return True
 
 
 def ready_line(log_path) -> dict | None:
@@ -77,7 +79,8 @@ def write_record(paths: MontagePaths, record: dict) -> None:
     write_text_atomic(paths.desk_file, json.dumps(record, ensure_ascii=False))
 
 
-def record_from_ready(ready: dict, *, pid: int, port: int, process_started: str | None) -> dict:
+def record_from_ready(ready: dict, *, pid: int, port: int, process_started: str | None,
+                      montage_root: str) -> dict:
     """Запись стола из строки готовности. Studio слушает только 127.0.0.1
     (engine_env ставит HYPERFRAMES_PREVIEW_HOST); иной адрес — отказ."""
 
@@ -86,4 +89,4 @@ def record_from_ready(ready: dict, *, pid: int, port: int, process_started: str 
         raise MontageError(f"Монтажный стол открылся не на 127.0.0.1 ({url}) — остановлен")
     return {"pid": pid, "port": int(ready.get("port") or port), "url": url,
             "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "process_started": process_started}
+            "process_started": process_started, "montage_root": montage_root}

@@ -31,6 +31,12 @@ def _read_umask() -> int:
 _UMASK = _read_umask()
 
 
+def new_file_mode() -> int:
+    """Права нового файла монтажа: 0644 минус umask (как у обычного open)."""
+
+    return 0o644 & ~_UMASK
+
+
 def _target_mode(path: Path) -> int:
     """Права файла после замены: как у заменяемого (владелец мог их задать),
     у нового — 0644 минус umask. mkstemp создаёт временный файл 0600, и без
@@ -40,7 +46,7 @@ def _target_mode(path: Path) -> int:
     try:
         return stat.S_IMODE(path.stat().st_mode)
     except FileNotFoundError:
-        return 0o644 & ~_UMASK
+        return new_file_mode()
 
 
 def write_text_atomic(path: Path, text: str) -> None:

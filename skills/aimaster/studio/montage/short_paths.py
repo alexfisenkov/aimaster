@@ -12,6 +12,14 @@ from pathlib import Path
 from ..platform_compat import IS_WINDOWS
 
 
+_DRIVE_ROOT = re.compile(r"[A-Za-z]:")
+# Путь — целиком, а не кусок чужого: слева не буква/цифра/точка/дефис
+# (/Users/al не заденет /Users/alex, /app — https://host/app), справа —
+# разделитель, пробел, кавычка, скобка, знак препинания или конец строки.
+_BEFORE = r"(?<![\w.-])"
+_AFTER = r"(?=[\\/]|[\s\"'`),;:\]]|\.(?:\s|$)|$)"
+
+
 def _variants(path) -> set[str]:
     text = str(path)
     found = {text, text.replace("\\", "/")}
@@ -20,7 +28,10 @@ def _variants(path) -> set[str]:
         found |= {real, real.replace("\\", "/")}
     except (OSError, ValueError):
         pass
-    return {value for value in found if len(value.strip("/\\")) > 1}
+    trimmed = {value.rstrip("/\\") for value in found}
+    # корень («/», «C:\») — не папка: заменять его значило бы резать любой путь
+    return {value for value in trimmed if len(value.strip("/\\")) > 1
+            and not _DRIVE_ROOT.fullmatch(value.strip("/\\"))}
 
 
 def short_paths(text: str, known: dict | None = None) -> str:
@@ -36,6 +47,6 @@ def short_paths(text: str, known: dict | None = None) -> str:
     flags = re.IGNORECASE if IS_WINDOWS else 0
     for value, label in sorted(pairs, key=lambda pair: -len(pair[0])):
         # «/» и «\» — одно и то же: пути на Windows приходят и смешанными
-        pattern = r"[\\/]+".join(re.escape(part) for part in re.split(r"[\\/]+", value))
-        text = re.sub(pattern, lambda _match, label=label: label, text, flags=flags)
+        body = r"[\\/]+".join(re.escape(part) for part in re.split(r"[\\/]+", value))
+        text = re.sub(_BEFORE + body + _AFTER, lambda _match, label=label: label, text, flags=flags)
     return text

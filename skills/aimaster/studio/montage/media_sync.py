@@ -20,6 +20,7 @@ from typing import Iterable
 
 from ..platform_compat import replace_file
 from . import MontageError
+from .index_io import new_file_mode
 
 ASSETS_DIR = "assets"
 
@@ -59,17 +60,26 @@ def link_or_copy(source: Path, target: Path) -> str:
     return "copy"
 
 
-def copy_via_temp(source: Path, target: Path) -> None:
+def copy_via_temp(source: Path, target: Path, *, keep_mode: bool = True) -> None:
     """Копия через временный файл mkstemp рядом с целью (не фиксированное
     «.имя.part»: его мог занять параллельный вызов или остаток прошлого) и
-    атомарную замену; сбой — временный файл убран, OSError наружу."""
+    атомарную замену; сбой — временный файл убран, OSError наружу.
+    `keep_mode=False` — содержимое без прав источника (файлы пакета навыка
+    бывают только для чтения — копия и её замена не должны от этого ломаться,
+    на Windows замена файла «только чтение» отказывает): права 0644 − umask."""
 
     descriptor, name = tempfile.mkstemp(dir=Path(target).parent, prefix=f".{Path(target).name}.",
                                         suffix=".part")
     os.close(descriptor)
     temporary = Path(name)
     try:
-        shutil.copy2(source, temporary)
+        if keep_mode:
+            shutil.copy2(source, temporary)
+        else:
+            shutil.copyfile(source, temporary)
+            os.chmod(temporary, new_file_mode())
+            if Path(target).exists():
+                os.chmod(target, new_file_mode())  # прежняя копия «только чтение» — снять
         replace_file(temporary, target)
     except OSError:
         try:

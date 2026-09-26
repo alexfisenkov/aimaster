@@ -5,9 +5,12 @@
 from __future__ import annotations
 
 import json
+import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -246,25 +249,38 @@ class DeskUnitTests(_Draft):
             self.assertEqual(self.desk().status(self.paths), {"state": "closed"})
         self.paths.desk_file.write_text("[" * 100000 + "]" * 100000, encoding="utf-8")
         self.assertIsNone(read_record(self.paths))
-        self.assertIsNone(fetch_config(70000))
         self.assertFalse(proc.process_alive(2 ** 40))
         self.assertIsNone(proc.process_started(2 ** 40))
 
-    def test_nested_json_from_the_port_is_not_an_answer(self):
-        class Connection:
-            def __init__(self, *args, **kwargs):
-                pass
+    def test_started_that_fails_right_after_launch_stops_the_process(self):
+        def broken(pid):
+            raise KeyboardInterrupt  # Ctrl+C между запуском и записью
+        studio = StudioDesk(fake_engine(self.base / "engine"), popen=self.popen_ready,
+                            sleep=lambda seconds: None, started=broken, kill=self.killed.append)
+        with self.assertRaises(KeyboardInterrupt):
+            studio.open(self.paths)
+        self.assertEqual(self.killed, [4242])
+        self.assertEqual(desk_children._children, {})
+        self.assertFalse(self.paths.desk_file.exists())
 
-            def request(self, *args):
-                pass
+    def test_a_copied_project_folder_does_not_stop_the_original_desk(self):
+        self.desk().open(self.paths)  # стол оригинала жив, запись с его временем запуска
+        copy = montage_paths(self.base / "p-копия")
+        shutil.copytree(self.paths.root, copy.root)
+        silent = self.desk(config=lambda port: None)  # тот же pid, то же время запуска
+        self.assertIn("ничего не остановлено", silent.close(copy)["forgotten"])
+        self.assertEqual(self.killed, [])
+        self.assertEqual(self.desk().status(self.paths)["state"], "open")
 
-            def getresponse(self):
-                return mock.Mock(status=200, read=lambda size: b"[" * 50000 + b"]" * 50000)
-
-            def close(self):
-                pass
-        with mock.patch.object(desk_identity.http.client, "HTTPConnection", Connection):
-            self.assertIsNone(fetch_config(1234))
+    def test_foreign_status_says_forgotten_only_when_it_forgot(self):
+        self.opened_elsewhere()
+        foreign = self.desk(config=lambda port: None, started="другой запуск")
+        with held_lock(self.paths.root / ".desk.lock", busy="занято"):
+            later = foreign.status(self.paths)["forgotten"]
+        self.assertIn("будет забыта", later)
+        self.assertTrue(self.paths.desk_file.exists())
+        self.assertIn("запись забыта", foreign.status(self.paths)["forgotten"])
+        self.assertFalse(self.paths.desk_file.exists())
 
     def test_start_timeout_kills_and_explains(self):
         ticks = iter([0, 0, 0, 100, 100, 100])
@@ -334,6 +350,70 @@ class DeskUnitTests(_Draft):
                         or argv[0].lower().endswith("system32/taskkill.exe"))
         self.assertEqual(sorted(argv[1:]), sorted(["/T", "/F", "/PID", "4242"]))
         self.assertNotIn("shell", kwargs)
+
+
+class _RawServer:
+    """127.0.0.1: на каждое подключение отдаёт `payload` — сразу или по `chunk` байт с паузой."""
+
+    def __init__(self, payload: bytes, *, chunk=None, delay=0.0):
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(5)
+        self.sock.settimeout(0.2)
+        self.port = self.sock.getsockname()[1]
+        self.stopped = threading.Event()
+        threading.Thread(target=self._serve, args=(payload, chunk or len(payload), delay),
+                         daemon=True).start()
+
+    def _serve(self, payload, step, delay):
+        while not self.stopped.is_set():
+            try:
+                connection, _ = self.sock.accept()
+            except OSError:
+                continue
+            with connection:
+                try:
+                    connection.recv(4096)
+                    for index in range(0, len(payload), step):
+                        if self.stopped.is_set():
+                            break
+                        connection.sendall(payload[index:index + step])
+                        time.sleep(delay)
+                except OSError:
+                    pass
+
+    def close(self):
+        self.stopped.set()
+        self.sock.close()
+
+
+class FetchConfigTests(unittest.TestCase):
+    def serve(self, payload, **kwargs):
+        server = _RawServer(payload, **kwargs)
+        self.addCleanup(server.close)
+        return server.port
+
+    def test_a_json_object_with_status_200_is_the_answer(self):
+        port = self.serve(b'HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{"pid": 7}')
+        self.assertEqual(fetch_config(port), {"pid": 7})
+
+    def test_other_statuses_and_shapes_are_not_answers(self):
+        for payload in (b"HTTP/1.0 404 Not Found\r\n\r\n{}", b"HTTP/1.0 200 OK\r\n\r\n[1]",
+                        b"HTTP/1.0 200 OK\r\n\r\n" + b"[" * 30000 + b"]" * 30000,  # RecursionError
+                        b"HTTP/1.0 200 OK\r\n\r\n" + b" " * 70000, b"garbage"):
+            with self.subTest(payload=payload[:40]):
+                self.assertIsNone(fetch_config(self.serve(payload)))
+
+    def test_one_deadline_for_the_whole_answer(self):
+        body = b'HTTP/1.0 200 OK\r\n\r\n{"pid": 7, "pad": "' + b"x" * 200 + b'"}'
+        port = self.serve(body, chunk=1, delay=0.05)  # целиком — больше 10 с
+        started = time.monotonic()
+        self.assertIsNone(fetch_config(port, timeout=0.5))
+        self.assertLess(time.monotonic() - started, 3.0)
+
+    def test_bad_ports_are_not_answers(self):
+        for port in (70000, -1, "x", None):
+            self.assertIsNone(fetch_config(port))
 
 
 class _FakeKernel32:
