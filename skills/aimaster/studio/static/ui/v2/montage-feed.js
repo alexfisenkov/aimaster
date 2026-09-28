@@ -48,9 +48,11 @@ export function hideMontage() {
   }
 }
 
-/** Что известно о монтаже проекта: `{status, model, error, modelFresh}` или
- * `null`. `modelFresh: false` — показанная схема отстала от статуса, B5
- * помечает её «обновляется…». */
+/** Что известно о монтаже проекта: `{status, model, error, modelFresh,
+ * modelLagging}` или `null` (montage-entry.js). `modelFresh: false` —
+ * показанная схема отстала от статуса: плашки и длина её не читают;
+ * `modelLagging` — отстала дольше одного опроса: схема помечена
+ * «обновляется…». */
 export function montageState(projectId) {
   return feed ? feed.current(projectId) : null;
 }

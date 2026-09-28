@@ -386,6 +386,62 @@ test("modelFresh — false, пока показанная схема отста�
   assert.equal(feed.current("p").modelFresh, true);
 });
 
+test("«обновляется…» — только если схема отстала дольше одного опроса статуса", async () => {
+  let key = "k1";
+  let release;
+  const load = (id, part) => {
+    if (!part) return Promise.resolve(ok(STATUS(key)));
+    const asked = key;
+    return new Promise((resolve) => { release = () => resolve(ok({ index_key: asked })); });
+  };
+  const feed = createMontageFeed({ load, notify: () => {} });
+  const marks = () => [feed.current("p").modelFresh, feed.current("p").modelLagging];
+  feed.show("p");
+  await feed.tick();
+  release();
+  await settleModel();
+  assert.deepEqual(marks(), [true, false]);
+  key = "k2";
+  await feed.tick(); // первый опрос со схемой позади — пометки ещё нет, схема может догнать сразу
+  assert.deepEqual(marks(), [false, false]);
+  await feed.tick(); // второй подряд — «обновляется…»
+  assert.deepEqual(marks(), [false, true]);
+  release();
+  await settleModel(); // схема k2 легла
+  assert.deepEqual(marks(), [true, false]);
+  key = "k3";
+  await feed.tick(); // счёт начался заново, а не продолжился с прошлого отставания
+  assert.deepEqual(marks(), [false, false]);
+  feed.hide(); // схема k3 так и не ответит — обрываем, её таймер не держит процесс 130 с
+});
+
+test("публикация статуса упала — схема всё равно спрошена, флаг её полёта не застревает", async () => {
+  const reported = [];
+  globalThis.reportError = (error) => reported.push(error.name);
+  try {
+    let odd = true;
+    const calls = [];
+    const load = (id, part) => {
+      calls.push(part || "status");
+      if (part) return Promise.resolve(ok({ index_key: "k1" }));
+      // BigInt в теле: JSON.stringify внутри публикации бросает TypeError
+      return Promise.resolve(ok(odd ? STATUS("k1", { odd: 1n }) : STATUS("k1")));
+    };
+    const feed = createMontageFeed({ load, notify: () => {} });
+    feed.show("p");
+    await assert.rejects(feed.tick(), TypeError);
+    await settleModel();
+    odd = false;
+    await feed.tick();
+    await settleModel();
+    assert.deepEqual(calls, ["status", "model", "status"]); // до правки: ["status", "status"] — схема «летела» вечно
+    assert.equal(feed.current("p").model.index_key, "k1");
+    assert.deepEqual(reported, ["TypeError"]); // сбой публикации после ответа схемы — не проглочен
+  } finally {
+    delete globalThis.reportError;
+  }
+});
+
 test("без AbortSignal.any запрос всё равно обрывается — и таймаутом, и сменой проекта (repro r3-no-abortsignal-any.mjs)", async () => {
   // Safari/iOS < 17.4, Chrome и Android WebView < 116, Firefox < 124 —
   // AbortSignal.any там нет. Здесь — только то, что видит load: его сигнал

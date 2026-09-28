@@ -1,11 +1,12 @@
 // node --test skills/aimaster/studio/static/ui/v2/montage-entry.test.mjs
 //
-// Что экран видит о монтаже: чей отказ главнее и свежа ли схема — таблицей.
+// Что экран видит о монтаже: чей отказ главнее, свежа ли схема и давно ли
+// отстала — таблицей.
 
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { composeEntry } from "./montage-entry.js";
+import { composeEntry, staleTicksAfter } from "./montage-entry.js";
 import { keyOf } from "./montage-model-tracker.js";
 
 const S = (key, patch = {}) => ({
@@ -33,15 +34,32 @@ const CASES = [
   { name: "статус неприменим — не свежая",
     input: { status: S("k1", { engine: { state: "missing" } }), model: MODEL, shownKey: K("k1") }, modelFresh: false },
   { name: "схемы нет — не свежая", input: { status: S("k1"), shownKey: K("k1") }, modelFresh: false },
+  { name: "отстала на один опрос — пометки нет",
+    input: { status: S("k2"), model: MODEL, shownKey: K("k1"), staleTicks: 1 }, modelFresh: false, modelLagging: false },
+  { name: "отстала дольше одного опроса — «обновляется…»",
+    input: { status: S("k2"), model: MODEL, shownKey: K("k1"), staleTicks: 2 }, modelFresh: false, modelLagging: true },
+  { name: "свежая схема не «обновляется», какой бы ни был счёт",
+    input: { status: S("k1"), model: MODEL, shownKey: K("k1"), staleTicks: 5 }, modelFresh: true, modelLagging: false },
+  { name: "схемы нет — и пометки нет", input: { status: S("k1"), staleTicks: 5 }, modelLagging: false },
 ];
 
 for (const { name, input, ...expected } of CASES) {
   test(`entry: ${name}`, () => {
     const entry = composeEntry(input);
-    assert.deepEqual(Object.keys(entry), ["status", "model", "error", "modelFresh"]);
+    assert.deepEqual(Object.keys(entry), ["status", "model", "error", "modelFresh", "modelLagging"]);
     assert.equal(entry.status, input.status ?? null);
     assert.equal(entry.model, input.model ?? null);
     if ("error" in expected) assert.deepEqual(entry.error, expected.error);
     if ("modelFresh" in expected) assert.equal(entry.modelFresh, expected.modelFresh);
+    if ("modelLagging" in expected) assert.equal(entry.modelLagging, expected.modelLagging);
   });
 }
+
+test("счёт отставшей схемы: растёт только с опросом статуса, свежая или никакая — ноль", () => {
+  const stale = { model: MODEL, modelFresh: false };
+  assert.equal(staleTicksAfter(0, stale, true), 1);
+  assert.equal(staleTicksAfter(1, stale, true), 2);
+  assert.equal(staleTicksAfter(2, stale, false), 2); // ответ схемы, всё ещё не свежей, — не опрос
+  assert.equal(staleTicksAfter(3, { model: MODEL, modelFresh: true }, true), 0);
+  assert.equal(staleTicksAfter(3, { model: null, modelFresh: false }, true), 0);
+});

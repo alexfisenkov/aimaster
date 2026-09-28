@@ -5,7 +5,7 @@
 // прежнее обрывается, поздний ответ тихо бросается. Обрыв — только по
 // таймауту и смене поколения (montage-request.js); entry — montage-entry.js.
 
-import { composeEntry } from "./montage-entry.js";
+import { composeEntry, staleTicksAfter } from "./montage-entry.js";
 import { createModelTracker } from "./montage-model-tracker.js";
 import { newController, requestWithTimeout } from "./montage-request.js";
 
@@ -37,14 +37,18 @@ export function createMontageFeed({
   let lastStatus = null;           // последний удачный статус
   let statusError = null;          // отказ последнего статуса
   let shown = null;                // последняя удачная схема: {model, key — для какого ключа спрошена}
+  let staleTicks = 0;              // опросов статуса подряд, пока схема на экране не свежая
 
-  /** Пересобрать entry и, если он изменился, оповестить. Сбой в `notify`
-   * не роняет опрос и не оставляет `refresh()` без ответа. */
-  function publish(id) {
-    const next = composeEntry({
+  /** Пересобрать entry и, если он изменился, оповестить. `tick` — публикует
+   * опрос статуса (он двигает счёт отставшей схемы). Сбой в `notify` не
+   * роняет опрос и не оставляет `refresh()` без ответа. */
+  function publish(id, tick = false) {
+    const facts = {
       status: lastStatus, statusError, model: shown?.model, shownKey: shown?.key,
       modelKey: tracker.key, modelError: tracker.error,
-    });
+    };
+    staleTicks = staleTicksAfter(staleTicks, composeEntry(facts), tick);
+    const next = composeEntry({ ...facts, staleTicks });
     if (JSON.stringify(next) === JSON.stringify(entry)) return;
     entry = next;
     try {
@@ -55,7 +59,9 @@ export function createMontageFeed({
   }
 
   /** Схема (`tracker.flight` — её ключ) легла — показать; статус тем временем
-   * ушёл на другой ключ — сразу спросить его. Прежнее поколение — бросить. */
+   * ушёл на другой ключ — сразу спросить его. Прежнее поколение — бросить.
+   * Следующую схему спрашивают до публикации: `tracker` уже записал её в
+   * полёт, и сбой публикации не должен оставить этот флаг навсегда. */
   function startModel(id, myGeneration, genSignal) {
     const key = tracker.flight;
     requestWithTimeout(load, id, "model", { ms: modelTimeoutMs, genSignal })
@@ -63,8 +69,8 @@ export function createMontageFeed({
         if (generation !== myGeneration) return; // tracker уже с чистого листа
         const next = tracker.onResult(key, result); // флаг полёта снят первым делом
         if (result.ok && result.body) shown = { model: result.body, key }; // без тела — провал, не показ
-        publish(id);
         if (next === "start") startModel(id, myGeneration, genSignal);
+        publish(id);
       })
       .catch(report);
   }
@@ -80,9 +86,10 @@ export function createMontageFeed({
     statusError = status.ok ? null : status;
     if (status.ok) lastStatus = status.body;
     const decision = status.ok ? tracker.onStatus(status.body) : "idle";
-    publish(id);
-    onStatus?.();
+    // Схему — раньше публикации: `onStatus` уже записал её в полёт.
     if (decision === "start") startModel(id, myGeneration, genSignal);
+    publish(id, true);
+    onStatus?.();
   }
 
   async function runStatus(id, myGeneration, genSignal, onStatus) {
@@ -110,6 +117,7 @@ export function createMontageFeed({
     lastStatus = null;
     statusError = null;
     shown = null;
+    staleTicks = 0;
     tracker.reset();
     queued = false;
     const waiters = queuedWaiters;
