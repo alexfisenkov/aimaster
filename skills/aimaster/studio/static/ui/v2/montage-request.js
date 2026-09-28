@@ -9,27 +9,46 @@ export function newController() {
   return typeof AbortController === "function" ? new AbortController() : null;
 }
 
-/** `load(id, part, signal)` с таймаутом `ms`. Запрос обрывают таймаут и
- * отмена поколения (`genSignal`); подписка на поколение снимается, как
- * только запрос кончился — поколение переживает много опросов. `controller`
- * можно передать свой, чтобы оборвать запрос снаружи. Никогда не бросает:
- * сбой самого `load` — это `network_error`, как у `getMontage` при обрыве. */
-export async function requestWithTimeout(load, id, part, { ms, genSignal = null, controller = newController() } = {}) {
-  const cancel = () => controller?.abort();
-  if (genSignal?.aborted) cancel();
-  else genSignal?.addEventListener("abort", cancel, { once: true });
-  let timer;
-  const timeout = new Promise((resolve) => {
-    // Сначала ответ «таймаут», потом обрыв: обрыв может синхронно
-    // закончить `load` своим network_error — гонку выигрывает таймаут.
-    timer = setTimeout(() => { resolve({ ok: false, code: "timeout" }); cancel(); }, ms);
+/** `load(id, part, signal)` с таймаутом `ms` и отменой по `genSignal`
+ * (поколение показа). Отмена сама заканчивает запрос — не ждёт, пока `load`
+ * заметит обрыв: таймер снят, подписка на поколение снята (поколение
+ * переживает много опросов), сигнал `load` оборван. Ответ всегда
+ * `{ok, …}`, промис никогда не отказывает:
+ * - ответ `load`; его сбой или отказ — `network_error`, как у `getMontage`;
+ * - `timeout` — `ms` прошло; `aborted` — поколение сменилось (такой ответ
+ *   ядро выбрасывает, не показывая). */
+export function requestWithTimeout(load, id, part, { ms, genSignal = null } = {}) {
+  return new Promise((resolve) => {
+    if (genSignal?.aborted) {
+      resolve({ ok: false, code: "aborted" });
+      return;
+    }
+    const controller = newController();
+    let open = true;
+    let timer = null;
+    const finish = (result) => {
+      if (!open) return;
+      open = false;
+      clearTimeout(timer);
+      genSignal?.removeEventListener("abort", onGenerationAbort);
+      resolve(result);
+    };
+    // Сначала ответ, потом обрыв: обрыв может синхронно закончить `load`
+    // своим network_error — побеждает причина отмены.
+    const cancel = (result) => {
+      finish(result);
+      controller?.abort();
+    };
+    function onGenerationAbort() {
+      cancel({ ok: false, code: "aborted" });
+    }
+    genSignal?.addEventListener("abort", onGenerationAbort, { once: true });
+    timer = setTimeout(() => cancel({ ok: false, code: "timeout" }), ms);
+    const failed = () => finish({ ok: false, code: "network_error" });
+    try {
+      Promise.resolve(load(id, part, controller?.signal)).then(finish, failed);
+    } catch {
+      failed();
+    }
   });
-  try {
-    return await Promise.race([load(id, part, controller?.signal), timeout]);
-  } catch {
-    return { ok: false, code: "network_error" };
-  } finally {
-    clearTimeout(timer);
-    genSignal?.removeEventListener("abort", cancel);
-  }
 }

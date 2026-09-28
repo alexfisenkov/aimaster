@@ -3,10 +3,10 @@
 // `{ok: false, code, message?}`: `message` — русский текст отказа монтажа
 // (422 montage_refused), экран показывает его как есть. POST — через общий
 // `postJson` (CSRF дашборда из `/api/session`). `signal` — от
-// `montage-feed.js`: у каждого запроса свой контроллер, его обрывают
-// таймаут этого запроса, смена поколения (человек ушёл с этого проекта) и,
-// у схемы, новый ключ — сюда доходит одним сигналом, обрывает `fetch`,
-// когда ответ здесь уже не ждут; обрыв возвращается как `network_error`.
+// `montage-request.js`: у каждого запроса свой контроллер, его обрывают
+// таймаут этого запроса и смена поколения (человек ушёл с этого проекта) —
+// сюда доходит одним сигналом, обрывает `fetch`, когда ответ здесь уже не
+// ждут. Обрыв — и до ответа, и посреди чтения тела — это `network_error`.
 
 import { postJson } from "../actions.js";
 
@@ -34,7 +34,12 @@ export async function getMontage(projectId, part = "", fetchImpl = globalThis.fe
   let body = null;
   try {
     body = await response.json();
-  } catch {
+  } catch (error) {
+    // Обрыв или разрыв связи посреди тела — ответа нет (не `http_200`);
+    // тело не JSON (страница ошибки прокси) — дальше код по статусу HTTP.
+    if (signal?.aborted || error?.name === "AbortError" || error?.name === "TypeError") {
+      return { ok: false, code: "network_error" };
+    }
     body = null;
   }
   if (response.ok && body && typeof body === "object") return { ok: true, body };

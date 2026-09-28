@@ -4,6 +4,12 @@
 // этом не трогают) и revision проекта (снимок изменился): сменился любой —
 // старая схема могла устареть. Отказ и счёт неудач всегда про последний
 // ключ, по которому схема ответила (`key`).
+//
+// Схема летит одна: сервер считает их по очереди (одна на проект за раз) и
+// брошенный клиентом запрос не отменяет — оборвать схему ради нового ключа
+// значит поставить в очередь сервера ещё один счёт и не показать ни одной
+// схемы, пока человек правит. Поэтому новый ключ ждёт, пока летящая схема
+// ляжет, — её показывают (пусть и не свежей), и тут же спрашивают следующую.
 
 // Сколько тиков пропустить перед повтором схемы, которая пришла с ошибкой
 // (сетевой отказ, таймаут или model_error/stale_error в теле — движок
@@ -37,6 +43,7 @@ export function createModelTracker() {
   let waitTicks = 0;
   let error = null;    // отказ запроса схемы для `key` — держим между попытками, не мигаем им
   let flight = null;   // ключ схемы, что летит сейчас
+  let latest = null;   // ключ последнего применимого статуса (null — статус неприменим)
 
   /** Ключ новый — или прошлая попытка по нему провалилась и пауза кончилась. */
   function due(next) {
@@ -53,24 +60,25 @@ export function createModelTracker() {
     get key() { return key; },
     get error() { return error; },
     get flight() { return flight; },
-    /** Удачный статус текущего поколения → что делать со схемой:
-     * `start` — спросить (`flight` уже её ключ), `keep` — одна уже летит,
-     * `idle` — не нужна; `restart`/`drop` — летящая схема прежнего ключа
-     * вытеснена (оборвать её), и новую спросить / не спрашивать. */
+    get latest() { return latest; },
+    /** Удачный статус текущего поколения → что делать со схемой: `start` —
+     * спросить (`flight` уже её ключ), `keep` — одна уже летит (новый ключ
+     * спросят, когда она ляжет), `idle` — не нужна. */
     onStatus(body) {
       if (!applicable(body)) {
+        latest = null;
         error = null; // статус стал неприменим — старая ошибка схемы не о нём
         return flight ? "keep" : "idle";
       }
-      const next = keyOf(body);
-      const dropped = Boolean(flight) && !sameKey(flight, next);
-      if (dropped) flight = null;
+      latest = keyOf(body);
       if (flight) return "keep";
-      if (!due(next)) return dropped ? "drop" : "idle";
-      flight = next;
-      return dropped ? "restart" : "start";
+      if (!due(latest)) return "idle";
+      flight = latest;
+      return "start";
     },
-    /** Схема для `resultKey` ответила (`{ok, body}` или отказ). */
+    /** Схема для `resultKey` ответила (`{ok, body}` или отказ): `start` —
+     * статус уже ушёл на другой ключ, спросить его сразу (`flight` — он),
+     * иначе `idle`. Флаг полёта снимается первым делом, при любом исходе. */
     onResult(resultKey, result) {
       flight = null;
       const failed = result.ok ? modelFailed(result.body) : true;
@@ -79,7 +87,9 @@ export function createModelTracker() {
       error = result.ok ? null : result;
       failStreak = failed ? streak + 1 : 0;
       waitTicks = failed ? MODEL_RETRY_TICKS[Math.min(failStreak - 1, MODEL_RETRY_TICKS.length - 1)] : 0;
-      return "idle";
+      if (!latest || sameKey(latest, resultKey)) return "idle";
+      flight = latest;
+      return "start";
     },
     reset() {
       key = null;
@@ -87,6 +97,7 @@ export function createModelTracker() {
       waitTicks = 0;
       error = null;
       flight = null;
+      latest = null;
     },
   };
 }

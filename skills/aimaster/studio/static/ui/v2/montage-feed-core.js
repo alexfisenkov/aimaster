@@ -1,9 +1,9 @@
-// Ядро опроса экрана «Сборка» — без DOM, его проверяют тесты: статус раз в
-// POLL_MS, схема слоёв — отдельной попыткой, которую статус не ждёт (сервер
-// считает её до 120 с, studio/montage/status_screen.py). Показ проекта
-// (show/hide) — новое «поколение» со своим AbortController: всё, что летело
-// для прежнего, обрывается, а его поздний ответ тихо бросается. Когда
-// спрашивать схему — montage-model-tracker.js; что показать — montage-entry.js.
+// Ядро опроса «Сборки» без DOM: статус раз в POLL_MS, схема слоёв — отдельно,
+// статус её не ждёт (сервер считает её до 120 с). Схема летит одна; новый
+// ключ спрашивают, как только она легла (montage-model-tracker.js). Показ
+// проекта (show/hide) — новое «поколение» со своим AbortController: всё
+// прежнее обрывается, поздний ответ тихо бросается. Обрыв — только по
+// таймауту и смене поколения (montage-request.js); entry — montage-entry.js.
 
 import { composeEntry } from "./montage-entry.js";
 import { createModelTracker } from "./montage-model-tracker.js";
@@ -16,10 +16,11 @@ export const POLL_MS = 5000;
 const STATUS_TIMEOUT_MS = 15000;
 const MODEL_TIMEOUT_MS = 130000;
 
-/** Сбой в чужом коде (`notify` и обработчики за ним) браузер показывает как
- * необработанную ошибку — в консоли и `window.onerror`, — а опрос живёт. */
+/** Сбой в чужом коде (`notify`) — браузеру как необработанная ошибка (консоль,
+ * `window.onerror`; без `reportError` — брошенная из таймера), опрос живёт. */
 export function report(error) {
-  globalThis.reportError?.(error);
+  if (typeof globalThis.reportError === "function") globalThis.reportError(error);
+  else setTimeout(() => { throw error; });
 }
 
 export function createMontageFeed({
@@ -35,10 +36,17 @@ export function createMontageFeed({
   let entry = null;
   let lastStatus = null;           // последний удачный статус
   let statusError = null;          // отказ последнего статуса
-  let shownModel = null;           // последняя удачная схема
-  let modelRequest = null;         // летящий запрос схемы: {controller}
+  let shown = null;                // последняя удачная схема: {model, key — для какого ключа спрошена}
 
-  function announce(id) {
+  /** Пересобрать entry и, если он изменился, оповестить. Сбой в `notify`
+   * не роняет опрос и не оставляет `refresh()` без ответа. */
+  function publish(id) {
+    const next = composeEntry({
+      status: lastStatus, statusError, model: shown?.model, shownKey: shown?.key,
+      modelKey: tracker.key, modelError: tracker.error,
+    });
+    if (JSON.stringify(next) === JSON.stringify(entry)) return;
+    entry = next;
     try {
       notify(id);
     } catch (error) {
@@ -46,34 +54,19 @@ export function createMontageFeed({
     }
   }
 
-  function publish(id) {
-    const next = composeEntry({
-      status: lastStatus, statusError, model: shownModel, modelKey: tracker.key, modelError: tracker.error,
-    });
-    if (JSON.stringify(next) === JSON.stringify(entry)) return;
-    entry = next;
-    announce(id);
-  }
-
-  /** Схема — отдельная, не дожидаемая статусом попытка. Пишет, только если
-   * её не вытеснили (новый ключ, новое поколение). */
+  /** Схема (`tracker.flight` — её ключ) легла — показать; статус тем временем
+   * ушёл на другой ключ — сразу спросить его. Прежнее поколение — бросить. */
   function startModel(id, myGeneration, genSignal) {
     const key = tracker.flight;
-    const request = { controller: newController() };
-    modelRequest = request;
-    requestWithTimeout(load, id, "model", { ms: modelTimeoutMs, genSignal, controller: request.controller })
+    requestWithTimeout(load, id, "model", { ms: modelTimeoutMs, genSignal })
       .then((result) => {
-        if (modelRequest !== request) return; // вытеснена — ответ никому не нужен
-        modelRequest = null;
-        if (generation !== myGeneration) return;
-        tracker.onResult(key, result);
-        if (result.ok) shownModel = result.body;
+        if (generation !== myGeneration) return; // tracker уже с чистого листа
+        const next = tracker.onResult(key, result); // флаг полёта снят первым делом
+        if (result.ok && result.body) shown = { model: result.body, key }; // без тела — провал, не показ
         publish(id);
+        if (next === "start") startModel(id, myGeneration, genSignal);
       })
-      .catch(report)
-      .finally(() => {
-        if (modelRequest === request) modelRequest = null;
-      });
+      .catch(report);
   }
 
   /** Одна попытка статуса: публикуется сразу (`onStatus` отпускает того,
@@ -89,11 +82,7 @@ export function createMontageFeed({
     const decision = status.ok ? tracker.onStatus(status.body) : "idle";
     publish(id);
     onStatus?.();
-    if (decision === "restart" || decision === "drop") {
-      modelRequest?.controller?.abort();
-      modelRequest = null;
-    }
-    if (decision === "start" || decision === "restart") startModel(id, myGeneration, genSignal);
+    if (decision === "start") startModel(id, myGeneration, genSignal);
   }
 
   async function runStatus(id, myGeneration, genSignal, onStatus) {
@@ -111,8 +100,7 @@ export function createMontageFeed({
     }
   }
 
-  /** Новое поколение: прежнее обрывается, состояние — с чистого листа;
-   * прежний refresh() своего ответа уже не дождётся. */
+  /** Новое поколение: прежнее обрывается, ждущие refresh() отпускаются. */
   function startGeneration(id) {
     generationController?.abort();
     generationController = newController();
@@ -121,8 +109,7 @@ export function createMontageFeed({
     entry = null;
     lastStatus = null;
     statusError = null;
-    shownModel = null;
-    modelRequest = null;
+    shown = null;
     tracker.reset();
     queued = false;
     const waiters = queuedWaiters;
@@ -131,20 +118,15 @@ export function createMontageFeed({
   }
 
   return {
-    show(id) {
-      if (id !== projectId) startGeneration(id);
-    },
-    hide() {
-      startGeneration(null);
-    },
+    show(id) { if (id !== projectId) startGeneration(id); },
+    hide() { startGeneration(null); },
     /** Опрос по таймеру: статус этого поколения уже летит — пропускаем. */
     tick() {
       if (!projectId || busyGeneration === generation) return Promise.resolve();
       return runStatus(projectId, generation, generationController?.signal);
     },
-    /** Явный запрос (после «Сделать текущей», открытия стола, возврата на
-     * вкладку): резолвится по СВОЕМУ статусу, схему не ждёт. Пока статус
-     * летит — досдаём ровно один ещё раз сразу следом. */
+    /** Явный запрос (после действия или возврата на вкладку): резолвится по
+     * СВОЕМУ статусу, схему не ждёт; статус летит — досдаём один раз следом. */
     refresh() {
       if (!projectId) return Promise.resolve();
       const myGeneration = generation;
