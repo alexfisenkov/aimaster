@@ -2,13 +2,16 @@
 //
 // Опрос монтажа: дешёвое состояние каждый раз, схема — когда сменился
 // index_key, current_version или revision, отдельной, не дожидаемой tick()
-// попыткой (статус её не ждёт); у каждого show()/hide() своё поколение со
-// своим AbortController — попытка прежнего поколения не пишет в состояние,
-// не ждётся и обрывается явно; отказ схемы держится между попытками, не
-// мигает, и не показывается для чужого ключа; отказ сервера — текстом.
+// попыткой (статус её не ждёт); у каждого show()/hide() своё поколение, у
+// каждого запроса свой контроллер — его обрывают таймаут, смена поколения
+// (без AbortSignal.any) и, у схемы, новый ключ; попытка прежнего поколения
+// не пишет в состояние и не ждётся; отказ схемы держится между попытками,
+// не мигает и не показывается для чужого ключа; отказ статуса поздняя схема
+// не затирает; сбой load/notify опрос не роняет; отказ сервера — текстом.
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 
 import { _resetCsrfTokenForTests } from "../actions.js";
 import { getMontage, montageUrl, postMontage, refusalText } from "./montage-api.js";
@@ -355,6 +358,237 @@ test("modelFresh — false, пока показанная схема отста�
   assert.equal(feed.current("p").modelFresh, false);
   await settleModel(); // схема k2 подъехала
   assert.equal(feed.current("p").modelFresh, true);
+});
+
+test("без AbortSignal.any запрос всё равно обрывается — и таймаутом, и сменой проекта (repro r3-no-abortsignal-any.mjs)", async () => {
+  // Safari/iOS < 17.4, Chrome и Android WebView < 116, Firefox < 124 —
+  // AbortSignal.any там нет. Раунд 3 тогда отдавал в load только сигнал
+  // поколения: таймаут обрывать было нечем, и зависшие опросы копили
+  // сокеты (у HTTP/1.1 предел — 6 на хост, дальше встаёт весь дашборд).
+  const savedAny = Object.getOwnPropertyDescriptor(AbortSignal, "any");
+  const SavedController = globalThis.AbortController;
+  const controllers = [];
+  delete AbortSignal.any;
+  globalThis.AbortController = class extends SavedController {
+    constructor() {
+      super();
+      controllers.push(this);
+    }
+  };
+  try {
+    assert.equal(typeof AbortSignal.any, "undefined");
+    const signals = [];
+    // Как getMontage поверх настоящего fetch: обрыв — сразу network_error, иначе молчит.
+    const load = (id, part, signal) => {
+      signals.push(signal);
+      return new Promise((resolve) => {
+        signal.addEventListener("abort", () => resolve({ ok: false, code: "network_error" }), { once: true });
+      });
+    };
+    const feed = createMontageFeed({ load, notify: () => {}, statusTimeoutMs: 20 });
+    feed.show("p");
+    const generationSignal = controllers[0].signal; // show() заводит контроллер поколения первым
+    for (let i = 0; i < 3; i += 1) await feed.tick(); // каждый опрос ждёт свой таймаут, 20 мс
+    assert.equal(signals.length, 3);
+    assert.deepEqual(signals.map((signal) => signal.aborted), [true, true, true]); // таймаут оборвал сам запрос
+    assert.equal(feed.current("p").error?.code, "timeout"); // и показан как таймаут, не как обрыв
+    assert.equal(generationSignal.aborted, false);
+    assert.equal(getEventListeners(generationSignal, "abort").length, 0); // подписки на поколение сняты
+
+    const slow = createMontageFeed({ load, notify: () => {}, statusTimeoutMs: 60000 });
+    slow.show("a");
+    const polled = slow.tick();
+    const inFlight = signals.at(-1);
+    assert.equal(inFlight.aborted, false);
+    slow.show("b"); // человек перешёл к другому проекту
+    assert.equal(inFlight.aborted, true);
+    await polled; // запрос кончился сразу, таймер на 60 с снят — тест его не ждёт
+  } finally {
+    globalThis.AbortController = SavedController;
+    if (savedAny) Object.defineProperty(AbortSignal, "any", savedAny); // под preload без any — его и не было
+  }
+});
+
+test("поздняя схема не затирает свежий отказ статуса (repro r3-status-error-wiped-by-model.mjs)", async () => {
+  const good = ok(STATUS("k1", { current_version: "v001", revision: 1 }));
+  let statusAnswer = good;
+  let releaseModel;
+  const load = (id, part) => (part
+    ? new Promise((resolve) => { releaseModel = () => resolve(ok({ index_key: "k1" })); })
+    : Promise.resolve(statusAnswer));
+  const shown = [];
+  const feed = createMontageFeed({ load, notify: (id) => shown.push(feed.current(id).error?.code ?? "none") });
+  feed.show("p");
+  await feed.tick(); // статус есть, схема летит
+  statusAnswer = { ok: false, code: "http_502" }; // дашборд перестал отвечать на статус
+  await feed.tick();
+  assert.equal(feed.current("p").error?.code, "http_502");
+  releaseModel();
+  await settleModel();
+  assert.equal(feed.current("p").model.index_key, "k1"); // схема легла…
+  assert.equal(feed.current("p").error?.code, "http_502"); // …а отказ статуса остался на экране
+  assert.deepEqual(shown, ["none", "http_502", "http_502"]);
+  statusAnswer = good;
+  await feed.tick();
+  assert.equal(feed.current("p").error, null); // статус ожил — отказа больше нет
+});
+
+test("новый ключ обрывает схему прежнего и спрашивает свою сразу (repro r3-new-key-waits-old-model.mjs)", async () => {
+  let key = "k1";
+  const calls = [];
+  const signals = {};
+  const releases = {};
+  const load = (id, part, signal) => {
+    calls.push(part ? `model(${key})` : "status");
+    if (!part) return Promise.resolve(ok(STATUS(key)));
+    const asked = key;
+    signals[asked] = signal;
+    return new Promise((resolve) => { releases[asked] = () => resolve(ok({ index_key: asked })); });
+  };
+  const feed = createMontageFeed({ load, notify: () => {} });
+  feed.show("p");
+  await feed.tick(); // схема k1 летит (сервер может считать её до 120 с)
+  key = "k2";
+  await feed.tick(); // статус уже на k2: схема k1 оборвана, схема k2 спрошена этим же тиком
+  assert.deepEqual(calls, ["status", "model(k1)", "status", "model(k2)"]);
+  assert.equal(signals.k1.aborted, true);
+  assert.equal(signals.k2.aborted, false);
+  assert.equal(feed.current("p").modelFresh, false);
+  releases.k1(); // ответ про k1 всё-таки пришёл — поздно, его никто не ждёт
+  await settleModel();
+  assert.equal(feed.current("p").model, null);
+  releases.k2();
+  await settleModel();
+  assert.equal(feed.current("p").model.index_key, "k2");
+  assert.equal(feed.current("p").modelFresh, true);
+  await feed.tick(); // схема k2 уже есть — поздний k1 не сбил ключ, заново не спрашиваем
+  assert.deepEqual(calls.slice(4), ["status"]);
+});
+
+test("статус вернулся к ключу, чья схема уже есть, — вытесненная схема не заставляет спрашивать её заново", async () => {
+  // k1 (схема есть) → k2 (схема летит) → снова k1, например правку откатили:
+  // схема k2 оборвана, схема k1 на экране и снова свежая, повторно не просим.
+  let key = "k1";
+  const calls = [];
+  const signals = {};
+  const load = (id, part, signal) => {
+    calls.push(part ? `model(${key})` : "status");
+    if (!part) return Promise.resolve(ok(STATUS(key)));
+    signals[key] = signal;
+    if (key === "k1") return Promise.resolve(ok({ index_key: "k1" }));
+    return new Promise((resolve) => {
+      signal.addEventListener("abort", () => resolve({ ok: false, code: "network_error" }), { once: true });
+    });
+  };
+  const feed = createMontageFeed({ load, notify: () => {} });
+  feed.show("p");
+  await feed.tick();
+  await settleModel(); // схема k1 на экране
+  key = "k2";
+  await feed.tick(); // схема k2 летит
+  key = "k1";
+  await feed.tick();
+  await settleModel();
+  assert.deepEqual(calls, ["status", "model(k1)", "status", "model(k2)", "status"]);
+  assert.equal(signals.k2.aborted, true);
+  assert.equal(feed.current("p").model.index_key, "k1");
+  assert.equal(feed.current("p").modelFresh, true);
+  assert.equal(feed.current("p").error, null);
+});
+
+test("статус вернулся к ключу, чья схема провалилась, — отказ снова на экране, схему переспрашивают", async () => {
+  // Отказ и счёт неудач — про последний ключ, по которому схема ответила;
+  // вытесненная схема k2 их не трогает, иначе k1 больше не переспросили бы.
+  const refusal = { ok: false, code: "montage_refused", message: "в папке монтажа есть ссылки на другие места" };
+  let key = "k1";
+  const calls = [];
+  const load = (id, part, signal) => {
+    calls.push(part ? `model(${key})` : "status");
+    if (!part) return Promise.resolve(ok(STATUS(key)));
+    if (key === "k1") return Promise.resolve(refusal);
+    return new Promise((resolve) => {
+      signal.addEventListener("abort", () => resolve({ ok: false, code: "network_error" }), { once: true });
+    });
+  };
+  const feed = createMontageFeed({ load, notify: () => {} });
+  feed.show("p");
+  await feed.tick();
+  await settleModel();
+  assert.equal(feed.current("p").error?.code, "montage_refused");
+  key = "k2";
+  await feed.tick(); // схема k2 летит; отказ про k1 к k2 не относится
+  assert.equal(feed.current("p").error, null);
+  key = "k1";
+  await feed.tick(); // снова k1: схема k2 оборвана, отказ k1 виден, пауза после первой неудачи — 0 тиков
+  assert.equal(feed.current("p").error?.code, "montage_refused");
+  assert.deepEqual(calls, ["status", "model(k1)", "status", "model(k2)", "status", "model(k1)"]);
+  await settleModel();
+  assert.equal(feed.current("p").error?.code, "montage_refused");
+});
+
+/** Необработанные отказы промисов за время `run` — их не должно быть. */
+async function unhandledDuring(run) {
+  const unhandled = [];
+  const onUnhandled = (reason) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    await run();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+  return unhandled;
+}
+
+test("load схемы падает — это отказ схемы, флаг полёта снят, отказ не уходит в пустоту", async () => {
+  const broken = [() => { throw new Error("load упал"); }, () => Promise.reject(new Error("load отказал"))];
+  for (const fail of broken) {
+    const calls = [];
+    const load = (id, part) => {
+      calls.push(part || "status");
+      return part ? fail() : Promise.resolve(ok(STATUS("k1")));
+    };
+    const feed = createMontageFeed({ load, notify: () => {} });
+    const unhandled = await unhandledDuring(async () => {
+      feed.show("p");
+      await feed.tick();
+      await settleModel();
+      assert.equal(feed.current("p").error?.code, "network_error");
+      await feed.tick(); // пауза 0 — схему спрашивают снова: прошлая попытка «летящей» не осталась
+      await settleModel();
+    });
+    assert.deepEqual(calls, ["status", "model", "status", "model"]);
+    assert.deepEqual(unhandled, []);
+  }
+});
+
+test("notify падает — опрос живёт: схема ложится, флаг полёта снят, refresh() резолвится", async () => {
+  const reported = [];
+  globalThis.reportError = (error) => reported.push(error.message);
+  try {
+    let key = "k1";
+    const calls = [];
+    const load = (id, part) => {
+      calls.push(part ? `model(${key})` : "status");
+      return Promise.resolve(ok(part ? { index_key: key } : STATUS(key)));
+    };
+    const feed = createMontageFeed({ load, notify: () => { throw new Error("обработчик упал"); } });
+    const unhandled = await unhandledDuring(async () => {
+      feed.show("p");
+      await feed.tick(); // не бросает, хоть notify и падает
+      await settleModel();
+      assert.equal(feed.current("p").model.index_key, "k1");
+      key = "k2";
+      await feed.refresh(); // резолвится по своему статусу
+      await settleModel();
+    });
+    assert.deepEqual(calls, ["status", "model(k1)", "status", "model(k2)"]); // схема k2 спрошена — флаг k1 снят
+    assert.equal(feed.current("p").model.index_key, "k2");
+    assert.deepEqual(reported, Array(4).fill("обработчик упал")); // сбой не проглочен молча
+    assert.deepEqual(unhandled, []);
+  } finally {
+    delete globalThis.reportError;
+  }
 });
 
 test("refresh() во время обычного опроса не теряется — резолвится по своему статусу", async () => {
