@@ -25,11 +25,9 @@ After every scene video (or the one-shot video) is chosen, `motion` is approved
 and `audio` is approved (an empty audio stage counts). The montage writes into
 the `assembly` stage; once `assembly` is approved, every changing command is
 refused. A build is local and free: it needs no `grant`, is not a paid action
-and needs no confirmation. «Собрать ролик» — in chat or from the dashboard — is
-`montage diff` → retell → `montage render` straight away, with no plan and no
-confirmation step. The dashboard's current prompt («Собрать → чат» /
-«Собрать заново → чат») still calls the build paid and asks to wait for a
-confirmation: that text predates the montage; do not wait.
+and needs no confirmation. «Собрать ролик» — in chat or from the dashboard's
+«Собрать ролик → чат» — is `montage diff` → retell → `montage render --by
+owner` straight away, with no plan and no confirmation step.
 
 ## Engine check
 
@@ -259,7 +257,8 @@ overridden by Font and GSAP above.
 1. `montage status` (engine), `montage draft`, `montage render`. Say: «Черновой
    монтаж готов — версия v1, 0:15. Он на экране «Сборка». Поправить можно
    словами здесь или мышью на монтажном столе». The dashboard's «Сборка»
-   shows the current version as the final video; `paths.output` is the file.
+   shows the current version, its file and all versions (Dashboard screen);
+   `paths.output` is the file.
 2. Wait. Words in chat → `montage edit` (one command per edit; name what
    changed). Mouse → `montage open`; open `opener_url` in a new tab through
    the host capability, or give that link (`url` only when `opener_url` is
@@ -284,6 +283,34 @@ otherwise say the visual check was not performed → a visible defect: fix with
 `montage edit`, render again → `stage approve` → final report (versions built,
 titles added and why, whether the engine was installed). No questions.
 
+## Dashboard screen
+
+The «Сборка» step of the dashboard shows the montage of a video or mixed
+project to the person; you read the same facts with `montage status`.
+
+- The preview plays the current version. «Скачать» saves its MP4 as
+  «<project title>-vNNN.mp4»; «Показать в папке» opens Finder, Explorer or the
+  Linux file manager at it; the path is shown from above the workspace folder,
+  and «Скопировать путь» copies exactly that short path.
+- The versions list shows who built each version (`by`), when and its
+  `summary`. «Сделать текущей» runs `montage restore` for the person — the
+  history says «Вы». «Принять ролик» at the bottom approves the current
+  version (`stage approve`, as before).
+- The layer scheme is read-only: the six tracks with clips by time; a tap
+  shows the clip and the piece of its source. «обновляется…» over it means
+  the engine is still reading the montage after an edit; «не обновилась» —
+  the reading failed, the reason is in a notice above. «Есть несобранные
+  правки» means `unrendered_changes`.
+- «Открыть монтажный стол» opens Studio in a new tab through `opener_url`;
+  «Закрыть стол» stops it. A desk that is open but came back without `url`
+  (Montage desk) is shown with «закройте стол и откройте заново». On a phone
+  and inside Telegram there is no desk and no «Показать в папке».
+- Chat buttons send ready prompts: «Собрать ролик → чат» (Guided flow, step
+  3), «Установить → чат» (Engine check — the person has already said «да»)
+  and «Обновить клипы → чат» (Keeping the draft current). After «Принять
+  ролик» the screen keeps its notices but has no chat buttons, no desk and
+  no «Сделать текущей».
+
 ## Retelling a diff
 
 `montage diff` returns ready Russian lines, for example «клип сцены 1 «Сад»:
@@ -307,8 +334,13 @@ record that points anywhere else comes back without `url`. Edits save to
 commands. Before your own edits while the desk may be open, read
 `montage status` and pass its `model_hash` as `--expected-model-hash`: a
 concurrent mouse edit then refuses your edit instead of being overwritten.
-`montage close` stops Studio and its browser; nothing stops the desk on its
-own yet. `montage status` → `desk.state` shows `open` or `closed`. Extra
+`montage close` stops Studio and its browser. A desk opened from the
+dashboard stops by itself after 60 minutes in which neither the «Сборка»
+screen asked about it (it asks every 5 s while its tab is visible) nor
+`current/index.html` changed, and when the dashboard stops. A desk opened
+with `montage open` stops only with `montage close` — until the dashboard
+opens the same desk; from then on the dashboard rule applies to it too.
+`montage status` → `desk.state` shows `open` or `closed`. Extra
 fields, all Russian text to retell, never errors:
 
 - `forgotten` (`open`, `close`, `status`): the recorded process turned out not
@@ -396,7 +428,8 @@ lists the clips (`clip`, `layer`, `scene_id`, `asset_id`, `current_asset_id`,
   release. After a skill update that pins another version, `montage status`
   says `missing` («стоит HyperFrames …, нужен …») and `engine.install` brings
   the engine to the pin.
-- The desk is not stopped by idleness or when the dashboard stops: close it
-  with `montage close`.
-- The studio reads a version's MP4 whole to check it: large videos register
-  slowly.
+- A desk opened only with `montage open` is not stopped by idleness or by
+  the dashboard: close it with `montage close`.
+- The studio reads a version's MP4 whole to check it when the version is
+  built: large videos register slowly. The dashboard plays and downloads them
+  in pieces and checks a file once until it changes.

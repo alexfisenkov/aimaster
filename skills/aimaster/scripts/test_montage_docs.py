@@ -168,6 +168,31 @@ class CanonMatchesCliTests(DocsTestCase):
             self.assertMentions(fragment, literals, "в строках кода монтажа")
 
 
+class DashboardCanonTests(DocsTestCase):
+    """План Б: канон знает экран «Сборка» и больше не оправдывается за
+    старый промпт дашборда («платно, дождись подтверждения»)."""
+
+    canon = _read("references/montage.md")
+
+    def test_old_notes_are_gone(self):
+        self.assertNotIn("still calls the build paid", self.canon)
+        self.assertNotIn("nothing stops the desk on its", self.canon)
+        self.assertNotIn("a desk opened from chat does not set it", self.canon)
+        self.assertNotIn("The desk is not stopped by idleness or when the dashboard stops", self.canon)
+
+    def test_dashboard_screen_is_described(self):
+        for text in ("## Dashboard screen", "«Собрать ролик → чат»", "«Сделать текущей»",
+                     "«Установить → чат»", "«Обновить клипы → чат»", "«Скачать»",
+                     "«Показать в папке»", "«Скопировать путь»", "«Принять ролик»", "opener_url",
+                     "60 minutes", "`montage render --by owner`", "«обновляется…»"):
+            self.assertMentions(text, self.canon)
+
+    def test_readme_is_honest_about_studio_analytics(self):
+        readme = (_SKILL_ROOT.parent.parent / "README.md").read_text(encoding="utf-8")
+        self.assertMentions("Монтажный стол", readme)
+        self.assertMentions("анонимной статистики Studio", readme)
+
+
 class CanonLinksTests(DocsTestCase):
     def test_canon_is_linked_from_the_entry_points(self):
         for rel in ("SKILL.md", "references/creator-studio.md", "references/autopilot.md",
