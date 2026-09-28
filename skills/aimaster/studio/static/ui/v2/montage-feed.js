@@ -14,13 +14,20 @@ export { POLL_MS, createMontageFeed };
 let feed = null;
 let timer = null;
 
+/** Перерисовать экран «Сборка» (`studio:montage-updated` слушает boot.js):
+ * опрос принёс новое — или кнопка экрана закончила запрос, а экран за это
+ * время перерисовали и её строки исхода уже нет на странице. */
+export function repaintMontage(projectId) {
+  document.dispatchEvent(new CustomEvent("studio:montage-updated", {
+    bubbles: true, detail: { projectId },
+  }));
+}
+
 function pageFeed() {
   if (!feed) {
     feed = createMontageFeed({
       load: (id, part, signal) => getMontage(id, part, undefined, signal),
-      notify: (id) => document.dispatchEvent(new CustomEvent("studio:montage-updated", {
-        bubbles: true, detail: { projectId: id },
-      })),
+      notify: repaintMontage,
     });
   }
   return feed;

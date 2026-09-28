@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  clipDetail, fmtLen, fmtTime, layerRows, sceneNames, volumeText,
+  clipDetail, fmtLen, fmtTime, layerRows, modelDuration, sceneNames, volumeText,
 } from "./montage-layers-model.js";
 import { projectWith } from "./snapshot.fixture.mjs";
 
@@ -85,4 +85,11 @@ test("без схемы дорожек нет; без длины ролика �
   assert.deepEqual(layerRows(null, PROJECT), []);
   const rows = layerRows({ duration: 0, layers: [{ layer: "video", label: "Видео", clips: [clip({ id: "v-1", start: 0, duration: 4 })] }] }, PROJECT);
   assert.deepEqual([rows[0].blocks[0].at, rows[0].blocks[0].len], [0, 100]);
+});
+
+test("длина по схеме — duration сервера, без неё — конец последнего клипа (линейка под схемой)", () => {
+  assert.equal(modelDuration(MODEL), 10);
+  assert.equal(modelDuration({ ...MODEL, duration: null }), 14); // атмосфера кончается на 14 с
+  assert.equal(modelDuration({ duration: null, layers: [] }), 0);
+  assert.equal(modelDuration(null), 0);
 });

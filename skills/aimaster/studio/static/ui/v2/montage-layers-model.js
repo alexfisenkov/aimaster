@@ -55,11 +55,17 @@ function blockText(layer, clip, names) {
   return "";
 }
 
+/** Длина ролика по схеме, секунды: `duration` сервера, иначе конец последнего клипа. */
+export function modelDuration(model) {
+  const layers = Array.isArray(model?.layers) ? model.layers : [];
+  const ends = layers.flatMap((layer) => (layer.clips || []).map((clip) => clip.start + clip.duration));
+  return Number(model?.duration) > 0 ? Number(model.duration) : Math.max(0, ...ends);
+}
+
 /** Дорожки и блоки: `at`/`len` — проценты ширины дорожки. */
 export function layerRows(model, project) {
   const layers = Array.isArray(model?.layers) ? model.layers : [];
-  const ends = layers.flatMap((layer) => (layer.clips || []).map((clip) => clip.start + clip.duration));
-  const duration = Number(model?.duration) > 0 ? Number(model.duration) : Math.max(0, ...ends);
+  const duration = modelDuration(model);
   const names = sceneNames(project);
   return layers.map((layer) => ({
     layer: layer.layer,

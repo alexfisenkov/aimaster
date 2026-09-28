@@ -1,0 +1,185 @@
+/*
+ * Экран «Сборка» с монтажом (спецификация монтажа 2026-09-25, «Дашборд:
+ * экран «Сборка»»): плашки, превью по стороне кадра, файл, главные кнопки,
+ * версии, схема слоёв. Визуальный язык — хэндофф 2026-09-23: карточки 16,
+ * пилюли, токены tokens-v2.css; цветов мимо токенов нет (кроме #fff на
+ * тёмном блоке). Положение блоков схемы — переменные --am-at/--am-len, их
+ * ставит montage-layers.js через CSSOM (атрибут style CSP запрещает).
+ * Телефон — @media (max-width: 759px), цели нажатия ≥ 44px.
+ */
+
+a.v2-primary, a.v2-chat-button { text-decoration: none; }
+
+.am-notices { display: grid; gap: 8px; margin-bottom: 16px; }
+.am-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  border-radius: var(--v2-r-group);
+  font-size: var(--v2-fs-13);
+}
+.am-notice[data-tone="warn"] { background: var(--v2-warn-bg); color: var(--v2-warn-ink); border: 1px solid var(--v2-warn-line); }
+.am-notice[data-tone="error"] { background: var(--v2-surface); color: var(--v2-danger); border: 1px solid var(--v2-danger); }
+.am-notice[data-tone="info"] { background: var(--v2-soft); color: var(--v2-ink-2); }
+.am-notice-text { flex: 1 1 240px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+
+.am-top { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; margin-bottom: 20px; }
+.am-side { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.am-top > .v2-final-preview[data-orientation="portrait"] { flex: 0 1 300px; max-width: 340px; aspect-ratio: 9 / 16; }
+.am-top > .v2-final-preview[data-orientation="square"] { flex: 0 1 420px; max-width: 480px; aspect-ratio: 1 / 1; }
+
+.am-file-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.am-inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.am-file-path { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 12px; }
+.am-file-path-text {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--v2-r-sm);
+  background: var(--v2-soft);
+  color: var(--v2-ink-2);
+  font-size: var(--v2-fs-12);
+  overflow-wrap: anywhere;
+}
+.am-link-button {
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--v2-ink);
+  font: inherit;
+  font-size: var(--v2-fs-13);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.am-link-button[disabled] { color: var(--v2-muted); cursor: default; }
+
+.am-main-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.am-desk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.am-note { margin: 0; font-size: var(--v2-fs-13); color: var(--v2-muted); }
+.am-desk-nolink { flex: 1 1 100%; color: var(--v2-warn-ink); }
+.am-engine {
+  align-self: stretch;
+  padding: 14px 16px;
+  border: 1px solid var(--v2-warn-line);
+  border-radius: var(--v2-r-group);
+  background: var(--v2-warn-bg);
+  color: var(--v2-warn-ink);
+}
+.am-engine-title { margin: 0; font-weight: 600; }
+.am-engine-reason { margin: 4px 0 10px; font-size: var(--v2-fs-13); overflow-wrap: anywhere; }
+
+.am-versions, .am-layers { margin-bottom: 20px; }
+.am-version-list {
+  display: flex;
+  gap: 12px;
+  margin: 0;
+  padding: 0 0 4px;
+  list-style: none;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+}
+.am-version {
+  flex: 0 0 240px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-group);
+  background: var(--v2-surface);
+}
+.am-version[data-current="true"] { border-color: var(--v2-ok); box-shadow: inset 0 0 0 1px var(--v2-ok); }
+.am-version-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.am-version-label { font-size: var(--v2-fs-15); font-weight: 700; font-variant-numeric: tabular-nums; }
+.am-version-meta { margin: 0; font-size: var(--v2-fs-12); color: var(--v2-muted); }
+.am-version-summary {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--v2-ink-2);
+  font-size: var(--v2-fs-13);
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.am-version-actions { margin-top: auto; }
+.am-versions-hint { margin: 10px 0 0; font-size: var(--v2-fs-12); color: var(--v2-muted); }
+
+.am-layers-mark {
+  padding: 1px 8px;
+  border-radius: var(--v2-r-pill);
+  background: var(--v2-soft);
+  color: var(--v2-muted);
+  font-size: var(--v2-fs-11);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.am-layers-mark[data-tone="error"] { background: var(--v2-surface); color: var(--v2-danger); box-shadow: inset 0 0 0 1px var(--v2-danger); }
+.am-tracks { display: grid; gap: 6px; margin-top: 12px; }
+.am-track { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 10px; }
+.am-track-label { font-size: var(--v2-fs-12); color: var(--v2-muted); }
+.am-lane { position: relative; height: 30px; border-radius: var(--v2-r-sm); background: var(--v2-soft); }
+.am-lane-empty { position: absolute; inset: 0; display: grid; place-items: center; font-size: var(--v2-fs-11); color: var(--v2-none); }
+.am-block {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: calc(var(--am-at, 0) * 1%);
+  width: calc(var(--am-len, 1) * 1%);
+  min-width: 6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--v2-ink-2);
+  color: #fff;
+  font: inherit;
+  font-size: var(--v2-fs-11);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.am-track[data-layer="video"] .am-block { background: var(--v2-ink); }
+.am-track[data-layer="titles"] .am-block { background: var(--v2-warn); color: var(--v2-ink); }
+.am-track[data-layer="voice"] .am-block { background: var(--v2-ok); }
+.am-track[data-layer="music"] .am-block { background: var(--v2-ok-ink); }
+.am-track[data-layer="fx"] .am-block { background: var(--v2-muted); }
+.am-track[data-layer="atmos"] .am-block { background: var(--v2-dashed); color: var(--v2-ink); }
+.am-block[aria-pressed="true"], .am-block:focus-visible { outline: 2px solid var(--v2-ink); outline-offset: 1px; }
+.am-ruler {
+  display: flex;
+  justify-content: space-between;
+  margin: 6px 0 0 106px;
+  color: var(--v2-muted);
+  font-size: var(--v2-fs-11);
+  font-variant-numeric: tabular-nums;
+}
+.am-layer-detail { min-height: 1.5em; margin: 12px 0 0; color: var(--v2-ink-2); font-size: var(--v2-fs-13); }
+
+@media (max-width: 759px) {
+  .am-top { flex-direction: column; flex-wrap: nowrap; gap: 12px; align-items: stretch; margin-bottom: 12px; }
+  /* В колонке основа flex — это высота: правило стороны кадра выше задало бы её 300px. */
+  .am-top > .v2-final-preview,
+  .am-top > .v2-final-preview[data-orientation] { flex: none; width: 100%; max-width: none; }
+  .am-top > .v2-final-preview[data-orientation="portrait"] { width: min(100%, calc(62vh * 9 / 16)); margin-inline: auto; }
+  .am-side { gap: 12px; }
+  /* Стол и «Показать в папке» — только на компьютере. Экран решает это при
+     отрисовке (isPhone), здесь — на случай, если окно сузили уже после неё. */
+  .am-desk, .am-reveal { display: none; }
+  .am-file-actions > .v2-chat-button, .am-main-actions .v2-primary { width: 100%; min-height: 44px; }
+  .am-notice .v2-chat-button { width: 100%; }
+  .am-link-button { min-height: 44px; }
+  .am-version { flex-basis: 78%; }
+  .am-version-actions .v2-chat-button { width: 100%; }
+  .am-track { grid-template-columns: 1fr; gap: 4px; }
+  .am-lane { height: 52px; }
+  /* Блок не уже пальца; у конца дорожки прижат к краю, а не торчит за ним. */
+  .am-block { top: 4px; bottom: 4px; left: min(calc(var(--am-at, 0) * 1%), calc(100% - 44px)); min-width: 44px; }
+  .am-ruler { margin-left: 0; }
+  .am-versions, .am-layers { margin-bottom: 12px; }
+}
