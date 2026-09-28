@@ -1,10 +1,11 @@
 // node --test skills/aimaster/studio/static/ui/v2/montage-feed.test.mjs
 //
 // Опрос монтажа: дешёвое состояние каждый раз, схема — когда сменился
-// index_key, current_version или revision; у каждого show()/hide() своё
-// поколение — попытка прежнего поколения не пишет в состояние и не ждётся,
-// переключение проекта не ждёт медленный ответ прежнего; отказ схемы
-// держится между попытками, не мигает; отказ сервера — текстом.
+// index_key, current_version или revision, отдельной, не дожидаемой tick()
+// попыткой (статус её не ждёт); у каждого show()/hide() своё поколение со
+// своим AbortController — попытка прежнего поколения не пишет в состояние,
+// не ждётся и обрывается явно; отказ схемы держится между попытками, не
+// мигает, и не показывается для чужого ключа; отказ сервера — текстом.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -15,6 +16,12 @@ import { POLL_MS, createMontageFeed } from "./montage-feed.js";
 
 const ok = (body) => ({ ok: true, body });
 const STATUS = (key, patch = {}) => ({ applicable: true, exists: true, engine: { state: "installed" }, index_key: key, ...patch });
+
+/** Схема — отдельная, не дожидаемая tick()/refresh() попытка (раунд 3): один
+ * оборот таймера-макрозадачи гарантированно даёт её микрозадачам (load →
+ * race → then-обработчик) осесть, раз сама схема отвечает синхронно-быстро
+ * (Promise.resolve, не настоящая сеть). */
+const settleModel = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function server(answers) {
   const calls = [];
@@ -44,6 +51,7 @@ test("первый опрос: состояние публикуется сра�
   const { calls, seen, feed } = feedFor({ status: [ok(STATUS("k1"))], model: [ok({ index_key: "k1", layers: [] })] });
   feed.show("p");
   await feed.tick();
+  await settleModel(); // схема — отдельная попытка, tick() её не ждёт
   assert.deepEqual(calls, ["p", "p:model"]);
   assert.deepEqual(seen, ["p", "p"]);
   assert.equal(feed.current("p").model.index_key, "k1");
@@ -53,6 +61,7 @@ test("то же состояние — схему не спрашиваем и �
   const { calls, seen, feed } = feedFor({ status: [ok(STATUS("k1"))], model: [ok({ index_key: "k1" })] });
   feed.show("p");
   await feed.tick(); // статус + схема — два оповещения
+  await settleModel();
   await feed.tick(); // тот же ключ, схема уже удачна — ни статус, ни схема не меняются, оповещений нет
   assert.deepEqual(calls, ["p", "p:model", "p"]);
   assert.deepEqual(seen, ["p", "p"]);
@@ -70,13 +79,12 @@ test("медленная схема не задерживает публикац
   const seen = [];
   const feed = createMontageFeed({ load, notify: (id) => seen.push(id) });
   feed.show("p");
-  const settled = feed.tick();
-  await new Promise((resolve) => setTimeout(resolve, 0)); // статус успел прийти, схема ещё летит
+  await feed.tick(); // резолвится по статусу — схему не ждёт вовсе (раунд 3)
   assert.deepEqual(seen, ["p"]);
   assert.equal(feed.current("p").status.index_key, "k1");
   assert.equal(feed.current("p").model, null);
   releaseModel();
-  await settled;
+  await settleModel();
   assert.deepEqual(seen, ["p", "p"]);
   assert.equal(feed.current("p").model.index_key, "k1");
 });
@@ -88,7 +96,9 @@ test("сменился index_key — схема заново", async () => {
   });
   feed.show("p");
   await feed.tick(); // статус + схема
+  await settleModel();
   await feed.tick(); // ключ сменился — статус + схема снова
+  await settleModel();
   assert.deepEqual(calls, ["p", "p:model", "p", "p:model"]);
   assert.deepEqual(seen, ["p", "p", "p", "p"]);
 });
@@ -105,7 +115,9 @@ test("сменился current_version при том же index_key — схем
   });
   feed.show("p");
   await feed.tick();
+  await settleModel();
   await feed.tick();
+  await settleModel();
   assert.deepEqual(calls, ["p", "p:model", "p", "p:model"]);
   assert.deepEqual(seen, ["p", "p", "p", "p"]);
   assert.equal(feed.current("p").model.unrendered_changes, false);
@@ -147,7 +159,9 @@ test("схема после провала оживает, как только �
   const { calls, feed } = feedFor({ status: [ok(STATUS("k1"))], model: [ok(failing), ok(ready)] });
   feed.show("p");
   await feed.tick(); // попытка 1 — провал, пауза 0
+  await settleModel();
   await feed.tick(); // пауза 0 — сразу попытка 2 — успех
+  await settleModel();
   assert.deepEqual(calls, ["p", "p:model", "p", "p:model"]);
   assert.equal(feed.current("p").model.unrendered_changes, false);
   await feed.tick(); // тот же ключ, прошлая попытка удачна — схему больше не спрашиваем
@@ -167,10 +181,12 @@ test("схема, зависшая дольше таймаута, считает
   };
   const feed = createMontageFeed({ load, notify: () => {}, modelTimeoutMs: 20 });
   feed.show("p");
-  await feed.tick(); // попытка 1 — таймаут, пауза 0 тиков (как любой провал)
+  await feed.tick(); // попытка 1 — схема запущена отдельно (детач), таймаут наступит через реальные 20 мс
+  await new Promise((resolve) => setTimeout(resolve, 30));
   assert.deepEqual(calls, ["status", "model"]);
   assert.equal(feed.current("p").error?.code, "timeout");
   await feed.tick(); // пауза 0 — сразу попытка 2 (тоже таймаут), пауза уже 5 тиков
+  await new Promise((resolve) => setTimeout(resolve, 30));
   assert.deepEqual(calls, ["status", "model", "status", "model"]);
   await feed.tick(); // пауза только началась — схему не спрашиваем
   assert.deepEqual(calls, ["status", "model", "status", "model", "status"]);
@@ -233,17 +249,112 @@ test("переключение на другой проект не ждёт ме
   };
   const feed = createMontageFeed({ load, notify: () => {} });
   feed.show("a");
-  const first = feed.tick(); // статус «a» готов, схема «a» висит
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await feed.tick(); // статус «a» готов; схема «a» запущена отдельно (детач) и «висит»
   feed.show("b");
   await feed.tick(); // «b» получает свои данные, не дожидаясь схемы «a»
+  await settleModel();
   assert.equal(feed.current("b").status.index_key, "k-b");
   assert.equal(feed.current("b").model.index_key, "k-b");
   assert.equal(feed.current("a"), null);
   releaseModelA();
-  await first; // «a» наконец сел — но его данные уже некуда писать
+  await settleModel(); // «a» наконец сел — но его данные уже некуда писать
   assert.equal(feed.current("b").status.index_key, "k-b"); // не затёрто ответом «a»
   assert.equal(feed.current("a"), null);
+});
+
+test("статус меняется на сервере, пока схема ещё летит — тик и refresh() видят перемену (repro r2-model-freezes-status.mjs)", async () => {
+  // Раунд 2 всё ещё держал весь опрос «занятым» на время схемы (до 120 с) —
+  // «Открыть монтажный стол» → POST успел, а десk на экране оставался
+  // «закрыт» до тех пор, пока не пришла схема. Раунд 3: статус и схема —
+  // независимые попытки; ни обычный тик, ни refresh() схему не ждут.
+  let desk = "closed";
+  let releaseModel;
+  const load = (id, part) => {
+    if (part === "model") {
+      return new Promise((resolve) => { releaseModel = () => resolve(ok({ index_key: "k1" })); });
+    }
+    return Promise.resolve(ok({ applicable: true, exists: true, engine: { state: "installed" }, index_key: "k1",
+      current_version: "v001", revision: 1, desk: { state: desk } }));
+  };
+  const feed = createMontageFeed({ load, notify: () => {} });
+  feed.show("p");
+  await feed.tick(); // статус: закрыт; схема запущена отдельно (детач) и «висит»
+  assert.equal(feed.current("p").status.desk.state, "closed");
+  desk = "open"; // человек нажал «Открыть монтажный стол», POST на сервере уже прошёл
+  await feed.tick(); // обычный тик по таймеру — видит перемену, схема всё ещё летит и не мешает
+  assert.equal(feed.current("p").status.desk.state, "open");
+  const refreshed = await feed.refresh().then(() => true); // резолвится по статусу, схему тоже не ждёт
+  assert.equal(refreshed, true);
+  releaseModel();
+  await settleModel();
+});
+
+test("отказ схемы не показывается для чужого ключа и гаснет, когда статус стал неприменим (repro r2-model-error-lifetime.mjs)", async () => {
+  const refusal = { ok: false, code: "montage_refused", message: "в папке монтажа есть ссылки на другие места" };
+  let status = STATUS("k1", { current_version: "v001", revision: 1 });
+  let modelAnswer = () => Promise.resolve(refusal);
+  const feed = createMontageFeed({
+    load: (id, part) => (part ? modelAnswer() : Promise.resolve(ok(status))), notify: () => {},
+  });
+  feed.show("p");
+  await feed.tick();
+  await settleModel();
+  assert.equal(feed.current("p").error?.code, "montage_refused");
+
+  // (a) ключ сменился на k2 — старая ошибка (про k1) не должна виснуть на новом статусе,
+  // пока схема k2 ещё летит; после её успешного прихода отказа тоже нет.
+  let release;
+  modelAnswer = () => new Promise((resolve) => { release = () => resolve(ok({ index_key: "k2" })); });
+  status = STATUS("k2", { current_version: "v001", revision: 1 });
+  await feed.tick();
+  assert.equal(feed.current("p").status.index_key, "k2");
+  assert.equal(feed.current("p").error, null);
+  release();
+  await settleModel();
+  assert.equal(feed.current("p").error, null);
+
+  // (b) статус стал неприменим (движок пропал) — держать отказ незачем, он снят.
+  status = STATUS("k2", { engine: { state: "missing" } });
+  await feed.tick();
+  assert.equal(feed.current("p").error, null);
+});
+
+test("переключение поколения обрывает запрос схемы прежнего проекта (repro r2-abandoned-live.mjs)", async () => {
+  // HTTP/1.1: у браузера предел в 6 соединений на хост — забытые запросы
+  // прежних поколений не должны копиться незамеченными.
+  const signals = [];
+  const releases = [];
+  function load(id, part, signal) {
+    if (!part) return Promise.resolve(ok(STATUS(`k-${id}`)));
+    signals.push(signal);
+    return new Promise((resolve) => releases.push(() => resolve(ok({ index_key: `k-${id}` }))));
+  }
+  const feed = createMontageFeed({ load, notify: () => {} });
+  for (const id of ["p1", "p2", "p3"]) {
+    feed.show(id);
+    feed.tick();
+    await settleModel(); // статус успел ответить, схема запущена и «висит»
+  }
+  assert.equal(signals.length, 3);
+  assert.deepEqual(signals.slice(0, 2).map((s) => s?.aborted), [true, true]); // прежние поколения оборваны явно
+  assert.equal(signals[2]?.aborted, false); // текущее поколение — нет
+  releases.forEach((release) => release()); // не оставляем висящих запросов после теста
+  await settleModel();
+});
+
+test("modelFresh — false, пока показанная схема отстала от статуса, снова true после её обновления", async () => {
+  const { feed } = feedFor({
+    status: [ok(STATUS("k1")), ok(STATUS("k2"))],
+    model: [ok({ index_key: "k1" }), ok({ index_key: "k2" })],
+  });
+  feed.show("p");
+  await feed.tick();
+  await settleModel();
+  assert.equal(feed.current("p").modelFresh, true);
+  await feed.tick(); // ключ сменился на k2 — показанная схема ещё k1
+  assert.equal(feed.current("p").modelFresh, false);
+  await settleModel(); // схема k2 подъехала
+  assert.equal(feed.current("p").modelFresh, true);
 });
 
 test("refresh() во время обычного опроса не теряется — резолвится по своему статусу", async () => {
@@ -302,6 +413,7 @@ test("отказ схемы держится между попытками, не
   feed.show("p");
   for (let i = 0; i < 9; i += 1) {
     await feed.tick();
+    await settleModel();
     assert.equal(feed.current("p").error?.code, "montage_refused", `tick ${i + 1}: отказ не должен пропадать`);
   }
 });

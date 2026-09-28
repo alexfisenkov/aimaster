@@ -6,11 +6,18 @@
 // только свои (таймаут запроса — ниже), его проверяют тесты; обёртка ниже
 // вешает таймер опроса и шлёт `studio:montage-updated`.
 //
-// Показ проекта (show/hide) заводит новое «поколение»: у каждой попытки
-// (attempt) оно своё, снятое в момент запуска. Попытка прежнего поколения,
-// чей ответ пришёл уже после переключения, тихо бросается — никогда не
-// пишет в entry и никого не ждёт: переключение на другой проект не ждёт
-// медленный ответ прежнего (схема сервер может считать до 120 с).
+// Показ проекта (show/hide) заводит новое «поколение» со своим
+// `AbortController`: у каждой попытки оно своё, снятое в момент запуска.
+// Попытка прежнего поколения, чей ответ пришёл уже после переключения,
+// тихо бросается — никогда не пишет в entry и никого не ждёт; её запрос
+// ещё и обрывается явно (дашборд по HTTP/1.1, у браузера предел — 6
+// соединений на хост, копить забытые незачем).
+//
+// Статус и схема идут раздельно: статус — раз в POLL_MS, коротко; схему
+// сервер может считать до 120 с (studio/montage/status_screen.py), и пока
+// она считается, статус всё равно опрашивается по расписанию — модель не
+// держит его в заложниках. `busyGeneration` — про статус,
+// `modelBusyGeneration` — про схему, это два независимых флага.
 
 import { getMontage } from "./montage-api.js";
 
@@ -34,10 +41,12 @@ export function createMontageFeed({
 }) {
   let projectId = null;
   let entry = null;
-  let generation = 0;        // растёт на каждый show()/hide() с новым id
-  let busyGeneration = null; // какое поколение сейчас опрашивается (null — свободно)
-  let queued = false;        // refresh() позвали, пока опрос уже летит — досдать сразу после него
-  let queuedWaiters = [];    // resolve() тех refresh(), что ждут именно этот добор
+  let generation = 0;
+  let generationController = null; // отменяется в show()/hide() — обрывает всё, что летело для прежнего поколения
+  let busyGeneration = null;       // статус для этого поколения летит (модель сюда не входит)
+  let modelBusyGeneration = null;  // схема для этого поколения летит — отдельно, статус её не ждёт
+  let queued = false;              // refresh() позвали, пока статус уже летит — досдать статус сразу после него
+  let queuedWaiters = [];          // resolve() тех refresh(), что ждут именно этот добор
 
   // Ключ, для которого схему в последний раз пробовали спросить: сменился
   // index_key (правка на столе), current_version (собрали новую версию —
@@ -66,10 +75,18 @@ export function createMontageFeed({
     return !body || Boolean(body.model_error) || Boolean(body.stale_error);
   }
 
+  /** Схему показываем как актуальную только пока её index_key совпадает с
+   * текущим статусом — B5 вешает на `false` подпись «обновляется…». */
+  function modelFresh(statusBody, model) {
+    return Boolean(model) && Boolean(statusBody) && model.index_key === statusBody.index_key;
+  }
+
   /** Схему просить сейчас — или ключ новый, или прошлая попытка по этому же
-   * ключу провалилась и пауза уже кончилась. */
-  function needsModel(status) {
+   * ключу провалилась и пауза уже кончилась; схема этого поколения уже не
+   * летит (иначе второй параллельный запрос той же схемы). */
+  function needsModel(status, myGeneration) {
     if (!applicable(status)) return false;
+    if (modelBusyGeneration === myGeneration) return false;
     const key = keyOf(status);
     if (!sameKey(key, modelKey)) {
       modelFailStreak = 0; // новый ключ — прошлых неудач для него ещё не было
@@ -90,70 +107,94 @@ export function createMontageFeed({
     waiters.forEach((resolve) => resolve());
   }
 
-  /** Один запрос с таймаутом: дольше `ms` не ждём, а дальше живём так, будто
-   * сервер отказал. `AbortController` не обязателен (тесты без него — тоже
-   * обычный JS), но когда он есть, зависший `fetch` реально отменяется. */
-  async function fetchWithTimeout(id, part, ms) {
-    const controller = typeof AbortController === "function" ? new AbortController() : null;
+  /** Один запрос с таймаутом плюс отмена всего поколения: `genSignal` —
+   * сигнал контроллера поколения (оборвётся в show()/hide() целиком);
+   * свой контроллер на этот же запрос добавляет таймаут. Оба вместе —
+   * через `AbortSignal.any`, когда он есть; без него таймаут всё равно
+   * работает, просто отмена по поколению не обрывает сам fetch раньше. */
+  async function fetchWithTimeout(id, part, ms, genSignal) {
+    const requestController = typeof AbortController === "function" ? new AbortController() : null;
+    const signal = requestController && typeof AbortSignal !== "undefined" && typeof AbortSignal.any === "function"
+      ? AbortSignal.any(genSignal ? [genSignal, requestController.signal] : [requestController.signal])
+      : (genSignal || requestController?.signal);
     let timer;
     const timeout = new Promise((resolve) => {
-      timer = setTimeout(() => resolve({ ok: false, code: "timeout" }), ms);
+      timer = setTimeout(() => { requestController?.abort(); resolve({ ok: false, code: "timeout" }); }, ms);
     });
     try {
-      const result = await Promise.race([load(id, part, controller?.signal), timeout]);
-      if (result.code === "timeout") controller?.abort();
-      return result;
+      return await Promise.race([load(id, part, signal), timeout]);
     } finally {
       clearTimeout(timer);
     }
   }
 
-  /** Одна попытка: дешёвое состояние публикуется сразу (`onStatus` отпускает
-   * того, кто ждал именно эту публикацию — `refresh()`), схема — отдельным,
-   * вторым шагом, если нужна. Устаревшее поколение проверяется на каждом
-   * шаге: писать в общий `entry` и звать чужой `notify` попытке чужого
-   * поколения нельзя — своего проекта на экране уже нет. */
-  async function attempt(id, myGeneration, onStatus) {
-    const status = await fetchWithTimeout(id, "", statusTimeoutMs);
+  /** Схема — отдельная, «отвязанная» от статуса попытка: статус её не
+   * ждёт (item 1 фикса раунда 3). Пишет в entry и зовёт notify, только
+   * если её поколение всё ещё текущее и модель всё ещё относится к
+   * последнему известному статусу (иначе более новый статус уже решил,
+   * что показывать в error, — не затираем его). */
+  function startModelFetch(id, myGeneration, statusBody, genSignal) {
+    const key = keyOf(statusBody);
+    if (!sameKey(key, modelKey)) modelError = null; // новый ключ — старая ошибка модели больше не о нём
+    modelBusyGeneration = myGeneration;
+    fetchWithTimeout(id, "model", modelTimeoutMs, genSignal).then((model) => {
+      if (modelBusyGeneration === myGeneration) modelBusyGeneration = null;
+      if (generation !== myGeneration) return; // поколение сменилось — эта попытка больше никому не нужна
+      modelKey = key;
+      const failed = model.ok ? modelFailed(model.body) : true;
+      modelError = model.ok ? null : model;
+      modelFailStreak = failed ? modelFailStreak + 1 : 0;
+      modelWaitTicks = failed ? MODEL_RETRY_TICKS[Math.min(modelFailStreak - 1, MODEL_RETRY_TICKS.length - 1)] : 0;
+      const currentStatus = entry?.status;
+      const stillCurrent = currentStatus && applicable(currentStatus) && sameKey(keyOf(currentStatus), key);
+      const nextModel = model.ok ? model.body : entry?.model || null;
+      const modelEntry = {
+        ...entry,
+        model: nextModel,
+        error: stillCurrent ? modelError : entry?.error ?? null,
+        modelFresh: modelFresh(currentStatus, nextModel),
+      };
+      if (JSON.stringify(modelEntry) !== JSON.stringify(entry)) {
+        entry = modelEntry;
+        notify(id);
+      }
+    });
+  }
+
+  /** Одна попытка статуса: публикуется сразу (`onStatus` отпускает того,
+   * кто ждал именно эту публикацию — `refresh()`); если нужна схема,
+   * запускает её отдельной, не дожидаемой попыткой (`startModelFetch`) —
+   * статус её не ждёт ни на этот, ни на следующий тик. */
+  async function statusAttempt(id, myGeneration, genSignal, onStatus) {
+    const status = await fetchWithTimeout(id, "", statusTimeoutMs, genSignal);
     if (generation !== myGeneration) {
       onStatus?.();
       return;
     }
+    const body = status.ok ? status.body : null;
+    if (status.ok && !applicable(body)) modelError = null; // статус стал неприменим — старая ошибка схемы не о нём
     const statusEntry = {
       status: status.ok ? status.body : entry?.status || null,
       model: entry?.model || null,
-      error: status.ok ? modelError : status,
+      error: status.ok ? (applicable(body) && sameKey(keyOf(body), modelKey) ? modelError : null) : status,
+      modelFresh: modelFresh(status.ok ? body : entry?.status, entry?.model || null),
     };
     const statusChanged = JSON.stringify(statusEntry) !== JSON.stringify(entry);
     entry = statusEntry;
     if (statusChanged) notify(id);
     onStatus?.();
-    if (!status.ok || !needsModel(status.body)) return;
-    const key = keyOf(status.body);
-    if (!sameKey(key, modelKey)) modelError = null;
-    const model = await fetchWithTimeout(id, "model", modelTimeoutMs);
-    if (generation !== myGeneration) return;
-    modelKey = key;
-    const failed = model.ok ? modelFailed(model.body) : true;
-    modelError = model.ok ? null : model;
-    modelFailStreak = failed ? modelFailStreak + 1 : 0;
-    modelWaitTicks = failed ? MODEL_RETRY_TICKS[Math.min(modelFailStreak - 1, MODEL_RETRY_TICKS.length - 1)] : 0;
-    const modelEntry = { ...entry, model: model.ok ? model.body : entry.model, error: modelError };
-    if (JSON.stringify(modelEntry) !== JSON.stringify(entry)) {
-      entry = modelEntry;
-      notify(id);
-    }
+    if (status.ok && needsModel(body, myGeneration)) startModelFetch(id, myGeneration, body, genSignal);
   }
 
-  async function run(id, myGeneration, onStatus) {
+  async function runStatus(id, myGeneration, genSignal, onStatus) {
     busyGeneration = myGeneration;
     try {
-      await attempt(id, myGeneration, onStatus);
+      await statusAttempt(id, myGeneration, genSignal, onStatus);
       while (queued && generation === myGeneration) {
         queued = false;
         const waiters = queuedWaiters;
         queuedWaiters = [];
-        await attempt(id, myGeneration, () => waiters.forEach((resolve) => resolve()));
+        await statusAttempt(id, myGeneration, genSignal, () => waiters.forEach((resolve) => resolve()));
       }
     } finally {
       if (busyGeneration === myGeneration) busyGeneration = null;
@@ -163,6 +204,8 @@ export function createMontageFeed({
   return {
     show(id) {
       if (id !== projectId) {
+        generationController?.abort();
+        generationController = typeof AbortController === "function" ? new AbortController() : null;
         projectId = id;
         generation += 1;
         entry = null;
@@ -175,6 +218,8 @@ export function createMontageFeed({
       }
     },
     hide() {
+      generationController?.abort();
+      generationController = null;
       projectId = null;
       generation += 1;
       entry = null;
@@ -185,18 +230,18 @@ export function createMontageFeed({
       queued = false;
       releaseWaiters();
     },
-    /** Обычный опрос (таймер, показ экрана): текущее поколение уже
+    /** Обычный опрос статуса (таймер, показ экрана): текущее поколение уже
      * опрашивается — просто пропускаем этот раз, следующий будет через
-     * POLL_MS. Поколение прежнего проекта не в счёт — новое стартует сразу. */
+     * POLL_MS. Схему (если она летит) не ждёт и не трогает. */
     tick() {
       if (!projectId) return Promise.resolve();
       if (busyGeneration === generation) return Promise.resolve();
-      return run(projectId, generation);
+      return runStatus(projectId, generation, generationController?.signal);
     },
     /** Явный запрос (после «Сделать текущей», открытия стола, возврата на
-     * вкладку): резолвится, как только придёт СВОЙ ответ дешёвого опроса —
-     * не ждёт схему. Пока летит обычный опрос — не теряем запрос, а сразу
-     * следом досдаём ровно один ещё раз и резолвим по его статусу. */
+     * вкладку): резолвится, как только придёт СВОЙ ответ статуса — не
+     * ждёт схему. Пока летит обычный опрос статуса — не теряем запрос, а
+     * сразу следом досдаём ровно один ещё раз и резолвим по его статусу. */
     refresh() {
       if (!projectId) return Promise.resolve();
       const myGeneration = generation;
@@ -205,7 +250,8 @@ export function createMontageFeed({
         return new Promise((resolve) => { queuedWaiters.push(resolve); });
       }
       const id = projectId;
-      return new Promise((resolve) => { run(id, myGeneration, resolve); });
+      const signal = generationController?.signal;
+      return new Promise((resolve) => { runStatus(id, myGeneration, signal, resolve); });
     },
     current(id) {
       return id && id === projectId ? entry : null;
@@ -247,14 +293,16 @@ export function hideMontage() {
   }
 }
 
-/** Что известно о монтаже проекта: `{status, model, error}` или `null`. */
+/** Что известно о монтаже проекта: `{status, model, error, modelFresh}` или
+ * `null`. `modelFresh: false` — показанная схема отстала от статуса (другой
+ * index_key), B5 помечает её «обновляется…». */
 export function montageState(projectId) {
   return feed.current(projectId);
 }
 
 /** Спросить сейчас: после «Сделать текущей», открытия стола, возврата на
- * вкладку. Резолвится по своему дешёвому ответу — вызывающий код не ждёт
- * схему; экран также слушает `studio:montage-updated` отдельно. */
+ * вкладку. Резолвится по своему статусу — вызывающий код не ждёт схему;
+ * экран также слушает `studio:montage-updated` отдельно. */
 export function refreshMontage() {
   return feed.refresh();
 }
