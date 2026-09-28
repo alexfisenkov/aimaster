@@ -131,6 +131,11 @@ async function parseErrorBody(response) {
   if (body && body.error && typeof body.error.current_revision === "number") {
     result.currentRevision = body.error.current_revision;
   }
+  // Отказ монтажа (422 montage_refused) несёт русский текст для человека —
+  // экран «Сборка» показывает его как есть (studio/montage_routes.py).
+  if (body && body.error && typeof body.error.message === "string") {
+    result.message = body.error.message;
+  }
   if (body && typeof body.accepted_answer !== "undefined") {
     result.acceptedAnswer = body.accepted_answer;
   }
@@ -148,8 +153,9 @@ async function parseErrorBody(response) {
  * `{ok:false, code, ...}` shape `parseErrorBody` already produces for every
  * other outcome -- a failed token fetch or network error included. Never
  * throws, so neither caller needs its own try/catch around this.
+ * Экспортирован для экрана «Сборка» (ui/v2/montage-api.js): его POST-маршруты — не /api/actions.
  */
-async function postJson(path, body, expectedStatus) {
+export async function postJson(path, body, expectedStatus) {
   let csrfToken;
   try {
     csrfToken = await fetchCsrfToken();
