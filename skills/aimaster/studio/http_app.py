@@ -14,6 +14,8 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 from .assets import AssetError, AssetIndex
 from .asset_stream import FileBody, VerifiedFiles, open_asset
 from .asset_download import content_disposition, download_names
+from .montage_routes import match as match_montage
+from .montage_routes import route as route_montage
 from .ledger import (
     ActionLedger,
     ActionRequest,
@@ -149,6 +151,7 @@ class StudioApplication:
         csrf_token: str | None = None,
         event_source: Callable[[], Iterable[dict]] | None = None,
         max_body_bytes: int = MAX_BODY_BYTES,
+        montage=None,
     ):
         parsed_origin = urlsplit(origin)
         if (
@@ -186,6 +189,8 @@ class StudioApplication:
         # Файлы, чей sha256 уже сверен этим процессом (asset_stream): плеер
         # шлёт десятки Range-запросов, и каждый не должен читать весь ролик.
         self.verified_files = VerifiedFiles()
+        # Экран «Сборка» (studio/montage_screen.py); None — маршрутов монтажа нет (404).
+        self.montage = montage
 
     @staticmethod
     def _headers(headers) -> dict[str, str]:
@@ -309,6 +314,10 @@ class StudioApplication:
                 return self._projects()
             if method == "GET" and request_path == "/api/events":
                 return self._events(request_headers)
+            montage_route = match_montage(request_path)
+            if montage_route is not None and method in {"GET", "POST"}:
+                return route_montage(self, self.montage, method, *montage_route,
+                                     request_headers, body)
             if method == "GET" and request_path.startswith("/api/projects/"):
                 suffix = request_path.removeprefix("/api/projects/")
                 if suffix.endswith("/snapshot"):

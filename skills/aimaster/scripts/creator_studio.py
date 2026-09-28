@@ -27,6 +27,7 @@ is the HyperFrames montage of video/mixed projects — see
 
 import argparse
 import json
+import signal
 import sys
 import time
 from pathlib import Path
@@ -65,10 +66,25 @@ from creator_studio_montage import add_montage_subcommands  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
 
 
+def _stop_on_sigterm() -> None:
+    """SIGTERM (агент, launchd, `kill`) — как Ctrl+C: `finally` в command_serve
+    закроет сервер, а с ним и монтажные столы, открытые дашбордом
+    (studio/desk_keeper.py). Без этого процесс умер бы, не закрыв их. Второй
+    SIGTERM, пока сервер закрывается, завершает процесс сразу."""
+
+    def stop(signum, frame):
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        raise KeyboardInterrupt
+
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, stop)
+
+
 def command_serve(args):
+    _stop_on_sigterm()
     running = serve(args.workspace, port=args.port)
-    print(json.dumps({"base_url": running.base_url}, ensure_ascii=False), flush=True)
     try:
+        print(json.dumps({"base_url": running.base_url}, ensure_ascii=False), flush=True)
         while True:
             time.sleep(3600)
     except KeyboardInterrupt:

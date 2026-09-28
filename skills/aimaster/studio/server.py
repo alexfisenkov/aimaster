@@ -11,11 +11,14 @@ from pathlib import Path
 from .assets import AssetIndex
 from .autopilot import StoreAutopilotPolicy
 from .decisions import DecisionWorker
+from .desk_keeper import DeskKeeper
 from .events import LedgerEventSource
 from .http_app import MAX_BODY_BYTES, StudioApplication
 from .http_write import write_response
 from .ledger import ActionLedger
 from .loopback_http import LoopbackThreadingHTTPServer
+from .montage.desk import StudioDesk
+from .montage_screen import EngineLookup, MontageScreen
 from .questions import QuestionStore
 from .store import ProjectStore
 from .workspace import (
@@ -116,6 +119,7 @@ class RunningServer:
     _server: _LoopbackHTTPServer
     _thread: threading.Thread
     _decision_worker: DecisionWorker
+    _desk_keeper: DeskKeeper
     _closed: bool = field(default=False, init=False)
 
     def close(self):
@@ -132,6 +136,9 @@ class RunningServer:
         self._server.shutdown()
         self._server.server_close()
         self._thread.join(timeout=5)
+        # План Б: после HTTP новых открытий стола не будет; столы, которые
+        # открыл этот дашборд, останавливаются вместе с ним.
+        self._desk_keeper.stop()
 
 
 def serve(workspace: Path, host: str = "127.0.0.1", port: int = 0) -> RunningServer:
@@ -197,6 +204,11 @@ def serve(workspace: Path, host: str = "127.0.0.1", port: int = 0) -> RunningSer
     wake_event = threading.Event()
     decision_worker = DecisionWorker(store, ledger, wake_event=wake_event)
 
+    # План Б, экран «Сборка»: столы, открытые дашбордом, — под присмотром
+    # хранителя (простой, выход сервера). Сам дашборд ролик не собирает.
+    desk_keeper = DeskKeeper(close_desk=lambda paths: StudioDesk(None).close(paths))
+    montage = MontageScreen(workspace, keeper=desk_keeper, engines=EngineLookup())
+
     httpd = _LoopbackHTTPServer((host, port), _Handler)
     assigned_port = httpd.server_address[1]
     base_url = f"http://127.0.0.1:{assigned_port}"
@@ -207,6 +219,7 @@ def serve(workspace: Path, host: str = "127.0.0.1", port: int = 0) -> RunningSer
         questions,
         origin=base_url,
         event_source=events,
+        montage=montage,
     )
     httpd.application = application
     thread = threading.Thread(
@@ -227,5 +240,6 @@ def serve(workspace: Path, host: str = "127.0.0.1", port: int = 0) -> RunningSer
     # HTTP thread so a worker failure can never prevent the server itself
     # from coming up; stopped from `RunningServer.close()`.
     decision_worker.start()
+    desk_keeper.start()
 
-    return RunningServer(base_url, application, httpd, thread, decision_worker)
+    return RunningServer(base_url, application, httpd, thread, decision_worker, desk_keeper)
