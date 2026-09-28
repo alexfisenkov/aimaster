@@ -10,7 +10,7 @@ import { AUDIO_LAYERS } from "./audio-model.js";
 import { playMark } from "./board-bits.js";
 import { chatButton, clock, el, openViewer } from "./dom.js";
 import { footerMode, renderFooter } from "./footer.js";
-import { assembleFinal } from "./screen-prompts.js";
+import { assembleFinal, assembleLabel } from "./screen-prompts.js";
 import { selectedResultVersion } from "./variants.js";
 import { renderPreview } from "./preview.js";
 
@@ -72,11 +72,8 @@ function summaryCard(project, revision, state) {
   card.append(list);
   const summary = typeof project?.assembly?.summary === "string" ? project.assembly.summary.trim() : "";
   if (summary) card.append(el("p", "v2-final-summary", summary));
-  card.append(chatButton(
-    state.ready ? "Собрать заново → чат" : "Собрать → чат",
-    assembleFinal(project, revision, { ready: state.ready }),
-    "v2-chat-button v2-card-button",
-  ));
+  card.append(chatButton(assembleLabel(project), assembleFinal(project, revision),
+    "v2-chat-button v2-card-button"));
   return card;
 }
 

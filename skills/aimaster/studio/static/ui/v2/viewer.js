@@ -11,7 +11,7 @@ import { renderDecisionHistory } from "../decision-history.js";
 import { formatHistoryEntries } from "../history-panel.js";
 import { pruneDrafts } from "../card-drafts.js";
 import { variantCounts } from "./counts.js";
-import { assembleFinal } from "./screen-prompts.js";
+import { assembleFinal, assembleLabel } from "./screen-prompts.js";
 import { moreVariants, uploadFrame } from "./chat-prompts.js";
 import { showToast } from "./toast.js";
 import { cardFocusNote, clock, dropCardFocusNote, el, restoreCardFocus } from "./dom.js";
@@ -281,10 +281,7 @@ function leftColumn(snapshot, project) {
     // Свой файл референса вариантов не имеет: его можно только заменить.
     chatMenu: !final && !ownFile,
     secondary: final
-      ? {
-        label: strip.total ? "Пересобрать → чат" : "Собрать → чат",
-        request: assembleFinal(project, snapshot.revision, { ready: strip.total > 0 }),
-      }
+      ? { label: assembleLabel(project), request: assembleFinal(project, snapshot.revision) }
       : ownFile
         ? { label: "Заменить файл → чат", request: uploadFrame({ ...chat, project, revision: snapshot.revision }) }
         : null,
