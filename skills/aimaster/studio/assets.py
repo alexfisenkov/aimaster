@@ -1090,6 +1090,33 @@ class AssetIndex:
             raise AssetValidationError("registered asset has changed")
         return resolved, mime_type
 
+    def stored(self, asset_id) -> dict:
+        """Запись об ассете без чтения файла: `relative_path`, `mime_type`,
+        `size_bytes`, `digest`. Для потоковой отдачи (`studio/asset_stream.py`):
+        та сверяет файл с `digest` сама — кусками и раз на отпечаток файла."""
+
+        if not isinstance(asset_id, str) or not asset_id:
+            raise AssetNotFound(str(asset_id))
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT relative_path, mime_type, size_bytes, digest "
+                "FROM assets WHERE asset_id = ?",
+                (asset_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            raise AssetNotFound(asset_id)
+        return dict(row)
+
+    def locate(self, relative_path) -> Path:
+        """Путь к файлу записи с теми же проверками, что у `resolve` (внутри
+        разрешённых корней, обычный файл, не в зарезервированном проекте), —
+        но без чтения файла."""
+
+        return self._resolve_candidate(relative_path)
+
     def forget(self, asset_id) -> bool:
         """Drop one registration; the file itself is not touched. Only for a
         writer that registered a file moments ago and failed before anything
