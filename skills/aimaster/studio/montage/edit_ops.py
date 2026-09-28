@@ -12,12 +12,12 @@ import re
 
 from . import MontageError
 from .draft_html import title_fragment
+from .engine import cli_timeout
 from .html_doc import (ROOT_ID, element_attrs, fmt_number as fmt, insert_before_root_end,
                        root_duration, set_attr, set_text)
 from .index_io import read_index, write_index
 from .split_fades import normalize_split_fades
 
-CLI_TIMEOUT = 120
 MAX_VOLUME = 3.98
 _TITLE_ID = re.compile(r"t-(\d+)")
 
@@ -30,7 +30,7 @@ def need(value, flag: str, op: str):
 
 def cli(ctx, args) -> dict:
     return ctx.runner.json(ctx.engine, ["timeline", *args, "--dir", ".", "--json"],
-                           cwd=ctx.paths.current, timeout=CLI_TIMEOUT)
+                           cwd=ctx.paths.current, timeout=cli_timeout())
 
 
 def patch(ctx, change) -> None:

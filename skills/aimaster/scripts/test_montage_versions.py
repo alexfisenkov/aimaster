@@ -21,7 +21,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from studio.montage import MontageError  # noqa: E402
+from studio.montage import MontageError, replace_target  # noqa: E402
 from studio.montage.model import Clip, Model  # noqa: E402
 from studio.montage.paths import montage_paths  # noqa: E402
 from studio.montage.version_staging import discard_staging, publish_version, stage_version  # noqa: E402
@@ -96,7 +96,7 @@ class VersionsTests(unittest.TestCase):
         # Round-fix-3/5, item F: OSError.__str__ часто по-английски и
         # локале-зависимый — не в тексте отказа, только в цепочке (from error).
         self.publish("v001")
-        with mock.patch.object(versions_module, "replace_file",
+        with mock.patch.object(replace_target, "replace_file",
                                side_effect=OSError("boom-english-text")):
             with self.assertRaises(MontageError) as caught:
                 restore_files(self.paths, "v001")
@@ -105,7 +105,7 @@ class VersionsTests(unittest.TestCase):
 
     def test_undo_folder_or_temp_file_that_cannot_be_made_is_a_russian_refusal(self):
         self.publish("v001")
-        for target, name in ((Path, "mkdir"), (versions_module.tempfile, "mkstemp")):
+        for target, name in ((Path, "mkdir"), (replace_target.tempfile, "mkstemp")):
             with self.subTest(name), mock.patch.object(target, name,
                                                        side_effect=PermissionError(13, "denied", "/abs")):
                 with self.assertRaises(MontageError) as caught:

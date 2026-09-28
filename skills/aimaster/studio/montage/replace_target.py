@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import os
 import stat
+import tempfile
 from pathlib import Path
+from typing import Callable
 
-from ..platform_compat import IS_WINDOWS, open_nofollow
+from ..platform_compat import IS_WINDOWS, open_nofollow, replace_file
 
 
 def regular_stat(path) -> os.stat_result | None:
@@ -61,3 +63,31 @@ def open_fresh(path):
     clear_link(path)
     descriptor = open_nofollow(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
     return os.fdopen(descriptor, "wb")
+
+
+def replace_via_temp(target, fill: Callable[[Path], None], *, mode: int | None,
+                     suffix: str = ".tmp") -> None:
+    """Файл целиком — через временный рядом с целью и атомарную замену. Одна
+    реализация на запись текста (index_io) и копии файлов (media_sync, vendor,
+    versions). Имя временного — mkstemp: не фиксированное «.имя.part», которое
+    мог занять параллельный вызов или остаток прошлой попытки. `fill(путь)`
+    пишет содержимое; `mode` — права результата (None — какие оставил `fill`).
+    Цель — через `make_replaceable`: ссылка на её месте удаляется сама, по ней
+    ничего не меняется. Сбой — временный файл убран, OSError уходит наружу."""
+
+    target = Path(target)
+    descriptor, name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=suffix)
+    os.close(descriptor)
+    temporary = Path(name)
+    try:
+        fill(temporary)
+        if mode is not None:
+            os.chmod(temporary, mode)
+        make_replaceable(target)
+        replace_file(temporary, target)
+    except OSError:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass  # уборка — best effort, не подменяет исходную ошибку
+        raise

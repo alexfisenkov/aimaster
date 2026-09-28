@@ -119,14 +119,17 @@ class SplitFadesTests(unittest.TestCase):
         self.assertEqual(attrs["t-1-2"]["class"], "clip am-title")
 
     def test_data_playback_start_is_accepted_like_model_py(self):
-        # Round-fix-3/5, item E: тот же запасной атрибут, что model.py:94
-        # (`data-media-start` или, если его нет, `data-playback-start`).
-        text = STUDIO_SPLIT.replace("data-media-start", "data-playback-start")
-        result, changed = normalize_split_fades(text)
-        self.assertEqual(set(changed), {"v-1", "v-1-2"})
-        attrs = element_attrs(result)
-        self.assertNotIn("data-fade-out", attrs["v-1"])
-        self.assertNotIn("data-fade-in", attrs["v-1-2"])
+        # Тот же запасной атрибут, что читает model.py: `data-media-start`,
+        # а если его нет или он пуст — `data-playback-start`.
+        for label, old, new in (("нет вовсе", "data-media-start", "data-playback-start"),
+                                ("пустой", 'data-media-start="1"',
+                                 'data-media-start="" data-playback-start="1"')):
+            with self.subTest(label):
+                result, changed = normalize_split_fades(STUDIO_SPLIT.replace(old, new))
+                self.assertEqual(set(changed), {"v-1", "v-1-2"})
+                attrs = element_attrs(result)
+                self.assertNotIn("data-fade-out", attrs["v-1"])
+                self.assertNotIn("data-fade-in", attrs["v-1-2"])
 
     def test_titles_with_different_text_are_not_matched(self):
         titles = ('<div id="t-1" class="clip am-title" data-start="0" data-duration="1" '

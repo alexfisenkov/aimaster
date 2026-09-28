@@ -12,6 +12,13 @@ from .index_io import write_text_atomic
 from .paths import MontagePaths
 
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+PUBLIC_KEYS = ("url", "port", "pid", "started_at")
+
+
+def public(record: dict) -> dict:
+    """Поля записи, которые видят ответы open/status (без служебных)."""
+
+    return {key: record[key] for key in PUBLIC_KEYS if key in record}
 
 
 MAX_PID = 2 ** 31 - 1

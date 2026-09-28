@@ -196,5 +196,34 @@ class ReplaceTargetTests(_Planted):
         self.assertIsNone(replace_target.regular_stat(self.project / "пропал"))
 
 
+class OneReplaceHelperTests(_Planted):
+    """Текст, медиа, GSAP и возврат версии пишутся одним помощником — одинаково
+    не по ссылке, одинаково с «только чтение» на Windows."""
+
+    def test_every_writer_goes_through_replace_via_temp(self):
+        prefix = fake_gsap_prefix(self.base / "движок")
+        source = self.base / "клип.bin"
+        source.write_bytes(b"data")
+        folder = self.project / "current"
+        folder.mkdir(parents=True)
+        with mock.patch.object(replace_target, "make_replaceable",
+                               wraps=replace_target.make_replaceable) as spy:
+            index_io.write_text_atomic(folder / "index.html", "<html></html>")
+            media_sync.copy_via_temp(source, folder / "a.bin")
+            vendor.copy_gsap(prefix, folder / "assets")
+        self.assertEqual([Path(call.args[0]).name for call in spy.call_args_list],
+                         ["index.html", "a.bin", "gsap.min.js", "MotionPathPlugin.min.js"])
+
+    def test_read_only_index_is_replaced_on_windows_too(self):
+        index = self.project / "index.html"
+        index.parent.mkdir(parents=True)
+        index.write_text("старое", encoding="utf-8")
+        os.chmod(index, 0o444)
+        self.addCleanup(lambda: index.exists() and os.chmod(index, 0o644))
+        with mock.patch.object(replace_target, "IS_WINDOWS", True):
+            index_io.write_text_atomic(index, "новое")
+        self.assertEqual(index.read_text(encoding="utf-8"), "новое")
+
+
 if __name__ == "__main__":
     unittest.main()

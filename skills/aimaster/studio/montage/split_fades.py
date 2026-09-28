@@ -40,11 +40,9 @@ def _mark(attrs: dict) -> SplitMark | None:
         return None
     tag = attrs.get("_tag")
     layer = attrs.get("data-am-layer") or ("titles" if tag == "div" else tag or "")
-    # round-fix-3/5, item E: тот же запасной атрибут, что читает model.py —
-    # `data-playback-start`, если `data-media-start` нет вовсе (model.py:94).
-    media = attrs.get("data-media-start")
-    if media is None:
-        media = attrs.get("data-playback-start")
+    # Как в model.py: пустой или отсутствующий data-media-start — берётся
+    # data-playback-start, иначе одна и та же пара читалась бы по-разному.
+    media = attrs.get("data-media-start") or attrs.get("data-playback-start")
     return SplitMark(layer=layer, asset_id=attrs.get("data-am-asset") or None,
                      src=attrs.get("src") or None, text=attrs.get("_text") or None,
                      start=start, duration=duration, media_start=_num(media) or 0.0)

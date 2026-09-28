@@ -16,12 +16,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from . import LAYER_LABELS, LAYERS, MontageError, model_cache
-from .engine import Engine
+from .engine import Engine, cli_timeout
 from .engine_cli import EngineRunner
 from .html_doc import element_attrs
 from .index_io import read_index
 
-CLI_TIMEOUT = 120
 _FALLBACK_LAYER = {"video": "video", "img": "video", "image": "video", "audio": "music"}
 
 
@@ -125,7 +124,8 @@ def read_model(engine: Engine, current_dir: Path, *, cache_dir: Path | None = No
             return Model.from_dict(hit)
         except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
             pass
-    timeline = runner.json(engine, ["timeline", "--json"], cwd=Path(current_dir), timeout=CLI_TIMEOUT)
+    timeline = runner.json(engine, ["timeline", "--json"], cwd=Path(current_dir),
+                           timeout=cli_timeout())
     model = build_model(timeline, html_text)
     if cache_dir:
         model_cache.save(cache_dir, engine.version, html_text, model.to_dict())

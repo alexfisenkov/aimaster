@@ -19,6 +19,8 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 from montage_testkit import FakeHyperframes, fake_engine, video_state, with_titles  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
 from studio.montage import edit_undo  # noqa: E402
+from studio.montage import engine as engine_module  # noqa: E402
+from studio.montage.engine import load_pin  # noqa: E402
 from studio.montage.canvas import Canvas  # noqa: E402
 from studio.montage.draft_html import render_draft_html  # noqa: E402
 from studio.montage.draft_plan import plan_draft  # noqa: E402
@@ -248,6 +250,13 @@ class EditTests(unittest.TestCase):
         self.paths.index.write_text(self.text() + " ", encoding="utf-8")  # правка мышью в столе
         with self.assertRaises(MontageError):
             self.edit(op="undo")
+
+    def test_engine_calls_wait_as_long_as_engine_json_allows(self):
+        pin = {**load_pin(), "timeouts": {**load_pin()["timeouts"], "cli": 7}}
+        with mock.patch.object(engine_module, "load_pin", return_value=pin):
+            self.edit(op="move", clip="t-1", at=0.3)
+        self.assertEqual(set(self.runner.timeouts), {7})
+        self.assertGreaterEqual(len(self.runner.timeouts), 3)  # модель до, правка, модель после
 
     def test_undo_folder_keeps_the_newest_edits_only(self):
         with mock.patch.object(edit_undo, "UNDO_DEPTH", 3):

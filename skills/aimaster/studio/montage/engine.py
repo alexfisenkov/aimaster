@@ -36,6 +36,12 @@ def load_pin() -> dict:
     return json.loads(PIN_FILE.read_text(encoding="utf-8"))
 
 
+def cli_timeout() -> float:
+    """Предел коротких команд движка (timeline, lint) — engine.json → timeouts.cli."""
+
+    return load_pin()["timeouts"]["cli"]
+
+
 def tools_prefix(*, home=None, environ=None) -> Path:
     environ = os.environ if environ is None else environ
     override = environ.get(PREFIX_ENV)

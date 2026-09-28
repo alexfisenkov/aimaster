@@ -57,7 +57,7 @@ class IndexIoTests(unittest.TestCase):
         # ИСХОДНУЮ ошибку записи, а не про сбой чистки.
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "index.html"
-            with mock.patch("studio.montage.index_io.replace_file",
+            with mock.patch("studio.montage.replace_target.replace_file",
                             side_effect=OSError("исходный сбой записи")):
                 with mock.patch.object(Path, "unlink", side_effect=OSError("сбой чистки")):
                     with self.assertRaises(MontageError) as caught:

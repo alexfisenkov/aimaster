@@ -227,10 +227,12 @@ class FakeHyperframes:
         self.render_bytes = render_bytes
         self.render_log = render_log
         self.refuse = dict(refuse or {})
+        self.timeouts: list[float] = []
 
     def json(self, engine, args, *, cwd, timeout, ok_codes=(0,)):
         args = [str(item) for item in args]
         self.calls.append(args)
+        self.timeouts.append(timeout)
         index = Path(cwd) / "index.html"
         if args[0] == "lint":
             return dict(self.lint_report)

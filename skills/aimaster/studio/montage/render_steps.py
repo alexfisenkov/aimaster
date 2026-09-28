@@ -10,7 +10,7 @@ from ..workspace import MONTAGE_MAX_BYTES
 from . import AUDIO_LAYER_NAMES, MontageError
 from .canvas import DEFAULT_HEIGHT, DEFAULT_WIDTH, Canvas
 from .composition_refs import check_composition
-from .engine import load_pin
+from .engine import cli_timeout
 from .html_doc import ROOT_ID, element_attrs
 from .index_io import read_index, write_index
 from .model import Model, read_model
@@ -51,7 +51,7 @@ def preflight(paths: MontagePaths, engine, runner, text: str) -> tuple[Model, li
     if problems:
         raise MontageError("Монтаж нельзя собрать: " + "; ".join(problems))
     report = runner.json(engine, ["lint", ".", "--json"], cwd=paths.current,
-                         timeout=load_pin()["timeouts"]["cli"], ok_codes=(0, 1))
+                         timeout=cli_timeout(), ok_codes=(0, 1))
     shown = {paths.root: "montage", engine.prefix: "<движок>"}
     problems = [short_paths(problem, shown) for problem in lint_problems(report)]
     if problems:

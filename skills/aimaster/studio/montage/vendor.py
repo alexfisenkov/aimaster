@@ -17,21 +17,18 @@ in preview». Таймлайн на паузе длиной во весь рол
 
 from __future__ import annotations
 
-import os
 import re
-import tempfile
 from pathlib import Path
 
-from ..platform_compat import replace_file
 from . import MontageError
 from .composition_refs import references
 from .draft_html import script_tag
 from .engine import Engine, load_pin, not_ready, package_version
 from .prefix_layout import DRAFT_GSAP, gsap_dist, gsap_problem
 from .index_io import read_index
-from .media_sync import ASSETS_DIR
+from .media_sync import ASSETS_DIR, copy_via_temp
 from .paths import MontagePaths
-from .replace_target import make_replaceable, regular_stat
+from .replace_target import regular_stat
 
 DRAFT_SCRIPTS = DRAFT_GSAP
 _PLUGIN = re.compile(r"[A-Z][A-Za-z0-9]{1,40}")
@@ -61,30 +58,17 @@ def gsap_sources(prefix: Path, names=DRAFT_SCRIPTS) -> list[Path]:
 
 
 def _copy_if_changed(source: Path, target: Path) -> bool:
-    """Копия через временный файл mkstemp рядом с целью (не фиксированное имя:
-    два параллельных вызова не пишут в один .part) и атомарную замену. Цель
+    """Копия через `media_sync.copy_via_temp` (права 0644 − umask: скрипт монтажа
+    читают Studio и рендер), если на месте нет того же файла. Цель
     сравнивается, только если это обычный файл: симлинк (хоть на тот же GSAP)
     заменяется своим файлом, не читается и не меняется (`replace_target`)."""
 
-    temporary = None
     try:
-        data = source.read_bytes()
-        if regular_stat(target) is not None and target.read_bytes() == data:
+        if regular_stat(target) is not None and target.read_bytes() == source.read_bytes():
             return False
         target.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".part")
-        temporary = Path(name)
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(data)
-        os.chmod(temporary, 0o644)  # mkstemp даёт 0600; скрипт монтажа читают Studio и рендер
-        make_replaceable(target)
-        replace_file(temporary, target)
+        copy_via_temp(source, target, keep_mode=False)
     except OSError as error:
-        if temporary is not None:
-            try:
-                temporary.unlink(missing_ok=True)
-            except OSError:
-                pass  # чистка — best effort, не подменяет исходную ошибку
         raise MontageError(f"не удалось положить {source.name} в assets монтажа") from error
     return True
 

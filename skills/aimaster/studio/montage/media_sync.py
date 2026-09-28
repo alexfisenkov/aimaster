@@ -14,14 +14,12 @@ from __future__ import annotations
 
 import os
 import shutil
-import tempfile
 from pathlib import Path
 from typing import Iterable
 
-from ..platform_compat import replace_file
 from . import MontageError
 from .index_io import new_file_mode
-from .replace_target import clear_link, make_replaceable
+from .replace_target import clear_link, replace_via_temp
 
 ASSETS_DIR = "assets"
 
@@ -63,31 +61,13 @@ def link_or_copy(source: Path, target: Path) -> str:
 
 
 def copy_via_temp(source: Path, target: Path, *, keep_mode: bool = True) -> None:
-    """Копия через временный файл mkstemp рядом с целью (не фиксированное
-    «.имя.part»: его мог занять параллельный вызов или остаток прошлого) и
-    атомарную замену; сбой — временный файл убран, OSError наружу.
+    """Копия `source` на место `target` через `replace_via_temp`.
     `keep_mode=False` — содержимое без прав источника (файлы пакета навыка
-    бывают только для чтения): права 0644 − umask. Цель — через
-    `make_replaceable`: симлинк удаляется сам, по нему ничего не меняется."""
+    бывают только для чтения): права 0644 − umask."""
 
-    descriptor, name = tempfile.mkstemp(dir=Path(target).parent, prefix=f".{Path(target).name}.",
-                                        suffix=".part")
-    os.close(descriptor)
-    temporary = Path(name)
-    try:
-        if keep_mode:
-            shutil.copy2(source, temporary)
-        else:
-            shutil.copyfile(source, temporary)
-            os.chmod(temporary, new_file_mode())
-        make_replaceable(target)
-        replace_file(temporary, target)
-    except OSError:
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass  # уборка — best effort, не подменяет исходную ошибку
-        raise
+    copy = shutil.copy2 if keep_mode else shutil.copyfile
+    replace_via_temp(target, lambda temporary: copy(source, temporary),
+                     mode=None if keep_mode else new_file_mode(), suffix=".part")
 
 
 def sync_media(items: Iterable[tuple[str, Path]], assets_dir: Path) -> dict[str, dict]:

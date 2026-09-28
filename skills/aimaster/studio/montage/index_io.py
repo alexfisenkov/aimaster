@@ -17,9 +17,8 @@ import tempfile
 import threading
 from pathlib import Path
 
-from ..platform_compat import replace_file
 from . import MontageError
-from .replace_target import clear_link, regular_stat
+from .replace_target import regular_stat, replace_via_temp
 
 
 _MODE_LOCK = threading.Lock()
@@ -72,38 +71,22 @@ def _target_mode(path: Path) -> int:
 
 
 def write_text_atomic(path: Path, text: str) -> None:
-    """Пишет текстовый файл через временный + атомарную замену, `newline=""`
-    — `text` уходит на диск как есть, без перевода строк: свежий текст,
-    собранный с `\\n`, получит `\\n`; текст, прочитанный `read_index` из
-    файла с CRLF и точечно правленный, вернёт CRLF, не перегонит весь файл
-    в LF ради пары атрибутов.
-
-    Временное имя — через `mkstemp` в той же папке: не голое «.name.tmp»
-    (параллельная запись того же файла из двух мест иначе коллизирует на
-    одном временном имени); права — как у заменяемого файла (`_target_mode`).
-    Сбой чтения/записи на любом шаге (нет прав, диск занят другим процессом
-    на Windows, диск полон) — MontageError с понятным текстом, а не голый
-    traceback; попытка убрать недописанный временный файл не должна
-    подменить исходную ошибку своей."""
+    """Пишет текстовый файл через временный + атомарную замену
+    (`replace_target.replace_via_temp`), `newline=""` — `text` уходит на диск
+    как есть: свежий текст с `\\n` получит `\\n`, а прочитанный `read_index`
+    из файла с CRLF и точечно правленный вернёт CRLF. Права — как у
+    заменяемого файла (`_target_mode`). Сбой на любом шаге (нет прав, файл
+    занят другим процессом на Windows, диск полон) — MontageError с понятным
+    текстом, а не голый traceback."""
 
     path = Path(path)
+
+    def fill(temporary: Path) -> None:
+        with open(temporary, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temp_name = tempfile.mkstemp(
-            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-        temporary = Path(temp_name)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
-                handle.write(text)
-            os.chmod(temporary, _target_mode(path))
-            clear_link(path)  # симлинк заменяется своим файлом, не его цель
-            replace_file(temporary, path)
-        except OSError:
-            try:
-                temporary.unlink(missing_ok=True)
-            except OSError:
-                pass  # чистка — best effort, не маскирует исходную ошибку
-            raise
+        replace_via_temp(path, fill, mode=_target_mode(path))
     except OSError as error:
         raise MontageError(f"не удалось записать {path.name} (нет доступа или файл занят)") from error
 

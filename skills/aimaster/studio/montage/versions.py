@@ -12,18 +12,17 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
-import tempfile
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
-from ..platform_compat import IS_WINDOWS, replace_file
+from ..platform_compat import IS_WINDOWS
 from . import MontageError
 from .model import Model
 from .paths import VERSION_ID, MontagePaths, version_name, version_number
+from .replace_target import replace_via_temp
 
 BY_VALUES = ("agent", "owner", "autopilot")
 
@@ -143,20 +142,11 @@ def restore_files(paths: MontagePaths, version_id: str) -> Path | None:
         except OSError as error:
             raise MontageError(f"не удалось сохранить текущий монтаж перед возвратом к {version_id}"
                                ) from error
-    # mkstemp, не фиксированное имя: два параллельных restore или недобитый
-    # временный файл прошлой попытки не столкнутся на одном имени.
-    temporary = None
     try:
-        descriptor, temp_name = tempfile.mkstemp(
-            dir=paths.index.parent, prefix=f".{paths.index.name}.", suffix=".restore.tmp")
-        os.close(descriptor)
-        temporary = Path(temp_name)
-        shutil.copy2(source, temporary)
-        replace_file(temporary, paths.index)
+        replace_via_temp(paths.index, lambda temporary: shutil.copy2(source, temporary), mode=None,
+                         suffix=".restore.tmp")
     except OSError as error:
         # Текст OSError (по-английски, с путями) — только в цепочке исключения.
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
         raise MontageError(f"не удалось восстановить версию {version_id}") from error
     return backup
 
