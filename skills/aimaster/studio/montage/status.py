@@ -41,8 +41,9 @@ def _base(ctx: ProjectContext, engine: Engine | None, reason: str) -> dict:
     }
 
 
-def _stale(ctx: ProjectContext) -> dict:
-    """Одна форма записи для всех трёх исходов stale_clips: audio_change
+def stale_part(ctx: ProjectContext) -> dict:
+    """Устаревшие клипы (и для экрана «Сборка», status_screen.model_status).
+    Одна форма записи для всех трёх исходов stale_clips: audio_change
     ставит только refresh, здесь его ещё нет — None."""
 
     try:
@@ -52,7 +53,7 @@ def _stale(ctx: ProjectContext) -> dict:
     return {"stale_clips": [{key: item.get(key) for key in STALE_KEYS} for item in items]}
 
 
-def _model_part(ctx: ProjectContext, engine: Engine, current_version, runner) -> dict:
+def model_part(ctx: ProjectContext, engine: Engine, current_version, runner) -> dict:
     paths = ctx.paths
     try:
         model = read_model(engine, paths.current, cache_dir=paths.cache, runner=runner)
@@ -67,10 +68,10 @@ def montage_status(ctx: ProjectContext, engine: Engine | None, reason: str, *, r
                    desk=None) -> dict:
     result = _base(ctx, engine, reason)
     if result["exists"]:
-        result.update(_stale(ctx))
+        result.update(stale_part(ctx))
         result["desk"] = (desk or StudioDesk(engine)).status(ctx.paths)
         if engine is not None:
-            result.update(_model_part(ctx, engine, result["current_version"], runner))
+            result.update(model_part(ctx, engine, result["current_version"], runner))
     if result["current_version"]:
         # Путь MP4 версии задан раскладкой (paths.render_output); проверять
         # файл через AssetIndex (чтение до 2 ГиБ и sha256) на каждый опрос
