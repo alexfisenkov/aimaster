@@ -84,7 +84,7 @@ class StateTests(unittest.TestCase):
                          ("montage-restored", "you"))
 
     def test_history_actor_follows_who_made_the_version(self):
-        # Round-fix-1/5, item 9: history actor раньше был всегда "agent",
+        # history actor раньше был всегда "agent",
         # даже когда версию сделал владелец (VersionMeta.by="owner"); domain
         # знает только "you"/"agent" — owner пишется в историю как "you".
         record_draft(self.store, "p", 0, canvas=Canvas(108, 192))
@@ -94,7 +94,7 @@ class StateTests(unittest.TestCase):
         self.assertEqual(self.load()["history"][-1]["actor"], "agent")
 
     def test_missing_asset_is_refused_in_russian(self):
-        # Round-fix-1/5, item 10: и запись версии, и возврат к ней читают
+        # И запись версии, и возврат к ней читают
         # актив монтажа (до 2 ГиБ, полный файл + sha256) до входа в
         # транзакцию, а не под файловой блокировкой state.
         record_draft(self.store, "p", 0, canvas=Canvas(108, 192))
@@ -103,7 +103,7 @@ class StateTests(unittest.TestCase):
                               asset_id="asset-not-registered", model_hash="h")
         with self.assertRaises(MontageError) as caught:
             record_version(self.store, self.assets, "p", 1, meta=missing)
-        # Round-fix-2/5, item 8: без английского текста исключения AssetIndex
+        # Без английского текста исключения AssetIndex
         # (assets.py: "registered asset has changed" и т. п.) в отказе.
         self.assertIn("изменился или удалён", str(caught.exception))
         self.assertNotIn("registered asset", str(caught.exception))

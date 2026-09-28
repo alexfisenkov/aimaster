@@ -104,13 +104,13 @@ class WorkspaceSkillsTests(unittest.TestCase):
         self.assertIn("engine.install в ответе montage status", result["hyperframes_skills"]["message"])
 
     def test_stale_copy_temp_dirs_are_swept_before_a_new_copy(self):
-        """Разбор 1/5, находка 11: мусор от оборванной прошлой копии
-        убирается — но только старше часа (разбор 2/5, находка B): свежая
+        """Мусор от оборванной прошлой копии
+        убирается — но только старше часа: свежая
         папка может быть рабочей папкой параллельно идущей установки."""
 
         claude_skills = self.ws / ".claude" / "skills"
         claude_skills.mkdir(parents=True)
-        # имена — настоящий mkdtemp, как у _copy: уборка сверяет его точный вид (разбор 4/5)
+        # имена — настоящий mkdtemp, как у _copy: уборка сверяет его точный вид
         prefix = f"{workspace_skills.TEMP_PREFIX}demo-"
         stale = Path(tempfile.mkdtemp(prefix=prefix, dir=str(claude_skills)))
         (stale / "leftover.txt").write_text("мусор", encoding="utf-8")
@@ -125,7 +125,7 @@ class WorkspaceSkillsTests(unittest.TestCase):
         self.assertTrue(keep.exists())
 
     def test_lookalike_user_folder_is_never_swept(self):
-        """Разбор 2/5, находка B: скилл называется «demo» — своя папка
+        """Скилл называется «demo» — своя папка
         пользователя «.demo-backup» не должна совпасть с точным видом
         tempfile.mkdtemp (раньше префиксный glob «.demo-*» её бы смёл)."""
 
@@ -140,7 +140,7 @@ class WorkspaceSkillsTests(unittest.TestCase):
     @unittest.skipIf(os.name == "nt", "права доступа POSIX — на Windows это не тестируется")
     @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root игнорирует права доступа")
     def test_unreadable_agent_dir_does_not_crash_the_sweep(self):
-        """Разбор 3/5, находка 2: PermissionError на iterdir() при уборке не
+        """PermissionError на iterdir() при уборке не
         должен ронять всю установку — уборка мусора необязательна."""
 
         claude_skills = self.ws / ".claude" / "skills"
@@ -155,7 +155,7 @@ class WorkspaceSkillsTests(unittest.TestCase):
     @unittest.skipIf(os.name == "nt", "права доступа POSIX — на Windows это не тестируется")
     @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root игнорирует права доступа")
     def test_unsearchable_agent_dir_does_not_crash_the_sync(self):
-        """Разбор 4/5, находка 2: 0o600 — iterdir() работает, а stat каждой
+        """0o600 — iterdir() работает, а stat каждой
         записи нет; на Python 3.11/3.12 уборка (is_symlink/is_dir) и
         inspect_copy (is_symlink/exists) бросали PermissionError."""
 
@@ -201,7 +201,7 @@ class WorkspaceSkillsTests(unittest.TestCase):
 
 
 class HomeGuardTests(unittest.TestCase):
-    """Разбор 1/5, находка 4: рабочая папка не может быть домашней."""
+    """Рабочая папка не может быть домашней."""
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -250,7 +250,7 @@ class HomeGuardTests(unittest.TestCase):
         self.assertEqual(report["status"], "installed")
 
     def test_case_variant_path_is_recognized_via_samefile(self):
-        """Разбор 2/5, находка A: на регистронезависимой ФС (обычная APFS)
+        """На регистронезависимой ФС (обычная APFS)
         Path.resolve() не меняет регистр — строковое сравнение путей это
         упускает, os.path.samefile (по st_dev/st_ino) — нет. Симулируем
         подменой samefile, чтобы тест не зависел от ФС хоста."""
@@ -269,7 +269,7 @@ class HomeGuardTests(unittest.TestCase):
         self.assertEqual(report["status"], "skipped_home")
 
     def test_root_level_match_is_caught_before_skills_subfolder_exists(self):
-        """Разбор 3/5, находка 3: пока ~/.claude/skills не существует ни с
+        """Пока ~/.claude/skills не существует ни с
         той, ни с другой стороны, старое сравнение (только на подпапке
         skills, резолвнутой строкой) это пропускало — теперь сверяется и
         сам корень агента (.claude), где симлинк/регистр уже виден."""
@@ -293,7 +293,7 @@ class HomeGuardTests(unittest.TestCase):
         self.assertEqual(report["status"], "skipped_home")
 
     def test_symlink_loop_in_agent_root_does_not_crash(self):
-        """Разбор 3/5, находка 3: цикл символических ссылок — на Python
+        """Цикл символических ссылок — на Python
         3.11/3.12 Path.resolve() бросает RuntimeError, не OSError — не
         должен ронять проверку, только сказать «не совпало»."""
 
@@ -323,7 +323,7 @@ class HomeGuardTests(unittest.TestCase):
         self.assertEqual(report["status"], "installed")
 
     def test_home_claude_itself_symlinked_elsewhere_is_still_detected(self):
-        """Разбор 2/5, находка A: ~/.claude сам может быть симлинком (типично
+        """~/.claude сам может быть симлинком (типично
         при управлении дотфайлами) — старое сравнение резолвило рабочую
         сторону, но не домашнюю, и пропускало этот случай."""
 

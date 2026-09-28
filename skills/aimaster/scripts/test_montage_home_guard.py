@@ -42,13 +42,13 @@ class SameDirTests(unittest.TestCase):
         self.assertFalse(home_guard.same_dir(a, self.base / "другой" / "путь"))
 
     def test_runtime_error_from_resolve_is_treated_as_not_matching(self):
-        """Разбор 3/5, находка 3: Path.resolve() на цикле символических
+        """Path.resolve() на цикле символических
         ссылок бросает RuntimeError на Python 3.11/3.12 (не OSError) —
         same_dir не должен падать, только сказать «не совпало». Подмена
         вместо реального цикла: поведение самого цикла отличается между
         версиями Python (на сборке, где писался тест, os.path.samefile сам
         перехватывает цикл как OSError раньше, чем дело доходит до
-        resolve() — см. batch-2-report.md, разбор 3/5)."""
+        resolve())."""
 
         a, b = self.base / "a", self.base / "b"
         with mock.patch("os.path.samefile", side_effect=OSError("не то")), \

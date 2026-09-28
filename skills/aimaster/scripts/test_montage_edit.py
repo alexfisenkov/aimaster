@@ -36,7 +36,7 @@ SOURCES = {"asset-a": "assets/asset-a.mp4", "asset-b": "assets/asset-b.mp4",
            "asset-v": "assets/asset-v.wav"}
 SCENES = [("s1", "Сад", "Барсик идёт по саду", 2000, "asset-a"),
           ("s2", "Клубок", "Находит клубок", 2000, "asset-b")]
-# Задача 10b: render_draft_html несёт ссылки на локальный GSAP в <head>.
+# render_draft_html несёт ссылки на локальный GSAP в <head>.
 SCRIPTS = ("assets/gsap.min.js", "assets/MotionPathPlugin.min.js")
 
 
@@ -88,7 +88,7 @@ class EditTests(unittest.TestCase):
         self.assertEqual(attrs["v-2-2"]["data-media-start"], "0.5")
 
     def test_split_audio_clip_drops_inner_fade_only(self):
-        # Round-fix-1/5, item 1: разрез настоящего <audio> с уже проставленными
+        # Разрез настоящего <audio> с уже проставленными
         # data-fade-in/out — внешние края (начало и конец ролика) остаются,
         # внутренний стык (место разреза) чистится с обеих сторон.
         self.edit(op="fade", clip="a-voice", fade_in=0.3, fade_out=0.3)
@@ -101,7 +101,7 @@ class EditTests(unittest.TestCase):
         self.assertEqual(attrs[new_id]["data-fade-out"], "0.3")
 
     def test_explicit_fade_survives_a_later_unrelated_split(self):
-        # Round-fix-2/5, item 1: разрез не должен трогать fade на ДРУГОМ
+        # Разрез не должен трогать fade на ДРУГОМ
         # клипе, даже если тот раньше был правой половиной более раннего
         # разреза того же исходника. v-1 -> v-1, v-1-2; на v-1-2 ставим
         # fade-in правкой (не копией CLI); затем разрезаем САМ v-1-2 ->
@@ -115,17 +115,16 @@ class EditTests(unittest.TestCase):
         self.assertEqual(self.attrs()["v-1-2"]["data-fade-in"], "0.3")
 
     def test_volume_allowed_by_markup_even_if_the_timeline_row_omits_it(self):
-        # Round-fix-2/5, item 7: _has_sound теперь смотрит на свою разметку
-        # (data-has-audio/muted), а не на Clip.volume — то самое поле строки
-        # `timeline --json`, о ненадёжности которого для этой же цели уже
-        # предупреждал round-fix-1/5, item 8 (там — про data-am-asset/src).
+        # _has_sound теперь смотрит на свою разметку
+        # (data-has-audio/muted), а не на Clip.volume — поле строки
+        # `timeline --json`, которое CLI не обязан отдавать одинаково.
         text = self.text().replace(' data-volume="0.3"', "")  # v-1: data-has-audio остаётся, data-volume снят
         self.paths.index.write_text(text, encoding="utf-8")
         self.edit(op="volume", clip="v-1", value=0.6)
         self.assertEqual(self.attrs()["v-1"]["data-volume"], "0.6")
 
     def test_volume_and_fade_refused_on_muted_video(self):
-        # Round-fix-1/5, item 7: v-2 немой (has_audio=False) — правка volume/fade
+        # v-2 немой (has_audio=False) — правка volume/fade
         # раньше молча принималась и ничего не делала; теперь явный отказ.
         with self.assertRaises(MontageError) as caught:
             self.edit(op="volume", clip="v-2", value=0.5)
@@ -134,7 +133,7 @@ class EditTests(unittest.TestCase):
             self.edit(op="fade", clip="v-2", fade_in=0.1)
 
     def test_undo_refuses_when_the_note_is_missing_or_corrupt(self):
-        # Round-fix-1/5, item 3: гвардия отката была «открыта по умолчанию» —
+        # Гвардия отката была «открыта по умолчанию» —
         # без отметки о состоянии файла после правки undo молча выполнялся.
         self.edit(op="delete", clip="t-2")
         note = sorted(self.paths.undo.glob("edit-*.json"))[-1]
@@ -151,7 +150,7 @@ class EditTests(unittest.TestCase):
             self.edit(op="undo")
 
     def test_undo_refuses_when_the_note_is_valid_json_but_not_an_object(self):
-        # Round-fix-2/5, item 6: валидный JSON, но не словарь (список,
+        # Валидный JSON, но не словарь (список,
         # число, null) — .get("after") падал бы AttributeError'ом мимо
         # отказа, а не отказывал по-русски.
         self.edit(op="delete", clip="t-2")
@@ -163,7 +162,7 @@ class EditTests(unittest.TestCase):
             self.assertIn("отметк", str(caught.exception))
 
     def test_crlf_survives_a_cli_edit(self):
-        # Round-fix-1/5, item 12: FakeHyperframes сам читал/писал index.html
+        # FakeHyperframes сам читал/писал index.html
         # универсальным переводом строк — CRLF молча превращался в LF ещё в
         # тесте, до того как могла бы вскрыться настоящая грабля в проде.
         crlf = self.text().replace("\n", "\r\n")
@@ -174,8 +173,8 @@ class EditTests(unittest.TestCase):
         self.assertNotRegex(raw, r"(?<!\r)\n")
 
     def test_timelines_script_survives_every_edit_op(self):
-        # Round-fix-1/5, item 13: window.__timelines["main"] — то, без чего
-        # превью Studio перематывает без звука (задача 10b) — не должно
+        # window.__timelines["main"] — то, без чего
+        # превью Studio перематывает без звука — не должно
         # пострадать ни от одной операции правки.
         baseline = self.text()
         cases = [

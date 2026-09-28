@@ -37,7 +37,7 @@ SOURCES = {"asset-a": "assets/asset-a.mp4", "asset-b": "assets/asset-b.mp4",
 SCENES = [("s1", "Сад", "Барсик идёт по саду", 2000, "asset-a"),
           ("s2", "Клубок", "Находит клубок", 2000, "asset-b")]
 NAMES = {"s1": "сцены 1 «Сад»", "s2": "сцены 2 «Клубок»"}
-# Задача 10b: render_draft_html несёт ссылки на локальный GSAP в <head> —
+# render_draft_html несёт ссылки на локальный GSAP в <head> —
 # для разбора моделью содержимое <script> роли не играет, важен только id.
 SCRIPTS = ("assets/gsap.min.js", "assets/MotionPathPlugin.min.js")
 
@@ -67,10 +67,9 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(model.clip("a-voice").layer, "voice")
 
     def test_clip_src_comes_from_markup_not_the_timeline_row(self):
-        # Round-fix-3/5, item E: Clip.src — атрибут разметки (`src=` тега),
+        # Clip.src — атрибут разметки (`src=` тега),
         # не поле `timeline --json`'s строки, которое CLI не обязан отдавать
-        # одинаково с тем, что реально в разметке (тот же риск, что уже был
-        # у data-am-asset, round-fix-1/5, item 8).
+        # одинаково с тем, что реально в разметке.
         text = draft_html()
         timeline = timeline_from_html(text)
         for track in timeline["timeline"]["tracks"]:
@@ -185,13 +184,13 @@ class DiffTests(unittest.TestCase):
         self.assertEqual((fmt_time(65.3), fmt_len(3.5)), ("1:05.3", "3,5 с"))
 
     def test_format_rounding_carries_into_the_next_minute(self):
-        # Round-fix-1/5, item 4: округление секунд ДО divmod — иначе 59.97 с
+        # Округление секунд ДО divmod — иначе 59.97 с
         # печаталось как «0:60.0» вместо «1:00.0».
         self.assertEqual(fmt_time(59.97), "1:00.0")
         self.assertEqual(fmt_time(59.94), "0:59.9")
 
     def test_format_shows_sub_tenth_changes_as_at_least_a_tenth(self):
-        # Round-fix-1/5, item 5: изменение меньше 0,1 с не должно читаться
+        # Изменение меньше 0,1 с не должно читаться
         # как «без изменений» — округление к 0,1 с, ROUND_HALF_UP, не к нулю.
         self.assertEqual(fmt_len(0.03), "0,1 с")
         self.assertEqual(fmt_len(0.05), "0,1 с")
@@ -210,7 +209,7 @@ class DiffTests(unittest.TestCase):
         self.assertEqual(self.diff(text), ["клип сцены 1 «Сад»: начало обрезано на 0,5 с"])
 
     def test_head_trim_amount_below_display_precision(self):
-        # Round-fix-3/5, item D: обрезка на 0,03 с раньше показывалась как
+        # Обрезка на 0,03 с раньше показывалась как
         # «0,1 с» (fmt_len завышала мелкое ненулевое значение) — теперь точно.
         text = self.text
         for attr, value in (("data-start", "0.03"), ("data-duration", "1.97"), ("data-media-start", "0.03")):
@@ -218,7 +217,7 @@ class DiffTests(unittest.TestCase):
         self.assertEqual(self.diff(text), ["клип сцены 1 «Сад»: начало обрезано на 0,03 с"])
 
     def test_root_length_precision_escalates(self):
-        # Round-fix-3/5, item D: то же самое для длины ролика (3,50 → 3,53).
+        # То же самое для длины ролика (3,50 → 3,53).
         text = set_attr(self.text, "root", "data-duration", "3.53")
         self.assertEqual(self.diff(text), ["длина ролика изменилась на 0,03 с"])
 
@@ -240,7 +239,7 @@ class DiffTests(unittest.TestCase):
                                            "клип сцены 2 «Клубок»: сдвинут 0:02.0 → 0:02.5"])
 
     def test_position_and_length_change_below_display_precision(self):
-        # Round-fix-2/5, item 5: 0,1 с не различает 2,00 и 2,03 — раньше
+        # 0,1 с не различает 2,00 и 2,03 — раньше
         # печаталось «сдвинут 0:02.0 → 0:02.0», как будто ничего не случилось.
         self.assertEqual(fmt_len_precise(0.03), "0,03 с")
         text = set_attr(self.text, "v-2", "data-start", "2.03")
@@ -258,7 +257,7 @@ class DiffTests(unittest.TestCase):
         self.assertEqual(self.diff(text), ["клип сцены 1 «Сад»: разрезан на 0:01.0"])
 
     def test_split_title_is_reported_as_one_cut(self):
-        # Round-fix-1/5, item 8: у титра нет data-am-asset — разрез узнаётся
+        # У титра нет data-am-asset — разрез узнаётся
         # по совпадающему тексту обеих половин, не по timeline-полю src.
         with tempfile.TemporaryDirectory() as temp:
             index = Path(temp) / "index.html"
@@ -269,7 +268,7 @@ class DiffTests(unittest.TestCase):
         self.assertEqual(self.diff(text), ["титр «Барсик идёт по саду»: разрезан на 0:01.0"])
 
     def test_split_without_asset_marker_is_reported_as_a_cut(self):
-        # Round-fix-2/5, item 3: Studio может перетащить в клип новый файл,
+        # Studio может перетащить в клип новый файл,
         # потеряв нашу метку data-am-asset — split всё равно узнаётся по src
         # (общее правило split_pairs.is_split_pair, то же, что у split_fades).
         text = self.text.replace(' data-am-asset="asset-b"', "")
@@ -284,7 +283,7 @@ class DiffTests(unittest.TestCase):
         self.assertFalse(any("добавлен" in line or "укорочен" in line for line in changes), changes)
 
     def test_repeated_split_is_reported_as_cuts_not_additions(self):
-        # Round-fix-1/5, item 8: второй разрез того же клипа (родитель — сам
+        # Второй разрез того же клипа (родитель — сам
         # новый кусок первого разреза, которого нет в «до») не должен
         # превращаться в «добавлен».
         with tempfile.TemporaryDirectory() as temp:
@@ -301,7 +300,7 @@ class DiffTests(unittest.TestCase):
         self.assertTrue(all("добавлен" not in line for line in changes))
 
     def test_missing_volume_defaults_to_full(self):
-        # Round-fix-1/5, item 6: клип без data-volume звучит на 100%, не на 0%
+        # Клип без data-volume звучит на 100%, не на 0%
         # (умолчание HyperFrames) — и diff не путает "нет атрибута" со "звук выключен".
         text = self.text.replace(' data-volume="1"', "")
         self.assertIsNone(model_of(text).clip("a-voice").volume)
@@ -316,7 +315,7 @@ class DiffTests(unittest.TestCase):
             "титр «Кот»: текст «Барсик идёт по саду» → «Кот»",
             "звук «Голос» (a-voice): громкость 100% (0 дБ) → 50% (−6 дБ)",
             "звук «Голос» (a-voice): плавное появление звука 0,5 с"])
-        # Round-fix-2/5, item 8: один стиль минуса (U+2212) везде — не ASCII-дефис.
+        # Один стиль минуса (U+2212) везде — не ASCII-дефис.
         self.assertIn("−", lines[1])
         self.assertNotIn("-6", lines[1])
 

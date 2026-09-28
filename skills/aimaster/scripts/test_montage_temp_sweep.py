@@ -137,7 +137,7 @@ class SweepTests(unittest.TestCase):
 
     @POSIX_PERMS
     def test_unsearchable_parent_is_a_no_op(self):
-        """Разбор 4/5, находка 2: чтение без поиска — iterdir() работает, а
+        """Чтение без поиска — iterdir() работает, а
         stat каждой записи нет; на Python 3.11/3.12 is_symlink()/is_dir()
         прежней уборки бросали PermissionError."""
 

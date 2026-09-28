@@ -1,10 +1,9 @@
 """Где стоит движок HyperFrames и готов ли он к работе.
 
-Движок ставит scripts/install_montage.py в <user_data_dir>/tools/hyperframes:
-`npm install --prefix`, свой HOME (home/) для кэшей и браузера и запись
-aimaster-engine.json с путём к скачанному браузеру (раскладка папки —
-prefix_layout.py, её имена доступны и отсюда). Переменная
-AIMASTER_HYPERFRAMES_DIR подменяет папку — для CI и смоука.
+Движок ставит scripts/install_montage.py в <user_data_dir>/tools/hyperframes
+(`npm install --prefix`, свой HOME, запись aimaster-engine.json с путём к
+браузеру; раскладка — prefix_layout.py, её имена доступны и отсюда).
+Переменная AIMASTER_HYPERFRAMES_DIR подменяет папку — для CI и смоука.
 """
 
 from __future__ import annotations
@@ -51,9 +50,8 @@ def tools_prefix(*, home=None, environ=None) -> Path:
 
 
 def install_argv() -> list[str]:
-    """argv установки — список без кавычек под какую-либо оболочку. Самый
-    надёжный вид команды: агент, чей инструмент запускает программу со
-    списком аргументов, берёт его (`engine.install_argv` в montage status)."""
+    """argv установки без кавычек под оболочку — самый надёжный вид команды
+    (`engine.install_argv` в montage status)."""
 
     return [sys.executable, str(INSTALL_PY), "--install-deps"]
 

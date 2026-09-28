@@ -34,7 +34,7 @@ def installed_version(prefix: Path) -> str | None:
     return package_version(prefix, "hyperframes")
 
 
-DRAFT_GSAP = ("gsap", "MotionPathPlugin")  # черновик несёт оба (vendor.py, задача 10b)
+DRAFT_GSAP = ("gsap", "MotionPathPlugin")  # черновик несёт оба (vendor.py)
 
 
 def gsap_dist(prefix: Path) -> Path:

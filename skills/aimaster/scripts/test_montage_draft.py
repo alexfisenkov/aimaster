@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Черновик: эталонная разметка без титров и внешних ссылок, локальный GSAP и таймлайн main
-(звук в превью Studio, задача 10b); свой шрифт; обновление устаревших клипов."""
+(звук в превью Studio); свой шрифт; обновление устаревших клипов."""
 
 from __future__ import annotations
 
@@ -35,9 +35,9 @@ from studio.montage.stale import stale_clips  # noqa: E402
 
 SCENES = [("s1", "Сад", "Барсик идёт по саду", 2000, "asset-a"),
           ("s2", "Клубок", "Находит клубок", 2000, "asset-b")]
-# Fix round 2/5, item 3 + раунд 3/5, item 5: data-am-scenes/data-am-gen-mode/
+# data-am-scenes/data-am-gen-mode/
 # data-am-layers — слепок структуры проекта на момент сборки, читает
-# stale_clips (stale.py). Задача 10b: без data-no-timeline — у черновика свой
+# stale_clips (stale.py). Без data-no-timeline — у черновика свой
 # таймлайн main (иначе Studio после правки играет перемоткой, без звука).
 ROOT = ('<div id="root" data-composition-id="main" data-start="0" data-duration="3.5" '
         'data-width="108" data-height="192" data-am-scenes="s1 s2" '
@@ -89,7 +89,7 @@ class DraftTests(unittest.TestCase):
             self.assertIn(line, text)
         self.assertNotIn('data-am-layer="titles"', text)
         self.assertNotIn("data-no-timeline", text)
-        # Задача 10b: локальный GSAP из движка и таймлайн main на паузе длиной
+        # Локальный GSAP из движка и таймлайн main на паузе длиной
         # в data-duration корня, зарегистрированный после корня.
         head = text[:text.index("</head>")]
         self.assertIn('<script src="assets/gsap.min.js"></script>', head)
@@ -107,7 +107,7 @@ class DraftTests(unittest.TestCase):
         self.assertNotIn("font-family: sans-serif", text)
         self.assertIn('src: url("assets/fonts/inter-cyrillic-400-normal.woff2") format("woff2")', text)
         self.assertTrue((self.paths.assets / "fonts" / "inter-cyrillic-700-normal.woff2").is_file())
-        # Fix round 1/5: лицензия шрифта едет рядом с файлами (условие 2 OFL).
+        # Лицензия шрифта едет рядом с файлами (условие 2 OFL).
         self.assertTrue((self.paths.assets / "fonts" / "OFL.txt").is_file())
         self.assertEqual(external_references(text), [])
         self.assertEqual(missing_sources(text, self.paths.current), [])
@@ -186,8 +186,6 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(backup.parent, self.paths.undo)
         self.assertTrue(backup.read_text(encoding="utf-8").endswith("<!-- правка в столе -->"))
 
-    # Fix round 1/5: три находки reviewer'а на refresh/stale_clips.
-
     def test_refresh_flips_muted_state_both_directions(self):
         self.draft(video_state(SCENES, audio={"voice": "asset-v"}))
         # s1 переезжает на немой asset-b (звук должен пропасть), s2 — на
@@ -220,7 +218,7 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(after["v-2"], before["v-2"])
 
     def test_stale_clips_removed_scene_needs_rebuild(self):
-        # Fix round 2/5, item 3: у структурных записей clip всегда None (даже
+        # У структурных записей clip всегда None (даже
         # если в разметке технически есть повисший "v-2") и есть cause.
         self.draft(video_state(SCENES))
         newer = video_state([SCENES[0]])
@@ -238,7 +236,7 @@ class DraftTests(unittest.TestCase):
                          [(None, "s3", "scene_added", "нужен --rebuild")])
 
     def test_stale_clips_gen_mode_switch_is_one_project_level_item(self):
-        # Fix round 2/5, item 3: ОДНА запись на весь проект, а не по клипу.
+        # ОДНА запись на весь проект, а не по клипу.
         self.draft(video_state(SCENES))
         newer = video_state([("s1", "Сад", "Барсик идёт по саду", 2000, None),
                              ("s2", "Клубок", "Находит клубок", 2000, None)],
@@ -248,7 +246,7 @@ class DraftTests(unittest.TestCase):
                          [(None, "gen_mode", "нужен --rebuild")])
 
     def test_stale_clips_newly_accepted_layer_without_a_clip_is_layer_added(self):
-        # Fix round 2/5, item 3: слой, ставший принятым уже после сборки
+        # Слой, ставший принятым уже после сборки
         # черновика — своя причина, «нужен --rebuild», не «нет принятого».
         self.draft(video_state(SCENES))
         newer = video_state(SCENES, audio={"music": "asset-c"})
@@ -258,7 +256,7 @@ class DraftTests(unittest.TestCase):
                          [(None, "music", "layer_added", "нужен --rebuild")])
 
     def test_stale_clips_scene_deleted_from_the_desk_is_not_stale(self):
-        # Fix round 2/5, item 3: сцена осталась в проекте и её знал черновик
+        # Сцена осталась в проекте и её знал черновик
         # (data-am-scenes), но клипа для неё в разметке уже нет — владелец
         # сам убрал её со стола; refresh это не его дело.
         self.draft(video_state(SCENES))
@@ -269,7 +267,7 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(stale, [])
 
     def test_stale_clips_reconstructs_structure_when_markers_are_stripped(self):
-        # Fix round 3/5, item 4: _legacy_stale_clips убран — без markers на
+        # _legacy_stale_clips убран — без markers на
         # корне структура восстанавливается из самих клипов и идёт через тот
         # же (единственный) алгоритм; пока клипы не поменялись, результат
         # совпадает с тем, что дала бы разметка (test_stale_clips_removed_
@@ -288,7 +286,7 @@ class DraftTests(unittest.TestCase):
                          [(None, "s2", "scene_removed", "нужен --rebuild")])
 
     def test_stale_clips_one_shot_without_markers_is_not_every_scene_added(self):
-        # Задача 10b (перенос из батча 4): one_shot-черновик без слепка на
+        # one_shot-черновик без слепка на
         # корне — видео-клип без сцены не говорит, какие сцены знал черновик;
         # сцены тогда неизвестны и разность сцен не считается (раньше каждая
         # сцена проекта выходила scene_added при неизменном проекте).
@@ -309,7 +307,7 @@ class DraftTests(unittest.TestCase):
                          [("v-1", "asset-a", None)])
 
     def test_stale_clips_scene_added_in_one_shot_needs_rebuild(self):
-        # Fix round 3/5, item 6: в one_shot один клип покрывает всю историю
+        # В one_shot один клип покрывает всю историю
         # (story_end считается по всем сценам) — добавление сцены меняет
         # раскладку и там, не только в per_scene; gen_mode не меняется.
         state = video_state([("s1", "Сад", "Барсик в саду", 2000, None),
@@ -326,7 +324,7 @@ class DraftTests(unittest.TestCase):
                          [(None, "s3", "scene_added", "нужен --rebuild")])
 
     def test_stale_clips_dedupes_scene_removed_by_scene_id(self):
-        # Fix round 3/5, item 7: два клипа с одной и той же (уже удалённой из
+        # Два клипа с одной и той же (уже удалённой из
         # проекта) сценой — запись про неё одна, не по одной на клип.
         html = ('<div id="root" data-am-scenes="s1 s2" data-am-gen-mode="per_scene" '
                'data-am-layers="">'
@@ -343,7 +341,7 @@ class DraftTests(unittest.TestCase):
         self.assertEqual([(item["scene_id"], item["clip"]) for item in removed], [("s2", None)])
 
     def test_stale_clips_layer_clip_deleted_from_the_desk_is_not_stale(self):
-        # Fix round 3/5, item 5: слой симметричен сцене — recorded и всё ещё
+        # Слой симметричен сцене — recorded и всё ещё
         # принятый слой, чей клип убрали со стола, не помечается вовсе.
         self.draft(video_state(SCENES, audio={"voice": "asset-v"}))
         text = self.paths.index.read_text(encoding="utf-8")
@@ -353,8 +351,8 @@ class DraftTests(unittest.TestCase):
         self.assertEqual(stale_clips(without_voice, newer), [])
 
     def test_stale_clips_layer_marker_reconstructed_when_absent(self):
-        # Fix round 3/5, item 5: черновик раунда 2 (data-am-scenes/
-        # data-am-gen-mode есть, data-am-layers ещё нет) — слои
+        # Черновик с частичным слепком (data-am-scenes и data-am-gen-mode
+        # есть, data-am-layers ещё нет) — слои
         # восстанавливаются из клипов отдельно от сцен/gen_mode, не
         # скатываются целиком в легаси только из-за одного нового поля.
         self.draft(video_state(SCENES, audio={"voice": "asset-v"}))

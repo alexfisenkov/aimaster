@@ -103,7 +103,7 @@ class PathsTests(unittest.TestCase):
                 version_number(bad)
 
 
-# Fix round 1/5: <script> (montage gsap допишет свой), <style> и комментарии
+# <script> (montage gsap допишет свой), <style> и комментарии
 # не должны читаться как разметка тег-сканером на регэкспах.
 WITH_SCRIPT = """<div id="root" data-duration="1">
   <!-- фальшивка <div id="v-1"></div> в комментарии -->
@@ -147,7 +147,7 @@ class FixRoundOneTests(unittest.TestCase):
         self.assertNotIn("</div>\n    </div>", inserted)
 
     def test_set_attr_false_removes_like_none(self):
-        # Fix round 2/5, item 5: value=False должно убирать атрибут, а не
+        # value=False должно убирать атрибут, а не
         # писать буквальный текст name="False".
         base = '<video id="v-1" src="a.mp4"></video>'
         muted = set_attr(base, "v-1", "muted", True)
@@ -157,7 +157,7 @@ class FixRoundOneTests(unittest.TestCase):
         self.assertEqual(set_attr(base, "v-1", "muted", False), base)
 
 
-# Fix round 2/5, item 2: раньше _excluded_ranges сканировал комментарии и
+# Раньше _excluded_ranges сканировал комментарии и
 # <script>/<style> ДВУМЯ независимыми regex — если один тип разметки прятал
 # внутри себя обрывок другого, они путали начало/конец друг у друга.
 COMMENT_HIDES_UNCLOSED_SCRIPT = (

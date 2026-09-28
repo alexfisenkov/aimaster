@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""round 2/5 → 4/5: chrome-headless-shell для Windows напрямую, в обход
+"""chrome-headless-shell для Windows напрямую, в обход
 штатной распаковки @puppeteer/browsers на не-ASCII пути
 (install_montage_browser_win): версия, пути, атомарная распаковка, отказы
 сети/архива/диска не бросают исключений, срок скачивания, уборка, протухшая
@@ -32,8 +32,8 @@ from studio import platform_compat  # noqa: E402
 VERSION = "152.0.7977.30"
 
 # Реальный дефолтный путь движка на Windows: кириллица и пробел
-# (studio.platform_compat.user_data_dir) — round 2/5 требует проверить
-# именно на таком префиксе, не на упрощённом ASCII.
+# (studio.platform_compat.user_data_dir) — проверяем именно на таком
+# префиксе, не на упрощённом ASCII.
 CYRILLIC_PREFIX_NAME = "AI Мастерская"
 
 
@@ -118,7 +118,7 @@ class VersionTests(unittest.TestCase):
         self.assertIsNone(win.pinned_chrome_headless_shell_version(base))
 
     def test_ignores_macos_12_variant_even_when_declared_first(self):
-        """round 3/5, Minor: «CHROME_VERSION» — подстрока «MACOS_12_CHROME_
+        """«CHROME_VERSION» — подстрока «MACOS_12_CHROME_
         VERSION» — без якоря (?<!\\w) регэксп мог прочитать версию для старых
         macOS 12 вместо основной, если минификация переставит объявления."""
 
@@ -143,9 +143,9 @@ class PathTests(unittest.TestCase):
 
 
 class PreseedTests(unittest.TestCase):
-    """round 2/5 → 3/5: проверка на кириллическом префиксе с пробелом —
+    """Проверка на кириллическом префиксе с пробелом —
     ровно то, что ломает встроенную распаковку @puppeteer/browsers на
-    Windows (H1, подтверждено run 36141827389)."""
+    Windows (подтверждено на CI)."""
 
     def _prefix(self):
         return temp_base(self) / CYRILLIC_PREFIX_NAME / "tools" / "hyperframes"
@@ -184,7 +184,7 @@ class PreseedTests(unittest.TestCase):
                          f"{win.BASE_URL}/152.0.7977.30/win64/chrome-headless-shell-win64.zip")
 
     def test_socket_timeout_is_one_read_not_the_whole_deadline(self):
-        """round 4/5, пункт 3: таймаут urlopen — предел одного чтения сокета
+        """Таймаут urlopen — предел одного чтения сокета
         (READ_TIMEOUT), а не весь срок: иначе медленная раздача по байту
         держала бы скачивание сколько угодно."""
 
@@ -249,7 +249,7 @@ class PreseedTests(unittest.TestCase):
         self.assertEqual(leftovers(base), [])
 
     def test_already_installed_still_sweeps_old_extract_dirs(self):
-        """round 4/5, пункт 4: уборка — до раннего выхода «уже стоит», иначе
+        """Уборка — до раннего выхода «уже стоит», иначе
         временные папки убитых прошлых попыток лежали бы вечно."""
 
         base = self._prefix()
@@ -301,7 +301,7 @@ class PreseedTests(unittest.TestCase):
         self.assertIn("повреждён", result.reason)
 
     def test_missing_executable_in_zip_leaves_no_partial_final_dir(self):
-        """round 3/5, атомарность: архив распаковался, но исполняемого файла
+        """Архив распаковался, но исполняемого файла
         внутри не оказалось — итоговая папка не должна появиться вовсе
         (HyperFrames доверяет «папка есть» без сверки содержимого)."""
 
@@ -325,7 +325,7 @@ class PreseedTests(unittest.TestCase):
 
 
 class FinalDirTests(unittest.TestCase):
-    """round 4/5, пункты 6–7: итоговая `win64-<версия>` уже есть, но без .exe;
+    """Итоговая `win64-<версия>` уже есть, но без .exe;
     параллельная установка; антивирус держит папку при переименовании."""
 
     def setUp(self):
@@ -443,7 +443,7 @@ class FinalDirTests(unittest.TestCase):
 
 
 class BudgetTests(unittest.TestCase):
-    """round 4/5, пункт 3: шаг браузера на Windows укладывается в B =
+    """Шаг браузера на Windows укладывается в B =
     timeouts.browser (preseed + ensure вместе), пока распаковка ≤ 60 с."""
 
     def test_download_stops_early_enough_to_leave_ensure_its_share(self):

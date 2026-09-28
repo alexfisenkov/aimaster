@@ -1,5 +1,5 @@
 """Смысловой diff двух моделей монтажа: какая строка и когда появляется.
-Русский текст самих строк — в `montage_format.py` (round-fix-3/5, item C).
+Русский текст самих строк — в `montage_format.py`.
 Обрезка начала (сдвиг начала вместе с куском исходника) — одна строка,
 разрез — одна строка, без «укорочен/добавлен»."""
 
@@ -27,7 +27,7 @@ def _timing(old: Clip, new: Clip, name: str, split_parent: bool) -> list[str]:
     if abs(shift) > EPS:
         if needs_precise_display(old.start, new.start):
             # 0,1 с не различает старое и новое — не молчать и не врать
-            # «не изменилось», показать точный сдвиг (round-fix-2/5, item 5).
+            # «не изменилось», показать точный сдвиг.
             direction = "вперёд" if shift > 0 else "назад"
             out.append(f"{name}: сдвинут на {fmt_len_precise(abs(shift))} {direction}")
         else:
@@ -78,8 +78,8 @@ def _mark(clip: Clip) -> SplitMark:
 
 def _split_pieces(before: dict, after: dict) -> dict[str, str]:
     """{новая часть: клип, из которого она появилась} — по общему правилу
-    `split_pairs.is_split_pair` (round-fix-2/5, item 3: раньше своё, чуть
-    другое правило было в split_fades.py, и они успели разойтись). Родителем
+    `split_pairs.is_split_pair` — том же, что у split_fades.py, чтобы два
+    места не разошлись в том, что считать разрезом. Родителем
     может быть и клип, переживший разрез с прошлой версии, и другая новая
     часть — второй разрез той же строки (A → A, A-2; затем A-2 → A-2, A-2-2)
     иначе на втором шаге не находил бы родителя вовсе и уходил в «добавлен»,

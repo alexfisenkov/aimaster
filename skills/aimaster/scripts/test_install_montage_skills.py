@@ -99,7 +99,7 @@ class HashTests(_Temp):
 
 
 class ResilientVerifyTests(_Temp):
-    """Разбор 1/5, находка 1: повреждённый кеш — статус, не трейсбек."""
+    """Повреждённый кеш — статус, не трейсбек."""
 
     def test_non_utf8_cache_file_is_broken_not_a_crash(self):
         root = self.write(self.base / "skills")
@@ -136,7 +136,7 @@ class TreeTests(unittest.TestCase):
 
 
 class TreeTokenTests(unittest.TestCase):
-    """round 1/5, пункт 3: с GITHUB_TOKEN в окружении api.github.com получает
+    """С GITHUB_TOKEN в окружении api.github.com получает
     `Authorization: Bearer …` — иначе 60 запросов/час на IP общие на всех."""
 
     def opener(self, captured):
@@ -166,7 +166,7 @@ class TreeTokenTests(unittest.TestCase):
         self.assertIsNone(captured[0].get_header("Authorization"))
 
     def test_401_with_a_token_retries_once_anonymously(self):
-        """round 3/5: протухший/невалидный токен — один анонимный повтор
+        """Протухший/невалидный токен — один анонимный повтор
         (лимит 60/ч на IP всё ещё может хватить) лучше, чем сразу падать."""
 
         captured = []
@@ -224,7 +224,7 @@ class SslTests(unittest.TestCase):
 
 
 class RawFetcherTests(unittest.TestCase):
-    """Разбор 1/5, находки 1 и 10: urllib.request вместо самодельного
+    """urllib.request вместо самодельного
     http.client (уважает HTTPS_PROXY/редиректы), обрыв не роняет установщик."""
 
     def _response(self, body):
@@ -294,13 +294,13 @@ class DownloadTests(_Temp):
         self.assertIn("demo", str(caught.exception))
 
     def test_stale_download_dirs_are_swept_before_a_new_download(self):
-        """Разбор 1/5, находка 11: мусор от оборванной прошлой закачки
-        убирается — но только старше часа (разбор 2/5, находка B): свежая
+        """Мусор от оборванной прошлой закачки
+        убирается — но только старше часа: свежая
         папка может быть рабочей папкой параллельно идущей закачки."""
 
         dest = self.base / "hyperframes-skills" / "v9.9.9"
         dest.parent.mkdir(parents=True)
-        # имена — настоящий mkdtemp: уборка сверяет его точный вид (разбор 4/5)
+        # имена — настоящий mkdtemp: уборка сверяет его точный вид
         stale = Path(tempfile.mkdtemp(prefix=fetch.DOWNLOAD_TEMP_PREFIX, dir=str(dest.parent)))
         (stale / "leftover.txt").write_text("мусор", encoding="utf-8")
         old_time = time.time() - 7200  # два часа назад
@@ -314,7 +314,7 @@ class DownloadTests(_Temp):
         self.assertTrue(keep.exists())
 
     def test_lookalike_user_folder_is_never_swept(self):
-        """Разбор 2/5, находка B: «.download-notes» пользователя не должна
+        """«.download-notes» пользователя не должна
         совпасть с точным видом tempfile.mkdtemp (раньше префиксный glob
         «.download-*» её бы смёл)."""
 
@@ -329,7 +329,7 @@ class DownloadTests(_Temp):
     @unittest.skipIf(os.name == "nt", "права доступа POSIX — на Windows это не тестируется")
     @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root игнорирует права доступа")
     def test_unreadable_cache_root_does_not_fail_a_good_download(self):
-        """Разбор 3/5, находка 2: PermissionError на iterdir() при уборке не
+        """PermissionError на iterdir() при уборке не
         должен провалить хорошую закачку — уборка мусора необязательна."""
 
         dest = self.base / "hyperframes-skills" / "v9.9.9"
@@ -367,7 +367,6 @@ class ReportTests(_Temp):
         self.assertEqual(again["status"], "found")
 
     def test_update_alone_does_not_download_on_a_clean_machine(self):
-        """Разбор 1/5, находка 2."""
 
         fetcher = FakeFetcher({})
         report = skills.skills_report(install_missing=False, update=True, pin=PIN, tree=[],
@@ -386,7 +385,7 @@ class ReportTests(_Temp):
         self.assertEqual(verify_skills(self.cache, PIN), [])
 
     def test_leftover_download_temp_dir_does_not_count_as_installed(self):
-        """Разбор 2/5, находка D: одна лишь недокачанная .aimaster-tmp-…
+        """Одна лишь недокачанная .aimaster-tmp-…
         папка — не сигнал «скиллы раньше ставили», иначе --update один
         принял бы мусор от оборванной закачки за настоящую установку."""
 
@@ -399,7 +398,7 @@ class ReportTests(_Temp):
         self.assertEqual(fetcher.gets, [])
 
     def test_unstatable_entry_is_not_a_crash(self):
-        """Разбор 4/5: папка читается, но не открывается для поиска (0o600) —
+        """Папка читается, но не открывается для поиска (0o600) —
         на Python 3.11/3.12 is_dir() каждой записи бросает PermissionError."""
 
         (self.cache.parent / "v0.8.70").mkdir(parents=True)
@@ -421,7 +420,7 @@ class ReportTests(_Temp):
         self.assertFalse(result)
 
     def test_unreadable_cache_root_is_not_a_crash(self):
-        """Разбор 2/5, находка D: PermissionError на iterdir — статус, не трейсбек."""
+        """PermissionError на iterdir — статус, не трейсбек."""
 
         self.cache.parent.mkdir(parents=True)
         with mock.patch("pathlib.Path.iterdir", side_effect=PermissionError("нет доступа")):
@@ -439,7 +438,7 @@ class ReportTests(_Temp):
         self.assertIn("через час", report["message"])
 
     def test_incomplete_read_mid_download_becomes_a_failed_status_not_a_crash(self):
-        """Разбор 1/5, находка 1: IncompleteRead не должен ронять установщик."""
+        """IncompleteRead не должен ронять установщик."""
 
         report = skills.skills_report(install_missing=True, update=False, pin=PIN,
                                       tree=tree_for(FILES), fetcher=BrokenFetcher())

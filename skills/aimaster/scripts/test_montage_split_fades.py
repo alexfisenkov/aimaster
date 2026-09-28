@@ -16,7 +16,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 from studio.montage.html_doc import element_attrs  # noqa: E402
 from studio.montage.split_fades import normalize_split_fades  # noqa: E402
 
-# Как реально выглядит разрез с обеих сторон (проба 0.8.75, задача 14 brief):
+# Как реально выглядит разрез с обеих сторон (проба 0.8.75):
 # CLI и Studio копируют fade-in/fade-out и класс am-fade-in на ОБЕ половины;
 # data-hf-id и порядок — шум, который Studio добавляет и который не должен
 # мешать опознать пару.
@@ -38,7 +38,7 @@ STUDIO_SPLIT = """<!DOCTYPE html>
 
 # <audio> в черновике никогда не несёт class вовсе (draft_html._element не
 # пишет его для не-видео дорожек) — проверка «класс дописывается, только
-# если он там реально был» (round-fix-2/5, item 2) нужна фикстуре без него.
+# если он там реально был» нужна фикстуре без него.
 STUDIO_SPLIT_AUDIO = """<!DOCTYPE html>
 <html lang="ru">
   <head><meta charset="UTF-8" /></head>
@@ -84,7 +84,7 @@ class SplitFadesTests(unittest.TestCase):
         self.assertEqual(changed, [])
 
     def test_no_empty_class_added_to_elements_without_one(self):
-        # Round-fix-2/5, item 2: <audio> никогда не несёт class — раньше
+        # <audio> никогда не несёт class — раньше
         # normalize дописывал пустой class="", хотя дело было только в
         # data-fade-in/out, к классу отношения не имеющих.
         text, changed = normalize_split_fades(STUDIO_SPLIT_AUDIO)
@@ -97,7 +97,7 @@ class SplitFadesTests(unittest.TestCase):
         self.assertNotIn('class=""', text)
 
     def test_title_split_matches_by_text_when_no_asset_marker(self):
-        # Round-fix-2/5, item 9: прежняя фикстура не несла data-media-start
+        # Прежняя фикстура не несла data-media-start
         # вовсе — is_split_pair требует и временную, и media-непрерывность,
         # так что пара тогда не подтверждалась вообще ничем: у титров и так
         # нет fade, поэтому «ничего не изменилось» проходило вхолостую и при

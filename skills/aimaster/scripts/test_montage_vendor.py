@@ -48,7 +48,7 @@ class CopyGsapTests(unittest.TestCase):
         self.assertEqual(len(list(self.assets.iterdir())), 2)
 
     def test_temp_name_is_not_fixed(self):
-        # fix round 1/5 батча 6: mkstemp, не «.gsap.min.js.part» — занятое фиксированное
+        # mkstemp, не «.gsap.min.js.part» — занятое фиксированное
         # имя (папка, файл параллельного вызова) раньше роняло копирование.
         prefix = fake_gsap_prefix(self.root)
         (self.assets / ".gsap.min.js.part").mkdir(parents=True)

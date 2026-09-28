@@ -71,7 +71,7 @@ class VersionStagingTests(unittest.TestCase):
         self.paths.index.write_text("<html>v1</html>", encoding="utf-8")
 
     def test_full_build_flow_without_reservations(self):
-        # Round-fix-3/5, item B: поток без резерваций — settle_orphans,
+        # Поток без резерваций — settle_orphans,
         # next_version_id, stage_version, publish_version, всё под одним
         # build_lock; ни одна функция не резервирует номер заранее.
         with build_lock(self.paths):

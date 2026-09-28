@@ -6,14 +6,14 @@ aimaster-engine.json — иначе `browser path` молча отдал бы с
 Тот же принцип, что у install_montage_engine.engine_install: ничего не скачано —
 качает только с `install_missing` (--install-deps); скачан, но для другой
 версии pin — чинят `install_missing` ИЛИ `update` (--update); --update один на
-пустом месте ничего не качает (правило владельца 2026-09-25, разбор 1/5).
+пустом месте ничего не качает (правило владельца 2026-09-25).
 
 Звать только с найденным Node.js 22+ и HyperFrames закреплённой версии —
-это проверяет install_montage.montage_report (разбор 4/5, находка 1).
+это проверяет install_montage.montage_report.
 
 Браузер — только скачанный chrome-headless-shell в HOME движка, записанный в
 aimaster-engine.json; HYPERFRAMES_BROWSER_PATH человека не читается и в
-запуски движка не наследуется (round 4/5): иначе установщик говорил бы
+запуски движка не наследуется: иначе установщик говорил бы
 «найден», а engine.locate — «не скачан», и автопилот крутил бы установку."""
 
 from __future__ import annotations
@@ -42,11 +42,9 @@ _HINT_FIX = "переустановите браузер движка: install.p
 
 
 def _failure_detail(ensured, located, path: str, *, inside: bool, is_file: bool) -> str:
-    """Раньше сообщение об отказе показывало только хвост УСПЕШНОГО вывода
-    `ensure` — выглядело как «всё скачалось», хотя отказал отдельный шаг
-    `browser path` (разбор round 1/5, находка CI Windows: `ensure` печатает
-    «Ready to render.», код 0, а браузер всё равно «failed»). Называем
-    конкретную причину, а не только последний экран `ensure`."""
+    """Конкретная причина отказа, а не хвост вывода `ensure`: тот бывает
+    успешным («Ready to render.», код 0 — так было на Windows CI), хотя
+    отказал отдельный шаг `browser path`."""
 
     reasons = []
     if ensured.code != 0:
@@ -80,8 +78,8 @@ def _locate_after_ensure(eng, prefix: Path, pin: dict, kwargs: dict):
 
 
 def _preseed_on_windows(prefix: Path, budget: float) -> tuple[str, float]:
-    """round 2/5 (run 36141827389): у не-ASCII префикса штатная распаковка
-    оставляет пустую папку — качаем сами (install_montage_browser_win). Не
+    """У не-ASCII префикса штатная распаковка оставляет пустую папку —
+    качаем сами (install_montage_browser_win). Не
     вышло — продолжаем обычным `ensure`, причину сохраняем. Возвращает
     (причина, таймаут `ensure`): бюджет общий на оба шага — расчёт в
     install_montage_browser_win (download_deadline, ensure_timeout)."""
@@ -124,7 +122,7 @@ def browser_install(node: str, prefix: Path, pin: dict, *, install_missing: bool
 
 
 def check_browser(prefix: Path, pin: dict) -> dict:
-    """Та же проверка, что у engine.locate() — оба согласны (round 4/5)."""
+    """Та же проверка, что у engine.locate() — оба согласны."""
 
     browser = engine.recorded_browser(prefix, version=pin["version"])
     if browser is not None:

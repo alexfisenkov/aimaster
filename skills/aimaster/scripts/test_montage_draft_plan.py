@@ -90,7 +90,7 @@ class DraftPlanTests(unittest.TestCase):
         self.assertEqual(by_layer(plan, "titles"), [])
 
 
-# Fix round 1/5: _current_asset брал результат по указателю позиции не
+# _current_asset брал результат по указателю позиции не
 # спрашивая decision/retired/hidden — отклонённый, отправленный в архив,
 # скрытый или ещё не принятый результат тогда попадал в черновик как обычный.
 _REJECTING_STATES = {
@@ -158,7 +158,7 @@ class AcceptedOnlyTests(unittest.TestCase):
             pass
 
     def test_duplicate_link_error_names_the_scene(self):
-        # Fix round 2/5, item 6: текст по-русски называет сцену/слой, а не
+        # Текст по-русски называет сцену/слой, а не
         # голое исключение domain.
         state = video_state(SCENES)
         duplicate = dict(self._video_result_for(state, "s2"))
@@ -178,19 +178,19 @@ class AcceptedOnlyTests(unittest.TestCase):
         state["audio_results"].append(duplicate)
         with self.assertRaises(MontageError) as caught:
             audio_sources(state)
-        # Fix round 3/5, item 11: по-русски название слоя, а не сырой ключ;
-        # задача 10b: название — в кавычках, как на экране («Голос»).
+        # По-русски название слоя, а не сырой ключ;
+        # Название — в кавычках, как на экране («Голос»).
         self.assertIn("звукового слоя «Голос»", str(caught.exception))
 
     def test_malformed_scene_is_a_montage_error_not_a_key_error(self):
-        # Fix round 3/5, item 11: position_specs() читает scene["scene_id"]
+        # position_specs() читает scene["scene_id"]
         # без .get() — сцена без этого поля даёт KeyError, а не
         # DomainValidationError; _position_specs должен ловить и его.
         state = video_state(SCENES)
         del state["scenes"][0]["scene_id"]
         with self.assertRaises(MontageError) as caught:
             video_sources(state, strict=False)
-        # Задача 10b: человеку — что именно сломано, а не repr ключа ('scene_id').
+        # Человеку — что именно сломано, а не repr ключа ('scene_id').
         self.assertEqual(str(caught.exception), "проект повреждён: у сцены нет scene_id")
 
 

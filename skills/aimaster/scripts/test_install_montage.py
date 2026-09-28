@@ -93,7 +93,7 @@ class NodeCheckTests(unittest.TestCase):
         self.assertIn("--disable-interactivity", argv)
 
     def test_linux_prints_instruction_and_never_runs(self):
-        """Разбор 1/5 → 2/5, находка C: сообщение само называет команду —
+        """Сообщение само называет команду —
         render_montage_lines печатает только message, «командой выше» без
         самой команды рядом ничего не говорит пользователю."""
 
@@ -103,7 +103,7 @@ class NodeCheckTests(unittest.TestCase):
         run.assert_not_called()
         self.assertEqual(item["status"], "missing")
         self.assertIn("nodejs.org", item["message"])
-        # разбор 3/5, находка 5: одной nodejs недостаточно — на Debian/Ubuntu
+        # Одной nodejs недостаточно — на Debian/Ubuntu
         # npm часто отдельный пакет, ставим сразу оба.
         self.assertIn("sudo apt install nodejs npm", item["message"])
         # то, что реально увидит пользователь в тексте — тот же message
@@ -222,7 +222,7 @@ class EngineInstallTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_neither_flag_names_the_gsap_mismatch_not_a_fake_version_diff(self):
-        """Разбор 1/5 → 2/5, находка G: HyperFrames уже той версии, что
+        """HyperFrames уже той версии, что
         нужно — «стоит 0.8.75, нужна 0.8.75» ничего не объясняет, дело в GSAP."""
 
         self.fake_npm(gsap=None)([], None, None, None)
@@ -234,7 +234,7 @@ class EngineInstallTests(unittest.TestCase):
         self.assertNotIn(f"стоит {PIN['version']}, нужна {PIN['version']}", item["message"])
 
     def test_neither_flag_names_the_gsap_version_mismatch_not_missing(self):
-        """Разбор 3/5, находка 5: GSAP стоит, но не той версии — не «нет GSAP»."""
+        """GSAP стоит, но не той версии — не «нет GSAP»."""
 
         self.fake_npm(gsap="3.14.1")([], None, None, None)
         self.calls.clear()
@@ -246,7 +246,7 @@ class EngineInstallTests(unittest.TestCase):
         self.assertNotIn("нет GSAP", item["message"])
 
     def test_install_deps_alone_reinstalls_present_wrong_version_to_pin(self):
-        """Разбор 1/5, находка 3: --install-deps один тоже чинит версию —
+        """--install-deps один тоже чинит версию —
         документированная команда действительно чинит расхождение."""
 
         self.fake_npm("0.8.74")([], None, None, None)
@@ -266,7 +266,7 @@ class EngineInstallTests(unittest.TestCase):
         self.assertEqual(item["status"], "installed")
 
     def test_update_alone_never_installs_from_nothing(self):
-        """Разбор 1/5, находка 2: --update один на чистой машине ничего не ставит."""
+        """--update один на чистой машине ничего не ставит."""
 
         item = install_montage_engine.engine_install(str(self.node), self.prefix, PIN, kind="macos",
                                               install_missing=False, update=True, run=self.fake_npm())
@@ -323,7 +323,7 @@ class EngineInstallTests(unittest.TestCase):
         self.assertEqual(slow["status"], "timeout")
 
     def test_default_runner_kills_the_whole_process_tree_on_timeout(self):
-        """Разбор 1/5, находка 5: по умолчанию npm запускается через
+        """По умолчанию npm запускается через
         движковый tree-killing runner, а не голый subprocess.run."""
 
         with mock.patch.object(install_montage_engine, "default_runner",
@@ -334,7 +334,7 @@ class EngineInstallTests(unittest.TestCase):
         self.assertEqual(item["status"], "timeout")
 
     def test_npm_missing_message_is_platform_specific(self):
-        """Разбор 1/5 → 2/5, находка C: дистрибутивный nodejs без npm — надо
+        """Дистрибутивный nodejs без npm — надо
         поставить npm отдельно (sudo apt install npm), не «переустановите
         Node.js» (переустановка apt-пакета npm может не принести)."""
 
@@ -368,13 +368,13 @@ class BrowserInstallTests(unittest.TestCase):
     def call(self, *args, **kwargs):
         """browser_install печатает «Качаю компонент…» в stderr, когда
         реально доходит до скачивания — перехватываем, чтобы тестовый вывод
-        оставался чистым (разбор 1/5 → 2/5, находка I)."""
+        оставался чистым."""
 
         with redirect_stderr(io.StringIO()):
             return install_montage_browser.browser_install(*args, **kwargs)
 
     def test_old_names_still_work_from_the_engine_module(self):
-        """Разбор 4/5, находка 3: браузер переехал в install_montage_browser.py,
+        """Браузер переехал в install_montage_browser.py,
         прежние имена install_montage_engine.* (интерфейс плана) — те же функции."""
 
         self.assertIs(install_montage_engine.browser_install, install_montage_browser.browser_install)
@@ -392,7 +392,7 @@ class BrowserInstallTests(unittest.TestCase):
         # --json в каждом запуске движка: без него он ходит за обновлениями (engine_cli.argv_for)
         self.assertEqual([call[0][-1] for call in self.calls], ["--json"] * len(self.calls))
 
-    # --- HYPERFRAMES_BROWSER_PATH: не поддерживается (round 4/5) ---
+    # --- HYPERFRAMES_BROWSER_PATH: не поддерживается ---
 
     def install_engine_files(self):
         """Минимальный движок в префиксе — чтобы engine.locate() дошёл до браузера."""
@@ -412,7 +412,7 @@ class BrowserInstallTests(unittest.TestCase):
             return engine.locate(environ=env)
 
     def test_browser_path_variable_changes_nothing_and_install_agrees_with_locate(self):
-        """round 4/5: запись установщика — единственный источник правды.
+        """Запись установщика — единственный источник правды.
         Переменная указывает на реальный файл, но ни check_browser, ни
         browser_install её не читают, в запуски `ensure`/`path` она не
         уходит, а итог установки совпадает с engine.locate() до и после."""
@@ -440,7 +440,7 @@ class BrowserInstallTests(unittest.TestCase):
             self.assertEqual(found.browser, str(self.browser))
 
     def test_record_for_another_version_is_missing_for_both_check_and_locate(self):
-        """round 4/5: check_browser и engine.locate() зовут одну проверку —
+        """check_browser и engine.locate() зовут одну проверку —
         браузер, записанный для другой версии HyperFrames, не готов ни там, ни там."""
 
         self.install_engine_files()
@@ -471,7 +471,7 @@ class BrowserInstallTests(unittest.TestCase):
                 self.assertIn("install.py --install-deps", item["message"])
 
     def test_stale_recorded_browser_outside_home_is_not_found(self):
-        """round 3/5, Minor 7: устаревшая запись (от прошлого override или
+        """Устаревшая запись (от прошлого override или
         ручной правки) вне папки движка не должна тихо сойти за «готовый
         браузер» — ни в browser_install, ни в check_browser."""
 
@@ -487,7 +487,7 @@ class BrowserInstallTests(unittest.TestCase):
     # --- Windows: install_montage_browser_win.preseed перед ensure ---
 
     def test_windows_calls_preseed_with_the_download_deadline_before_ensure(self):
-        """round 4/5: бюджет timeouts.browser общий — preseed получает срок
+        """Бюджет timeouts.browser общий — preseed получает срок
         скачивания download_deadline(B), `ensure` — остаток, не больше B."""
 
         order = []
@@ -524,7 +524,7 @@ class BrowserInstallTests(unittest.TestCase):
         self.assertEqual(self.calls[0][1]["timeout"], PIN["timeouts"]["browser"])
 
     def test_windows_ensure_timeout_keeps_the_preseed_reason(self):
-        """round 4/5, пункт 5: `ensure` не уложился — причина отказа своего
+        """`ensure` не уложился — причина отказа своего
         скачивателя всё равно видна человеку (раньше терялась на этой ветке)."""
 
         def runner(argv, **kwargs):
@@ -596,9 +596,9 @@ class BrowserInstallTests(unittest.TestCase):
         self.assertIn(str(missing), item["message"])
 
     def test_no_retry_on_a_missing_file_single_ensure_attempt(self):
-        """round 3/5: retry-опрос и второй `ensure` (round 1/5, построены на
-        опровергнутых гипотезах — антивирус, незавершённая распаковка) убраны
-        — один `ensure`, файла нет → сразу «failed», без пауз."""
+        """Ни опроса с паузами, ни второго `ensure` (гипотезы про
+        антивирус и незавершённую распаковку не подтвердились): один `ensure`,
+        файла нет → сразу «failed»."""
 
         never = self.browser.parent / "так-и-не-скачался.exe"
         item = self.call("/usr/bin/node", self.prefix, PIN,
@@ -745,7 +745,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Node.js", report["hyperframes"]["message"])
 
     def test_gsap_only_mismatch_does_not_block_the_browser_with_a_hyperframes_message(self):
-        """Разбор 3/5, находка 5: HyperFrames уже на закреплённой версии,
+        """HyperFrames уже на закреплённой версии,
         расхождение только в GSAP — статус hyperframes при этом "missing"
         (см. CheckPackageTests), но браузеру не нужно ждать HyperFrames,
         он уже есть; строка про браузер не должна врать про HyperFrames."""
@@ -764,7 +764,7 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("сначала нужен HyperFrames", report["browser"]["message"])
 
     def test_node_not_ready_never_starts_the_browser_download(self):
-        """Разбор 4/5, находка 1: Node.js нет или он старый, HyperFrames
+        """Node.js нет или он старый, HyperFrames
         закреплённой версии уже на диске, браузер не скачан, флаг действия
         есть. Раньше browser_install(None, …) печатал «Качаю…» и падал
         TypeError в Popen; install.py прятал это в английскую ошибку, и
@@ -796,7 +796,7 @@ class ReportTests(unittest.TestCase):
                     self.assertIn(install_montage_node.NODE_INSTALL["linux"], step)
 
     def test_update_alone_does_not_install_a_fresh_engine(self):
-        """Разбор 1/5, находка 2, на уровне отчёта целиком."""
+        """--update один на чистой машине — на уровне отчёта целиком."""
 
         with mock.patch.object(engine, "find_node", return_value="/usr/bin/node"), \
                 mock.patch.object(engine, "node_major", return_value=22):
@@ -817,7 +817,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("  неожиданный сбой", lines)
 
     def test_text_lines_show_install_cmd_when_not_in_the_message(self):
-        """Разбор 1/5 → 2/5, находка C: render_montage_lines раньше вообще
+        """render_montage_lines раньше вообще
         не печатал install_cmd — теперь показывает его, если сообщение сам
         не назвал команду."""
 
@@ -826,8 +826,8 @@ class ReportTests(unittest.TestCase):
         self.assertIn("      поставить: brew install node", lines)
 
     def test_text_lines_do_not_duplicate_an_already_embedded_install_cmd(self):
-        # настоящий ответ node_check на Linux с --install-deps, не строка от руки
-        # (разбор 4/5, находка 4): команда уже внутри message
+        # настоящий ответ node_check на Linux с --install-deps, не строка от руки:
+        # команда уже внутри message
         with mock.patch.object(engine, "find_node", return_value=None):
             node = install_montage_node.node_check("linux", True)
         command = install_montage_node.NODE_INSTALL["linux"]
@@ -837,7 +837,7 @@ class ReportTests(unittest.TestCase):
 
 
 class UpdateHelpTextTests(unittest.TestCase):
-    """Разбор 2/5, находка F: у install_montage.py нет --install-deps —
+    """У install_montage.py нет --install-deps —
     справка не должна советовать его запускать, а вправе объяснить, что его
     здесь нет (упоминание ради отрицания — не то же самое, что совет)."""
 

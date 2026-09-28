@@ -68,7 +68,7 @@ class FileLockTests(unittest.TestCase):
                     pass
 
     def test_non_blocking_acquire_succeeds_when_free(self):
-        # Round-fix-3/5, item A: blocking=False — один build_lock на сборку,
+        # blocking=False — один build_lock на сборку,
         # не poll-and-retry.
         with tempfile.TemporaryDirectory() as directory:
             lock_path = Path(directory) / ".lock"

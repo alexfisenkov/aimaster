@@ -81,7 +81,7 @@ class CiCheckTests(FakeMediaTestCase):
         self.assertIn("не готов", report["problems"][0])
 
     def test_skill_draft_with_a_title_is_ready_for_an_offline_build(self):
-        # Задача 10b: черновик — локальный GSAP из движка и один таймлайн main
+        # Черновик — локальный GSAP из движка и один таймлайн main
         # на паузе, корень без data-no-timeline; титр — как после montage edit
         # title-add; текст только шрифтом «AM Inter»; ни одной внешней ссылки.
         with mock.patch.object(montage_ci_check, "probe_media", side_effect=_probe):

@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""Чтение/запись index.html (и прочих текстовых файлов монтажа) на диске.
-
-Fix round 3/5, item 2: выделен из test_montage_html_doc.py вместе с
-index_io.py (module split) — заодно чинит критическую находку (`newline=`
-у Path.read_text появился только в 3.13, читаем через Path.open) и добавляет
-уникальное временное имя (mkstemp) плюс защиту от того, что ошибка чистки
-подменит исходную."""
+"""Чтение/запись index.html (и прочих текстовых файлов монтажа) на диске:
+CRLF сохраняется (`newline=` у Path.read_text появился только в 3.13 — читаем
+через Path.open), временное имя уникально (mkstemp), ошибка чистки не
+подменяет исходную, права файла не теряются, umask процесса не меняется."""
 
 from __future__ import annotations
 
@@ -52,7 +49,7 @@ class IndexIoTests(unittest.TestCase):
             self.assertEqual(leftovers, [])
 
     def test_write_failure_is_a_montage_error_and_cleanup_does_not_mask_it(self):
-        # Fix round 3/5, item 2: если и запись, и попытка убрать временный
+        # Если и запись, и попытка убрать временный
         # файл после неё падают, наружу должна выйти MontageError про
         # ИСХОДНУЮ ошибку записи, а не про сбой чистки.
         with tempfile.TemporaryDirectory() as temp:
@@ -62,7 +59,7 @@ class IndexIoTests(unittest.TestCase):
                 with mock.patch.object(Path, "unlink", side_effect=OSError("сбой чистки")):
                     with self.assertRaises(MontageError) as caught:
                         write_index(path, "текст")
-            # fix round 1/5 батча 6: текст OSError (по-английски от ОС) — в цепочке, не в сообщении
+            # Текст OSError (по-английски от ОС) — в цепочке, не в сообщении
             self.assertEqual(str(caught.exception.__cause__), "исходный сбой записи")
             self.assertIn("index.html", str(caught.exception))
             self.assertNotIn("сбой чистки", str(caught.exception))
@@ -81,7 +78,7 @@ class IndexIoTests(unittest.TestCase):
 
 @unittest.skipIf(os.name == "nt", "права файла POSIX; на Windows chmod меняет только «только чтение»")
 class IndexIoModeTests(unittest.TestCase):
-    """Задача 10b: mkstemp создаёт временный файл с правами 0600, и после
+    """mkstemp создаёт временный файл с правами 0600, и после
     замены index.html/hyperframes.json становились недоступны на чтение
     остальным (Studio другого пользователя, резервная копия) — права цели
     сохраняются, у нового файла — 0644 с учётом umask."""

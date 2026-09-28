@@ -61,7 +61,7 @@ def _tree_headers() -> dict:
     ставит монтаж с этого адреса (в CI — на весь диапазон рантайм-раннеров).
     С GITHUB_TOKEN (в CI это `${{ github.token }}`, эфемерный на джобу) лимит
     поднимается на порядок; значение только в заголовке запроса, никогда не
-    в выводе или логе — round 1/5, пункт 3."""
+    в выводе или логе."""
 
     headers = dict(HEADERS)
     token = os.environ.get("GITHUB_TOKEN")
@@ -81,7 +81,7 @@ def fetch_tree(pin: dict, *, opener=urllib.request.urlopen) -> list[dict]:
     except urllib.error.HTTPError as error:
         if error.code != 401 or "Authorization" not in headers:
             raise
-        # round 3/5: протухший/невалидный токен — один анонимный повтор лучше,
+        # Протухший/невалидный токен — один анонимный повтор лучше,
         # чем сразу падать (анонимный лимит 60/ч на IP всё ещё может хватить).
         with opener(urllib.request.Request(url, headers=HEADERS),
                     timeout=HTTP_TIMEOUT, context=context) as response:

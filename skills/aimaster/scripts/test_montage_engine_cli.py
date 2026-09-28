@@ -68,7 +68,7 @@ class EnvTests(unittest.TestCase):
         self.assertNotIn("HYPERFRAMES_BROWSER_PATH", env)
 
     def test_inherited_browser_variable_never_reaches_the_engine(self):
-        """round 4/5: браузер — только из записи установщика. Чужой
+        """Браузер — только из записи установщика. Чужой
         HYPERFRAMES_BROWSER_PATH из окружения человека не наследуется: без
         записи его нет вовсе, с записью — перебит путём из записи."""
 
@@ -120,7 +120,7 @@ class EnvTests(unittest.TestCase):
             self.assertEqual(Path(env["HYPERFRAMES_FFPROBE_PATH"]), folder / f"ffprobe{suffix}")
 
     def test_windows_leaves_localappdata_and_appdata_alone(self):
-        """round 3/5: пробная гипотеза (LOCALAPPDATA/APPDATA переносить вместе
+        """Пробная гипотеза (LOCALAPPDATA/APPDATA переносить вместе
         с HOME) не подтвердилась прямым CI-прогоном — H2 (системный Chrome
         виснет на --version независимо от этих переменных) уже объяснял
         зависание, а не рассинхрон известных папок. Убрано (было в
@@ -296,7 +296,7 @@ class PopenTests(unittest.TestCase):
 class FakePopen:
     """Имитирует subprocess.Popen: первый communicate() — таймаут, и, как у
     настоящего Popen, TimeoutExpired уже несёт то, что процесс успел
-    накопить (проверено эмпирически — см. отчёт); второй communicate()
+    накопить (проверено на настоящем Popen); второй communicate()
     (только для ветки Windows в default_runner) отдаёт то же самое."""
 
     def __init__(self, argv, **kwargs):
@@ -549,7 +549,7 @@ class RealTimeoutKillsTreeTests(unittest.TestCase):
         # hasattr, а не os.name == "nt": именно эти два имени использует
         # proc_tree.kill_tree на POSIX-ветке, и это ровно то, чего не будет
         # на Windows — проверено прогоном сюиты с искусственно вырезанными
-        # os.killpg/signal.SIGKILL (см. отчёт).
+        # os.killpg/signal.SIGKILL.
         if not (hasattr(os, "killpg") and hasattr(signal, "SIGKILL")):
             self.skipTest("процессная группа POSIX — на Windows своя ветка, см. DefaultRunnerTests")
         with tempfile.TemporaryDirectory() as temp:

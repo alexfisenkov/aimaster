@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Версии: v001, v002…; снимок публикуется целиком; не перезаписываются; возврат с резервной копией.
 
-Резервация версии — по round-fix-3/5: один build_lock на весь `montage
-build`, не резервации с проверкой возраста (test_montage_version_staging.py
-несёт остальные тесты этой части — build_lock/settle_orphans/stage_version)."""
+Замок сборки, settle_orphans и stage_version — в test_montage_version_staging.py."""
 
 from __future__ import annotations
 
@@ -93,7 +91,7 @@ class VersionsTests(unittest.TestCase):
             restore_files(self.paths, "v007")
 
     def test_restore_failure_does_not_leak_raw_os_error_text(self):
-        # Round-fix-3/5, item F: OSError.__str__ часто по-английски и
+        # OSError.__str__ часто по-английски и
         # локале-зависимый — не в тексте отказа, только в цепочке (from error).
         self.publish("v001")
         with mock.patch.object(replace_target, "replace_file",
@@ -120,7 +118,7 @@ class VersionsTests(unittest.TestCase):
         self.assertTrue(has_unrendered_changes("h1", None))
 
     def test_next_version_id_requires_recorded_ids_and_accounts_for_them(self):
-        # Round-fix-3/5, item B: recorded_ids — обязательный именованный
+        # recorded_ids — обязательный именованный
         # аргумент; staging здесь больше не участвует вовсе (счёт по одному
         # только диску и state) — settle_orphans разбирает staging раньше,
         # чем эта функция вообще может быть вызвана в реальном потоке.
@@ -131,7 +129,7 @@ class VersionsTests(unittest.TestCase):
             next_version_id(self.paths)  # без recorded_ids — TypeError, не тихое умолчание
 
     def test_restore_does_not_collide_on_a_fixed_temp_name(self):
-        # Round-fix-1/5, item 11: временное имя — mkstemp, не фиксированное
+        # Временное имя — mkstemp, не фиксированное
         # ".index.restore.tmp"; два восстановления подряд не должны спотыкаться
         # друг о друга или оставлять after себя фиксированное имя.
         self.publish("v001")
@@ -141,7 +139,7 @@ class VersionsTests(unittest.TestCase):
         self.assertEqual(self.paths.index.read_text(encoding="utf-8"), "<html>v1</html>")
 
     def test_windows_sharing_violation_on_the_backup_copy_is_retried(self):
-        # Windows CI (run 36178690695): пока другой поток подменяет index.html,
+        # Windows CI: пока другой поток подменяет index.html,
         # чтение его для копии в .undo падает WinError 32 — это мгновение, не отказ.
         self.publish("v001")
         real_copy, failures = versions_module.shutil.copy2, []
@@ -168,7 +166,7 @@ class VersionsTests(unittest.TestCase):
         self.assertIn("v001", str(caught.exception))
 
     def test_restore_from_two_threads_at_once_does_not_collide(self):
-        # Round-fix-2/5, item 9: прежний тест только проверял, что имя не
+        # Прежний тест только проверял, что имя не
         # фиксировано — здесь настоящая гонка, несколько потоков одновременно.
         self.publish("v001")
         errors = []

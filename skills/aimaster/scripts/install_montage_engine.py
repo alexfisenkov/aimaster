@@ -2,7 +2,7 @@
 """HyperFrames и GSAP закреплённых версий — часть установщика монтажа
 (install_montage.py). npm запускается как `node <npm-cli.js> install --prefix
 <папка движка>`. Браузер для сборки — install_montage_browser.py (имена
-browser_install/check_browser доступны и отсюда, как в плане задачи 4).
+browser_install/check_browser доступны и отсюда).
 
 `install_missing` (--install-deps) ставит то, чего нет вовсе; `install_missing`
 или `update` (--update) переустанавливают на закреплённую версию то, что уже

@@ -34,8 +34,8 @@ def isolate_hyperframes_dir(test: unittest.TestCase, root) -> None:
     """Подменяет AIMASTER_HYPERFRAMES_DIR на пустую временную папку — иначе
     `workspace init` (и любой другой вызов montage_report) читает настоящий
     кеш HyperFrames пользователя: медленно, недетерминированно между машинами
-    и может скопировать реальные скиллы в тестовую рабочую папку (разбор 1/5,
-    находка 9). Звать в setUp до первого workspace init."""
+    и может скопировать реальные скиллы в тестовую рабочую папку. Звать в
+    setUp до первого workspace init."""
 
     patcher = mock.patch.dict(os.environ, {PREFIX_ENV: str(Path(root) / "неиспользуемый-hyperframes")})
     patcher.start()

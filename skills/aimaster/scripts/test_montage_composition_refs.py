@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Ссылки композиции не выходят наружу и не уходят за пределы current/.
-
-Fix round 2/5: выделен из test_montage_media_sync.py вместе с
-composition_refs.py (module split, ruling item 1)."""
+"""Ссылки композиции не выходят наружу и не уходят за пределы current/."""
 
 from __future__ import annotations
 
@@ -69,7 +66,7 @@ class ReferenceTests(unittest.TestCase):
             self.assertEqual(composition_refs.missing_sources(html, current), [])
 
     def test_percent_encoded_traversal_is_caught(self):
-        # Fix round 2/5, item 8: "%2e%2e/" декодируется в ".." до проверки —
+        # "%2e%2e/" декодируется в ".." до проверки —
         # иначе она прячет подъём, хотя рендерер его раскодирует и подставит.
         html = ('<video src="%2e%2e/media/v.mp4"></video>'
                 '<video src="assets%2fok.mp4"></video>')
@@ -81,7 +78,7 @@ class ReferenceTests(unittest.TestCase):
         self.assertIn("ссылка вне папки монтажа: %2e%2e/media/v.mp4", problems)
 
     def test_percent_encoded_backslash_traversal_is_caught(self):
-        # Fix round 3/5, item 8: раскодировать НАДО раньше нормализации "\\"
+        # Раскодировать НАДО раньше нормализации "\\"
         # → "/" — "%5c" не текстовый "\\", им не станет, пока не раскодирован;
         # старый порядок (сначала заменить "\\", потом unquote) эту форму
         # пропускал.
@@ -91,7 +88,7 @@ class ReferenceTests(unittest.TestCase):
                          ["..%5cmedia%5cv.mp4", "%5cabs%5cx.mp4"])
 
     def test_percent_encoded_space_in_an_existing_file_is_not_missing(self):
-        # Fix round 3/5, item 8: missing_sources ищет файл по тому же
+        # missing_sources ищет файл по тому же
         # раскодированному пути, что escaping_sources проверяет — иначе
         # "my%20clip.mp4" ищет файл с буквальным "%20" в имени и не находит
         # реально существующий "my clip.mp4".
@@ -104,7 +101,7 @@ class ReferenceTests(unittest.TestCase):
 
 
     def test_local_gsap_is_allowed_and_cdn_gsap_is_not(self):
-        # Задача 10b: черновик несёт GSAP из движка локально (assets/) — это
+        # Черновик несёт GSAP из движка локально (assets/) — это
         # не проблема сборки, пока файл лежит в папке монтажа; тот же GSAP с
         # CDN — внешняя ссылка, как и раньше.
         local = ('<head><script src="assets/gsap.min.js"></script>'

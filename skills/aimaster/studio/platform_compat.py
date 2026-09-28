@@ -76,8 +76,8 @@ def file_lock(target, *, timeout: float = DEFAULT_LOCK_TIMEOUT, blocking: bool =
     filesystem that cannot lock raises ``OSError`` at once instead of
     hanging.
 
-    ``blocking=False`` (round-fix-3/5, item A — one build lock held for a
-    whole `montage build`, not a poll-and-retry): a single attempt, no
+    ``blocking=False`` (the montage build lock is held for a whole build,
+    never polled): a single attempt, no
     ``timeout`` wait at all. POSIX adds ``LOCK_NB`` to the same ``flock``
     call; Windows makes one ``msvcrt.locking(LK_NBLCK)`` attempt instead of
     ``_acquire_polling``'s retry loop. Either raises ``LockBusyError``

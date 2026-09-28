@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
-"""Медиа в current/assets: жёсткая ссылка, иначе копия.
-
-Fix round 2/5: проверка ссылок композиции (external/missing/escaping)
-переехала в test_montage_composition_refs.py вместе с composition_refs.py —
-здесь только про то, как файл попадает на диск."""
+"""Медиа в current/assets: жёсткая ссылка, иначе копия. Проверка ссылок
+композиции (external/missing/escaping) — в test_montage_composition_refs.py."""
 
 from __future__ import annotations
 
@@ -66,7 +63,7 @@ class SyncTests(unittest.TestCase):
             media_sync.link_or_copy(self.source, self.assets / "asset-1.mp4")
 
     def test_stat_failure_on_existing_target_is_a_montage_error(self):
-        # Fix round 1/5: гонка/права при os.path.samefile или .stat() на уже
+        # Гонка/права при os.path.samefile или .stat() на уже
         # существующем target не должны утечь голым OSError.
         self.assets.mkdir(parents=True)
         (self.assets / "asset-1.mp4").write_bytes(b"video-bytes")

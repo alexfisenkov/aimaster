@@ -47,7 +47,7 @@ def montage_report(kind: str, *, install_missing: bool, update: bool, install_no
     """`install_missing` (--install-deps) ставит то, чего нет; `update`
     (--update) один, без --install-deps, только чинит уже стоящее на
     закреплённую версию и ничего не ставит с нуля (правило владельца
-    2026-09-25, разбор 1/5) — распределение между «поставить» и «починить»
+    2026-09-25) — распределение между «поставить» и «починить»
     целиком внутри engine_install/browser_install/skills_report."""
 
     pin = engine.load_pin()
@@ -74,9 +74,9 @@ def montage_report(kind: str, *, install_missing: bool, update: bool, install_no
 
 def _browser_step(node, prefix: Path, pin: dict, *, install_missing: bool, update: bool) -> dict:
     """Браузер качает сам HyperFrames, запущенный этим Node, — без Node.js 22+
-    браузер не проверяем и не качаем (разбор 4/5, находка 1: иначе
-    browser_install получал node=None и падал TypeError, а настоящий затор —
-    Node.js — терялся из next_steps). Дальше важна именно версия HyperFrames,
+    браузер не проверяем и не качаем: иначе browser_install получил бы
+    node=None и упал TypeError, а настоящий затор — Node.js — потерялся бы
+    из next_steps. Дальше важна именно версия HyperFrames,
     не report["hyperframes"]["status"] целиком: тот бывает "missing" из-за
     одного несовпавшего GSAP, а GSAP браузеру не нужен."""
 

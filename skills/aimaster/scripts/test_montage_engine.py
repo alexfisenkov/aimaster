@@ -137,7 +137,7 @@ class LocateTests(_Prefix):
         self.assertIn("браузер", reason)
 
     def test_browser_outside_engine_home_is_not_accepted(self):
-        """round 3/5, Minor 7: запись `browser` вне `<prefix>/home` (осевший
+        """Запись `browser` вне `<prefix>/home` (осевший
         системный браузер из записи прошлых версий установщика, ручная
         правка файла) не должна тихо сходить за «готовый движок» —
         `engine.locate()` и install_montage_browser.check_browser()/

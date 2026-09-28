@@ -52,7 +52,7 @@ def _history_actor(by: str) -> str:
 
 
 def _resolved_mime(assets: AssetIndex, asset_id: str) -> str:
-    # round-fix-2/5, item 8: без английского текста исключения AssetIndex
+    # Без английского текста исключения AssetIndex
     # (assets.py говорит "registered asset has changed" и т. п.) — один
     # русский отказ на любую причину: не найден, изменился, не читается.
     try:
@@ -111,7 +111,7 @@ def record_version(store: ProjectStore, assets: AssetIndex, project_id: str,
                    expected_revision: int, *, meta: VersionMeta) -> dict:
     # Полное чтение файла + sha256 (до 2 ГиБ у результата монтажа) — до
     # транзакции: под файловой блокировкой store.transact держать эту работу
-    # незачем (round-fix-1/5, item 10).
+    # незачем.
     mime_type = _resolved_mime(assets, meta.asset_id)
     require_result_asset_role(_resolved_role(assets, meta.asset_id), "a montage version")
     actor = _history_actor(meta.by)

@@ -28,8 +28,8 @@ _REAL_SYMLINK = os.symlink
 
 def _linux_without_node():
     """Настоящий ответ node_check на Linux без Node.js при --install-deps —
-    не переписанная от руки строка, которая молча устаревает (разбор 4/5,
-    находка 4: в тестах жила старая подсказка без npm)."""
+    не переписанная от руки строка, которая молча устаревает (подсказка без
+    npm, записанная в тесте, разошлась бы с кодом)."""
     with mock.patch.object(install_montage_node.engine, "find_node", return_value=None):
         return install_montage_node.node_check("linux", True)
 
@@ -121,7 +121,7 @@ class InstallTests(_TempInstall, unittest.TestCase):
         self.assertIn("Node.js не найден", text)
 
     def test_montage_next_steps_names_the_node_blocker(self):
-        """Разбор 1/5, находка 3: без Node.js next_steps называет реальный
+        """Без Node.js next_steps называет реальный
         затор, а не слепо повторяет --install-deps."""
 
         self.montage.return_value = {"ok": False, "node": _linux_without_node()}
@@ -132,7 +132,7 @@ class InstallTests(_TempInstall, unittest.TestCase):
         self.assertNotIn("повторите: install.py --install-deps", text)
 
     def test_montage_crash_does_not_block_the_rest_of_the_report(self):
-        """Разбор 1/5, находка 1: сбой внутри монтажа не должен ронять весь
+        """Сбой внутри монтажа не должен ронять весь
         установщик — остальной JSON обязан напечататься."""
 
         self.montage.return_value = {"ok": False, "error": "бум"}
@@ -607,8 +607,7 @@ class SelfCheckTests(unittest.TestCase):
     def test_self_check_on_real_skill_passes(self):
         # workspace init внутри self_check читает AIMASTER_HYPERFRAMES_DIR по
         # настоящему os.environ (субпроцесс наследует окружение процесса) —
-        # без подмены он читал бы настоящий кеш HyperFrames пользователя
-        # (разбор 1/5, находка 9).
+        # без подмены он читал бы настоящий кеш HyperFrames пользователя.
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         with mock.patch.dict(os.environ, {"AIMASTER_HYPERFRAMES_DIR": str(Path(temp.name) / "hf")}):
@@ -621,7 +620,7 @@ class SelfCheckTests(unittest.TestCase):
 
 
 class MontageReportGuardTests(unittest.TestCase):
-    """Разбор 1/5, находка 1: непредвиденное исключение внутри
+    """Непредвиденное исключение внутри
     install_montage.montage_report не должно ронять install.py целиком."""
 
     def test_unexpected_exception_becomes_an_error_status(self):
@@ -637,7 +636,7 @@ class MontageReportGuardTests(unittest.TestCase):
 
 
 class MontageNextStepTests(unittest.TestCase):
-    """Разбор 1/5, находка 3: next_steps называет реальный затор."""
+    """next_steps называет реальный затор."""
 
     def test_node_blocker_is_named_directly_not_install_deps(self):
         text = install._montage_next_step({"ok": False, "node": _linux_without_node()})
@@ -651,7 +650,7 @@ class MontageNextStepTests(unittest.TestCase):
         self.assertIn("--install-deps", text)
 
     def test_missing_npm_blocker_is_named_directly_not_install_deps(self):
-        """Разбор 1/5 → 2/5 → 3/5, находка C/4: блокер — структурное поле
+        """Блокер — структурное поле
         engine_install(..., blocker="npm_missing"), не разбор русского
         текста; берём РЕАЛЬНЫЙ результат engine_install, не выдуманный."""
 
@@ -674,7 +673,7 @@ class MontageNextStepTests(unittest.TestCase):
 
 
 class MontageImportFailureTests(unittest.TestCase):
-    """Разбор 1/5 → 3/5, находка E: render_text делает СВОЙ отдельный
+    """render_text делает СВОЙ отдельный
     `import install_montage` (за render_montage_lines) — сбой этого
     импорта, не только внутри _montage_report, не должен ронять весь вывод
     install.py: ни JSON, ни (главное — он выводится по умолчанию) текст.

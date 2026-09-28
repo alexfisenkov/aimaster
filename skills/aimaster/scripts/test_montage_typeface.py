@@ -39,7 +39,7 @@ class TypefaceTests(unittest.TestCase):
         self.assertEqual(typeface.FONT_STACK, '"AM Inter", sans-serif')
 
     def test_sync_copies_once_and_repairs_a_damaged_copy(self):
-        # Fix round 1/5: sync_fonts теперь несёт и OFL.txt рядом со шрифтами
+        # sync_fonts теперь несёт и OFL.txt рядом со шрифтами
         # (условие 2 лицензии) — 4 шрифта + лицензия = 5, было 4.
         with tempfile.TemporaryDirectory() as temp:
             assets = Path(temp) / "assets"
@@ -113,7 +113,7 @@ class TypefaceTests(unittest.TestCase):
             self.assertEqual(list((assets / "fonts").glob(".*.part")), [])  # временный файл убран
 
     def test_verify_bundle_wraps_a_read_failure(self):
-        # Fix round 2/5, item 4: OSError на чтении файла бандла (не «его
+        # OSError на чтении файла бандла (не «его
         # нет», а именно сбой чтения) — MontageError, как обещает докстрока.
         with mock.patch.object(Path, "read_bytes", side_effect=OSError("denied")):
             with self.assertRaises(MontageError):
@@ -127,7 +127,7 @@ class TypefaceTests(unittest.TestCase):
                     typeface.sync_fonts(assets)
 
     def test_load_manifest_wraps_a_missing_or_unreadable_file(self):
-        # Fix round 3/5, item 9: fonts.json нет/не читается/битый JSON —
+        # fonts.json нет/не читается/битый JSON —
         # MontageError «пакет навыка повреждён», не голый traceback.
         for error in (FileNotFoundError("no such file"), PermissionError("denied")):
             with self.subTest(error=type(error).__name__):

@@ -2,7 +2,7 @@
 
 Обновление устаревших клипов (`refresh.refresh_draft`) и сравнение с
 проектом (`stale.stale_clips`) — в отдельных модулях, отдельно от сборки:
-разные поводы меняться (fix round 2/5 ruling item 1, round 3/5 item 3)."""
+разные поводы меняться."""
 
 from __future__ import annotations
 

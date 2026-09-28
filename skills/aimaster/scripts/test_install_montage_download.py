@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""round 4/5, пункт 3: скачивание с общим сроком (install_montage_download)."""
+"""Скачивание с общим сроком (install_montage_download)."""
 
 from __future__ import annotations
 

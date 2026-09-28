@@ -38,7 +38,7 @@ def load_manifest() -> dict:
 def _sha256(path: Path) -> str:
     """Сбой чтения (нет прав, файл пропал между .is_file() и этим вызовом,
     диск отвалился) — MontageError, не голый OSError: verify_bundle это
-    обещает и сам, и через sync_fonts (задача 4 раунда 2)."""
+    обещает и сам, и через sync_fonts."""
 
     try:
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()

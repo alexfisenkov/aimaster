@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Регрессия на настоящем файле, сохранённом из HyperFrames Studio.
 
-Fix round 3/5, item 10: реальный пробник (не наша генерация) подтвердил, что
+Реальный пробник (не наша генерация) подтвердил, что
 Studio при сохранении: переписывает `<!doctype html>` → `<!DOCTYPE html>`,
 `<meta ... />` → `<meta ...>` (без самозакрывающего слэша), добавляет
 `data-hf-id="hf-XXXX"` КАЖДОМУ элементу (нестабильный — никогда не
 использовать как идентичность) — но наши `data-am-*` на корне и клипах
 переживают сохранение без изменений.
 
-Задача 10b: фикстуры сняты заново (Studio 0.8.75, 2026-09-26) с черновика
+Фикстуры сняты (Studio 0.8.75, 2026-09-26) с черновика
 нового вида — локальный GSAP в <head>, таймлайн main после корня, без
 data-no-timeline, с data-am-layers. `fixtures/montage/studio-before.html` —
 наш черновик (плюс титр t-1, как его вставил бы montage edit) до открытия в
@@ -63,7 +63,7 @@ class StudioSavedFormTests(unittest.TestCase):
         self.assertIn('<meta charset="UTF-8">', AFTER_MOVE)
 
     def test_studio_keeps_the_local_gsap_and_the_timeline_script(self):
-        # Задача 10b: GSAP и таймлайн main — то, ради чего в Studio слышен
+        # GSAP и таймлайн main — то, ради чего в Studio слышен
         # звук; сохранение из Studio оставляет их как были, байт в байт.
         for part in ('<script src="assets/gsap.min.js"></script>',
                      '<script src="assets/MotionPathPlugin.min.js"></script>',
