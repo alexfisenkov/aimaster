@@ -111,6 +111,20 @@ class DeskSweepTests(unittest.TestCase):
         self.assertEqual(desk_children.sweep(kill=self.kill), [18])
         self.assertEqual(desk_children._children, {})
 
+    def test_unexpected_failure_of_kill_keeps_the_desk_too(self):
+        paths = self.project("j")
+        child = _Child(19)
+        desk_children.remember(paths, child, "t")
+        shutil.rmtree(paths.root)
+
+        def broken(_child):
+            raise RuntimeError("сбой посреди остановки")
+
+        with self.assertRaises(RuntimeError):
+            desk_children.sweep(kill=broken)
+        self.assertEqual(len(desk_children._children), 1)
+        self.assertEqual(desk_children.sweep(kill=self.kill), [19])
+
     def test_registry_survives_parallel_use(self):
         projects = [self.project(f"g{index}") for index in range(4)]
         errors = []

@@ -98,6 +98,15 @@ class DeskUnitTests(_Draft):
                           config=config or self.ours, started=lambda pid: started,
                           kill=self.killed.append)
 
+    def test_address_in_a_planted_record_is_not_passed_on(self):
+        self.desk().open(self.paths)
+        record = json.loads(self.paths.desk_file.read_text(encoding="utf-8"))
+        for url in ("http://evil.test:9/#project/current", "javascript:alert(1)"):
+            with self.subTest(url=url):
+                self.paths.desk_file.write_text(json.dumps({**record, "url": url}), encoding="utf-8")
+                status = self.desk().status(self.paths)
+                self.assertEqual((status["state"], "url" in status), ("open", False))
+
     def opened_elsewhere(self):
         """Стол открыт другим вызовом CLI: своего Popen у этого процесса нет."""
 

@@ -299,7 +299,10 @@ their edits as they are.
 and returns `url` and `opener_url`; a second `open` returns the same desk.
 `opener_url` is a page on the desk's own address: it turns Studio's usage
 analytics off in this browser and goes on to the desk — give the person
-`opener_url`, not `url`. Edits save to
+`opener_url`, not `url`. `montage status` has no `opener_url`: for the link,
+run `montage open` again — it returns the same desk with its `opener_url`.
+Both addresses are only ever `http://127.0.0.1:<port>` (or localhost); a desk
+record that points anywhere else comes back without `url`. Edits save to
 `current/index.html` by themselves and Studio picks up edits made by
 commands. Before your own edits while the desk may be open, read
 `montage status` and pass its `model_hash` as `--expected-model-hash`: a

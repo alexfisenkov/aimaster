@@ -173,7 +173,8 @@ class RenderTests(unittest.TestCase):
     def test_failed_render_is_a_clear_message(self):
         with self.assertRaises(MontageError) as caught:
             self.render(FakeHyperframes(render_bytes=None))
-        self.assertIn("Сборка не удалась", str(caught.exception))
+        self.assertIn("Сборка не удалась: код 1 (текст движка, по-английски): render failed: browser crashed",
+                      str(caught.exception))
         self.assertTrue((self.paths().logs / "render-v001.log").is_file())
 
     def test_failure_text_shows_no_absolute_paths(self):

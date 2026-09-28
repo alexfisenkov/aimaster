@@ -22,6 +22,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 
 from .desk import TELEMETRY_STORAGE_KEY
+from .desk_record import loopback_url
 from .index_io import write_text_atomic
 from .paths import MontagePaths
 
@@ -67,12 +68,16 @@ def ensure_opener(paths: MontagePaths) -> None:
 
 def opener_url(studio_url: str) -> str | None:
     """Адрес страницы на origin стола по его `studioUrl` 0.8.75
-    (`http://127.0.0.1:<порт>/#project/<имя>`); имени в адресе нет — None."""
+    (`http://127.0.0.1:<порт>/#project/<имя>`). Адрес не `loopback_url`, имени
+    в нём нет или оно «.»/«..» (путь `/api/projects/../preview/…` ушёл бы из
+    папки проекта) — None."""
 
+    if not loopback_url(studio_url):
+        return None
     parts = urlsplit(studio_url)
     head, _, rest = parts.fragment.partition("/")
     name = unquote(rest.split("?", 1)[0])
-    if head != "project" or not name or "/" in name or not parts.netloc:
+    if head != "project" or name in ("", ".", "..") or "/" in name or "\\" in name:
         return None
     return (f"{parts.scheme}://{parts.netloc}/api/projects/{quote(name, safe='')}"
             f"/preview/{OPENER_RELATIVE}")

@@ -272,6 +272,28 @@ class EditTests(unittest.TestCase):
                 self.edit(op="undo")
         self.assertIn("отменять нечего", str(caught.exception))
 
+    def test_undo_order_follows_the_counter_not_the_clock(self):
+        self.edit(op="move", clip="t-1", at=0.3)
+        # снимок прежнего вида, чьё время в имени «позже» — часы переводили назад
+        legacy = self.paths.undo / "edit-29991231-235959-000000000.html"
+        legacy.write_text("<html>старый</html>", encoding="utf-8")
+        self.edit(op="move", clip="t-1", at=0.4)
+        self.assertEqual([path.name for path in edit_undo._edit_snapshots(self.paths)],
+                         [legacy.name, "edit-n000000001.html", "edit-n000000002.html"])
+        self.edit(op="undo")
+        self.assertEqual(self.attrs()["t-1"]["data-start"], "0.3")
+
+    def test_undo_numbers_continue_after_the_largest(self):
+        self.edit(op="move", clip="t-1", at=0.3)
+        first = self.paths.undo / "edit-n000000001.html"
+        first.rename(self.paths.undo / "edit-n999999999.html")
+        first.with_suffix(".json").rename(self.paths.undo / "edit-n999999999.json")
+        self.edit(op="move", clip="t-1", at=0.4)
+        self.assertEqual([path.name for path in edit_undo._edit_snapshots(self.paths)],
+                         ["edit-n999999999.html", "edit-n1000000000.html"])
+        self.edit(op="undo")
+        self.assertEqual(self.attrs()["t-1"]["data-start"], "0.3")
+
     def test_undo_folder_that_cannot_be_written_is_a_russian_refusal(self):
         before = self.text()
         with mock.patch.object(Path, "write_bytes", side_effect=OSError(28, "No space", "/abs/x")):

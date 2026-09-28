@@ -10,7 +10,7 @@ from __future__ import annotations
 from . import MontageError
 from .context import open_context
 from .desk import StudioDesk
-from .desk_opener import ensure_opener, opener_url
+from .desk_opener import ensure_opener, opener_file, opener_url
 from .draft import create_draft, rebuild_draft
 from .edit import EditRequest, apply_edit
 from .engine import locate as locate_engine
@@ -96,7 +96,9 @@ def open_desk(workspace, project_id, *, engine=None, desk=None) -> dict:
     if ctx.paths.index.is_file():  # без черновика стол откажет сам — папок не заводим
         ensure_opener(ctx.paths)
     opened = desk.open(ctx.paths)
-    return {"project_id": project_id, **opened, "opener_url": opener_url(opened["url"])}
+    url = opened.get("url")  # нет — запись стола указывала не на 127.0.0.1 (desk_record.public)
+    page = opener_url(url) if url and opener_file(ctx.paths).is_file() else None
+    return {"project_id": project_id, **opened, "opener_url": page}
 
 
 def close_desk(workspace, project_id, *, desk=None) -> dict:

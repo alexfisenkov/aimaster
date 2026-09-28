@@ -1,16 +1,22 @@
 """Откат правок агента: снимок index.html до правки и отметка после неё.
 
-Перед каждой правкой current/index.html копируется в .undo/edit-<время>.html,
+Перед каждой правкой current/index.html копируется в .undo/edit-n<номер>.html,
 после неё рядом пишется .json с хэшем получившегося файла. `undo` возвращает
 последний снимок, только если файл с тех пор не меняли (например, мышью в
 монтажном столе). Откатить можно `UNDO_DEPTH` последних правок: более старые
-снимки с отметками удаляются."""
+снимки с отметками удаляются.
+
+Порядок снимков — по номеру: следующий после самого большого в папке, файл
+создаётся только новым (две правки разом не займут один номер). Часы тут ни
+при чём: перевод времени назад (NTP, смена пояса) не сделал бы старый снимок
+«последним». Снимки прежнего вида edit-<время>.html считаются старше любых
+нумерованных."""
 
 from __future__ import annotations
 
 import hashlib
 import json
-import time
+import re
 from pathlib import Path
 
 from . import MontageError
@@ -18,6 +24,8 @@ from .index_io import read_index, write_index
 from .paths import MontagePaths
 
 UNDO_DEPTH = 50
+_NUMBERED = re.compile(r"edit-n(\d+)\.html")
+_NUMBER_WIDTH = 9
 
 
 def _sha(path: Path) -> str:
@@ -27,14 +35,34 @@ def _sha(path: Path) -> str:
         raise MontageError(f"не удалось прочитать {Path(path).name} монтажа") from error
 
 
+def _order(path: Path) -> tuple[int, int, str]:
+    found = _NUMBERED.fullmatch(path.name)
+    return (1, int(found.group(1)), path.name) if found else (0, 0, path.name)
+
+
+def _claim_next(paths: MontagePaths) -> Path:
+    """Новый пустой файл снимка со следующим номером (создан только что — наш)."""
+
+    number = max((_order(path)[1] for path in _edit_snapshots(paths)), default=0)
+    while True:
+        number += 1
+        target = paths.undo / f"edit-n{number:0{_NUMBER_WIDTH}d}.html"
+        try:
+            with open(target, "xb"):
+                return target
+        except FileExistsError:
+            continue  # номер занят параллельной правкой — следующий
+
+
 def snapshot_before(paths: MontagePaths) -> Path:
-    stamp = time.strftime("%Y%m%d-%H%M%S") + f"-{time.time_ns() % 1_000_000_000:09d}"
-    target = paths.undo / f"edit-{stamp}.html"
+    target = None
     try:
         paths.undo.mkdir(parents=True, exist_ok=True)
+        target = _claim_next(paths)
         target.write_bytes(paths.index.read_bytes())
     except OSError as error:
-        target.unlink(missing_ok=True)
+        if target is not None:
+            target.unlink(missing_ok=True)
         raise MontageError("не удалось сохранить снимок для отката в montage/.undo (нет доступа "
                            "или диск занят) — правка не сделана") from error
     return target
@@ -55,9 +83,9 @@ def write_note(paths: MontagePaths, snapshot: Path, op: str) -> None:
 
 
 def _edit_snapshots(paths: MontagePaths) -> list[Path]:
-    """Снимки правок по порядку: имя начинается со времени создания."""
+    """Снимки правок по порядку: прежние (по времени в имени), затем по номеру."""
 
-    return sorted(paths.undo.glob("edit-*.html")) if paths.undo.is_dir() else []
+    return sorted(paths.undo.glob("edit-*.html"), key=_order) if paths.undo.is_dir() else []
 
 
 def prune_snapshots(paths: MontagePaths) -> None:

@@ -11,7 +11,8 @@ from typing import Callable
 
 from . import MontageError
 from .context import open_context
-from .desk_opener import opener_url
+from .desk_opener import opener_file, opener_url
+from .desk_record import loopback_url
 from .montage_state import montage_section
 from .paths import MontagePaths, render_output
 from .service import open_desk
@@ -22,11 +23,15 @@ DeskState = Callable[[MontagePaths], dict]
 _NOTES = ("note", "forgotten")
 
 
-def desk_view(desk: dict) -> dict:
+def desk_view(desk: dict, paths: MontagePaths) -> dict:
+    """Адрес — только `http://127.0.0.1:<порт>`; переходник — только если его
+    файл на месте (иначе Studio ответила бы на ссылку 404)."""
+
     view = {"state": desk.get("state", "closed")}
-    if view["state"] == "open" and isinstance(desk.get("url"), str):
-        page = opener_url(desk["url"])
-        view.update(url=page or desk["url"], telemetry_off=page is not None)
+    url = desk.get("url")
+    if view["state"] == "open" and loopback_url(url):
+        page = opener_url(url) if opener_file(paths).is_file() else None
+        view.update(url=page or url, telemetry_off=page is not None)
     view.update({key: desk[key] for key in _NOTES if isinstance(desk.get(key), str)})
     return view
 
@@ -37,7 +42,8 @@ def screen_status(workspace, project_id, *, locate, desk_state: DeskState) -> di
         return {"project_id": project_id, "revision": ctx.revision, "applicable": False}
     engine, reason = locate()
     result = {"applicable": True, **cheap_status(ctx, engine, reason)}
-    result["desk"] = desk_view(desk_state(ctx.paths)) if result["exists"] else {"state": "closed"}
+    result["desk"] = (desk_view(desk_state(ctx.paths), ctx.paths) if result["exists"]
+                      else {"state": "closed"})
     return result
 
 
@@ -50,7 +56,7 @@ def screen_model(workspace, project_id, *, locate, runner=None) -> dict:
 def open_desk_for_screen(workspace, project_id, *, desk) -> tuple[dict, MontagePaths]:
     opened = open_desk(workspace, project_id, desk=desk)
     paths = open_context(workspace, project_id, guard=False).paths
-    return {"project_id": project_id, **desk_view(opened)}, paths
+    return {"project_id": project_id, **desk_view(opened, paths)}, paths
 
 
 def restore_as_owner(workspace, project_id, expected_revision, version_id) -> dict:

@@ -102,7 +102,8 @@ def run_engine_json(engine: Engine, args: Sequence[str], *, cwd: Path, timeout: 
                                            f"словами движка, по-английски: {refusal['reason']}{fix}",
                                            shown))
         tail = short_paths(result.stderr or result.stdout, shown).strip()[-600:]
-        raise MontageError(f"HyperFrames «{command}» завершился с кодом {result.code}: {tail}")
+        said = f" (текст движка, по-английски): {tail}" if tail else ""
+        raise MontageError(f"HyperFrames «{command}» завершился с кодом {result.code}{said}")
     payload = _json_payload(result.stdout)
     if not isinstance(payload, dict):
         raise MontageError(f"HyperFrames «{command}» вернул не JSON")

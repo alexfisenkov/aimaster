@@ -15,10 +15,31 @@ LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 PUBLIC_KEYS = ("url", "port", "pid", "started_at")
 
 
-def public(record: dict) -> dict:
-    """Поля записи, которые видят ответы open/status (без служебных)."""
+def loopback_url(url) -> bool:
+    """`http://127.0.0.1:<порт>/…` (или localhost, [::1]) без логина и без
+    пробельных и управляющих знаков. Только такой адрес стола уходит в ответы
+    и на экран: запись montage/.desk.json лежит в папке проекта, её могли
+    подменить — ссылка на чужой сайт или `javascript:` на экран не попадёт."""
 
-    return {key: record[key] for key in PUBLIC_KEYS if key in record}
+    if not isinstance(url, str) or any(ord(char) <= 32 or ord(char) == 127 for char in url):
+        return False
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return False
+    return (parts.scheme == "http" and parts.hostname in LOOPBACK_HOSTS and port is not None
+            and parts.username is None and parts.password is None)
+
+
+def public(record: dict) -> dict:
+    """Поля записи, которые видят ответы open/status (без служебных); адрес —
+    только проверенный `loopback_url`."""
+
+    shown = {key: record[key] for key in PUBLIC_KEYS if key in record}
+    if not loopback_url(shown.get("url")):
+        shown.pop("url", None)
+    return shown
 
 
 MAX_PID = 2 ** 31 - 1

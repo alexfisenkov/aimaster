@@ -96,9 +96,10 @@ def render_mp4(ctx, engine, runner, version_id: str) -> Path:
     shown = {ctx.workspace: "<рабочая папка>", engine.prefix: "<движок>"}
     if result.code != 0 or not output.is_file():
         remove_output(output)
+        tail = short_paths(result.stderr or result.stdout, shown).strip()[-500:]
         why = (f"не уложилась в {pin['timeouts']['render']} с" if result.timed_out
-               else short_paths(result.stderr or result.stdout, shown).strip()[-500:]
-               or f"код {result.code}")
+               else f"код {result.code} (текст движка, по-английски): {tail}" if tail
+               else f"код {result.code}")
         raise MontageError(f"Сборка не удалась: {why} (лог: {log_name})")
     network = network_markers(short_paths(log, shown))
     if network:

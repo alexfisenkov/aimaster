@@ -334,6 +334,16 @@ class ServiceTests(unittest.TestCase):
                                                ".hyperframes/aimaster-desk-open.html")
         self.assertTrue((self.paths.current / ".hyperframes" / "aimaster-desk-open.html").is_file())
 
+    def test_opener_address_only_with_its_page_and_on_this_computer(self):
+        service.draft(self.ws, "p", 0, **self.kw(probe=True))
+        desk = mock.Mock()
+        desk.open.return_value = {"state": "open", "url": "http://127.0.0.1:7/#project/current",
+                                  "port": 7, "pid": 2, "started_at": "t"}
+        with mock.patch.object(service, "ensure_opener"):  # страница не записалась
+            self.assertIsNone(service.open_desk(self.ws, "p", desk=desk)["opener_url"])
+        desk.open.return_value = {"state": "open", "port": 7, "pid": 2, "started_at": "t"}  # адрес отброшен
+        self.assertIsNone(service.open_desk(self.ws, "p", desk=desk)["opener_url"])
+
     def test_open_desk_without_a_draft_creates_no_folders(self):
         desk = mock.Mock()
         desk.open.side_effect = MontageError("черновика ещё нет: сначала montage draft")

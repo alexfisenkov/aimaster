@@ -20,6 +20,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 from montage_built import BuiltMontage  # noqa: E402
 from montage_testkit import isolate_hyperframes_dir  # noqa: E402
 from studio.montage import MontageError  # noqa: E402
+from studio.montage.desk_opener import ensure_opener, opener_file  # noqa: E402
 from studio.montage.service_screen import (  # noqa: E402
     current_output, desk_view, open_desk_for_screen, restore_as_owner, screen_model, screen_status)
 
@@ -58,17 +59,34 @@ class ServiceScreenTests(unittest.TestCase):
 
     def test_open_desk_is_shown_through_the_opener_without_pid_and_port(self):
         self.m.draft()
+        ensure_opener(self.m.paths)  # кладёт service.open_desk
         self.assertEqual(self.status(lambda paths: dict(OPEN))["desk"],
                          {"state": "open", "url": OPENER, "telemetry_off": True})
 
+    def test_without_the_opener_file_the_studio_address_is_shown_honestly(self):
+        self.m.draft()
+        self.assertFalse(opener_file(self.m.paths).exists())
+        self.assertEqual(self.status(lambda paths: dict(OPEN))["desk"],
+                         {"state": "open", "url": STUDIO, "telemetry_off": False})
+
     def test_desk_notes_pass_as_text_and_numbers_do_not(self):
-        self.assertEqual(desk_view({"state": "closed", "note": "монтажный стол не отвечает", "pid": 3}),
+        self.assertEqual(desk_view({"state": "closed", "note": "монтажный стол не отвечает", "pid": 3},
+                                   self.m.paths),
                          {"state": "closed", "note": "монтажный стол не отвечает"})
-        self.assertEqual(desk_view({"state": "busy"}), {"state": "busy"})
+        self.assertEqual(desk_view({"state": "busy"}, self.m.paths), {"state": "busy"})
 
     def test_studio_address_without_project_keeps_the_flag_honest(self):
-        self.assertEqual(desk_view({"state": "open", "url": "http://127.0.0.1:9/"}),
+        self.assertEqual(desk_view({"state": "open", "url": "http://127.0.0.1:9/"}, self.m.paths),
                          {"state": "open", "url": "http://127.0.0.1:9/", "telemetry_off": False})
+
+    def test_address_off_this_computer_is_not_shown(self):
+        self.m.draft()
+        ensure_opener(self.m.paths)
+        for url in ("https://127.0.0.1:9/#project/current", "http://example.com:9/#project/current",
+                    "http://user@127.0.0.1:9/#project/current", "javascript:alert(1)//127.0.0.1:9/",
+                    "http://127.0.0.1/#project/current", "http://127.0.0.1:9/#project/cur rent", 7):
+            with self.subTest(url=url):
+                self.assertEqual(desk_view({"state": "open", "url": url}, self.m.paths), {"state": "open"})
 
     def test_model_uses_the_engine_from_locate(self):
         self.m.draft()

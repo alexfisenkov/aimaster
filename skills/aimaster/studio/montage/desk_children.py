@@ -84,7 +84,8 @@ def sweep(*, kill, all_live: bool = False) -> list[int]:
     исчезла или переименована (или все живые при `all_live` — выход
     дашборда), — остановить `kill(child)` и забыть. Это свой Popen: пока он не
     прибран, его номер не достанется чужому процессу. Не остановился (отказ
-    `kill`) — остаётся в реестре до следующей уборки. Ответ — pid остановленных."""
+    `kill` или любой сбой в нём) — остаётся в реестре до следующей уборки. Ответ —
+    pid остановленных."""
 
     with _lock:
         items = list(_children.items())
@@ -94,13 +95,27 @@ def sweep(*, kill, all_live: bool = False) -> list[int]:
             continue
         if _take(key, child) is None:
             continue  # его уже прибрала другая уборка или остановка стола
-        if child.poll() is None:
-            try:
-                kill(child)
-            except (MontageError, OSError):
-                with _lock:
-                    _children.setdefault(key, (child, started))
-                continue
+        if child.poll() is not None:
+            _reap(child)
+        elif _stop(key, child, started, kill):
             stopped.append(key[1])
-        _reap(child)
+            _reap(child)
     return stopped
+
+
+def _stop(key, child, started, kill) -> bool:
+    """`kill(child)` забранной записи. Не вышло — запись возвращается в
+    реестр (живой свой процесс не теряется из виду): при отказе (MontageError,
+    OSError) ответ False, любое другое исключение летит дальше."""
+
+    done = False
+    try:
+        kill(child)
+        done = True
+    except (MontageError, OSError):
+        pass
+    finally:
+        if not done:
+            with _lock:
+                _children.setdefault(key, (child, started))
+    return done

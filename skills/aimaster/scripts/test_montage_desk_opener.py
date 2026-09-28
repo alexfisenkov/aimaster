@@ -89,7 +89,16 @@ class OpenerUrlTests(unittest.TestCase):
 
     def test_no_project_in_the_address_means_no_page(self):
         for url in ("http://127.0.0.1:1/", "http://127.0.0.1:1/#settings",
-                    "http://127.0.0.1:1/#project/", "http://127.0.0.1:1/#project/a%2Fb", "#project/x"):
+                    "http://127.0.0.1:1/#project/", "http://127.0.0.1:1/#project/a%2Fb", "#project/x",
+                    "http://127.0.0.1:1/#project/.", "http://127.0.0.1:1/#project/..",
+                    "http://127.0.0.1:1/#project/%2E%2E", "http://127.0.0.1:1/#project/a%5Cb"):
+            with self.subTest(url=url):
+                self.assertIsNone(opener_url(url))
+
+    def test_only_a_plain_address_on_this_computer_gets_a_page(self):
+        for url in ("https://127.0.0.1:1/#project/current", "http://example.com:1/#project/current",
+                    "http://u:p@127.0.0.1:1/#project/current", "file:///#project/current",
+                    "http://127.0.0.1/#project/current", "http://127.0.0.1:99999/#project/current"):
             with self.subTest(url=url):
                 self.assertIsNone(opener_url(url))
 
