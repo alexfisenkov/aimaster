@@ -2,7 +2,9 @@
 // (studio/montage_routes.py). Без DOM. Ответ — всегда `{ok: true, body}` или
 // `{ok: false, code, message?}`: `message` — русский текст отказа монтажа
 // (422 montage_refused), экран показывает его как есть. POST — через общий
-// `postJson` (CSRF дашборда из `/api/session`).
+// `postJson` (CSRF дашборда из `/api/session`). `signal` — свой таймаут
+// каждого запроса (`montage-feed.js`): отменяет `fetch`, когда экран уже не
+// ждёт этот ответ — старому проекту он всё равно не нужен, а новому вреден.
 
 import { postJson } from "../actions.js";
 
@@ -12,6 +14,7 @@ const CODE_TEXT = Object.freeze({
   network_error: "Нет связи с дашбордом.",
   session_error: "Нет связи с дашбордом — обновите страницу.",
   not_found: "Экран монтажа не нашёл проект — обновите страницу.",
+  timeout: "Дашборд долго не отвечал — попробуйте ещё раз.",
 });
 
 export function montageUrl(projectId, part = "") {
@@ -19,10 +22,10 @@ export function montageUrl(projectId, part = "") {
   return part ? `${base}/${part}` : base;
 }
 
-export async function getMontage(projectId, part = "", fetchImpl = globalThis.fetch) {
+export async function getMontage(projectId, part = "", fetchImpl = globalThis.fetch, signal) {
   let response;
   try {
-    response = await fetchImpl(montageUrl(projectId, part), { headers: { Accept: "application/json" } });
+    response = await fetchImpl(montageUrl(projectId, part), { headers: { Accept: "application/json" }, signal });
   } catch {
     return { ok: false, code: "network_error" };
   }

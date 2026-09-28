@@ -180,6 +180,17 @@ test("устаревшие клипы — три разных исхода, тр
   assert.deepEqual(mixed.map((item) => item.key), ["stale", "stale-rebuild", "stale-unaccepted"]);
 });
 
+test("устаревшие клипы с незнакомым reason не пропадают молча — считаются отдельной строкой", () => {
+  // Сервер может завести новый исход, о котором эта версия дашборда ещё не
+  // знает: без запасной ветки такая запись просто выпадала бы из всех трёх
+  // фильтров staleNotices и исчезала из плашек без следа.
+  const model = { index_key: "k1", unrendered_changes: false,
+    stale_clips: [{ clip: "v-9", reason: "будущий исход", cause: null }] };
+  const list = notices({ status: status(), model });
+  assert.deepEqual(list.map((item) => item.key), ["stale-other"]);
+  assert.match(list[0].text, /устарело — клипов: 1/);
+});
+
 test("записки стола и ошибка опроса видны; фото — только ошибка опроса", () => {
   const list = notices({ status: status({ desk: { state: "closed", note: "монтажный стол не отвечает" } }), feedError: "Нет связи с дашбордом." });
   assert.deepEqual(list.map((item) => item.key), ["feed", "desk-note"]);
@@ -205,4 +216,12 @@ test("длина — из схемы без несобранных правок 
     status: status({ unrendered_changes: null }), model: { ...model, unrendered_changes: true }, project: PROJECT,
   }), "00:35");
   assert.equal(durationText({ status: null, model: null, project: projectWith({ scenes: [] }) }), "");
+});
+
+test("длина после сборки: свежий статус говорит «нет правок», отставшая схема ещё говорит «есть» — 00:15", () => {
+  // b4-review/stale-after-render.mjs, durationText-часть: index_key тот же
+  // (сборка не трогает index.html), поэтому model.duration всё ещё верен —
+  // статус лишь решает, использовать его или упасть на сумму сцен.
+  const model = { index_key: "k1", unrendered_changes: true, duration: 14.6 };
+  assert.equal(durationText({ status: status({ unrendered_changes: false }), model, project: PROJECT }), "00:15");
 });

@@ -1,7 +1,10 @@
 // node --test skills/aimaster/studio/static/ui/v2/montage-feed.test.mjs
 //
-// Опрос монтажа: дешёвое состояние каждый раз, схема — только когда сменился
-// index_key; ответ для прежнего проекта выбрасывается; отказ сервера — текстом.
+// Опрос монтажа: дешёвое состояние каждый раз, схема — когда сменился
+// index_key, current_version или revision; у каждого show()/hide() своё
+// поколение — попытка прежнего поколения не пишет в состояние и не ждётся,
+// переключение проекта не ждёт медленный ответ прежнего; отказ схемы
+// держится между попытками, не мигает; отказ сервера — текстом.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -33,22 +36,49 @@ test("опрос раз в 5 секунд", () => {
   assert.equal(POLL_MS, 5000);
 });
 
-test("первый опрос: состояние и схема, одно оповещение", async () => {
+test("первый опрос: состояние публикуется сразу, схема — вторым шагом", async () => {
+  // Требование «статус раньше схемы»: даже когда схема приходит быстро
+  // следом (без задержки, как здесь), это два отдельных шага публикации —
+  // оба меняют entry, оба зовут notify. Так «Сборка» видит свежий статус
+  // (десk, current_version), не дожидаясь медленной схемы (до 130 с).
   const { calls, seen, feed } = feedFor({ status: [ok(STATUS("k1"))], model: [ok({ index_key: "k1", layers: [] })] });
   feed.show("p");
   await feed.tick();
   assert.deepEqual(calls, ["p", "p:model"]);
-  assert.deepEqual(seen, ["p"]);
+  assert.deepEqual(seen, ["p", "p"]);
   assert.equal(feed.current("p").model.index_key, "k1");
 });
 
-test("то же состояние — схему не спрашиваем и не перерисовываем", async () => {
+test("то же состояние — схему не спрашиваем и не перерисовываем повторно", async () => {
   const { calls, seen, feed } = feedFor({ status: [ok(STATUS("k1"))], model: [ok({ index_key: "k1" })] });
   feed.show("p");
-  await feed.tick();
-  await feed.tick();
+  await feed.tick(); // статус + схема — два оповещения
+  await feed.tick(); // тот же ключ, схема уже удачна — ни статус, ни схема не меняются, оповещений нет
   assert.deepEqual(calls, ["p", "p:model", "p"]);
+  assert.deepEqual(seen, ["p", "p"]);
+});
+
+test("медленная схема не задерживает публикацию статуса", async () => {
+  // Требование «статус раньше схемы», буквально: пока схема ещё летит,
+  // entry уже несёт свежий статус (desk, current_version, …) — DOM не
+  // застревает на старых данных на те секунды, что считает движок.
+  let releaseModel;
+  const load = async (id, part) => {
+    if (!part) return { ok: true, body: STATUS("k1") };
+    return new Promise((resolve) => { releaseModel = () => resolve({ ok: true, body: { index_key: "k1" } }); });
+  };
+  const seen = [];
+  const feed = createMontageFeed({ load, notify: (id) => seen.push(id) });
+  feed.show("p");
+  const settled = feed.tick();
+  await new Promise((resolve) => setTimeout(resolve, 0)); // статус успел прийти, схема ещё летит
   assert.deepEqual(seen, ["p"]);
+  assert.equal(feed.current("p").status.index_key, "k1");
+  assert.equal(feed.current("p").model, null);
+  releaseModel();
+  await settled;
+  assert.deepEqual(seen, ["p", "p"]);
+  assert.equal(feed.current("p").model.index_key, "k1");
 });
 
 test("сменился index_key — схема заново", async () => {
@@ -57,10 +87,10 @@ test("сменился index_key — схема заново", async () => {
     model: [ok({ index_key: "k1" }), ok({ index_key: "k2" })],
   });
   feed.show("p");
-  await feed.tick();
-  await feed.tick();
+  await feed.tick(); // статус + схема
+  await feed.tick(); // ключ сменился — статус + схема снова
   assert.deepEqual(calls, ["p", "p:model", "p", "p:model"]);
-  assert.deepEqual(seen, ["p", "p"]);
+  assert.deepEqual(seen, ["p", "p", "p", "p"]);
 });
 
 test("сменился current_version при том же index_key — схема заново (сборка не трогает index.html)", async () => {
@@ -77,7 +107,7 @@ test("сменился current_version при том же index_key — схем
   await feed.tick();
   await feed.tick();
   assert.deepEqual(calls, ["p", "p:model", "p", "p:model"]);
-  assert.deepEqual(seen, ["p", "p"]);
+  assert.deepEqual(seen, ["p", "p", "p", "p"]);
   assert.equal(feed.current("p").model.unrendered_changes, false);
 });
 
@@ -124,6 +154,28 @@ test("схема после провала оживает, как только �
   assert.deepEqual(calls, ["p", "p:model", "p", "p:model", "p"]);
 });
 
+test("схема, зависшая дольше таймаута, считается провалом и уходит в паузу", async () => {
+  // Без своего таймаута зависший (не сетевой-отказавший, а именно молчащий)
+  // запрос схемы держал бы опрос занятым бесконечно — сервер сам считает
+  // модель до 120 с, отличить «ещё считает» от «завис навсегда» без предела
+  // нечем. modelTimeoutMs здесь мал специально — тест не ждёт реальные 130 с.
+  const calls = [];
+  const load = async (id, part) => {
+    calls.push(part || "status");
+    if (part === "model") return new Promise(() => {}); // никогда не ответит
+    return ok(STATUS("k1"));
+  };
+  const feed = createMontageFeed({ load, notify: () => {}, modelTimeoutMs: 20 });
+  feed.show("p");
+  await feed.tick(); // попытка 1 — таймаут, пауза 0 тиков (как любой провал)
+  assert.deepEqual(calls, ["status", "model"]);
+  assert.equal(feed.current("p").error?.code, "timeout");
+  await feed.tick(); // пауза 0 — сразу попытка 2 (тоже таймаут), пауза уже 5 тиков
+  assert.deepEqual(calls, ["status", "model", "status", "model"]);
+  await feed.tick(); // пауза только началась — схему не спрашиваем
+  assert.deepEqual(calls, ["status", "model", "status", "model", "status"]);
+});
+
 test("нет движка, черновика или это фото — схему не спрашиваем", async () => {
   for (const status of [STATUS("k1", { engine: { state: "missing" } }), STATUS(null, { exists: false }),
     { applicable: false }]) {
@@ -143,12 +195,11 @@ test("скрытый экран не опрашивается", async () => {
   assert.equal(feed.current("p"), null);
 });
 
-test("ответ для прежнего проекта выбрасывается, а не второй параллельный запрос", async () => {
-  // Один опрос летит за раз (busy): переключение на «b», пока «a» ещё не
-  // ответил, не запускает второй запрос тут же — иначе a→b→a копит
-  // параллельные запросы (обзор B4, репродукция overlap.mjs). Как только
-  // ответ для «a» пришёл, он отбрасывается (projectId уже не тот), а «b»
-  // спрашивается следующим тиком.
+test("ответ для прежнего проекта выбрасывается", async () => {
+  // Брифовый тест задачи 16 (восстановлен в раунде 2 правок B4): «b»
+  // спрашивается сразу, не дожидаясь медленного ответа «a» — своё
+  // поколение не ждёт чужое. Когда ответ «a» всё же приходит, поколение
+  // уже другое — отброшен молча, ни entry, ни notify его не видят.
   let release;
   const load = (id) => (id === "a"
     ? new Promise((resolve) => { release = () => resolve(ok(STATUS("k1"))); })
@@ -158,21 +209,50 @@ test("ответ для прежнего проекта выбрасываетс
   feed.show("a");
   const first = feed.tick();
   feed.show("b");
-  await feed.tick(); // «a» ещё летит — этот тик пустой, «b» пока не спрошен
-  assert.equal(feed.current("b"), null);
+  await feed.tick();
   release();
-  await first; // ответ для «a» пришёл, но экран уже не на нём — отброшен
+  await first;
   assert.equal(feed.current("a"), null);
-  assert.equal(feed.current("b"), null);
-  await feed.tick(); // свободно — спрашиваем «b»
   assert.equal(feed.current("b").status.index_key, "k9");
   assert.deepEqual(seen, ["b"]);
 });
 
-test("refresh() во время обычного опроса не теряется — досдаётся один раз сразу за ним", async () => {
+test("переключение на другой проект не ждёт медленный ответ прежнего (repro r1-switch-latency.mjs)", async () => {
+  // Раунд 1: «busy»-флаг на весь опрос заставлял «b» ждать до 120 с схемы
+  // «a». Раунд 2: у каждого show() своё поколение — «b» получает свои
+  // данные сразу же следующим тиком, «a» продолжает копить неудачи в фоне
+  // и никогда не пишет в состояние «b».
+  let releaseModelA;
+  const calls = [];
+  const load = (id, part) => {
+    calls.push(part ? `${id}:${part}` : `${id}:status`);
+    if (id === "a" && part === "model") {
+      return new Promise((resolve) => { releaseModelA = () => resolve(ok({ index_key: "k-a" })); });
+    }
+    return Promise.resolve(ok(part ? { index_key: `k-${id}` } : STATUS(`k-${id}`)));
+  };
+  const feed = createMontageFeed({ load, notify: () => {} });
+  feed.show("a");
+  const first = feed.tick(); // статус «a» готов, схема «a» висит
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  feed.show("b");
+  await feed.tick(); // «b» получает свои данные, не дожидаясь схемы «a»
+  assert.equal(feed.current("b").status.index_key, "k-b");
+  assert.equal(feed.current("b").model.index_key, "k-b");
+  assert.equal(feed.current("a"), null);
+  releaseModelA();
+  await first; // «a» наконец сел — но его данные уже некуда писать
+  assert.equal(feed.current("b").status.index_key, "k-b"); // не затёрто ответом «a»
+  assert.equal(feed.current("a"), null);
+});
+
+test("refresh() во время обычного опроса не теряется — резолвится по своему статусу", async () => {
   // refreshMontage() зовут после «Сделать текущей», открытия стола,
   // возврата на вкладку: если промолчать, пока летит обычный опрос через
   // POLL_MS, человек до 5 с смотрел бы на старые данные без причины.
+  // Раунд 2: refresh() резолвится не по всему циклу («статус + возможно
+  // схема» текущего опроса), а именно по СВОЕЙ, отдельно досланной попытке
+  // — как только придёт её собственный статус, не дожидаясь схемы.
   let releaseFirst;
   const answers = [STATUS("k1", { engine: { state: "missing" } }), STATUS("k2", { engine: { state: "missing" } })];
   const calls = [];
@@ -186,13 +266,44 @@ test("refresh() во время обычного опроса не теряет�
   const feed = createMontageFeed({ load, notify: () => {} });
   feed.show("p");
   const polled = feed.tick(); // 1-й запрос — «летит»
-  const refreshed = feed.refresh(); // позвали, пока первый ещё не ответил
+  const refreshed = feed.refresh(); // позвали, пока первый ещё не ответил — встал в очередь, второго запроса нет
   assert.deepEqual(calls, ["status"]); // второй запрос не стартовал сам по себе — refresh() не полез вперёд
-  assert.equal(await refreshed, undefined); // сам по себе не ждёт довеска — тот привязан к polled
-  releaseFirst();
-  await polled; // первый сел, следом сам собой ушёл и сел добор (queued)
+  releaseFirst(); // первый ответ пришёл — сразу следом уходит добор
+  await polled;
+  await refreshed; // резолвится по статусу добора
   assert.deepEqual(calls, ["status", "status"]);
   assert.equal(feed.current("p").status.index_key, "k2");
+});
+
+test("refresh(), пока идёт опрос, а потом hide() — добор не срывается с id=null (repro r1-queued-after-hide.mjs)", async () => {
+  let release;
+  const calls = [];
+  const notified = [];
+  const load = (id, part) => {
+    calls.push([id, part]);
+    if (calls.length === 1) return new Promise((resolve) => { release = () => resolve(ok(STATUS("k1"))); });
+    return Promise.resolve({ ok: false, code: "not_found" }); // добор не должен случиться вовсе
+  };
+  const feed = createMontageFeed({ load, notify: (id) => notified.push(id) });
+  feed.show("p");
+  const t = feed.tick();
+  feed.refresh(); // например, возврат на вкладку, пока обычный опрос летит
+  feed.hide(); // человек ушёл с экрана «Сборка» раньше, чем опрос ответил
+  release();
+  await t;
+  assert.deepEqual(calls, [["p", ""]]); // ни второго вызова, ни тем более с id=null
+  assert.deepEqual(notified, []); // экран уже не на «p» — писать некуда, notify не зовётся
+});
+
+test("отказ схемы держится между попытками, не мигает (repro r1-model-refusal-flicker.mjs)", async () => {
+  const refusal = { ok: false, code: "montage_refused", message: "в папке монтажа есть ссылки на другие места" };
+  const load = async (id, part) => (part ? refusal : { ok: true, body: STATUS("k1", { current_version: "v001" }) });
+  const feed = createMontageFeed({ load, notify: () => {} });
+  feed.show("p");
+  for (let i = 0; i < 9; i += 1) {
+    await feed.tick();
+    assert.equal(feed.current("p").error?.code, "montage_refused", `tick ${i + 1}: отказ не должен пропадать`);
+  }
 });
 
 test("отказ сервера сохраняется с текстом", async () => {

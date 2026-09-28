@@ -1,7 +1,7 @@
 """Маршруты экрана «Сборка»: `/api/projects/<id>/montage…`.
 
     GET  …/montage             дешёвое состояние (экран спрашивает раз в 5 с)
-    GET  …/montage/model       схема слоёв (когда сменился index_key)
+    GET  …/montage/model       схема слоёв (когда сменился index_key, версия или ревизия)
     POST …/montage/desk        {} → открыть стол; адрес страницы-переходника
     POST …/montage/desk/close  {} → закрыть стол
     POST …/montage/restore     {"version": "v001", "expected_revision": N}

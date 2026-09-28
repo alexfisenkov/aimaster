@@ -94,9 +94,16 @@ export function screenFlags({ status = null, finished = false, phone = false, te
  * принятого"` — заменить нечем, менять решение — на человеке. Одна плашка
  * на исход, а не одна на всё: текст должен сразу сказать, что предстоит. */
 function staleNotices(clips) {
-  const refreshable = clips.filter((clip) => !clip.reason);
-  const structural = clips.filter((clip) => clip.cause);
-  const unaccepted = clips.filter((clip) => clip.reason === "нет принятого");
+  const refreshable = [];
+  const structural = [];
+  const unaccepted = [];
+  const other = []; // неизвестный reason — не роняем запись молча, а всё равно считаем
+  for (const clip of clips) {
+    if (!clip.reason) refreshable.push(clip);
+    else if (clip.cause) structural.push(clip);
+    else if (clip.reason === "нет принятого") unaccepted.push(clip);
+    else other.push(clip);
+  }
   const list = [];
   if (refreshable.length) {
     list.push({ key: "stale", tone: "warn", action: "refresh",
@@ -104,11 +111,15 @@ function staleNotices(clips) {
   }
   if (structural.length) {
     list.push({ key: "stale-rebuild", tone: "warn", action: "refresh",
-      text: "Проект изменился (сцены или режим показа) — нужен новый черновик монтажа." });
+      text: "Проект изменился: сцены, способ генерации или звуковые слои — нужен новый черновик монтажа." });
   }
   if (unaccepted.length) {
     list.push({ key: "stale-unaccepted", tone: "warn", action: "refresh",
       text: `Нет принятого результата — таких клипов в монтаже: ${unaccepted.length}.` });
+  }
+  if (other.length) {
+    list.push({ key: "stale-other", tone: "warn", action: "refresh",
+      text: `В монтаже устарело — клипов: ${other.length}.` });
   }
   return list;
 }
