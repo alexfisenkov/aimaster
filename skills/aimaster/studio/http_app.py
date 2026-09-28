@@ -13,6 +13,7 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 
 from .assets import AssetError, AssetIndex
 from .asset_stream import FileBody, VerifiedFiles, open_asset
+from .asset_download import content_disposition, download_names
 from .ledger import (
     ActionLedger,
     ActionRequest,
@@ -264,17 +265,19 @@ class StudioApplication:
         if parsed.scheme or parsed.netloc or parsed.fragment:
             raise ValueError("absolute request targets and fragments are unsupported")
         if parsed.query:
-            # Project selection belongs only to the dashboard document. API
-            # routes retain their existing exact-path contract.
+            # Project selection belongs only to the dashboard document; the one
+            # other query is «Скачать» — `/assets/<id>?download=1`. API routes
+            # keep their exact-path contract.
             pairs = parse_qsl(parsed.query, keep_blank_values=True,
                               strict_parsing=True, errors="strict")
-            if parsed.path != "/" or len(pairs) != 1 or pairs[0][0] != "project":
-                raise ValueError("unsupported query")
-            project_id = pairs[0][1]
-            if (not project_id or project_id in {".", ".."}
-                    or any(char in project_id for char in ("/", "\\", "\0"))
-                    or any(ord(char) < 32 for char in project_id)):
-                raise ValueError("invalid project selector")
+            if not (parsed.path.startswith("/assets/") and pairs == [("download", "1")]):
+                if parsed.path != "/" or len(pairs) != 1 or pairs[0][0] != "project":
+                    raise ValueError("unsupported query")
+                project_id = pairs[0][1]
+                if (not project_id or project_id in {".", ".."}
+                        or any(char in project_id for char in ("/", "\\", "\0"))
+                        or any(ord(char) < 32 for char in project_id)):
+                    raise ValueError("invalid project selector")
         try:
             return unquote(parsed.path, errors="strict")
         except (UnicodeDecodeError, ValueError) as error:
@@ -315,7 +318,8 @@ class StudioApplication:
             if method == "GET" and request_path.startswith("/assets/"):
                 asset_id = request_path.removeprefix("/assets/")
                 if asset_id and "/" not in asset_id:
-                    return self._asset(asset_id, request_headers.get("range"))
+                    return self._asset(asset_id, request_headers.get("range"),
+                                       download=self._wants_download(path))
             if method == "GET" and request_path == "/":
                 return self._static_file("index.html")
             if method == "GET" and request_path.startswith("/static/"):
@@ -435,11 +439,14 @@ class StudioApplication:
             return "unsatisfiable"
         return max(0, length - suffix), length - 1
 
-    def _asset(self, asset_id, range_header=None):
+    def _asset(self, asset_id, range_header=None, *, download=False):
         opened = open_asset(self.assets, asset_id, self.verified_files)
         try:
             requested = self._requested_byte_range(range_header, opened.size)
             headers = {"Accept-Ranges": "bytes"}
+            if download:
+                headers["Content-Disposition"] = content_disposition(
+                    *download_names(opened.relative_path, self._project_title))
             if requested == "unsatisfiable":
                 headers["Content-Range"] = f"bytes */{opened.size}"
                 opened.handle.close()
@@ -459,6 +466,19 @@ class StudioApplication:
         headers = _security_headers(content_type)
         headers.update(extra_headers)
         return Response(status, headers, b"", stream=body)
+
+    @staticmethod
+    def _wants_download(raw_path) -> bool:
+        query = urlsplit(raw_path).query
+        return bool(query) and parse_qsl(query, keep_blank_values=True) == [("download", "1")]
+
+    def _project_title(self, project_id: str) -> str | None:
+        try:
+            project = self.store.load(project_id).get("project") or {}
+        except (ProjectNotFound, StoreError, OSError, ValueError):
+            return None
+        title = project.get("title")
+        return title if isinstance(title, str) else None
 
     def _static_file(self, relative_path: str) -> Response:
         resolved = _resolve_static(relative_path)
