@@ -8,7 +8,8 @@ index.html, из которого она собрана, — и оба совп�
 промах: модель собирается заново и кэш перезаписывается своим файлом.
 
 Каждая правка монтажа даёт новый текст и новый файл кэша, поэтому папка
-ограничена: после записи остаются `KEEP` самых свежих файлов модели.
+ограничена: после записи остаются `KEEP` самых свежих файлов модели, а
+временные файлы оборванных записей старше часа убираются.
 """
 
 from __future__ import annotations
@@ -16,14 +17,19 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import time
 from pathlib import Path
 
 from . import MontageError
 from .index_io import write_text_atomic
 from .replace_target import regular_stat
+from .temp_sweep import MIN_AGE_SECONDS, MKDTEMP_TAIL
 
 KEEP = 20
 PREFIX, SUFFIX = "model-", ".json"
+# временный файл атомарной записи (replace_via_temp: mkstemp «.<имя>.XXXXXXXX.tmp»)
+LEFTOVER = re.compile(rf"\.{PREFIX}[0-9a-f]{{24}}{re.escape(SUFFIX)}\.{MKDTEMP_TAIL}\.tmp")
 
 
 def _sha256(text: str) -> str:
@@ -70,21 +76,31 @@ def _mtime(entry) -> int:
         return 0
 
 
+def _unlink(path) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
 def prune(cache_dir: Path, *, keep: Path | None = None) -> None:
-    """Оставляет KEEP самых свежих файлов модели (и всегда `keep`); прочее в
-    папке не трогает. Уборка — забота, а не обязанность: ошибки молча."""
+    """Оставляет KEEP самых свежих файлов модели (и всегда `keep`) и убирает
+    временные файлы оборванных записей старше часа (свежий может писать
+    параллельный вызов); прочее в папке не трогает, по ссылкам не ходит.
+    Уборка — забота, а не обязанность: ошибки молча."""
 
     try:
         with os.scandir(cache_dir) as listing:
-            entries = [entry for entry in listing if entry.name.startswith(PREFIX)
-                       and entry.name.endswith(SUFFIX) and entry.is_file(follow_symlinks=False)]
+            files = [entry for entry in listing if entry.is_file(follow_symlinks=False)]
     except OSError:
         return
-    entries.sort(key=_mtime, reverse=True)
-    for entry in entries[KEEP:]:
-        if keep is not None and entry.name == keep.name:
-            continue
-        try:
-            os.unlink(entry.path)
-        except OSError:
-            pass
+    stale_before = (time.time() - MIN_AGE_SECONDS) * 1e9
+    for entry in files:
+        if LEFTOVER.fullmatch(entry.name) and 0 < _mtime(entry) < stale_before:  # 0 — возраст неизвестен
+            _unlink(entry.path)
+    models = sorted((entry for entry in files
+                     if entry.name.startswith(PREFIX) and entry.name.endswith(SUFFIX)),
+                    key=_mtime, reverse=True)
+    for entry in models[KEEP:]:
+        if keep is None or entry.name != keep.name:
+            _unlink(entry.path)

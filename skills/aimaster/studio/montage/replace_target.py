@@ -5,8 +5,8 @@
 по такой ссылке трогают её цель: chmod сделал бы ключ читаемым всем, запись
 затёрла бы чужой файл, а права цели перешли бы на наш. Поэтому цель смотрим
 только через lstat: ссылку (и любую запись, кроме обычного файла и папки)
-удаляем саму — не то, на что она указывает; папку не трогаем (замена файлом на
-ней откажет сама); обычный файл «только чтение» делаем записываемым только на
+удаляем саму — не то, на что она указывает (junction Windows — тоже ссылка);
+настоящую папку не трогаем (замена файлом на ней откажет сама); обычный файл «только чтение» делаем записываемым только на
 Windows — там его замена отказывает, а на POSIX rename права цели не смотрит.
 """
 
@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..platform_compat import IS_WINDOWS, open_nofollow, replace_file
+from .link_guard import is_link
 
 
 def regular_stat(path) -> os.stat_result | None:
@@ -33,11 +34,16 @@ def regular_stat(path) -> os.stat_result | None:
 
 def clear_link(path) -> os.stat_result | None:
     """Ссылку (и прочую запись, кроме обычного файла и папки) на месте `path`
-    удаляет саму; возвращает lstat обычного файла, иначе None."""
+    удаляет саму; возвращает lstat обычного файла, иначе None. Junction
+    Windows lstat показывает папкой — ссылкой его узнаёт `link_guard.is_link`
+    по тегу, и `os.unlink` снимает сам junction, не трогая его цель."""
 
     try:
         info = os.lstat(path)
     except (FileNotFoundError, NotADirectoryError):
+        return None
+    if is_link(info):
+        os.unlink(path)
         return None
     if stat.S_ISREG(info.st_mode):
         return info

@@ -23,7 +23,8 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
 from montage_testkit import FakeHyperframes, fake_engine, fake_gsap_prefix, seed_workspace  # noqa: E402
 from studio.authoring_support import open_store  # noqa: E402
 from studio.store import StoreError  # noqa: E402
-from studio.montage import MontageError, engine_cli, index_io, media_sync, replace_target, typeface, vendor  # noqa: E402
+from studio.montage import (MontageError, engine_cli, index_io, link_guard, media_sync,  # noqa: E402
+                            replace_target, typeface, vendor)
 from studio.montage.locks import held_lock  # noqa: E402
 from studio.montage.model import read_model  # noqa: E402
 from test_montage_model import draft_html  # noqa: E402
@@ -194,6 +195,49 @@ class ReplaceTargetTests(_Planted):
         self.assertTrue(folder.is_dir())
         self.assertIsNone(replace_target.regular_stat(folder))
         self.assertIsNone(replace_target.regular_stat(self.project / "пропал"))
+
+
+class JunctionAtTargetTests(_Planted):
+    """Windows: junction на месте файла монтажа (например .desk.lock). lstat
+    видит в нём папку — но с тегом точки повторной обработки: это ссылка, и
+    удаляется она сама, а не то, куда она ведёт."""
+
+    JUNCTION_TAG = 0xA0000003
+
+    def test_a_junction_goes_away_itself(self):
+        lock = self.project / "montage" / ".desk.lock"
+        lock.parent.mkdir(parents=True)
+        real_lstat, removed = os.lstat, []
+
+        def lstat(path, *args, **kwargs):
+            if Path(path) == lock:
+                return mock.Mock(st_mode=stat.S_IFDIR | 0o777, st_reparse_tag=self.JUNCTION_TAG)
+            return real_lstat(path, *args, **kwargs)
+        with mock.patch.object(link_guard, "IS_WINDOWS", True), \
+                mock.patch.object(replace_target.os, "lstat", lstat), \
+                mock.patch.object(replace_target.os, "unlink", removed.append):
+            self.assertIsNone(replace_target.clear_link(lock))
+        self.assertEqual(removed, [lock])
+
+    def test_a_plain_folder_is_not_a_junction(self):
+        folder = self.project / "montage" / "папка"
+        folder.mkdir(parents=True)
+        with mock.patch.object(link_guard, "IS_WINDOWS", True):
+            self.assertIsNone(replace_target.clear_link(folder))
+        self.assertTrue(folder.is_dir())
+
+    @unittest.skipUnless(os.name == "nt", "junction — только на Windows")
+    def test_a_real_junction_at_the_desk_lock_goes_away_and_its_target_stays(self):
+        import _winapi
+        lock = self.project / "montage" / ".desk.lock"
+        lock.parent.mkdir(parents=True)
+        _winapi.CreateJunction(str(self.outside.parent), str(lock))
+        self.addCleanup(lambda: os.path.isdir(lock) and os.rmdir(lock))  # остался junction — только его
+        self.assertIsNone(replace_target.clear_link(lock))
+        self.assertFalse(os.path.lexists(lock))
+        self.assertEqual(self.outside.read_bytes(), SECRET)
+        with held_lock(lock, busy="занято"):
+            self.assertTrue(lock.is_file())
 
 
 class OneReplaceHelperTests(_Planted):

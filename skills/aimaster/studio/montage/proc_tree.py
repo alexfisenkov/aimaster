@@ -12,7 +12,8 @@ macOS и Linux) и разослать сигналы каждому найден
 Chrome шанс на штатное закрытие — как обычно и работает Ctrl+C), недолгая
 пауза, затем SIGKILL всем, кто не отреагировал. Номер завершившегося потомка
 ОС за эту паузу может отдать чужому процессу, поэтому у каждого потомка
-запоминается время запуска, и SIGKILL получает только тот же самый процесс.
+запоминается время запуска, и SIGKILL получает только тот же самый процесс;
+потомок, чьё время запуска не прочиталось, получает только SIGTERM.
 Windows: `taskkill /T /F` сразу останавливает всё дерево одной командой —
 своей эскалации не нужно.
 """
@@ -108,9 +109,10 @@ def kill_tree(proc) -> None:
         except (OSError, subprocess.SubprocessError):
             pass  # лучшее, что можно сделать — не дать чистке уронить вызывающего
         return
-    # (номер, время запуска); время не прочитать — процесса уже нет
-    descendants = [(pid, started) for pid in _descendants(proc.pid)
-                   if (started := process_started(pid)) is not None]
+    # (номер, время запуска). Время не прочиталось (сбой ps, процесс выходит) —
+    # SIGTERM всё равно: иначе Chrome остался бы жить; SIGKILL — только тому,
+    # чьё время запуска известно и после паузы то же.
+    descendants = [(pid, process_started(pid)) for pid in _descendants(proc.pid)]
     _signal_group(proc.pid, signal.SIGTERM)
     for pid, _started in descendants:
         _signal_pid(pid, signal.SIGTERM)
@@ -119,5 +121,5 @@ def kill_tree(proc) -> None:
         time.sleep(0.05)
     _signal_group(proc.pid, signal.SIGKILL)
     for pid, started in descendants:
-        if process_started(pid) == started:  # тот же процесс, а не новый с его номером
+        if started is not None and process_started(pid) == started:  # тот же, не новый с его номером
             _signal_pid(pid, signal.SIGKILL)

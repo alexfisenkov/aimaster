@@ -28,9 +28,15 @@ _new_mode: int | None = None
 def _probe_new_mode() -> int:
     """Права, которые ОС даёт новому файлу с запрошенными 0644. umask процесса
     не трогаем: его можно узнать, только установив другой, а на этот миг он
-    действовал бы и на файлы, которые создают другие потоки (дашборд)."""
+    действовал бы и на файлы, которые создают другие потоки (дашборд).
+    Временную папку системы не создать — MontageError с этой причиной
+    (не кэшируется: следующая запись пробует снова)."""
 
-    folder = tempfile.mkdtemp(prefix="aimaster-mode-")
+    try:
+        folder = tempfile.mkdtemp(prefix="aimaster-mode-")
+    except OSError as error:
+        raise MontageError("системная временная папка недоступна — не узнать права новых файлов "
+                           "монтажа (переменные TMPDIR, TEMP)") from error
     probe = os.path.join(folder, "probe")
     try:
         os.close(os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644))

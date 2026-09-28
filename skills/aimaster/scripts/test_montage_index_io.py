@@ -21,7 +21,7 @@ for _path in (str(_SKILL_ROOT), str(_SCRIPTS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from studio.montage import MontageError  # noqa: E402
+from studio.montage import MontageError, index_io  # noqa: E402
 from studio.montage.index_io import read_index, write_index  # noqa: E402
 
 CRLF_SAMPLE = '<!DOCTYPE html>\r\n<html>\r\n  <body>текст</body>\r\n</html>\r\n'
@@ -103,6 +103,25 @@ class IndexIoModeTests(unittest.TestCase):
                 write_index(path, "новое")
                 self.assertEqual((self._mode(path), read_index(path)), (mode, "новое"))
 
+
+
+class ModeProbeTests(unittest.TestCase):
+    """Права нового файла узнаются пробой во временной папке системы. Её нет
+    или туда не записать — отказ с этой причиной, а не «не удалось записать
+    index.html (нет доступа или файл занят)»; следующая запись пробует снова."""
+
+    def test_unusable_temp_folder_is_named_as_the_reason(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                mock.patch.object(index_io, "_new_mode", None), \
+                mock.patch.object(index_io.tempfile, "mkdtemp",
+                                  side_effect=PermissionError(13, "Permission denied", temp)):
+            target = Path(temp) / "index.html"
+            with self.assertRaises(MontageError) as caught:
+                write_index(target, "текст")
+            self.assertIn("временная папка", str(caught.exception))
+            self.assertNotIn(temp, str(caught.exception))
+            self.assertFalse(target.exists())
+            self.assertIsNone(index_io._new_mode)
 
 
 class UmaskTests(unittest.TestCase):

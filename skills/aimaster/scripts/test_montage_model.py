@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -170,6 +171,51 @@ class ModelCacheTests(unittest.TestCase):
         newest = {path.name for path in old[-(model_cache.KEEP - 1):]}  # и свежий файл этой записи
         self.assertEqual(left, newest | {self.path.name})
         self.assertTrue((self.cache / "заметка.txt").is_file())
+
+    def test_leftover_temp_files_of_the_cache_are_pruned_once_old(self):
+        """Оборванная запись кэша оставляет «.model-<ключ>.json.<8 знаков>.tmp»
+        (временный файл атомарной замены). Старые уходят вместе с уборкой
+        кэша; свежий может писать параллельный вызов — он остаётся, как и
+        чужие файлы с похожими именами."""
+
+        def leftover(name: str, age: float) -> Path:
+            path = self.cache / name
+            path.write_text("{", encoding="utf-8")
+            os.utime(path, (time.time() - age, time.time() - age))
+            return path
+        stale = leftover(f".model-{'a' * 24}.json.k2x_9qzw.tmp", 7200)
+        fresh = leftover(f".model-{'b' * 24}.json.abcdefgh.tmp", 60)
+        foreign = [leftover(".model-заметка.tmp", 7200),
+                   leftover(f".model-{'c' * 24}.json.tmp", 7200),
+                   leftover(f"model-{'d' * 24}.json.abcdefgh.tmp", 7200)]
+        self.read()  # промах — модель записана, кэш прибран
+        self.assertFalse(stale.exists())
+        self.assertTrue(fresh.exists())
+        self.assertTrue(all(path.exists() for path in foreign))
+
+    def test_leftover_pattern_is_the_name_the_atomic_write_really_uses(self):
+        target = model_cache.cache_file(self.cache, self.engine.version, self.html)
+        # как replace_target.replace_via_temp
+        descriptor, name = tempfile.mkstemp(dir=self.cache, prefix=f".{target.name}.", suffix=".tmp")
+        os.close(descriptor)
+        self.assertRegex(Path(name).name, model_cache.LEFTOVER)
+        self.assertIsNotNone(model_cache.LEFTOVER.fullmatch(Path(name).name))
+
+    def test_temp_leftover_as_a_link_is_not_followed(self):
+        target = self.base / "чужое.txt"
+        target.write_text("чужое", encoding="utf-8")
+        link = self.cache / f".model-{'e' * 24}.json.abcdefgh.tmp"
+        try:
+            os.symlink(target, link)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"симлинк здесь не создать: {error}")
+        if os.utime not in os.supports_follow_symlinks:
+            self.skipTest("время самой ссылки здесь не задать")
+        old = time.time() - 7200
+        os.utime(link, (old, old), follow_symlinks=False)
+        model_cache.prune(self.cache)
+        self.assertTrue(os.path.islink(link))
+        self.assertEqual(target.read_text(encoding="utf-8"), "чужое")
 
 
 class DiffTests(unittest.TestCase):

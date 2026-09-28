@@ -97,22 +97,36 @@ class KillTreePosixSequencingTests(unittest.TestCase):
         # SIGTERM целиком раньше любого SIGKILL — не вперемешку
         self.assertLess(calls.index(term[-1]), calls.index(kill[0]))
 
-    def test_a_reused_pid_never_gets_sigkill(self):
-        """За паузу потомок 202 завершился, а ОС отдала его номер чужому
-        процессу (другое время запуска); 203 исчез ещё до SIGTERM."""
-
+    def _signals(self, descendants, started) -> list:
         calls = []
-        started = {201: iter(["t201", "t201"]), 202: iter(["t202", "чужой"]), 203: iter([None])}
         fake_proc = mock.Mock(pid=100)
         fake_proc.poll.return_value = 0
         with mock.patch.object(proc_tree, "IS_WINDOWS", False), \
-                mock.patch.object(proc_tree, "_descendants", return_value=[201, 202, 203]), \
+                mock.patch.object(proc_tree, "_descendants", return_value=descendants), \
                 mock.patch.object(proc_tree, "process_started", side_effect=lambda pid: next(started[pid])), \
                 mock.patch.object(proc_tree.os, "killpg"), \
                 mock.patch.object(proc_tree.os, "kill",
                                   side_effect=lambda pid, sig: calls.append((pid, sig))):
             proc_tree.kill_tree(fake_proc)
-        self.assertEqual(calls, [(201, signal.SIGTERM), (202, signal.SIGTERM), (201, signal.SIGKILL)])
+        return calls
+
+    def test_a_reused_pid_never_gets_sigkill(self):
+        """За паузу потомок 202 завершился, а ОС отдала его номер чужому
+        процессу (другое время запуска)."""
+
+        started = {201: iter(["t201", "t201"]), 202: iter(["t202", "чужой"])}
+        self.assertEqual(self._signals([201, 202], started),
+                         [(201, signal.SIGTERM), (202, signal.SIGTERM), (201, signal.SIGKILL)])
+
+    def test_unreadable_start_time_still_gets_sigterm_but_never_sigkill(self):
+        """Время запуска 203 при обходе не прочиталось (сбой ps, процесс
+        выходит): SIGTERM он получает всё равно — иначе Chrome остался бы
+        жить; SIGKILL — нет: без отметки не доказать, что после паузы по
+        этому номеру тот же процесс, а не чужой."""
+
+        started = {201: iter(["t201", "t201"]), 203: iter([None, "чей-то"])}
+        self.assertEqual(self._signals([201, 203], started),
+                         [(201, signal.SIGTERM), (203, signal.SIGTERM), (201, signal.SIGKILL)])
 
     def test_foreign_process_that_refuses_signals_does_not_stop_the_kill(self):
         fake_proc = mock.Mock(pid=100)
