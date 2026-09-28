@@ -72,7 +72,7 @@ def collect_replies() -> dict[str, set[str]]:
         fields = _flow(Path(temp))
     # desk._forgotten_note: open добавляет forgotten (чужой процесс в записи),
     # close — forgotten или note (запись не удалилась), status — оба.
-    fields["open"] = {"project_id", "state", *PUBLIC_KEYS, "forgotten"}
+    fields["open"] = {"project_id", "state", *PUBLIC_KEYS, "forgotten", "opener_url"}
     fields["close"] = {"project_id", "state", "forgotten", "note"}
     fields["desk notes"] = {"note", "forgotten"}
     return fields

@@ -10,6 +10,7 @@ from __future__ import annotations
 from . import MontageError
 from .context import open_context
 from .desk import StudioDesk
+from .desk_opener import ensure_opener, opener_url
 from .draft import create_draft, rebuild_draft
 from .edit import EditRequest, apply_edit
 from .engine import locate as locate_engine
@@ -91,8 +92,11 @@ def edit(workspace, project_id, expected_revision, request: EditRequest, *,
 
 def open_desk(workspace, project_id, *, engine=None, desk=None) -> dict:
     ctx = open_context(workspace, project_id)
-    return {"project_id": project_id,
-            **(desk or StudioDesk(engine or require_engine())).open(ctx.paths)}
+    desk = desk or StudioDesk(engine or require_engine())
+    if ctx.paths.index.is_file():  # без черновика стол откажет сам — папок не заводим
+        ensure_opener(ctx.paths)
+    opened = desk.open(ctx.paths)
+    return {"project_id": project_id, **opened, "opener_url": opener_url(opened["url"])}
 
 
 def close_desk(workspace, project_id, *, desk=None) -> dict:

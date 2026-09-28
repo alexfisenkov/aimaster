@@ -108,7 +108,7 @@ what it means in plain words (see Refusals).
 | `montage render` | reference check → lint → MP4 (its log checked for network access) → ffprobe → new version → `assembly` | `version`, `asset_id`, `path`, `duration`, `changes`, `warnings` (lint warnings), `revision` |
 | `montage restore` | makes an earlier version current again (the replaced `index.html` goes to `.undo/`) | `current_version`, `backup`, `revision` |
 | `montage gsap` | copies pinned GSAP and plugins from the engine into `current/assets/` | `version`, `files`, `copied`, `script_tags`, `missing_tags`, `rules` |
-| `montage open` | starts the montage desk (HyperFrames Studio) | `state`, `url`, `port`, `pid`, `started_at`; sometimes `forgotten` (Montage desk) |
+| `montage open` | starts the montage desk (HyperFrames Studio) | `state`, `url`, `opener_url`, `port`, `pid`, `started_at`; sometimes `forgotten` (Montage desk) |
 | `montage close` | stops it | `state`; sometimes `forgotten` or `note` (Montage desk) |
 
 `montage render` without `--by` records `autopilot` in an autopilot project and
@@ -261,10 +261,10 @@ overridden by Font and GSAP above.
    словами здесь или мышью на монтажном столе». The dashboard's «Сборка»
    shows the current version as the final video; `paths.output` is the file.
 2. Wait. Words in chat → `montage edit` (one command per edit; name what
-   changed). Mouse → `montage open`; open `url` in a new tab through the host
-   capability, or give the link: «Монтажный стол открыт: <url>. Правки
-   сохраняются сами; интерфейс стола на английском. Когда закончите —
-   напишите «собери»».
+   changed). Mouse → `montage open`; open `opener_url` in a new tab through
+   the host capability, or give that link (`url` only when `opener_url` is
+   `null`): «Монтажный стол открыт: <opener_url>. Правки сохраняются сами;
+   интерфейс стола на английском. Когда закончите — напишите «собери»».
 3. On «собери» / «Собрать ролик» or the dashboard prompt: `montage diff`,
    retell the changes, `montage render` straight away (`--by owner` for the
    person's desk edits) — free and local, no plan and no confirmation — then
@@ -296,7 +296,10 @@ their edits as they are.
 ## Montage desk
 
 `montage open` starts HyperFrames Studio on 127.0.0.1 for this project only
-and returns `url`; a second `open` returns the same desk. Edits save to
+and returns `url` and `opener_url`; a second `open` returns the same desk.
+`opener_url` is a page on the desk's own address: it turns Studio's usage
+analytics off in this browser and goes on to the desk — give the person
+`opener_url`, not `url`. Edits save to
 `current/index.html` by themselves and Studio picks up edits made by
 commands. Before your own edits while the desk may be open, read
 `montage status` and pass its `model_hash` as `--expected-model-hash`: a
@@ -375,9 +378,12 @@ lists the clips (`clip`, `layer`, `scene_id`, `asset_id`, `current_asset_id`,
 
 - Studio's interface is English only.
 - Studio's page sends usage analytics to its developers (PostHog) unless the
-  key `hyperframes-studio:telemetryDisabled` is set to `1` in the page's local
-  storage before it first loads; a desk opened from chat does not set it. The
-  engine's own telemetry is off.
+  key `hyperframes-studio:telemetryDisabled` is `1` in the page's local
+  storage before it first loads. `opener_url` sets it (and Studio's second
+  opt-out key `hf-studio-telemetry-opt-out`) and then opens the desk; every
+  desk start takes a new port, so the page does it on every opening. A desk
+  opened at `url` directly keeps the analytics on. The engine's own telemetry
+  is off.
 - The engine is kept offline by `--json` on every call, not by a setting:
   with it, render, lint, timeline edits and the desk make no outbound request
   and start no `git` (checked through a logging proxy on the engine's Node

@@ -324,6 +324,23 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(service.close_desk(self.ws, "p", desk=desk), {"project_id": "p", "state": "closed"})
         self.assertEqual(desk.open.call_args.args[0], self.paths)
 
+    def test_open_desk_puts_the_opener_page_and_returns_its_address(self):
+        service.draft(self.ws, "p", 0, **self.kw(probe=True))
+        desk = mock.Mock()
+        desk.open.return_value = {"state": "open", "url": "http://127.0.0.1:7/#project/current",
+                                  "port": 7, "pid": 2, "started_at": "t"}
+        opened = service.open_desk(self.ws, "p", desk=desk)
+        self.assertEqual(opened["opener_url"], "http://127.0.0.1:7/api/projects/current/preview/"
+                                               ".hyperframes/aimaster-desk-open.html")
+        self.assertTrue((self.paths.current / ".hyperframes" / "aimaster-desk-open.html").is_file())
+
+    def test_open_desk_without_a_draft_creates_no_folders(self):
+        desk = mock.Mock()
+        desk.open.side_effect = MontageError("черновика ещё нет: сначала montage draft")
+        with self.assertRaises(MontageError):
+            service.open_desk(self.ws, "p", desk=desk)
+        self.assertFalse(self.paths.current.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
