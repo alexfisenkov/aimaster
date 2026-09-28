@@ -9,10 +9,12 @@ import json
 import os
 import select
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+import zlib
 from pathlib import Path
 from unittest import mock
 
@@ -202,6 +204,33 @@ class MontageHttpTests(unittest.TestCase):
 
 
 @unittest.skipIf(os.name == "nt", "на Windows SIGTERM не перехватить: TerminateProcess")
+class FaviconTests(unittest.TestCase):
+    """Значок вкладки: без него браузер на каждой загрузке пишет в консоль 404."""
+
+    def test_favicon_is_a_small_png_the_page_may_cache(self):
+        with tempfile.TemporaryDirectory() as temp:
+            m = BuiltMontage(Path(temp).resolve())
+            running = serve(m.workspace)
+            try:
+                app = running.application
+                response = app.handle("GET", "/favicon.ico", [("Host", app.authority)], b"")
+            finally:
+                running.close()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers["Content-Type"], "image/png")
+        self.assertEqual(response.headers["Cache-Control"], "max-age=86400")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        body = response.body
+        self.assertTrue(body.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual(struct.unpack(">II", body[16:24]), (32, 32))
+        pixels = zlib.decompress(body[body.index(b"IDAT") + 4:body.index(b"IEND") - 8])
+        row = 1 + 32 * 4
+        center = pixels[16 * row + 1 + 16 * 4:16 * row + 1 + 17 * 4]
+        corner = pixels[1:5]
+        self.assertEqual((center, corner), (b"\xff\xff\xff\xff", b"\x00\x00\x00\x00"))
+        self.assertLess(len(body), 1024)
+
+
 class ServeStopsOnTermTests(unittest.TestCase):
     """Дашборд, остановленный SIGTERM (агент, launchd, `kill`), закрывается так
     же, как по Ctrl+C: `RunningServer.close()` — и столы, открытые им, тоже."""

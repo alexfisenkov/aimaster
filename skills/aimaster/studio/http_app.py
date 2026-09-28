@@ -14,6 +14,7 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 from .assets import AssetError, AssetIndex
 from .asset_stream import FileBody, VerifiedFiles, open_asset
 from .asset_download import content_disposition, download_names
+from .favicon import favicon_png
 from .montage_routes import match as match_montage
 from .montage_routes import route as route_montage
 from .ledger import (
@@ -333,6 +334,10 @@ class StudioApplication:
                                        download=self._wants_download(path))
             if method == "GET" and request_path == "/":
                 return self._static_file("index.html")
+            if method == "GET" and request_path == "/favicon.ico":
+                # Браузер просит значок сам на каждой загрузке (favicon.py).
+                return self._response(200, favicon_png(), "image/png",
+                                      {"Cache-Control": "max-age=86400"})
             if method == "GET" and request_path.startswith("/static/"):
                 return self._static_file(request_path.removeprefix("/static/"))
             if method == "POST" and request_path == "/api/actions":

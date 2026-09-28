@@ -7,7 +7,9 @@
 — «busy»; проверка самого стола (HTTP-запрос к Studio, не дольше 2 с) идёт
 уже без замка проекта, чтобы открытие и закрытие её не ждали. Схема слоёв
 одного проекта читается одним потоком за раз: движок после правки думает до
-120 с, второй запрос ждёт и берёт кэш. «Показать в папке» — файл текущей
+120 с, второй запрос ждёт и берёт кэш. Опрос состояния — знак хранителю
+«экран смотрят» (`DeskKeeper.touch`), кроме принятого ролика (`approved`):
+его стол уходит по простою. «Показать в папке» — файл текущей
 версии из state, никаких путей из запроса и никаких замков. Ответы — без
 абсолютных путей и без команды установки движка."""
 
@@ -84,12 +86,16 @@ class MontageScreen:
         self._model_reads = KeyedLocks()
 
     def status(self, project_id: str) -> dict:
-        self.keeper.touch(project_id)
         result = service_screen.screen_status(
             self.workspace, project_id, locate=self.engines,
             desk_state=lambda paths: self._desk_state(project_id, paths))
         if result.get("applicable"):
             result["reveal"] = self.reveal_ready
+            # Экран смотрят — стол не простаивает. Но не у принятого ролика:
+            # его монтаж уже не меняют, оставленный открытым стол уйдёт по
+            # простою, даже если «Сборка» так и открыта.
+            if not result.get("approved"):
+                self.keeper.touch(project_id)
         return result
 
     def _desk_state(self, project_id: str, paths) -> dict:

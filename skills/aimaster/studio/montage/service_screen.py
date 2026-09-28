@@ -36,12 +36,20 @@ def desk_view(desk: dict, paths: MontagePaths) -> dict:
     return view
 
 
+def assembly_approved(state: dict) -> bool:
+    """Ролик принят («Принять ролик», `stage approve`): монтаж больше не меняют."""
+
+    milestones = state.get("milestones")
+    return isinstance(milestones, dict) and milestones.get("assembly") == "approved"
+
+
 def screen_status(workspace, project_id, *, locate, desk_state: DeskState) -> dict:
     ctx = open_context(workspace, project_id)
     if (ctx.state.get("project") or {}).get("type") == "photo":
         return {"project_id": project_id, "revision": ctx.revision, "applicable": False}
     engine, reason = locate()
-    result = {"applicable": True, **cheap_status(ctx, engine, reason)}
+    result = {"applicable": True, "approved": assembly_approved(ctx.state),
+              **cheap_status(ctx, engine, reason)}
     result["desk"] = (desk_view(desk_state(ctx.paths), ctx.paths) if result["exists"]
                       else {"state": "closed"})
     return result

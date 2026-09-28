@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 import tempfile
@@ -182,6 +183,21 @@ class MontageScreenTests(unittest.TestCase):
         screen.status("p")
         clock.now += 90
         self.assertEqual(keeper.sweep(), [])
+        clock.now += 20
+        self.assertEqual((keeper.sweep(), closed), (["p"], [self.m.paths]))
+
+    def test_status_polls_do_not_keep_a_desk_alive_after_the_video_is_approved(self):
+        clock, closed = FakeClock(), []
+        keeper = DeskKeeper(close_desk=closed.append, clock=clock, idle=100)
+        screen = self.screen(keeper=keeper)
+        screen.open_desk("p")
+        self.assertIs(screen.status("p")["approved"], False)
+        path = self.m.workspace / "projects" / "p" / "state.json"
+        state = json.loads(path.read_text(encoding="utf-8"))
+        state["milestones"]["assembly"] = "approved"
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        clock.now += 90
+        self.assertIs(screen.status("p")["approved"], True)  # опрос есть, но стол им не держится
         clock.now += 20
         self.assertEqual((keeper.sweep(), closed), (["p"], [self.m.paths]))
 
