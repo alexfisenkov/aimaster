@@ -203,7 +203,6 @@ class MontageHttpTests(unittest.TestCase):
         stop.assert_called_once()
 
 
-@unittest.skipIf(os.name == "nt", "на Windows SIGTERM не перехватить: TerminateProcess")
 class FaviconTests(unittest.TestCase):
     """Значок вкладки: без него браузер на каждой загрузке пишет в консоль 404."""
 
@@ -231,6 +230,7 @@ class FaviconTests(unittest.TestCase):
         self.assertLess(len(body), 1024)
 
 
+@unittest.skipIf(os.name == "nt", "на Windows SIGTERM не перехватить: TerminateProcess")
 class ServeStopsOnTermTests(unittest.TestCase):
     """Дашборд, остановленный SIGTERM (агент, launchd, `kill`), закрывается так
     же, как по Ctrl+C: `RunningServer.close()` — и столы, открытые им, тоже."""
