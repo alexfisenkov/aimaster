@@ -5,16 +5,24 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import posixpath
+import re
 import secrets
 import threading
 import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 from .http_app import Response
 from .http_write import write_response
 from .loopback_http import LoopbackThreadingHTTPServer
+
+# План Б (экран «Сборка»): монтажный стол и «Показать в папке» — только на
+# компьютере владельца. Через шлюз (телефон, туннель) их нет: Studio наружу не
+# выставляется, а папка открылась бы на компьютере, а не у человека в руках.
+_LOCAL_ONLY = re.compile(r"/api/projects/.+/montage/(?:desk|desk/close|reveal)")
+_DECODE_ROUNDS = 4
 
 
 def validate_init_data(raw: str, bot_token: str, owner_id: int, *, now=None, max_age=86400) -> dict:
@@ -132,9 +140,35 @@ class MiniAppGateway:
         headers["Content-Length"] = str(len(body))
         return Response(response.status, headers, body)
 
+    @staticmethod
+    def _local_only(path: str) -> bool:
+        """Путь стола или папки — в том виде, в каком его увидит дашборд
+        (`http_app._path` раскодирует процентные последовательности), и ещё
+        строже: раскодированный до конца (`%252F`), без двойных и конечных «/»,
+        без «.» и «..». Не раскодируется — тоже «нельзя»: дашборд его всё равно
+        не примет."""
+
+        text = path
+        for _ in range(_DECODE_ROUNDS):
+            try:
+                decoded = unquote(text, errors="strict")
+            except (UnicodeDecodeError, ValueError):
+                return True
+            if decoded == text:
+                break
+            text = decoded
+        else:
+            return True
+        flat = posixpath.normpath(re.sub(r"/+", "/", text))
+        return any(_LOCAL_ONLY.fullmatch(form) for form in (text, flat))
+
     def handle(self, method, path, headers, body):
         normalized = {key.casefold(): value for key, value in headers}
         parsed = urlsplit(path)
+        # И путь, который уйдёт дашборду, и цель запроса как есть: «//api/…»
+        # urlsplit считает адресом хоста — такую цель тоже не пускаем.
+        if any(self._local_only(form) for form in (parsed.path, path.partition("?")[0])):
+            return self._forbidden()  # до проверки входа и без обращения к дашборду
         asset_path = parsed.path.startswith("/assets/")
         asset_id = parsed.path.removeprefix("/assets/") if asset_path else ""
         ticket_ok = asset_path and "/" not in asset_id and self._valid_asset_ticket(asset_id, parsed.query)

@@ -172,6 +172,55 @@ class MiniAppDocumentTests(unittest.TestCase):
         self.assertEqual(self.inner.calls, [])
 
 
+class MiniAppMontageTests(unittest.TestCase):
+    """План Б: монтажный стол и «Показать в папке» — только на компьютере
+    владельца; через шлюз (телефон, туннель) — 403, дашборд не зовётся."""
+
+    def setUp(self):
+        self.token = "123456:" + "a" * 32
+        self.inner = _StubInner()
+        self.gateway = MiniAppGateway(self.inner, self.token, 501)
+        self.auth = ("Authorization", "tma " + init_data(self.token, 501, int(time.time())))
+
+    def post(self, target, *, auth=True):
+        headers = [("Host", "public"), ("Content-Type", "application/json")]
+        return self.gateway.handle("POST", target, headers + ([self.auth] if auth else []), b"{}")
+
+    def test_desk_and_reveal_are_refused_in_any_spelling(self):
+        for target in ("/api/projects/p/montage/desk", "/api/projects/p/montage/desk/close",
+                       "/api/projects/p/montage/reveal", "/api/projects/p/montage/desk/",
+                       "/api/projects/p/montage%2Fdesk", "/api/projects/p/montage%2freveal",
+                       "/api/projects/p%20x/montage/desk%2Fclose",
+                       "/api/projects/p/montage//desk", "//api/projects/p/montage/reveal",
+                       "/api//projects/p/montage/desk//close/", "/api/projects/p/montage/./reveal",
+                       "/api/projects/p/montage/x/../desk", "/api/projects/p/montage/%2e/reveal",
+                       "/api/projects/p/montage%252Fdesk", "/api/projects/p/montage%25252Freveal",
+                       "/api/projects/p%2Fq/montage/desk", "/api/projects/p/montage/%64esk",
+                       "/api/projects/p/montage/desk?x=1", "/api/projects/p/montage%ff/desk"):
+            with self.subTest(target=target):
+                self.assertEqual(self.post(target).status, 403)
+                self.assertEqual(self.post(target, auth=False).status, 403)
+        self.assertEqual(self.inner.calls, [])
+
+    def test_state_model_and_restore_pass_after_login(self):
+        get = self.gateway.handle("GET", "/api/projects/p/montage", [("Host", "public"), self.auth], b"")
+        model = self.gateway.handle("GET", "/api/projects/p/montage/model", [("Host", "public"), self.auth], b"")
+        restore = self.post("/api/projects/p/montage/restore")
+        self.assertEqual((get.status, model.status, restore.status), (200, 200, 200))
+        self.assertEqual([call[1] for call in self.inner.calls],
+                         ["/api/projects/p/montage", "/api/projects/p/montage/model",
+                          "/api/projects/p/montage/restore"])
+
+    def test_restore_without_login_is_still_refused(self):
+        denied = self.post("/api/projects/p/montage/restore", auth=False)
+        self.assertEqual((denied.status, self.inner.calls), (403, []))
+
+    def test_project_named_like_a_part_is_not_confused(self):
+        response = self.gateway.handle("GET", "/api/projects/desk/montage", [("Host", "public"), self.auth], b"")
+        self.assertEqual((response.status, [call[1] for call in self.inner.calls]),
+                         (200, ["/api/projects/desk/montage"]))
+
+
 class MiniAppFramingTests(unittest.TestCase):
     """Responses must carry exactly one, correct Content-Length.
 
