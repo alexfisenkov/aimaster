@@ -27,3 +27,10 @@ export function onViewportChange(callback) {
   list.addEventListener("change", listener);
   return () => list.removeEventListener("change", listener);
 }
+
+/** Дашборд открыт внутри Telegram (Mini App): `initData` у Telegram.WebApp
+ * есть только там — в обычном браузере скрипт Telegram загружен, но пуст. */
+export function inTelegram() {
+  const data = globalThis.Telegram?.WebApp?.initData;
+  return typeof data === "string" && data.length > 0;
+}

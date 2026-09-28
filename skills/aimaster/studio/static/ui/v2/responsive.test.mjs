@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { PHONE_QUERY, isPhone, onViewportChange } from "./responsive.js";
+import { PHONE_QUERY, inTelegram, isPhone, onViewportChange } from "./responsive.js";
 
 test("без window телефон не угадываем, отписка всё равно функция", () => {
   assert.equal(isPhone(), false);
@@ -33,5 +33,20 @@ test("брейкпойнт тот же, что в CSS, и слушатель с�
     assert.equal(listeners.size, 0);
   } finally {
     delete globalThis.window;
+  }
+});
+
+test("Telegram — только когда есть initData; обычный браузер со скриптом Telegram — нет", () => {
+  const saved = globalThis.Telegram;
+  try {
+    globalThis.Telegram = { WebApp: { initData: "query_id=AA" } };
+    assert.equal(inTelegram(), true);
+    globalThis.Telegram = { WebApp: { initData: "" } };
+    assert.equal(inTelegram(), false);
+    delete globalThis.Telegram;
+    assert.equal(inTelegram(), false);
+  } finally {
+    if (saved === undefined) delete globalThis.Telegram;
+    else globalThis.Telegram = saved;
   }
 });
