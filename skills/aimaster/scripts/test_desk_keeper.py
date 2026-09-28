@@ -88,6 +88,27 @@ class DeskKeeperTests(unittest.TestCase):
         self.keeper.touch("чужой")
         self.assertEqual(self.keeper.watched(), [])
 
+    def test_sweep_skips_a_desk_touched_between_judging_it_idle_and_stopping_it(self):
+        # sweep() решает «простаивает» без замка стола (os.stat вне _guard —
+        # см. докстринг файла), а закрывает уже под ним, взяв его у
+        # DeskKeeper.lock. Гонка: ровно в этот промежуток экран мог как раз
+        # опросить стол — touch() обновит ту же запись _Watched. Патчим
+        # `lock`, чтобы воспроизвести это детерминированно: тронуть запись
+        # ровно в момент, когда _stop_desk идёт за замком.
+        self.keeper.opened("p", self.paths)
+        self.clock.now += 3600
+        real_lock = self.keeper.lock
+
+        def lock_and_touch(project_id):
+            if project_id == "p":
+                self.keeper.touch("p")
+            return real_lock(project_id)
+
+        with mock.patch.object(self.keeper, "lock", side_effect=lock_and_touch):
+            self.assertEqual(self.keeper.sweep(), [])
+        self.assertEqual(self.closed, [])
+        self.assertEqual(self.keeper.watched(), ["p"])
+
     def test_busy_desk_waits_for_the_next_sweep(self):
         self.keeper.opened("p", self.paths)
         self.clock.now += 3600

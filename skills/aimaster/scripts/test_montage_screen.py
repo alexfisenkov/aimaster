@@ -198,6 +198,24 @@ class MontageScreenTests(unittest.TestCase):
         self.assertEqual(screen.close_desk("p"), {"project_id": "p", "state": "closed"})
         self.assertEqual((self.keeper.watched(), self.log), ([], ["open", "close"]))
 
+    def test_open_desk_for_an_unknown_project_leaves_no_lock_behind(self):
+        # `_locks` растёт по одной записи на каждый увиденный project_id и
+        # никогда не убывает (стол мог понадобиться снова); отказ по
+        # несуществующему id не должен в неё что-то добавлять — иначе
+        # опечатка или перебор чужих id копит записи без предела.
+        screen = self.screen()
+        with self.assertRaisesRegex(MontageError, "нет проекта «призрак»"):
+            screen.open_desk("призрак")
+        self.assertNotIn("призрак", self.keeper._locks)
+        self.assertEqual(self.log, [])
+
+    def test_close_desk_for_an_unknown_project_leaves_no_lock_behind(self):
+        screen = self.screen()
+        with self.assertRaisesRegex(MontageError, "нет проекта «призрак»"):
+            screen.close_desk("призрак")
+        self.assertNotIn("призрак", self.keeper._locks)
+        self.assertEqual(self.log, [])
+
     def test_one_model_read_at_a_time(self):
         runner = SlowTimeline(render_bytes=tiny_mp4(b"out-1"))
         shutil.rmtree(self.m.paths.cache, ignore_errors=True)  # кэша нет — схему читает движок

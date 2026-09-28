@@ -10,8 +10,12 @@
 слушает. Дольше незачем: Studio с браузером превью занимает сотни мегабайт,
 а поднять стол снова — секунда-другая, правки уже на диске.
 
-Столы, открытые агентом (`montage open`), здесь не учитываются — их
-останавливает `montage close`. При выходе сервера останавливаются все столы,
+Стол, который открыл агент (`montage open`) и дашборд ни разу не трогал,
+здесь не учитывается — его останавливает `montage close`. Но стоит дашборду
+открыть `…/montage/desk` для того же проекта — стол уже работает, новый
+процесс не поднимается (`StudioDesk.open` вернёт тот же `state: "open"`), —
+и с этого момента запись в `_watched` есть: тот же час простоя остановит его
+точно так же, как свой. При выходе сервера останавливаются все столы,
 запущенные этим процессом: сперва дожидаемся действий, которые идут прямо
 сейчас (стол могут как раз открывать), а стол, открытый уже после выхода,
 закрывается сразу. Замок `_guard` — только над словарями; остановка стола
@@ -92,7 +96,15 @@ class DeskKeeper:
             return sorted(self._watched)
 
     def sweep(self) -> list[str]:
-        """Уборка реестра и остановка простаивающих столов; ответ — чьи остановлены."""
+        """Уборка реестра и остановка простаивающих столов; ответ — чьи остановлены.
+
+        Простой судится здесь, а закрывается в `_stop_desk` — между этими
+        двумя моментами `self._guard` не удержать (замок стола ждут, стол
+        останавливают без него). За это время запись могли тронуть: опрос
+        экрана (`touch`) или переоткрытие стола после закрытия. Поэтому
+        каждому кандидату несём не только id, а и `seen_at`, по которому его
+        судили, — `_stop_desk` сверяет его под замком заново и, если запись
+        уже не та, уборку этого стола пропускает до следующего захода."""
 
         desk_children.sweep(kill=self._kill)
         now, idle = self._clock(), []
@@ -104,21 +116,28 @@ class DeskKeeper:
                 if stamp != watched.stamp:
                     watched.stamp, watched.seen_at = stamp, now
                     continue
-                expired = now - watched.seen_at >= self._idle
+                expired, judged_seen_at = now - watched.seen_at >= self._idle, watched.seen_at
             if expired:
-                idle.append(project_id)
-        return [project_id for project_id in idle if self._stop_desk(project_id, wait=0)]
+                idle.append((project_id, judged_seen_at))
+        return [project_id for project_id, judged_seen_at in idle
+                if self._stop_desk(project_id, wait=0, judged_seen_at=judged_seen_at)]
 
-    def _stop_desk(self, project_id: str, *, wait: float) -> bool:
+    def _stop_desk(self, project_id: str, *, wait: float, judged_seen_at: float | None = None) -> bool:
+        """Останавливает стол, но только если это ровно та запись, что признали
+        простаивающей: `judged_seen_at` — её `seen_at` на момент решения
+        (`None` у `stop()` — при выходе сервера закрываем любую текущую
+        запись, свежесть уже не важна)."""
+
         lock = self.lock(project_id)
         if not _take(lock, wait):
             return False  # стол сейчас открывают или закрывают — до следующей уборки
         try:
             with self._guard:
-                watched = self._watched.pop(project_id, None)
-            if watched is None:
-                return False
-            self._close_quietly(watched.paths)
+                current = self._watched.get(project_id)
+                if current is None or (judged_seen_at is not None and current.seen_at != judged_seen_at):
+                    return False  # запись сменилась (тронули или переоткрыли) — не наша уборка
+                self._watched.pop(project_id, None)
+            self._close_quietly(current.paths)
             return True
         finally:
             lock.release()

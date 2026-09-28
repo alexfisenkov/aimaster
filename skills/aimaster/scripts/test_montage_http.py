@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import select
 import signal
 import subprocess
 import sys
@@ -32,6 +33,19 @@ from studio.server import serve  # noqa: E402
 STUDIO = "http://127.0.0.1:9/#project/current"
 OPENER = "http://127.0.0.1:9/api/projects/current/preview/.hyperframes/aimaster-desk-open.html"
 RESTORE = "/api/projects/p/montage/restore"
+
+
+def _readline_with_timeout(stream, timeout):
+    """`stream.readline()`, но не дольше `timeout` с: без этого сорванный
+    старт дочернего дашборда (занятый порт, сломанное окружение) вешал бы
+    тест до общего таймаута прогона вместо понятного провала здесь.
+    POSIX-only (`select` на трубе процесса) — класс ниже и так пропускает
+    Windows: там SIGTERM не перехватить."""
+
+    ready, _, _ = select.select([stream], [], [], timeout)
+    if not ready:
+        raise AssertionError(f"дашборд не написал строку запуска за {timeout} с")
+    return stream.readline()
 
 
 class FakeDesk:
@@ -201,7 +215,7 @@ class ServeStopsOnTermTests(unittest.TestCase):
                                      str(workspace)], stdout=subprocess.PIPE,
                                     stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, env=env)
             try:
-                self.assertIn(b"base_url", proc.stdout.readline())
+                self.assertIn(b"base_url", _readline_with_timeout(proc.stdout, 30))
                 proc.send_signal(signal.SIGTERM)
                 self.assertEqual(proc.wait(timeout=30), 0)  # без обработчика было бы -15
             finally:
@@ -209,6 +223,29 @@ class ServeStopsOnTermTests(unittest.TestCase):
                     proc.kill()
                     proc.wait()
                 proc.stdout.close()
+
+
+@unittest.skipIf(os.name == "nt", "select() на трубе не работает на Windows — только на сокетах")
+class ReadlineWithTimeoutTests(unittest.TestCase):
+    """`_readline_with_timeout` — то, чем выше заменена голая `readline()`."""
+
+    def test_returns_the_line_once_it_is_written(self):
+        read_fd, write_fd = os.pipe()
+        try:
+            os.write(write_fd, b'{"base_url": "http://127.0.0.1:9"}\n')
+            with os.fdopen(read_fd, "rb") as stream:
+                self.assertEqual(_readline_with_timeout(stream, 1.0), b'{"base_url": "http://127.0.0.1:9"}\n')
+        finally:
+            os.close(write_fd)
+
+    def test_times_out_instead_of_hanging_forever(self):
+        read_fd, write_fd = os.pipe()  # никто не пишет — голая readline() повисла бы навсегда
+        try:
+            with os.fdopen(read_fd, "rb") as stream:
+                with self.assertRaisesRegex(AssertionError, "не написал строку запуска за 0.2 с"):
+                    _readline_with_timeout(stream, 0.2)
+        finally:
+            os.close(write_fd)
 
 
 if __name__ == "__main__":

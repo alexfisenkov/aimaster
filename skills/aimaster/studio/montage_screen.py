@@ -20,6 +20,7 @@ from pathlib import Path
 from .desk_keeper import DeskKeeper
 from .keyed_locks import KeyedLocks
 from .montage import MontageError, service, service_screen
+from .montage.context import open_context
 from .montage.desk import StudioDesk
 from .montage.engine import locate as locate_engine
 from .reveal import reveal_available, reveal_file
@@ -104,6 +105,10 @@ class MontageScreen:
                                                runner=self.runner)
 
     def open_desk(self, project_id: str) -> dict:
+        # Тот же guard, что и у service.open_desk ниже (по умолчанию True):
+        # проверка ровно та, что случилась бы всё равно — просто до замка,
+        # чтобы у _locks не копилась запись на каждый чужой или опечатанный id.
+        open_context(self.workspace, project_id)
         with self.keeper.lock(project_id):
             engine, reason = self.engines()
             if engine is None:
@@ -114,6 +119,9 @@ class MontageScreen:
             return view
 
     def close_desk(self, project_id: str) -> dict:
+        # guard=False — тот же, что у service.close_desk: своё Studio нужно
+        # остановить и в «грязной» папке монтажа, отказывать тут рано.
+        open_context(self.workspace, project_id, guard=False)
         with self.keeper.lock(project_id):
             closed = service.close_desk(self.workspace, project_id, desk=self.desk_factory(None))
             self.keeper.closed(project_id)
