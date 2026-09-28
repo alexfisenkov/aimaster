@@ -109,6 +109,34 @@ class DeskKeeperTests(unittest.TestCase):
         self.assertEqual(self.closed, [])
         self.assertEqual(self.keeper.watched(), ["p"])
 
+    def test_sweep_skips_a_desk_edited_between_judging_it_idle_and_stopping_it(self):
+        # Тот же зазор без замка, но другой источник жизни: правка легла на
+        # диск (Studio пишет мышь за секунду), а не опрос экрана. sweep()
+        # сверяет стемп в своём основном проходе (тоже без замка — os.stat
+        # вне _guard) и признаёт простой; _stop_desk сверяет его ЕЩЁ раз,
+        # уже взяв замок, — и должен увидеть новую правку, если она легла
+        # именно в этот зазор.
+        calls = []
+
+        def flaky_stamp(paths):
+            calls.append(1)
+            # 1-й вызов — opened(); 2-й — sweep() до решения «простаивает»;
+            # оба видят один и тот же стемп. 3-й — recheck в _stop_desk,
+            # уже другой: как будто Studio дописала правку между ними.
+            return (1, 1) if len(calls) <= 2 else (2, 2)
+
+        keeper = DeskKeeper(close_desk=self.closed.append, kill=self.no_kill, clock=self.clock,
+                            idle=3600, sweep_every=0.01, stamp=flaky_stamp)
+        keeper.opened("p", self.paths)
+        self.clock.now += 3600
+        self.assertEqual(keeper.sweep(), [])
+        self.assertEqual(self.closed, [])
+        self.assertEqual(keeper.watched(), ["p"])
+        # Следующая уборка увидит новый стемп как «есть жизнь» и обновит
+        # запись, а не будет пытаться закрыть стол по старому решению.
+        self.assertEqual(keeper.sweep(), [])
+        self.assertEqual(keeper.watched(), ["p"])
+
     def test_busy_desk_waits_for_the_next_sweep(self):
         self.keeper.opened("p", self.paths)
         self.clock.now += 3600

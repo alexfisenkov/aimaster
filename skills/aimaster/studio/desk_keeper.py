@@ -118,15 +118,19 @@ class DeskKeeper:
                     continue
                 expired, judged_seen_at = now - watched.seen_at >= self._idle, watched.seen_at
             if expired:
-                idle.append((project_id, judged_seen_at))
-        return [project_id for project_id, judged_seen_at in idle
-                if self._stop_desk(project_id, wait=0, judged_seen_at=judged_seen_at)]
+                idle.append((project_id, judged_seen_at, stamp))
+        return [project_id for project_id, judged_seen_at, judged_stamp in idle
+                if self._stop_desk(project_id, wait=0, judged=(judged_seen_at, judged_stamp))]
 
-    def _stop_desk(self, project_id: str, *, wait: float, judged_seen_at: float | None = None) -> bool:
+    def _stop_desk(self, project_id: str, *, wait: float,
+                    judged: tuple[float, tuple | None] | None = None) -> bool:
         """Останавливает стол, но только если это ровно та запись, что признали
-        простаивающей: `judged_seen_at` — её `seen_at` на момент решения
-        (`None` у `stop()` — при выходе сервера закрываем любую текущую
-        запись, свежесть уже не важна)."""
+        простаивающей: `judged` — (`seen_at`, стемп `current/index.html`) на
+        момент решения. И то, и другое сверяем заново под замком стола —
+        правка могла лечь на диск в тот самый промежуток между тем, как
+        `sweep()` её проверил (без замка — `os.stat` вне `_guard`, см. докстринг
+        файла) и тем, как этот замок достался нам. `None` у `stop()` — при
+        выходе сервера закрываем любую текущую запись, свежесть уже не важна."""
 
         lock = self.lock(project_id)
         if not _take(lock, wait):
@@ -134,9 +138,19 @@ class DeskKeeper:
         try:
             with self._guard:
                 current = self._watched.get(project_id)
-                if current is None or (judged_seen_at is not None and current.seen_at != judged_seen_at):
-                    return False  # запись сменилась (тронули или переоткрыли) — не наша уборка
-                self._watched.pop(project_id, None)
+            if current is None:
+                return False
+            if judged is not None:
+                judged_seen_at, judged_stamp = judged
+                stamp = self._stamp(current.paths)  # os.stat — вне _guard
+                with self._guard:
+                    current = self._watched.get(project_id)
+                    if current is None or current.seen_at != judged_seen_at or stamp != judged_stamp:
+                        return False  # запись сменилась: тронули, переоткрыли или легла правка — не наша уборка
+                    self._watched.pop(project_id, None)
+            else:
+                with self._guard:
+                    self._watched.pop(project_id, None)
             self._close_quietly(current.paths)
             return True
         finally:
