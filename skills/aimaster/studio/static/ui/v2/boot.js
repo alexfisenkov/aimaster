@@ -13,6 +13,7 @@ import { attachAgentPromptListener } from "../chat-prompt-dialog.js";
 import { renderShellV2, setViewedScreen } from "./shell.js";
 import { createRailDrawer } from "./rail-drawer.js";
 import { attachViewerV2, repaintViewer } from "./viewer.js";
+import { refreshMontage } from "./montage-feed.js";
 
 const LAST_PROJECT_KEY = "aimaster.v2.lastProject";
 
@@ -89,6 +90,7 @@ export function bootV2() {
   attachViewerOpenListener();
   attachAgentPromptListener();
   ensureStylesheet("/static/styles/v2/viewer.css");
+  ensureStylesheet("/static/styles/v2/montage.css");
 
   const shellRoot = document.querySelector(".app-shell");
   const railRoot = document.querySelector('[data-hook="project-rail"]');
@@ -182,6 +184,12 @@ export function bootV2() {
   });
   document.addEventListener("visibilitychange", controller.refreshOnReturn);
   window.addEventListener("focus", controller.refreshOnReturn);
+  // Экран «Сборка»: опрос монтажа принёс новое — перерисовать; вернулись на
+  // вкладку — спросить сразу, не ждать 5 секунд (montage-feed.js).
+  document.addEventListener("studio:montage-updated", () => renderShellV2(shellRoot, store.getState()));
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refreshMontage();
+  });
   setInterval(controller.pollLiveness, controller.liveness.periodMs);
 
   // Без `?project=` контроллер останавливается на «choose» (или сразу

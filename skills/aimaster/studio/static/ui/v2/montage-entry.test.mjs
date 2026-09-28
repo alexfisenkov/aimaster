@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { composeEntry, staleTicksAfter } from "./montage-entry.js";
+import { composeEntry, readEntry, staleTicksAfter } from "./montage-entry.js";
 import { keyOf } from "./montage-model-tracker.js";
 
 const S = (key, patch = {}) => ({
@@ -62,4 +62,17 @@ test("счёт отставшей схемы: растёт только с оп�
   assert.equal(staleTicksAfter(2, stale, false), 2); // ответ схемы, всё ещё не свежей, — не опрос
   assert.equal(staleTicksAfter(3, { model: MODEL, modelFresh: true }, true), 0);
   assert.equal(staleTicksAfter(3, { model: null, modelFresh: false }, true), 0);
+});
+
+test("экран читает entry: плашкам и длине — только свежая схема, рисунку слоёв — и отставшая", () => {
+  const status = S("k2");
+  const stale = readEntry(composeEntry({ status, model: MODEL, shownKey: K("k1"), staleTicks: 2 }));
+  assert.deepEqual(stale, { status, model: null, schema: MODEL, lagging: true, error: null });
+  const fresh = readEntry(composeEntry({ status: S("k1"), model: MODEL, shownKey: K("k1") }));
+  assert.equal(fresh.model, MODEL);
+  assert.equal(fresh.lagging, false);
+  const photo = readEntry(composeEntry({ status: { applicable: false }, statusError: null }));
+  assert.equal(photo.status, null);
+  assert.deepEqual(readEntry(null), { status: null, model: null, schema: null, lagging: false, error: null });
+  assert.deepEqual(readEntry(composeEntry({ status, statusError: DOWN })).error, DOWN);
 });

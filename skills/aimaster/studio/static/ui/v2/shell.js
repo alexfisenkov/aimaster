@@ -13,6 +13,7 @@
 import { requestAgentPrompt } from "../chat-prompt-dialog.js";
 import { projectRef } from "./chat-prompts.js";
 import { el, restoreCardFocus, cardFocusNote } from "./dom.js";
+import { hideMontage } from "./montage-feed.js";
 import { renderPath } from "./path-nav.js";
 import { renderAssemblyScreen } from "./screen-assembly.js";
 import { renderAudioScreen } from "./screen-audio.js";
@@ -182,6 +183,8 @@ export function renderShellV2(root, state) {
   const snapshot = state?.snapshot;
   const project = snapshot?.active_project;
   const screen = project ? currentScreen(project) : null;
+  // Опрос монтажа нужен только экрану «Сборка» (montage-feed.js).
+  if (screen !== "assembly") hideMontage();
   if (topbarContent) {
     const focusKey = topbarFocusKey(topbarContent);
     topbarContent.textContent = "";

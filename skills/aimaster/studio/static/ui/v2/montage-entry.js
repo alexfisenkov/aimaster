@@ -37,3 +37,20 @@ export function staleTicksAfter(previous, { model, modelFresh }, tick) {
   if (!model || modelFresh) return 0;
   return tick ? previous + 1 : previous;
 }
+
+/** Как экран «Сборка» читает entry (`montageState`; `null` — ещё ничего):
+ * - `status` — только применимый (фото монтажа не имеет);
+ * - `model` — схема для плашек и длины, только свежая: отставшая показала бы
+ *   «несобранные правки» и длину прежней версии;
+ * - `schema` — схема для рисунка слоёв, и отставшая (с пометкой `lagging`);
+ * - `error` — отказ опроса или схемы, как в entry. */
+export function readEntry(entry) {
+  const status = entry?.status && entry.status.applicable !== false ? entry.status : null;
+  return {
+    status,
+    model: entry?.modelFresh ? entry.model || null : null,
+    schema: entry?.model || null,
+    lagging: Boolean(entry?.modelLagging),
+    error: entry?.error || null,
+  };
+}

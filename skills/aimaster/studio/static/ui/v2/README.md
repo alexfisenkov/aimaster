@@ -42,7 +42,29 @@
 - `audio-model.js` — `AUDIO_LAYERS` (голос, музыка, эффекты, атмосфера —
   человеческий порядок, не серверный) и `audioTiles(project)`.
 - `screen-prompts.js` — тексты для чата, нужные только экранам:
-  `changeGenMode`, `editScenario`, `reopenScenario`, `assembleFinal`.
+  `changeGenMode`, `editScenario`, `reopenScenario`, `assembleFinal`
+  (монтаж: `montage diff` → пересказ → сразу `montage render --by owner`,
+  бесплатно; у фото — `assembly set`), `ASSEMBLE_LABEL`/`assembleLabel`,
+  `installMontage` («Установить → чат»), `updateMontageClips`.
+- `montage-model.js` — экран монтажа: `montageApplies`, `montageScreen`,
+  `versionLabel`, `whenText`, `versionRows(project)`, `downloadHref(url)`,
+  `screenFlags({status, finished, phone, telegram})` (в том числе
+  `deskLinkMissing` — стол открыт, ссылки нет),
+  `notices({status, model, feedError})`, `orientation(canvas)`,
+  `durationText({status, model, project})`.
+- `montage-layers-model.js` — схема слоёв: `fmtTime`, `fmtLen`, `volumeText`,
+  `sceneNames`, `clipDetail`, `modelDuration(model)`, `layerRows(model, project)`.
+- `montage-api.js` — `montageUrl`, `getMontage(projectId, part, fetch, signal)`,
+  `postMontage(projectId, part, body)`, `refusalText(result)`.
+- Опрос монтажа, пока открыт экран «Сборка», — пять модулей:
+  `montage-request.js` (`requestWithTimeout`: таймаут и отмена поколением
+  без `AbortSignal.any`), `montage-model-tracker.js` (когда спрашивать
+  схему: ключ, одна в полёте, пауза после неудачи), `montage-entry.js`
+  (`composeEntry` → `{status, model, error, modelFresh, modelLagging}`,
+  `staleTicksAfter`, `readEntry` — как экран читает entry: плашкам и длине
+  только свежая схема), `montage-feed-core.js` (`createMontageFeed({load,
+  notify})`, `POLL_MS`) и обёртка страницы `montage-feed.js` (`showMontage`,
+  `hideMontage`, `montageState`, `refreshMontage`, `repaintMontage`).
 - `chat-prompts.js` — `addReference(kind, project, revision, {sceneId})`,
   `moreVariants({project, revision, sceneId, referenceId, slot, layer,
   promptVersion, selectedVariant})`,
@@ -89,6 +111,16 @@
   `<video preload="metadata">`; `<img>` на mp4 отдаёт битую плитку.
 - `more-menu.js` — `moreMenu(items)`: «···» из `<details>`, всё редкое с экрана.
 - `screen-frames.js` — `renderFramesScreen(root, {state, readOnly, screen})`.
+- `assembly-parts.js` — `sceneDuration`, `assemblyLines`, `doneBanner`,
+  `finalPreview` (сторона кадра — `data-orientation`), `summaryCard`,
+  `historyBlock` (раскрытая история не сворачивается перерисовкой):
+  части «Сборки» для фото и монтажа.
+- `montage-notices.js` · `montage-file.js` · `montage-desk.js` ·
+  `montage-versions.js` · `montage-layers.js` — плашки; файл («Скачать»,
+  «Показать в папке», путь и «Скопировать путь»); главные кнопки и
+  монтажный стол; версии с «Сделать текущей»; схема слоёв с пометкой
+  «обновляется…». Стол и «Показать в папке» — только на компьютере.
+  Стили — `styles/v2/montage.css` (подключает `boot.js`).
 - `screen-scenario.js` · `screen-video.js` · `screen-audio.js` ·
   `screen-assembly.js` — `render*Screen(root, {state, screen})`, внизу каждого
   `renderFooter(snapshot, {screen})`.
@@ -150,7 +182,10 @@
   `docked|collapsed|open|closed`. Список внутри рисует `ui/rail.js`.
 - `boot.js` — `bootV2()`: стор, контроллер и fetch те же, что у v1, плюс
   `ensureStylesheet(href)` — `index.html` принадлежит оболочке, поэтому
-  `styles/v2/viewer.css` подключается отсюда тегом `<link>`. Здесь же
+  `styles/v2/viewer.css` и `styles/v2/montage.css` подключаются отсюда
+  тегом `<link>`. Здесь же перерисовка по `studio:montage-updated` и опрос
+  монтажа сразу при возврате на вкладку; `shell.js` останавливает опрос на
+  любом экране, кроме «Сборки». Здесь же
   адресная строка (`?project=` через `history.pushState`, `popstate`) и
   память о последнем проекте в `localStorage`: голый `/` открывает его,
   а если такого проекта уже нет — экран выбора с открытой панелью.
@@ -167,6 +202,9 @@
   не спорят за одно событие. Набор вкладок зависит от `target.kind`:
   сцена — «Кадры · Видео · История», референс — «Картинка · История»,
   слой звука — «Звук · История», сборка — «Ролик · История».
+- `studio:montage-updated` · `{projectId}` — опрос монтажа принёс новое
+  (или кнопка экрана закончила запрос, пока экран перерисовали —
+  `repaintMontage`); слушает `boot.js` и перерисовывает оболочку.
 
 ## Что делать волне 2
 
@@ -188,8 +226,8 @@
   asset_id, summary}`. Просмотрщик показывает его одной плиткой
   «Финальный ролик» (`soloStrip`), а принимается финал только кнопкой
   подвала: своей коллекции результатов у `assembly` на сервере нет
-  (`decision_cards.STAGE_COLLECTIONS`). Скачивания пока нет — оно
-  отдельной работой.
+  (`decision_cards.STAGE_COLLECTIONS`). Скачивание — «Скачать» на экране
+  «Сборка» у проектов с монтажом.
 - Пока решение в полёте, просмотрщик не перерисовывается вовсе: ни
   листание, ни вкладки, ни фоновый опрос. Это цена того, что ряд кнопок
   гасит `submitAction`, а не сам просмотрщик; если когда-нибудь

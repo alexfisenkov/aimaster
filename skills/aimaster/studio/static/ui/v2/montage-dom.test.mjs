@@ -9,6 +9,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
+import { PROJECT } from "./snapshot.fixture.mjs";
+
 const MODULES = Object.freeze({
   "./montage-notices.js": ["renderNotices"],
   "./montage-file.js": ["renderFileCard"],
@@ -48,4 +50,25 @@ test("на экране нет абсолютных путей: путь к фа
   }
   const file = fs.readFileSync(new URL("./montage-file.js", import.meta.url), "utf8");
   assert.match(file, /file\?\.shown/);
+});
+
+test("экран «Сборка» и его части загружаются; строки «Финальный ролик» — прежние", async () => {
+  const screen = await import("./screen-assembly.js");
+  assert.equal(typeof screen.renderAssemblyScreen, "function");
+  const parts = await import("./assembly-parts.js");
+  for (const name of ["sceneDuration", "doneBanner", "finalPreview", "summaryCard", "historyBlock"]) {
+    assert.equal(typeof parts[name], "function", name);
+  }
+  const lines = parts.assemblyLines(PROJECT, { ready: false, finished: false });
+  assert.deepEqual(lines.map((line) => [line.key, line.value]),
+    [["Сцены", "6 · 00:35"], ["Режим", "кадр за кадром"], ["Звук", "без звука"], ["Статус", "ещё не собран"]]);
+  assert.equal(parts.sceneDuration(PROJECT), "00:35");
+});
+
+test("оболочка останавливает опрос монтажа вне «Сборки», boot подключает стили и перерисовку", () => {
+  const shell = fs.readFileSync(new URL("./shell.js", import.meta.url), "utf8");
+  assert.match(shell, /if \(screen !== "assembly"\) hideMontage\(\);/);
+  const boot = fs.readFileSync(new URL("./boot.js", import.meta.url), "utf8");
+  assert.match(boot, /ensureStylesheet\("\/static\/styles\/v2\/montage\.css"\)/);
+  assert.match(boot, /addEventListener\("studio:montage-updated"/);
 });

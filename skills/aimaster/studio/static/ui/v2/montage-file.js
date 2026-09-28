@@ -36,12 +36,19 @@ function revealButton(project) {
   return wrap;
 }
 
-async function copyText(text) {
+/** Буфер обмена; не пустил (нет разрешения, встроенный браузер) — выделить
+ * путь на экране и попробовать старым способом: выделенное останется. */
+async function copyPath(node, text) {
   try {
     await navigator.clipboard.writeText(text);
     return true;
   } catch {
-    return false;
+    try {
+      window.getSelection()?.selectAllChildren(node);
+      return document.execCommand("copy");
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -53,8 +60,8 @@ function pathLine(project, shown) {
   copy.type = "button";
   markControlHooks(copy, `montage:${project.id}`, "copy-path");
   copy.addEventListener("click", async () => {
-    showToast((await copyText(shown)) ? "Путь скопирован"
-      : "Не получилось скопировать — выделите путь и скопируйте сами");
+    showToast((await copyPath(text, shown)) ? "Путь скопирован"
+      : "Не получилось скопировать — путь выделен, скопируйте его сами");
   });
   line.append(text, copy);
   return line;

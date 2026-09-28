@@ -177,9 +177,10 @@ a.v2-primary, a.v2-chat-button { text-decoration: none; }
   .am-version { flex-basis: 78%; }
   .am-version-actions .v2-chat-button { width: 100%; }
   .am-track { grid-template-columns: 1fr; gap: 4px; }
-  .am-lane { height: 52px; }
-  /* Блок не уже пальца; у конца дорожки прижат к краю, а не торчит за ним. */
-  .am-block { top: 4px; bottom: 4px; left: min(calc(var(--am-at, 0) * 1%), calc(100% - 44px)); min-width: 44px; }
+  /* Блок — во всю высоту полосы 44px и не уже пальца; у конца дорожки
+     прижат к краю, а не торчит за ним. */
+  .am-lane { height: 44px; }
+  .am-block { top: 0; bottom: 0; left: min(calc(var(--am-at, 0) * 1%), calc(100% - 44px)); min-width: 44px; }
   .am-ruler { margin-left: 0; }
   .am-versions, .am-layers { margin-bottom: 12px; }
 }
