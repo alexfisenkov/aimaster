@@ -207,6 +207,19 @@ class ExclusivePortTests(unittest.TestCase):
         self.assertIn(socket.SO_REUSEADDR, options)
         self.assertNotIn(loopback_http._SO_EXCLUSIVEADDRUSE, options)
 
+    def test_a_client_that_went_away_is_not_a_traceback(self):
+        server = loopback_http.LoopbackThreadingHTTPServer(("127.0.0.1", 0), None)
+        self.addCleanup(server.server_close)
+        for error, printed in ((BrokenPipeError(), False), (ConnectionResetError(), False),
+                               (ConnectionAbortedError(), False), (ValueError("сбой"), True)):
+            with self.subTest(error=type(error).__name__):
+                with mock.patch("socketserver.BaseServer.handle_error") as default:
+                    try:
+                        raise error
+                    except Exception:  # noqa: BLE001 — handle_error читает sys.exc_info()
+                        server.handle_error(None, ("127.0.0.1", 1))
+                self.assertEqual(default.called, printed)
+
     @unittest.skipUnless(os.name == "nt", "SO_REUSEADDR port stealing is a Windows behaviour")
     def test_another_socket_cannot_take_the_same_port_on_windows(self):
         server = loopback_http.LoopbackThreadingHTTPServer(("127.0.0.1", 0), None)

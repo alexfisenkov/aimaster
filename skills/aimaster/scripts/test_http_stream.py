@@ -130,6 +130,10 @@ class StreamedAssetTests(unittest.TestCase):
         self.assertEqual((status, body), (416, b""))
         self.assertEqual(values(headers, "Content-Range"), [f"bytes */{len(self.data)}"])
 
+    def test_head_of_an_asset_is_still_not_allowed(self):
+        status, headers, body = self.get(f"/assets/{self.asset}", method="HEAD")
+        self.assertEqual((status, body, values(headers, "Allow")), (405, b"", ["GET, POST"]))
+
     def test_asset_is_not_read_whole_by_resolve(self):
         with mock.patch.object(AssetIndex, "resolve", side_effect=AssertionError("resolve читает целиком")):
             status, _headers, body = self.get(f"/assets/{self.asset}", {"Range": "bytes=0-99"})

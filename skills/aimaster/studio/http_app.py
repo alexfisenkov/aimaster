@@ -289,7 +289,9 @@ class StudioApplication:
             raise ValueError("request path is malformed") from error
 
     def handle(self, method, path, headers, body) -> Response:
-        """Handle one request and return only a sanitized, fully buffered response."""
+        """Handle one request and return only a sanitized response: buffered
+        bytes, or — for `/assets/<id>` — an open file stream (`Response.stream`)
+        that `http_write.write_response` sends in chunks and always closes."""
 
         try:
             request_headers = self._headers(headers)

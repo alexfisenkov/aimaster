@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 import unittest
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -41,6 +42,13 @@ class RevealCommandTests(unittest.TestCase):
     def test_windir_is_used_when_system_root_is_missing(self):
         command = reveal_command(WIN_FILE, system="windows", environ={"windir": r"D:\Win"}, is_file=lambda path: True)
         self.assertTrue(command.startswith('"D:\\Win\\explorer.exe" /select,"'))
+
+    def test_system_root_is_found_in_any_letter_case(self):
+        for name in ("SYSTEMROOT", "systemroot", "WINDIR"):
+            with self.subTest(name=name):
+                command = reveal_command(WIN_FILE, system="windows", environ={name: r"E:\Win"},
+                                         is_file=lambda path: True)
+                self.assertTrue(command.startswith('"E:\\Win\\explorer.exe" /select,"'))
 
     def test_explorer_needs_an_absolute_system_root(self):
         for environ in ({}, {"SystemRoot": "Windows"}):
@@ -95,6 +103,56 @@ class RevealFileTests(unittest.TestCase):
         _calls, run = self.runner(error=subprocess.TimeoutExpired(cmd="open", timeout=15))
         with self.assertRaisesRegex(MontageError, "не удалось открыть папку"):
             reveal_file(MAC_FILE, system="mac", environ={}, run=run, is_file=lambda path: True)
+
+    def detached(self, *, code=0, running=False, error=None):
+        calls = []
+
+        class Process:
+            def __init__(self):
+                self.waits = []
+
+            def wait(self, timeout=None):
+                self.waits.append(timeout)
+                if running and timeout is not None:
+                    raise subprocess.TimeoutExpired(cmd="xdg-open", timeout=timeout)
+                return code
+
+        def popen(command, **kwargs):
+            calls.append((command, kwargs))
+            if error is not None:
+                raise error
+            calls.append(Process())
+            return calls[-1]
+        return calls, popen
+
+    def reveal_linux(self, popen):
+        reveal_file(LINUX_FILE, system="linux", environ={"PATH": "/usr/bin"}, find=xdg, popen=popen,
+                    run=lambda *args, **kwargs: self.fail("xdg-open не ждут через run"), wait=0.01)
+
+    def test_xdg_open_runs_in_its_own_session_without_shell(self):
+        calls, popen = self.detached()
+        self.reveal_linux(popen)
+        command, kwargs = calls[0]
+        self.assertEqual(command, ["/usr/bin/xdg-open", "/home/а б/рабочая папка/media/p/montage"])
+        self.assertNotIn("shell", kwargs)
+        self.assertEqual((kwargs["start_new_session"], kwargs["stdin"]), (True, subprocess.DEVNULL))
+
+    def test_file_manager_still_open_is_success(self):
+        calls, popen = self.detached(running=True)
+        self.reveal_linux(popen)  # не ждёт закрытия окна и не убивает его
+        process = calls[1]
+        for _ in range(100):
+            if None in process.waits:
+                break
+            time.sleep(0.01)
+        self.assertEqual(process.waits, [0.01, None])  # фоновый поток приберёт процесс
+
+    def test_xdg_open_failure_is_a_refusal(self):
+        for kwargs in ({"code": 4}, {"error": OSError("нет")}):
+            with self.subTest(**{key: str(value) for key, value in kwargs.items()}):
+                _calls, popen = self.detached(**kwargs)
+                with self.assertRaisesRegex(MontageError, "не удалось открыть папку"):
+                    self.reveal_linux(popen)
 
     def test_missing_program_is_named(self):
         _calls, run = self.runner()

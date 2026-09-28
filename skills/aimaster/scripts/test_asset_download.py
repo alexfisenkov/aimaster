@@ -49,6 +49,17 @@ class DownloadNameTests(unittest.TestCase):
         self.assertEqual(download_names("media/clip 1.mp4", lambda project: "x"), ("clip 1.mp4", "clip-1.mp4"))
         self.assertEqual(download_names("media/клип.mp4", lambda project: "x"), ("клип.mp4", "file.mp4"))
 
+    def test_long_name_of_another_file_keeps_its_extension(self):
+        name, fallback = download_names("media/" + "к" * 120 + ".webm", lambda project: "x")
+        self.assertEqual((name, fallback), ("к" * 80 + ".webm", "file.webm"))
+        name, fallback = download_names("media/" + "a" * 120 + ".mp4", lambda project: "x")
+        self.assertEqual((name, fallback), ("a" * 80 + ".mp4", "a" * 80 + ".mp4"))
+
+    def test_odd_extensions_are_not_trusted(self):
+        self.assertEqual(download_names("media/clip.tar gz", lambda project: "x"),
+                         ("clip.tar gz", "clip.tar-gz"))
+        self.assertEqual(download_names("media/кадр 1.PNG", lambda project: "x"), ("кадр 1.PNG", "1.PNG"))
+
     def test_header_carries_both_names(self):
         self.assertEqual(content_disposition("Проба-v001.mp4", "p-v001.mp4"),
                          "attachment; filename=\"p-v001.mp4\"; filename*=UTF-8''"

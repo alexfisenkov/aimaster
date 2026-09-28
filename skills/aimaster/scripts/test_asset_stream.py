@@ -7,6 +7,8 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -97,6 +99,44 @@ class AssetStreamTests(unittest.TestCase):
             self.open()
         self.assertEqual(digest.call_count, 1)
 
+    @unittest.skipIf(os.name == "nt", "на Windows st_ctime — время создания, запись его не меняет")
+    def test_rewrite_with_the_old_mtime_put_back_is_still_checked(self):
+        self.open()
+        before = self.file.stat()
+        changed = bytearray(self.data)
+        changed[-1] ^= 0xFF
+        time.sleep(0.01)  # время изменения inode — позже прежнего
+        self.file.write_bytes(bytes(changed))
+        os.utime(self.file, ns=(before.st_atime_ns, before.st_mtime_ns))
+        self.assertEqual((self.file.stat().st_mtime_ns, self.file.stat().st_size),
+                         (before.st_mtime_ns, before.st_size))
+        with self.assertRaises(AssetValidationError):
+            open_asset(self.index, self.asset, self.verified)
+
+    def test_first_view_is_hashed_once_for_parallel_requests(self):
+        real, calls, opened, errors = asset_stream._digest, [], [], []
+
+        def slow(handle):
+            calls.append(1)
+            time.sleep(0.2)
+            return real(handle)
+
+        def request():
+            try:
+                opened.append(open_asset(self.index, self.asset, self.verified))
+            except Exception as error:  # noqa: BLE001 — любой сбой потока — провал теста
+                errors.append(error)
+
+        with mock.patch.object(asset_stream, "_digest", side_effect=slow):
+            threads = [threading.Thread(target=request) for _ in range(3)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        for item in opened:
+            item.handle.close()
+        self.assertEqual((len(calls), len(opened), errors), (1, 3, []))
+
     def test_shorter_file_is_refused_without_hashing(self):
         self.file.write_bytes(self.data[:-10])
         with mock.patch.object(asset_stream, "_digest") as digest:
@@ -123,9 +163,9 @@ class AssetStreamTests(unittest.TestCase):
     def test_memory_of_checked_files_is_bounded(self):
         verified = VerifiedFiles(limit=2)
         for name in "abc":
-            verified.remember(name, (1, 2, 3, 4))
-        self.assertEqual([verified.known(name, (1, 2, 3, 4)) for name in "abc"], [False, True, True])
-        self.assertFalse(verified.known("c", (1, 2, 3, 5)))
+            verified.remember(name, (1, 2, 3, 4, 5))
+        self.assertEqual([verified.known(name, (1, 2, 3, 4, 5)) for name in "abc"], [False, True, True])
+        self.assertFalse(verified.known("c", (1, 2, 3, 4, 6)))
 
 
 if __name__ == "__main__":

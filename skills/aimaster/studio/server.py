@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 import threading
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler
@@ -32,16 +31,10 @@ from .workspace import (
 
 
 class _LoopbackHTTPServer(LoopbackThreadingHTTPServer):
+    # A client that drops a video preview mid-stream is not printed as a
+    # traceback — `LoopbackThreadingHTTPServer.handle_error`, shared with the
+    # Mini App gateway.
     daemon_threads = True
-
-    def handle_error(self, request, client_address):
-        # A browser that stops a video preview mid-stream (Range requests for
-        # a poster frame) closes the socket; that is ordinary, not a fault.
-        # Everything else keeps the default traceback on stderr.
-        error = sys.exc_info()[1]
-        if isinstance(error, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
-            return
-        super().handle_error(request, client_address)
 
 
 class _WakingLedger:

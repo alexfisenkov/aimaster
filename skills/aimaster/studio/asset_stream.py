@@ -4,9 +4,14 @@
 собранного ролика (до 2 ГиБ) и частых Range-запросов плеера это непосильно.
 Здесь файл открывается один раз на запрос; размер сверяется с записью, а
 sha256 считается кусками по 1 МиБ — только когда отпечаток файла (устройство,
-inode, размер, время изменения) этим процессом ещё не сверен. Сверенный файл
-отдаётся с того же открытого дескриптора: подменить его между проверкой и
-отдачей можно только правкой того же inode, а она меняет время изменения."""
+inode, размер, время изменения содержимого и время изменения inode) этим
+процессом ещё не сверен. Сверенный файл отдаётся с того же открытого
+дескриптора: подменить его можно только записью в тот же inode. Запись меняет
+mtime, но mtime можно вернуть назад (utime) — а время изменения inode
+(st_ctime на POSIX) вернуть нельзя, оно меняется и от самой записи, и от
+utime. На Windows st_ctime — время создания файла: там отпечаток держится на
+mtime и размере. Первый просмотр ролика шлёт сразу несколько Range-запросов —
+sha256 считает один из них, остальные ждут его (`VerifiedFiles.hashing`)."""
 
 from __future__ import annotations
 
@@ -19,13 +24,14 @@ from dataclasses import dataclass
 from typing import BinaryIO, Iterator
 
 from .assets import AssetIndex, AssetValidationError
+from .keyed_locks import KeyedLocks
 
 CHUNK_BYTES = 1024 * 1024
 REMEMBER = 256
 
 
-def fingerprint(info: os.stat_result) -> tuple[int, int, int, int]:
-    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns
+def fingerprint(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
 
 
 class VerifiedFiles:
@@ -36,6 +42,13 @@ class VerifiedFiles:
         self._seen: OrderedDict[str, tuple] = OrderedDict()
         self._limit = limit
         self._lock = threading.Lock()
+        self._hashing = KeyedLocks()
+
+    def hashing(self, asset_id: str):
+        """Один sha256 файла ассета за раз: остальные потоки ждут и потом
+        видят его в `known` — ролик не читается целиком несколько раз подряд."""
+
+        return self._hashing.hold(asset_id)
 
     def known(self, asset_id: str, mark: tuple) -> bool:
         with self._lock:
@@ -100,9 +113,11 @@ def open_asset(index: AssetIndex, asset_id: str, verified: VerifiedFiles) -> Ope
             raise AssetValidationError("registered asset has changed")
         mark = fingerprint(info)
         if not verified.known(asset_id, mark):
-            if _digest(handle) != row["digest"]:
-                raise AssetValidationError("registered asset has changed")
-            verified.remember(asset_id, mark)
+            with verified.hashing(asset_id):
+                if not verified.known(asset_id, mark):  # пока ждали, мог сверить другой поток
+                    if _digest(handle) != row["digest"]:
+                        raise AssetValidationError("registered asset has changed")
+                    verified.remember(asset_id, mark)
         return OpenedAsset(handle, row["mime_type"], info.st_size, row["relative_path"])
     except BaseException:
         handle.close()
