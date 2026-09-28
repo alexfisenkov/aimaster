@@ -157,8 +157,8 @@ class RunTests(unittest.TestCase):
         self.assertTrue((self.base / "home").is_dir())
 
     def test_every_command_carries_json(self):
-        # HyperFrames 0.8.75 без --json на каждом запуске проверяет обновления
-        # (registry.npmjs.org, git ls-remote github.com) — флаг добавляется
+        # Без --json HyperFrames 0.8.75 ходит за обновлениями (registry.npmjs.org,
+        # git ls-remote github.com; см. engine_cli.argv_for) — флаг добавляется
         # сам, если вызвавший его забыл, и не дублируется.
         for args, tail in ((["render", ".", "--quiet"], ["render", ".", "--quiet", "--json"]),
                            (["browser", "path"], ["browser", "path", "--json"]),

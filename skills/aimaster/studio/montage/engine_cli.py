@@ -36,11 +36,13 @@ JSON_FLAG = "--json"
 
 def argv_for(engine: Engine, args: Sequence[str]) -> list[str]:
     """argv запуска движка; --json добавляется, если его нет. HyperFrames 0.8.75
-    (dist/cli.js, `hasJsonFlag`) без --json на каждом запуске проверяет
-    обновления — свои (registry.npmjs.org) и своих скиллов (`git ls-remote`
-    github.com и raw.githubusercontent.com), — и никакая переменная окружения
-    этого не отключает. `render` и `browser` флаг принимают, их вывод не меняется
-    (у `render` он действует только с --batch)."""
+    (dist/cli.js, `hasJsonFlag`) без --json проверяет обновления — свои
+    (registry.npmjs.org) и своих скиллов (`git ls-remote` github.com и
+    raw.githubusercontent.com): раз в сутки, пока сеть есть, и на каждом
+    запуске, пока проверка не удаётся (неудачную он не запоминает). Никакая
+    переменная окружения этого не отключает; с --json проверки нет вовсе.
+    `render` и `browser` флаг принимают, их вывод не меняется (у `render` он
+    действует только с --batch)."""
 
     items = [str(item) for item in args]
     if JSON_FLAG not in items:

@@ -13,9 +13,11 @@ Run the commands as `python3 scripts/creator_studio.py montage …` (the
 `python_cmd` of this machine instead of `python3`). Never run the `hyperframes`
 CLI, `npx hyperframes` or `npm` yourself: the montage commands start the pinned
 engine with its own HOME, telemetry off, the ffmpeg this skill found and
-`--json` on every call. Without `--json` HyperFrames 0.8.75 checks for updates
-of itself and of its skills on every run (the npm registry, GitHub,
-`git ls-remote`), and no environment variable turns that off.
+`--json` on every call. With `--json` HyperFrames 0.8.75 makes no update check
+at all. Without it, it checks for updates of itself and of its skills (the
+npm registry, GitHub, `git ls-remote`) once a day while the network works and
+on every run while the check fails (a failed check is not remembered), and no
+environment variable turns that off.
 
 ## When to start
 
@@ -39,9 +41,10 @@ Start with `montage status WS P`. Its `engine`:
   `install_argv` is the exact install command for this machine as a list of
   arguments and `install` is the same command as one line, for example
   `/usr/bin/python3 /…/skills/aimaster/scripts/install.py --install-deps`.
-  Every command that needs the engine refuses with «Монтажный движок не готов:
-  …. Команда установки — engine.install в ответе montage status»: the refusal
-  itself carries no paths, the command is in `montage status`.
+  Every command that needs the engine (`montage draft` too) refuses with
+  «Монтажный движок не готов: <reason>. Команда установки — engine.install в
+  ответе montage status»: the refusal does not repeat the command and carries
+  no paths; take the command from `montage status`.
 
 Run it as `install_argv` when your tool starts a program with a list of
 arguments (no shell). Otherwise run the line `install` in the shell: it works
@@ -105,8 +108,8 @@ what it means in plain words (see Refusals).
 | `montage render` | reference check → lint → MP4 (its log checked for network access) → ffprobe → new version → `assembly` | `version`, `asset_id`, `path`, `duration`, `changes`, `warnings` (lint warnings), `revision` |
 | `montage restore` | makes an earlier version current again (the replaced `index.html` goes to `.undo/`) | `current_version`, `backup`, `revision` |
 | `montage gsap` | copies pinned GSAP and plugins from the engine into `current/assets/` | `version`, `files`, `copied`, `script_tags`, `missing_tags`, `rules` |
-| `montage open` | starts the montage desk (HyperFrames Studio) | `state`, `url`, `port`, `pid`, `started_at` |
-| `montage close` | stops it | `state` |
+| `montage open` | starts the montage desk (HyperFrames Studio) | `state`, `url`, `port`, `pid`, `started_at`; sometimes `forgotten` (Montage desk) |
+| `montage close` | stops it | `state`; sometimes `forgotten` or `note` (Montage desk) |
 
 `montage render` without `--by` records `autopilot` in an autopilot project and
 `agent` otherwise; pass `--by owner` when the build is the person's own
@@ -299,10 +302,17 @@ commands. Before your own edits while the desk may be open, read
 `montage status` and pass its `model_hash` as `--expected-model-hash`: a
 concurrent mouse edit then refuses your edit instead of being overwritten.
 `montage close` stops Studio and its browser; nothing stops the desk on its
-own yet. `montage status` → `desk.state` shows `open` or `closed` (with a
-`note` when a recorded desk no longer answers). `open`, `close` and `status`
-add `forgotten` when the recorded process turned out not to be this desk: it
-is left alone and only the record is dropped.
+own yet. `montage status` → `desk.state` shows `open` or `closed`. Extra
+fields, all Russian text to retell, never errors:
+
+- `forgotten` (`open`, `close`, `status`): the recorded process turned out not
+  to be this desk (another program got its number or port); it is left alone
+  and only the record is dropped — «процесс … — уже не монтажный стол этого
+  проекта: запись забыта, ничего не остановлено».
+- `note` on `status`: our desk no longer answers (the next `open` or `close`
+  stops it), or its record `montage/.desk.json` could not be deleted.
+- `note` on `close`: the record `montage/.desk.json` could not be deleted;
+  `montage status` checks it again later. The desk itself is stopped.
 
 ## Keeping the draft current
 
@@ -370,7 +380,8 @@ lists the clips (`clip`, `layer`, `scene_id`, `asset_id`, `current_asset_id`,
   engine's own telemetry is off.
 - The engine is kept offline by `--json` on every call, not by a setting:
   with it, render, lint, timeline edits and the desk make no outbound request
-  and start no `git` (checked through a logging proxy). The desk page in the
+  and start no `git` (checked through a logging proxy on the engine's Node
+  process). The desk page in the
   browser is outside that (Studio's analytics above).
 - The engine is pinned: a newer HyperFrames is used only after a skill
   release. After a skill update that pins another version, `montage status`

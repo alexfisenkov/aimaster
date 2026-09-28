@@ -102,7 +102,7 @@ class ServiceTests(unittest.TestCase):
                          ["montage-drafted", "montage-built", "montage-built", "montage-restored"])
 
     def test_every_engine_call_carries_json(self):
-        # Без --json движок на каждом запуске ходит за обновлениями (engine_cli.argv_for):
+        # Без --json движок ходит за обновлениями (engine_cli.argv_for):
         # и lint/timeline, и правки, и сама сборка передают его явно.
         drafted = service.draft(self.ws, "p", 0, **self.kw(probe=True))
         for request in (EditRequest(op="move", clip="v-2", at=2.5),

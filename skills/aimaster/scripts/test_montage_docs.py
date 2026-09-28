@@ -157,7 +157,8 @@ class CanonMatchesCliTests(DocsTestCase):
                      "paths.output", 'font-family: "AM Inter", sans-serif', ".claude/skills",
                      ".agents/skills", 'window.__timelines["main"]', "never add `data-no-timeline`",
                      "Never register a second `main`", "`missing_tags`", "`--json` on every call",
-                     "no plan and no confirmation"):
+                     "no plan and no confirmation", "makes no update check at all",
+                     "once a day while the network works", "`note` on `close`"):
             self.assertMentions(text, self.canon)
 
     def test_quoted_refusals_are_string_literals_of_the_code(self):

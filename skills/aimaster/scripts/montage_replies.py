@@ -70,7 +70,9 @@ def collect_replies() -> dict[str, set[str]]:
     with tempfile.TemporaryDirectory() as temp, \
             mock.patch.dict(os.environ, {PREFIX_ENV: str(Path(temp) / "нет-кеша-скиллов")}):
         fields = _flow(Path(temp))
-    fields["open"] = {"project_id", "state", *PUBLIC_KEYS}
-    fields["close"] = {"project_id", "state"}
+    # desk._forgotten_note: open добавляет forgotten (чужой процесс в записи),
+    # close — forgotten или note (запись не удалилась), status — оба.
+    fields["open"] = {"project_id", "state", *PUBLIC_KEYS, "forgotten"}
+    fields["close"] = {"project_id", "state", "forgotten", "note"}
     fields["desk notes"] = {"note", "forgotten"}
     return fields
