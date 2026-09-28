@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qsl, urlsplit
 
 from .http_app import Response
+from .http_write import write_response
 from .loopback_http import LoopbackThreadingHTTPServer
 
 
@@ -194,20 +195,9 @@ class _MiniAppHandler(BaseHTTPRequestHandler):
             # be parsed as the next request on a socket the tunnel shares.
             response = MiniAppGateway._forbidden()
             self.close_connection = True
-        self.send_response(response.status)
-        # The body's real length is sent exactly once: a `Content-Length` the
-        # response already carries (`_rewrite_asset_urls` sets one, and the
-        # inner Studio may too) would otherwise be emitted a second time
-        # alongside this one -- duplicate, and historically conflicting,
-        # framing headers. See `MiniAppGateway._forbidden`.
-        for name, value in response.headers.items():
-            if name.casefold() == "content-length":
-                continue
-            self.send_header(name, value)
-        self.send_header("Content-Length", str(len(response.body)))
-        self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(response.body)
+        # Одна настоящая длина и поток файла кусками — http_write (там же
+        # объяснено, почему Content-Length из ответа не повторяется).
+        write_response(self, response)
 
     do_GET = _dispatch
     do_POST = _dispatch

@@ -13,6 +13,7 @@ from .autopilot import StoreAutopilotPolicy
 from .decisions import DecisionWorker
 from .events import LedgerEventSource
 from .http_app import MAX_BODY_BYTES, StudioApplication
+from .http_write import write_response
 from .ledger import ActionLedger
 from .loopback_http import LoopbackThreadingHTTPServer
 from .questions import QuestionStore
@@ -94,13 +95,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._write(response)
 
     def _write(self, response):
-        self.send_response(response.status)
-        for name, value in response.headers.items():
-            self.send_header(name, value)
-        self.send_header("Content-Length", str(len(response.body)))
-        self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(response.body)
+        write_response(self, response)
 
     do_GET = _dispatch
     do_POST = _dispatch

@@ -12,6 +12,7 @@ from typing import Callable, Iterable, Mapping
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 from .assets import AssetError, AssetIndex
+from .asset_stream import FileBody, VerifiedFiles, open_asset
 from .ledger import (
     ActionLedger,
     ActionRequest,
@@ -93,6 +94,9 @@ class Response:
     status: int
     headers: dict[str, str]
     body: bytes
+    # Тело потоком (`asset_stream.FileBody`: `length`, `chunks()`, `close()`) —
+    # у файлов `/assets/<id>`; тогда `body` пуст, пишет `http_write.write_response`.
+    stream: object | None = None
 
 
 def _security_headers(content_type: str) -> dict[str, str]:
@@ -178,6 +182,9 @@ class StudioApplication:
         self.csrf_token = csrf_token or secrets.token_urlsafe(32)
         self.event_source = event_source or (lambda: ())
         self.max_body_bytes = max_body_bytes
+        # Файлы, чей sha256 уже сверен этим процессом (asset_stream): плеер
+        # шлёт десятки Range-запросов, и каждый не должен читать весь ролик.
+        self.verified_files = VerifiedFiles()
 
     @staticmethod
     def _headers(headers) -> dict[str, str]:
@@ -429,21 +436,29 @@ class StudioApplication:
         return max(0, length - suffix), length - 1
 
     def _asset(self, asset_id, range_header=None):
-        path, mime_type = self.assets.resolve(asset_id)
-        body = path.read_bytes()
-        confirmed_path, confirmed_mime = self.assets.resolve(asset_id)
-        if confirmed_path != path or confirmed_mime != mime_type:
-            raise AssetError("asset identity changed while it was read")
-        requested = self._requested_byte_range(range_header, len(body))
-        headers = {"Accept-Ranges": "bytes"}
-        if requested == "unsatisfiable":
-            headers["Content-Range"] = f"bytes */{len(body)}"
-            return self._response(416, b"", mime_type, headers)
-        if requested is None:
-            return self._response(200, body, mime_type, headers)
-        start, end = requested
-        headers["Content-Range"] = f"bytes {start}-{end}/{len(body)}"
-        return self._response(206, body[start : end + 1], mime_type, headers)
+        opened = open_asset(self.assets, asset_id, self.verified_files)
+        try:
+            requested = self._requested_byte_range(range_header, opened.size)
+            headers = {"Accept-Ranges": "bytes"}
+            if requested == "unsatisfiable":
+                headers["Content-Range"] = f"bytes */{opened.size}"
+                opened.handle.close()
+                return self._response(416, b"", opened.mime_type, headers)
+            start, end = (0, opened.size - 1) if requested is None else requested
+            if requested is not None:
+                headers["Content-Range"] = f"bytes {start}-{end}/{opened.size}"
+            body = FileBody(opened.handle, start, end - start + 1)
+        except BaseException:
+            opened.handle.close()
+            raise
+        return self._stream_response(200 if requested is None else 206, body,
+                                     opened.mime_type, headers)
+
+    @staticmethod
+    def _stream_response(status, body, content_type, extra_headers) -> Response:
+        headers = _security_headers(content_type)
+        headers.update(extra_headers)
+        return Response(status, headers, b"", stream=body)
 
     def _static_file(self, relative_path: str) -> Response:
         resolved = _resolve_static(relative_path)
