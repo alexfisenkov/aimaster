@@ -105,13 +105,13 @@ test("стол «открыт» без ссылки (адрес не с этог
   // studio/montage/service_screen.py:desk_view отдаёт ровно {"state": "open"}
   // без ключа url, когда адрес стола не 127.0.0.1/localhost/[::1] — например,
   // запись .desk.json подменена или устарела. deskUrl тогда null, а флаг
-  // deskLinkPending отличает этот случай от «стол закрыт».
+  // deskLinkMissing отличает этот случай от «стол закрыт».
   const flags = screenFlags({ status: status({ desk: { state: "open" } }) });
-  assert.deepEqual([flags.desk, flags.deskUrl, flags.deskLinkPending], ["open", null, true]);
-  assert.equal(screenFlags({ status: status({ desk: { state: "closed" } }) }).deskLinkPending, false);
+  assert.deepEqual([flags.desk, flags.deskUrl, flags.deskLinkMissing], ["open", null, true]);
+  assert.equal(screenFlags({ status: status({ desk: { state: "closed" } }) }).deskLinkMissing, false);
   assert.equal(screenFlags({
     status: status({ desk: { state: "open", url: "http://127.0.0.1:9/x", telemetry_off: true } }),
-  }).deskLinkPending, false);
+  }).deskLinkMissing, false);
 });
 
 test("плашка несобранных правок — по свежей схеме, иначе по дешёвому состоянию", () => {
@@ -128,6 +128,18 @@ test("без собранной версии плашки нет: собират
   assert.deepEqual(notices({ status: status({ current_version: null, file: null, unrendered_changes: true }) }), []);
 });
 
+test("свежий статус после сборки перебивает отставшую схему: банера «несобранные правки» нет", () => {
+  // b4-review/stale-after-render.mjs: montage render не трогает index.html —
+  // index_key не меняется, но дешёвый статус (пересчитывается каждый опрос)
+  // уже знает про новую версию, а отставшая схема (снята до сборки) — ещё
+  // нет. Статусу доверяем больше: он свежее по построению.
+  const list = notices({
+    status: status({ unrendered_changes: false }),
+    model: { index_key: "k1", unrendered_changes: true },
+  });
+  assert.deepEqual(list.map((item) => item.key), []);
+});
+
 test("ошибки монтажа, пропавший файл и устаревшие клипы — текстом", () => {
   const list = notices({
     status: status({ file: { version: "v002", shown: null } }),
@@ -138,6 +150,34 @@ test("ошибки монтажа, пропавший файл и устарев
   assert.match(list[0].text, /v2 нет на месте/);
   assert.match(list[2].text, /устарело: 2/);
   assert.equal(list[2].action, "refresh");
+});
+
+test("устаревшие клипы — три разных исхода, три разных текста", () => {
+  const model = (stale_clips) => ({ index_key: "k1", unrendered_changes: false, stale_clips });
+  const refreshable = notices({ status: status(), model: model([
+    { clip: "v-1", reason: null, cause: null }, { clip: "v-2", reason: null, cause: null },
+  ]) });
+  assert.deepEqual(refreshable.map((item) => [item.key, item.action]), [["stale", "refresh"]]);
+  assert.match(refreshable[0].text, /выбрали другие клипы или звук — устарело: 2/);
+
+  const structural = notices({ status: status(), model: model([
+    { clip: null, layer: "video", scene_id: "s1", reason: "нужен --rebuild", cause: "scene_added" },
+  ]) });
+  assert.deepEqual(structural.map((item) => item.key), ["stale-rebuild"]);
+  assert.match(structural[0].text, /проект изменился.*нужен новый черновик/i);
+
+  const unaccepted = notices({ status: status(), model: model([
+    { clip: "v-1", asset_id: null, current_asset_id: null, reason: "нет принятого", cause: null },
+  ]) });
+  assert.deepEqual(unaccepted.map((item) => item.key), ["stale-unaccepted"]);
+  assert.match(unaccepted[0].text, /нет принятого/i);
+
+  const mixed = notices({ status: status(), model: model([
+    { clip: "v-1", reason: null, cause: null },
+    { clip: null, layer: "video", scene_id: "s1", reason: "нужен --rebuild", cause: "scene_added" },
+    { clip: "v-2", reason: "нет принятого", cause: null },
+  ]) });
+  assert.deepEqual(mixed.map((item) => item.key), ["stale", "stale-rebuild", "stale-unaccepted"]);
 });
 
 test("записки стола и ошибка опроса видны; фото — только ошибка опроса", () => {
@@ -155,9 +195,14 @@ test("сторона кадра — для превью вертикальног
   assert.equal(orientation(null), "landscape");
 });
 
-test("длина — из схемы без несобранных правок, иначе по концу последней сцены", () => {
+test("длина — из схемы без несобранных правок по дешёвому статусу, иначе по концу последней сцены", () => {
   const model = { index_key: "k1", unrendered_changes: false, duration: 14.6 };
   assert.equal(durationText({ status: status(), model, project: PROJECT }), "00:15");
-  assert.equal(durationText({ status: status(), model: { ...model, unrendered_changes: true }, project: PROJECT }), "00:35");
+  // Статус свежее модели (см. notices выше) — его unrendered_changes решает,
+  // даже когда отставшая модель говорит другое.
+  assert.equal(durationText({ status: status({ unrendered_changes: true }), model, project: PROJECT }), "00:35");
+  assert.equal(durationText({
+    status: status({ unrendered_changes: null }), model: { ...model, unrendered_changes: true }, project: PROJECT,
+  }), "00:35");
   assert.equal(durationText({ status: null, model: null, project: projectWith({ scenes: [] }) }), "");
 });

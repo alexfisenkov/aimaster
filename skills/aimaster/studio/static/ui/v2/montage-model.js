@@ -63,7 +63,7 @@ function engineState(status) {
  * Что можно делать на экране. Стол и «Показать в папке» — только на компьютере
  * (не телефон, не Telegram); после принятия ролика монтаж не меняется.
  *
- * `deskLinkPending`: сервер прислал `desk: {"state": "open"}` без `url`
+ * `deskLinkMissing`: сервер прислал `desk: {"state": "open"}` без `url`
  * (`montage/service_screen.py:desk_view` — адрес стола не 127.0.0.1/localhost/
  * [::1], запись `.desk.json` могла устареть или её подменили). Стол открыт,
  * но перейти по нему нельзя; отдельный флаг — чтобы это не путалось с
@@ -80,12 +80,37 @@ export function screenFlags({ status = null, finished = false, phone = false, te
     engine,
     desk,
     deskUrl,
-    deskLinkPending: desk === "open" && deskUrl === null,
+    deskLinkMissing: desk === "open" && deskUrl === null,
     deskHint: !local && deskPossible,
     reveal: local && status?.reveal === true && typeof status?.file?.shown === "string",
     restore: !finished,
     build: !finished,
   };
+}
+
+/** Три исхода `stale_clips` (`studio/montage/stale.py`): `reason: null` —
+ * обновит `montage draft --refresh`; `reason: "нужен --rebuild"` (`cause`
+ * заполнен) — структурная перемена, точечно не поправить; `reason: "нет
+ * принятого"` — заменить нечем, менять решение — на человеке. Одна плашка
+ * на исход, а не одна на всё: текст должен сразу сказать, что предстоит. */
+function staleNotices(clips) {
+  const refreshable = clips.filter((clip) => !clip.reason);
+  const structural = clips.filter((clip) => clip.cause);
+  const unaccepted = clips.filter((clip) => clip.reason === "нет принятого");
+  const list = [];
+  if (refreshable.length) {
+    list.push({ key: "stale", tone: "warn", action: "refresh",
+      text: `После черновика в проекте выбрали другие клипы или звук — устарело: ${refreshable.length}.` });
+  }
+  if (structural.length) {
+    list.push({ key: "stale-rebuild", tone: "warn", action: "refresh",
+      text: "Проект изменился (сцены или режим показа) — нужен новый черновик монтажа." });
+  }
+  if (unaccepted.length) {
+    list.push({ key: "stale-unaccepted", tone: "warn", action: "refresh",
+      text: `Нет принятого результата — таких клипов в монтаже: ${unaccepted.length}.` });
+  }
+  return list;
 }
 
 /** Плашки над экраном — тексты сервера (по-русски, без путей) и свои. */
@@ -94,7 +119,14 @@ export function notices({ status = null, model = null, feedError = null } = {}) 
   if (feedError) list.push({ key: "feed", tone: "error", text: feedError });
   if (!status || status.applicable === false) return list;
   const fresh = Boolean(model && model.index_key && model.index_key === status.index_key);
-  const unrendered = fresh ? model.unrendered_changes : status.unrendered_changes;
+  // status.unrendered_changes — из дешёвого опроса, пересчитывается на
+  // каждый тик; модель может отстать от текущей версии (сборка не трогает
+  // index.html, index_key не меняется — b4-review/stale-after-render.mjs),
+  // поэтому её unrendered_changes доверяем только когда у статуса вообще
+  // нет ответа на этот вопрос (null — нет попадания в кэш модели).
+  const unrendered = typeof status.unrendered_changes === "boolean"
+    ? status.unrendered_changes
+    : (fresh ? model.unrendered_changes : null);
   if (status.current_version && unrendered === true) {
     list.push({ key: "unrendered", tone: "warn", action: "build",
       text: "Есть несобранные правки: монтаж менялся после последней сборки." });
@@ -106,10 +138,8 @@ export function notices({ status = null, model = null, feedError = null } = {}) 
   for (const key of ["model_error", "stale_error"]) {
     if (fresh && typeof model[key] === "string" && model[key]) list.push({ key, tone: "error", text: model[key] });
   }
-  const stale = fresh && Array.isArray(model.stale_clips) ? model.stale_clips.length : 0;
-  if (stale) {
-    list.push({ key: "stale", tone: "warn", action: "refresh",
-      text: `После черновика в проекте выбрали другие клипы или звук — в монтаже устарело: ${stale}.` });
+  if (fresh && Array.isArray(model.stale_clips) && model.stale_clips.length) {
+    list.push(...staleNotices(model.stale_clips));
   }
   for (const key of ["note", "forgotten"]) {
     const text = status.desk?.[key];
@@ -136,9 +166,18 @@ function mmss(seconds) {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
-/** Длина текущей версии: из схемы, когда несобранных правок нет; иначе — по сценам. */
+/** Длина текущей версии: из схемы, когда несобранных правок нет; иначе — по сценам.
+ * «Несобранных правок нет» решаем как в `notices` — по дешёвому
+ * `status.unrendered_changes`, когда он известен (модель могла отстать от
+ * версии: сборка не трогает index.html), иначе по модели. `model.duration`
+ * всё равно берём только у модели с тем же `index_key` — она зависит от
+ * содержимого index.html, а не от того, какая версия текущая. */
 export function durationText({ status = null, model = null, project = null } = {}) {
-  const settled = Boolean(model && status && model.index_key === status.index_key && model.unrendered_changes === false);
+  const fresh = Boolean(model && status && model.index_key === status.index_key);
+  const unrendered = typeof status?.unrendered_changes === "boolean"
+    ? status.unrendered_changes
+    : (fresh ? model.unrendered_changes : null);
+  const settled = fresh && unrendered === false;
   if (settled && Number(model.duration) > 0) return mmss(Number(model.duration));
   const ends = (project?.scenes || []).map((scene) => scene?.end_ms).filter(Number.isFinite);
   return ends.length ? mmss(Math.max(...ends) / 1000) : "";

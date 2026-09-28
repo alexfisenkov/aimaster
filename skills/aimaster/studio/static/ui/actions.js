@@ -116,6 +116,14 @@ export function fetchCsrfToken() {
   return csrfTokenPromise;
 }
 
+/** Только для тестов: следующий `postJson`/`fetchCsrfToken` снова спросит
+ * `/api/session`, а не возьмёт кэш прошлой проверки — без этого тест,
+ * подменивший `globalThis.fetch`, оставляет свой токен жить дальше теми,
+ * что идут за ним в том же файле. */
+export function _resetCsrfTokenForTests() {
+  csrfTokenPromise = null;
+}
+
 async function parseErrorBody(response) {
   let body = null;
   try {

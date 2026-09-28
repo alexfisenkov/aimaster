@@ -33,6 +33,7 @@ test("сборка видео: diff и пересказ, затем сразу r
   assert.match(prompt, /montage render --by owner/);
   assert.match(prompt, /бесплатная, подтверждения не нужно/);
   assert.match(prompt, /копию не собирай/);
+  assert.match(prompt, /--expected-revision.*montage status/s);
   assert.doesNotMatch(prompt, /платное действие|дождись моего подтверждения/);
 });
 
@@ -47,11 +48,13 @@ test("фото-проект собирается принятой картинк
   assert.doesNotMatch(prompt, /montage/);
 });
 
-test("«Установить → чат» — команда из montage status, без путей", () => {
+test("«Установить → чат» — команда из montage status, без путей, со ссылкой на Engine check", () => {
   const { title, prompt } = installMontage(VIDEO, 62);
   assert.equal(title, "Установить монтажный стол");
   assert.match(prompt, /engine\.install_argv/);
   assert.match(prompt, /бесплатный/);
+  assert.match(prompt, /Engine check/);
+  assert.match(prompt, /PowerShell/);
   assert.doesNotMatch(prompt, PATHS);
 });
 
@@ -59,6 +62,9 @@ test("«Обновить клипы → чат» — refresh сразу, rebuild
   const { title, prompt } = updateMontageClips(VIDEO, 62);
   assert.equal(title, "Обновить клипы в монтаже");
   assert.match(prompt, /stale_clips/);
+  assert.match(prompt, /reason: null/);
+  assert.doesNotMatch(prompt, /reason пустой/);
   assert.match(prompt, /montage draft --refresh/);
+  assert.match(prompt, /--expected-revision.*montage status/s);
   assert.match(prompt, /дождись моего ответа/);
 });

@@ -5,6 +5,7 @@
 // `montage diff`: «0:03.3», «2,5 с».
 
 const MIN_LEN = 1.2; // % ширины дорожки: короткий клип всё равно можно нажать
+const EPS = 0.01; // studio/montage/montage_format.py: тот же допуск
 
 const round2 = (value) => Math.round(value * 100) / 100;
 
@@ -16,9 +17,12 @@ export function fmtTime(seconds) {
   return `${minutes}:${rest.toFixed(1).padStart(4, "0")}`;
 }
 
-/** 2.5 → «2,5 с». */
+/** 2.5 → «2,5 с»; как `montage_format.fmt_len` — короче кадра показа, но не
+ * ноль, всё равно «0,1 с» (не «без изменений»). */
 export function fmtLen(seconds) {
-  const tenths = Math.round(Math.max(0, Number(seconds) || 0) * 10);
+  const value = Math.max(0, Number(seconds) || 0);
+  let tenths = Math.round(value * 10);
+  if (tenths === 0 && value > EPS) tenths = 1;
   return `${(tenths / 10).toFixed(1).replace(".", ",")} с`;
 }
 

@@ -71,9 +71,10 @@ export function assembleFinal(project, revision) {
       + `status: нет движка — предложи установку и дождись ответа; нет черновика — сделай его `
       + `(montage draft); черновик есть — прочитай montage diff и перескажи изменения простыми `
       + `словами, без номеров клипов. Изменений нет — так и скажи и копию не собирай. Затем сразу `
-      + `montage render --by owner: сборка локальная и бесплатная, подтверждения не нужно. В конце `
-      + `назови новую версию, её длину и что в ней изменилось. Недостающие клипы ничем не `
-      + `подменяй — скажи, чего не хватает.`,
+      + `montage render --by owner: сборка локальная и бесплатная, подтверждения не нужно. `
+      + `--expected-revision для draft и render бери из свежего ответа montage status (поле `
+      + `revision), не из этого сообщения. В конце назови новую версию, её длину и что в ней `
+      + `изменилось. Недостающие клипы ничем не подменяй — скажи, чего не хватает.`,
   };
 }
 
@@ -84,9 +85,10 @@ export function installMontage(project, revision) {
     title: "Установить монтажный стол",
     prompt: `Открой ${projectRef(project, revision)}. Установи монтажный движок HyperFrames — он `
       + `бесплатный, около 330 МБ, ставится один раз. Команду возьми из ответа montage status: `
-      + `engine.install_argv (или строку engine.install) — и выполни её. Потом снова montage `
-      + `status; движок готов — продолжай сборку по references/montage.md. Не вышло — покажи `
-      + `строки установщика про монтаж.`,
+      + `engine.install_argv (или строку engine.install) — и выполни её так, как описано в `
+      + `разделе «Engine check» references/montage.md (там же — про вызов строки install в `
+      + `PowerShell через оператор &). Потом снова montage status; движок готов — продолжай `
+      + `сборку по references/montage.md. Не вышло — покажи строки установщика про монтаж.`,
   };
 }
 
@@ -95,9 +97,10 @@ export function updateMontageClips(project, revision) {
   return {
     title: "Обновить клипы в монтаже",
     prompt: `Открой ${projectRef(project, revision)}. После чернового монтажа в проекте выбрали `
-      + `другие клипы или звук. Прочитай montage status → stale_clips. Где reason пустой — обнови `
-      + `монтаж: montage draft --refresh. Где «нужен --rebuild» — объясни, что пропадут титры и `
-      + `правки со стола, и дождись моего ответа. Где «нет принятого» — скажи, что выбрать. `
-      + `Потом собери новую версию по references/montage.md.`,
+      + `другие клипы или звук. Прочитай montage status → stale_clips. Где reason: null — обнови `
+      + `монтаж: montage draft --refresh (--expected-revision — из того же montage status). `
+      + `Где «нужен --rebuild» — объясни, что пропадут титры и правки со стола, и дождись моего `
+      + `ответа. Где «нет принятого» — скажи, что выбрать. Потом собери новую версию по `
+      + `references/montage.md.`,
   };
 }

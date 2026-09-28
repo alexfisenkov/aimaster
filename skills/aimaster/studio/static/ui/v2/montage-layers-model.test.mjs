@@ -41,6 +41,13 @@ test("время и длина — как в строках montage diff", () =>
   assert.equal(volumeText(null), "100 %");
 });
 
+test("длина короче кадра показа — не «0,0 с», а «0,1 с» (как montage_format.fmt_len)", () => {
+  assert.equal(fmtLen(0.03), "0,1 с");
+  assert.equal(fmtLen(0.05), "0,1 с");
+  assert.equal(fmtLen(0.005), "0,0 с"); // меньше EPS — правда «без изменений»
+  assert.equal(fmtLen(0), "0,0 с");
+});
+
 test("сцены называются по порядку, а не по месту в списке", () => {
   assert.deepEqual(sceneNames(PROJECT), {
     s1: { number: 1, text: "сцена 1 «Сад»" },
