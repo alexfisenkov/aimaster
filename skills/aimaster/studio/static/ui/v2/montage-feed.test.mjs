@@ -415,6 +415,33 @@ test("«обновляется…» — только если схема отс�
   feed.hide(); // схема k3 так и не ответит — обрываем, её таймер не держит процесс 130 с
 });
 
+test("«обновляется…» считает только опросы по таймеру: refresh() после действия счёт не двигает", async () => {
+  let key = "k1";
+  let release;
+  const load = (id, part) => {
+    if (!part) return Promise.resolve(ok(STATUS(key)));
+    const asked = key;
+    return new Promise((resolve) => { release = () => resolve(ok({ index_key: asked })); });
+  };
+  const feed = createMontageFeed({ load, notify: () => {} });
+  const lagging = () => feed.current("p").modelLagging;
+  feed.show("p");
+  await feed.tick();
+  release();
+  await settleModel();
+  key = "k2";
+  await feed.refresh(); // после «Сделать текущей» и при возврате на вкладку — подряд, без паузы
+  await feed.refresh();
+  await feed.refresh();
+  await settleModel(); // refresh() отпускают раньше, чем его попытка снимет флаг «статус летит»
+  assert.equal(lagging(), false);
+  await feed.tick(); // первый опрос по таймеру со схемой позади
+  assert.equal(lagging(), false);
+  await feed.tick(); // второй — схема отстала дольше одного опроса
+  assert.equal(lagging(), true);
+  feed.hide();
+});
+
 test("публикация статуса упала — схема всё равно спрошена, флаг её полёта не застревает", async () => {
   const reported = [];
   globalThis.reportError = (error) => reported.push(error.name);

@@ -4,12 +4,15 @@
 // превью знает сторону кадра (`data-orientation`) — вертикальный ролик
 // монтажа не сжимается в полосу 16:9. Экран монтажа перерисовывается по
 // каждому ответу опроса — раскрытая «История решений» при этом не
-// сворачивается (`historyOpen`).
+// сворачивается (`historyOpen`), а превью и кнопка сборки держат фокус
+// (`markControlHooks`). Длина — length-text.js, как в шапке.
 
+import { markControlHooks } from "../card-forms.js";
 import { formatHistoryEntries } from "../history-panel.js";
 import { AUDIO_LAYERS } from "./audio-model.js";
 import { playMark } from "./board-bits.js";
-import { chatButton, clock, el, openViewer } from "./dom.js";
+import { chatButton, el, openViewer } from "./dom.js";
+import { lengthClock, sceneSeconds } from "./length-text.js";
 import { renderPreview } from "./preview.js";
 import { assembleFinal, assembleLabel } from "./screen-prompts.js";
 import { selectedResultVersion } from "./variants.js";
@@ -18,10 +21,10 @@ const MODE_WORDS = Object.freeze({ per_scene: "кадр за кадром", one_
 
 let historyOpen = false;
 
-/** Длительность ролика по концу последней сцены, «00:30»; нет — «». */
+/** Длительность ролика по концу последней сцены, «00:30» (короче 10 с —
+ * «00:03,5», как «3,5 с» в шапке); нет сцен — «». */
 export function sceneDuration(project) {
-  const ends = (project?.scenes || []).map((scene) => scene?.end_ms).filter(Number.isFinite);
-  return ends.length ? clock(Math.max(...ends)) : "";
+  return lengthClock(sceneSeconds(project));
 }
 
 /** Строки «ключ — значение» карточки «Финальный ролик». */
@@ -54,7 +57,8 @@ export function finalPreview(project, { ready, statusText, durationText = "", or
   const assembly = project?.assembly && typeof project.assembly === "object" ? project.assembly : null;
   const button = el("button", "v2-final-preview");
   button.type = "button";
-  button.dataset.hook = "v2-final-slot";
+  markControlHooks(button, `assembly:${project?.id}`, "preview");
+  button.dataset.part = "v2-final-slot";
   button.dataset.ready = String(ready);
   button.dataset.orientation = orientation;
   button.setAttribute("aria-label", ready ? "Открыть финальный ролик" : "Финального ролика пока нет");
@@ -84,8 +88,10 @@ export function summaryCard(project, revision, state) {
   card.append(list);
   const summary = typeof project?.assembly?.summary === "string" ? project.assembly.summary.trim() : "";
   if (summary) card.append(el("p", "v2-final-summary", summary));
-  card.append(chatButton(assembleLabel(project), assembleFinal(project, revision),
-    "v2-chat-button v2-card-button"));
+  const build = chatButton(assembleLabel(project), assembleFinal(project, revision),
+    "v2-chat-button v2-card-button");
+  markControlHooks(build, `assembly:${project?.id}`, "build");
+  card.append(build);
   return card;
 }
 

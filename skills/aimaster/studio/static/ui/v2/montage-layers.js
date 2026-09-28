@@ -8,7 +8,10 @@
 // Схема, отставшая от монтажа дольше одного опроса (`lagging`,
 // montage-entry.js), помечена «обновляется…»; есть отказ опроса или схемы
 // (`error`, его текст — в плашке сверху) — «не обновилась»: ждать нечего.
+// Блоки помечены для фокуса (`markControlHooks`): перерисовка по опросу не
+// уводит его на `<body>`.
 
+import { markControlHooks } from "../card-forms.js";
 import { el } from "./dom.js";
 import { fmtTime, layerRows, modelDuration } from "./montage-layers-model.js";
 
@@ -19,7 +22,8 @@ function block(projectId, item, detail, grid) {
   const key = `${projectId}:${item.id}`;
   const button = el("button", "am-block", item.text);
   button.type = "button";
-  button.dataset.hook = "am-block";
+  markControlHooks(button, `montage:${projectId}`, `block:${item.id}`);
+  button.dataset.part = "am-block";
   button.style.setProperty("--am-at", String(item.at));
   button.style.setProperty("--am-len", String(item.len));
   button.setAttribute("aria-label", item.detail);
@@ -39,15 +43,17 @@ function track(projectId, row, detail, grid) {
   const line = el("div", "am-track");
   line.dataset.layer = row.layer;
   const lane = el("div", "am-lane");
+  lane.dataset.empty = String(!row.blocks.length);
   if (!row.blocks.length) lane.append(el("span", "am-lane-empty", "пусто"));
   for (const item of row.blocks) lane.append(block(projectId, item, detail, grid));
   line.append(el("span", "am-track-label", row.label), lane);
   return line;
 }
 
-function hintText(engine, exists, model) {
+function hintText(engine, exists, model, error) {
   if (exists === false) return "Схема появится после чернового монтажа.";
   if (engine === "missing") return "Схема появится, когда будет установлен монтажный стол.";
+  if (error) return "Схему прочитать не удалось — причина выше.";
   return model ? "Схему прочитать не удалось." : "Читаем монтаж…";
 }
 
@@ -69,7 +75,7 @@ export function renderLayers({ project, model, engine, exists, lagging = false, 
   const rows = exists !== false && engine === "installed" && model ? layerRows(model, project) : [];
   box.append(heading(lagging && rows.length > 0, Boolean(error)));
   if (!rows.length) {
-    box.append(el("p", "v2-section-hint", hintText(engine, exists, model)));
+    box.append(el("p", "v2-section-hint", hintText(engine, exists, model, error)));
     return box;
   }
   const grid = el("div", "am-tracks");

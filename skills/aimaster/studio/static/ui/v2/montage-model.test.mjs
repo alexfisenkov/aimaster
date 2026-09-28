@@ -7,8 +7,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  downloadHref, durationText, montageApplies, montageScreen, notices, orientation, screenFlags,
-  versionLabel, versionRows, whenText,
+  downloadHref, durationSeconds, durationText, loopbackUrl, montageApplies, montageScreen, notices,
+  orientation, screenFlags, versionLabel, versionRows, whenText,
 } from "./montage-model.js";
 import { PROJECT, projectWith } from "./snapshot.fixture.mjs";
 
@@ -92,7 +92,30 @@ test("нет движка или черновика — стола нет, сб�
 
 test("после принятия ролика — ни стола, ни «Сделать текущей», ни сборки", () => {
   const flags = screenFlags({ status: status(), finished: true });
-  assert.deepEqual([flags.desk, flags.restore, flags.build, flags.deskHint], ["hidden", false, false, false]);
+  assert.deepEqual([flags.desk, flags.restore, flags.build, flags.deskHint, flags.deskCloseOnly],
+    ["hidden", false, false, false, false]);
+});
+
+test("после принятия ролика стол, оставленный открытым, можно только закрыть — без ссылки на правку", () => {
+  const open = status({ desk: { state: "open", url: "http://127.0.0.1:9/x", telemetry_off: true } });
+  const flags = screenFlags({ status: open, finished: true });
+  assert.deepEqual([flags.desk, flags.deskCloseOnly, flags.deskUrl, flags.deskLinkMissing],
+    ["open", true, null, false]);
+  assert.equal(screenFlags({ status: status({ desk: { state: "busy" } }), finished: true }).desk, "busy");
+  assert.equal(screenFlags({ status: open, finished: true, phone: true }).desk, "hidden");
+  assert.equal(screenFlags({ status: open }).deskCloseOnly, false);
+});
+
+test("адрес стола — только http на 127.0.0.1, localhost или [::1] с портом; иначе стол «без ссылки»", () => {
+  for (const url of ["http://127.0.0.1:9/x", "http://localhost:5173/#project/current", "http://[::1]:9/"]) {
+    assert.equal(loopbackUrl(url), url);
+  }
+  for (const url of ["https://127.0.0.1:9/", "http://example.com:9/", "http://127.0.0.1/", "javascript:alert(1)",
+    "http://user:pw@127.0.0.1:9/", "http://127.0.0.1:9/ x", "http://127.0.0.2:9/", null, 9]) {
+    assert.equal(loopbackUrl(url), null, String(url));
+  }
+  const flags = screenFlags({ status: status({ desk: { state: "open", url: "http://example.com:9/x" } }) });
+  assert.deepEqual([flags.desk, flags.deskUrl, flags.deskLinkMissing], ["open", null, true]);
 });
 
 test("«Показать в папке» — только когда файл на месте и серверу есть чем открыть папку", () => {
@@ -224,4 +247,11 @@ test("длина после сборки: свежий статус говори
   // статус лишь решает, использовать его или упасть на сумму сцен.
   const model = { index_key: "k1", unrendered_changes: true, duration: 14.6 };
   assert.equal(durationText({ status: status({ unrendered_changes: false }), model, project: PROJECT }), "00:15");
+});
+
+test("длина короче 10 с — с десятыми, как в шапке; секунды — те же, что у пилюли", () => {
+  const model = { index_key: "k1", unrendered_changes: false, duration: 3.5 };
+  assert.equal(durationText({ status: status(), model, project: PROJECT }), "00:03,5");
+  assert.equal(durationSeconds({ status: status(), model, project: PROJECT }), 3.5);
+  assert.equal(durationSeconds({ status: null, model: null, project: projectWith({ scenes: [] }) }), null);
 });

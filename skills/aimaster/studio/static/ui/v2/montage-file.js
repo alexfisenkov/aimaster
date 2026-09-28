@@ -4,35 +4,35 @@
 // текстом и «Скопировать путь». Путь — от папки над рабочей, ровно как на
 // экране: абсолютных путей сервер не отдаёт. Версию и адрес файла даёт
 // снимок проекта, путь — живое состояние, если оно про ту же версию.
+// «Показать в папке» помнит «летит» и отказ через перерисовку
+// (montage-action.js); у всех контролов — метки фокуса (`markControlHooks`).
 
-import { buildStatusLine, markControlHooks } from "../card-forms.js";
+import { markControlHooks } from "../card-forms.js";
 import { el } from "./dom.js";
+import { actionButton } from "./montage-action.js";
 import { postMontage, refusalText } from "./montage-api.js";
 import { downloadHref, versionRows } from "./montage-model.js";
 import { showToast } from "./toast.js";
 
-function downloadLink(href) {
+function downloadLink(project, href) {
   const link = el("a", "v2-chat-button", "Скачать");
   link.href = href;
   link.setAttribute("download", "");
-  link.dataset.hook = "am-download";
+  markControlHooks(link, `montage:${project.id}`, "download");
+  link.dataset.part = "am-download";
   return link;
 }
 
 function revealButton(project) {
-  const wrap = el("span", "am-inline am-reveal");
-  const button = el("button", "v2-chat-button", "Показать в папке");
-  button.type = "button";
-  markControlHooks(button, `montage:${project.id}`, "reveal");
-  const status = buildStatusLine();
-  button.addEventListener("click", async () => {
-    button.disabled = true;
-    status.textContent = "";
-    const result = await postMontage(project.id, "reveal");
-    button.disabled = false;
-    if (!result.ok) status.textContent = refusalText(result);
+  const wrap = actionButton({
+    slot: `reveal:${project.id}`, projectId: project.id, targetId: `montage:${project.id}`,
+    action: "reveal", label: "Показать в папке", className: "v2-chat-button", busyText: "Открываю папку…",
+    send: async () => {
+      const result = await postMontage(project.id, "reveal");
+      return result.ok ? "" : refusalText(result);
+    },
   });
-  wrap.append(button, status);
+  wrap.className = "am-inline am-reveal"; // на телефоне её прячет и CSS
   return wrap;
 }
 
@@ -55,7 +55,7 @@ async function copyPath(node, text) {
 function pathLine(project, shown) {
   const line = el("div", "am-file-path");
   const text = el("code", "am-file-path-text", shown);
-  text.dataset.hook = "am-file-path";
+  text.dataset.part = "am-file-path";
   const copy = el("button", "am-link-button", "Скопировать путь");
   copy.type = "button";
   markControlHooks(copy, `montage:${project.id}`, "copy-path");
@@ -79,7 +79,7 @@ export function renderFileCard({ project, status, flags }) {
   const shown = status?.current_version === current.id ? status?.file?.shown || null : null;
   const actions = el("div", "am-file-actions");
   const href = downloadHref(current.assetUrl);
-  if (href) actions.append(downloadLink(href));
+  if (href) actions.append(downloadLink(project, href));
   if (flags.reveal && shown) actions.append(revealButton(project));
   if (actions.childElementCount) card.append(actions);
   if (shown) card.append(pathLine(project, shown));

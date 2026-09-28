@@ -10,7 +10,7 @@ import { setActiveProject } from "../actions.js";
 import { createAppController } from "../app-controller.js";
 import { attachViewerOpenListener } from "../viewer.js";
 import { attachAgentPromptListener } from "../chat-prompt-dialog.js";
-import { renderShellV2, setViewedScreen } from "./shell.js";
+import { montageRepaintWanted, renderShellV2, setViewedScreen } from "./shell.js";
 import { createRailDrawer } from "./rail-drawer.js";
 import { attachViewerV2, repaintViewer } from "./viewer.js";
 import { refreshMontage } from "./montage-feed.js";
@@ -186,7 +186,9 @@ export function bootV2() {
   window.addEventListener("focus", controller.refreshOnReturn);
   // Экран «Сборка»: опрос монтажа принёс новое — перерисовать; вернулись на
   // вкладку — спросить сразу, не ждать 5 секунд (montage-feed.js).
-  document.addEventListener("studio:montage-updated", () => renderShellV2(shellRoot, store.getState()));
+  document.addEventListener("studio:montage-updated", (event) => {
+    if (montageRepaintWanted(store.getState(), event?.detail?.projectId)) renderShellV2(shellRoot, store.getState());
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") refreshMontage();
   });

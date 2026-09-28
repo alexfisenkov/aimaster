@@ -5,6 +5,10 @@
 // `GET /api/projects/<id>/montage` (движок, стол, файл, `index_key`) и
 // `…/montage/model` (схема, несобранные правки, ошибки движка).
 
+import { lengthClock, sceneSeconds } from "./length-text.js";
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
 const WHO = Object.freeze({ owner: "Вы", agent: "Агент", autopilot: "Автопилот" });
 
 /** Монтаж — у видео и смешанных проектов; фото собирается картинкой. */
@@ -54,34 +58,59 @@ export function downloadHref(url) {
   return `${url}${url.includes("?") ? "&" : "?"}download=1`;
 }
 
+/** Адрес стола — только `http://127.0.0.1|localhost|[::1]:<порт>/…` без
+ * логина и без пробельных знаков; иначе `null` (стол — «без ссылки»). Сервер
+ * проверяет то же (`desk_record.loopback_url`); здесь — второй замок: чужой
+ * адрес не попадёт ни в ссылку, ни во вкладку. */
+export function loopbackUrl(url) {
+  if (typeof url !== "string" || /[\u0000-\u0020\u007f]/.test(url)) return null;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const ok = parsed.protocol === "http:" && LOOPBACK_HOSTS.has(parsed.hostname) && parsed.port !== ""
+    && !parsed.username && !parsed.password;
+  return ok ? url : null;
+}
+
 function engineState(status) {
   const state = status?.engine?.state;
   return state === "installed" || state === "missing" ? state : "unknown";
 }
 
+function deskState(status, finished) {
+  const state = status?.desk?.state;
+  if (state === "open" || state === "busy") return state;
+  return finished ? "hidden" : "closed";
+}
+
 /**
  * Что можно делать на экране. Стол и «Показать в папке» — только на компьютере
- * (не телефон, не Telegram); после принятия ролика монтаж не меняется.
+ * (не телефон, не Telegram); после принятия ролика монтаж не меняется — но
+ * оставленный открытым стол можно закрыть (`deskCloseOnly`).
  *
- * `deskLinkMissing`: сервер прислал `desk: {"state": "open"}` без `url`
- * (`montage/service_screen.py:desk_view` — адрес стола не 127.0.0.1/localhost/
- * [::1], запись `.desk.json` могла устареть или её подменили). Стол открыт,
- * но перейти по нему нельзя; отдельный флаг — чтобы это не путалось с
- * обычным «закрыт» (`deskUrl` в обоих случаях `null`).
+ * `deskLinkMissing`: стол открыт, а ссылки нет — сервер прислал
+ * `desk: {"state": "open"}` без `url` (`montage/service_screen.py:desk_view` —
+ * адрес стола не 127.0.0.1/localhost/[::1], запись `.desk.json` могла
+ * устареть или её подменили) или адрес не прошёл `loopbackUrl`. Отдельный
+ * флаг — чтобы это не путалось с обычным «закрыт» (`deskUrl` в обоих
+ * случаях `null`).
  */
 export function screenFlags({ status = null, finished = false, phone = false, telegram = false } = {}) {
   const engine = engineState(status);
   const local = !phone && !telegram;
-  const deskPossible = !finished && status?.exists === true && engine === "installed";
-  const state = status?.desk?.state;
-  const desk = local && deskPossible ? (state === "open" || state === "busy" ? state : "closed") : "hidden";
-  const deskUrl = desk === "open" && typeof status?.desk?.url === "string" ? status.desk.url : null;
+  const installed = status?.exists === true && engine === "installed";
+  const desk = local && installed ? deskState(status, finished) : "hidden";
+  const deskUrl = desk === "open" && !finished ? loopbackUrl(status?.desk?.url) : null;
   return {
     engine,
     desk,
     deskUrl,
-    deskLinkMissing: desk === "open" && deskUrl === null,
-    deskHint: !local && deskPossible,
+    deskLinkMissing: desk === "open" && !finished && deskUrl === null,
+    deskCloseOnly: desk === "open" && finished,
+    deskHint: !local && installed && !finished,
     reveal: local && status?.reveal === true && typeof status?.file?.shown === "string",
     restore: !finished,
     build: !finished,
@@ -172,24 +201,25 @@ export function orientation(canvas) {
   return width > height ? "landscape" : "square";
 }
 
-function mmss(seconds) {
-  const total = Math.max(0, Math.round(seconds));
-  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-}
-
-/** Длина текущей версии: из схемы, когда несобранных правок нет; иначе — по сценам.
+/** Длина текущей версии в секундах: из схемы, когда несобранных правок нет;
+ * иначе — по сценам; ничего нет — null. Её же показывает шапка на экране
+ * «Сборка» (shell.js), чтобы шапка и пилюля превью не расходились.
  * «Несобранных правок нет» решаем как в `notices` — по дешёвому
  * `status.unrendered_changes`, когда он известен (модель могла отстать от
  * версии: сборка не трогает index.html), иначе по модели. `model.duration`
  * всё равно берём только у модели с тем же `index_key` — она зависит от
  * содержимого index.html, а не от того, какая версия текущая. */
-export function durationText({ status = null, model = null, project = null } = {}) {
+export function durationSeconds({ status = null, model = null, project = null } = {}) {
   const fresh = Boolean(model && status && model.index_key === status.index_key);
   const unrendered = typeof status?.unrendered_changes === "boolean"
     ? status.unrendered_changes
     : (fresh ? model.unrendered_changes : null);
   const settled = fresh && unrendered === false;
-  if (settled && Number(model.duration) > 0) return mmss(Number(model.duration));
-  const ends = (project?.scenes || []).map((scene) => scene?.end_ms).filter(Number.isFinite);
-  return ends.length ? mmss(Math.max(...ends) / 1000) : "";
+  if (settled && Number(model.duration) > 0) return Number(model.duration);
+  return sceneSeconds(project);
+}
+
+/** Та же длина для пилюли превью: «00:15», короче 10 с — «00:03,5». */
+export function durationText(options = {}) {
+  return lengthClock(durationSeconds(options));
 }

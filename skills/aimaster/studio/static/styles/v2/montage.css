@@ -5,7 +5,8 @@
  * пилюли, токены tokens-v2.css; цветов мимо токенов нет (кроме #fff на
  * тёмном блоке). Положение блоков схемы — переменные --am-at/--am-len, их
  * ставит montage-layers.js через CSSOM (атрибут style CSP запрещает).
- * Телефон — @media (max-width: 759px), цели нажатия ≥ 44px.
+ * Телефон — @media (max-width: 759px), цели нажатия ≥ 44px. Текст — не
+ * меньше 4,5:1 к своему фону (проверяет montage-dom.test.mjs по токенам).
  */
 
 a.v2-primary, a.v2-chat-button { text-decoration: none; }
@@ -59,8 +60,9 @@ a.v2-primary, a.v2-chat-button { text-decoration: none; }
 
 .am-main-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .am-desk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-.am-note { margin: 0; font-size: var(--v2-fs-13); color: var(--v2-muted); }
-.am-desk-nolink { flex: 1 1 100%; color: var(--v2-warn-ink); }
+/* Колонка кнопок лежит на фоне страницы (--v2-bg): --v2-muted на нём — 4,2:1. */
+.am-note { margin: 0; font-size: var(--v2-fs-13); color: var(--v2-ink-2); }
+.am-desk-nolink, .am-desk-left { flex: 1 1 100%; color: var(--v2-warn-ink); }
 .am-engine {
   align-self: stretch;
   padding: 14px 16px;
@@ -113,7 +115,7 @@ a.v2-primary, a.v2-chat-button { text-decoration: none; }
   padding: 1px 8px;
   border-radius: var(--v2-r-pill);
   background: var(--v2-soft);
-  color: var(--v2-muted);
+  color: var(--v2-ink-2);
   font-size: var(--v2-fs-11);
   font-weight: 600;
   white-space: nowrap;
@@ -123,7 +125,9 @@ a.v2-primary, a.v2-chat-button { text-decoration: none; }
 .am-track { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 10px; }
 .am-track-label { font-size: var(--v2-fs-12); color: var(--v2-muted); }
 .am-lane { position: relative; height: 30px; border-radius: var(--v2-r-sm); background: var(--v2-soft); }
-.am-lane-empty { position: absolute; inset: 0; display: grid; place-items: center; font-size: var(--v2-fs-11); color: var(--v2-none); }
+/* Пустая дорожка — белая с пунктиром: «пусто» цветом --v2-muted читается (4,6:1). */
+.am-lane[data-empty="true"] { box-sizing: border-box; border: 1px dashed var(--v2-dashed); background: var(--v2-surface); }
+.am-lane-empty { position: absolute; inset: 0; display: grid; place-items: center; font-size: var(--v2-fs-11); color: var(--v2-muted); }
 .am-block {
   position: absolute;
   top: 3px;

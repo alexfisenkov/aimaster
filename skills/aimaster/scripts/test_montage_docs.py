@@ -184,7 +184,9 @@ class DashboardCanonTests(DocsTestCase):
         for text in ("## Dashboard screen", "«Собрать ролик → чат»", "«Сделать текущей»",
                      "«Установить → чат»", "«Обновить клипы → чат»", "«Скачать»",
                      "«Показать в папке»", "«Скопировать путь»", "«Принять ролик»", "opener_url",
-                     "60 minutes", "`montage render --by owner`", "«обновляется…»"):
+                     "60 minutes", "`montage render --by owner`", "«обновляется…»", "«не обновилась»",
+                     "either the montage status poll or the scheme read",
+                     "once the video is approved, its asking no longer counts"):
             self.assertMentions(text, self.canon)
 
     def test_readme_is_honest_about_studio_analytics(self):

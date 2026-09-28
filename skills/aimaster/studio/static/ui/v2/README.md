@@ -48,10 +48,13 @@
   `installMontage` («Установить → чат»), `updateMontageClips`.
 - `montage-model.js` — экран монтажа: `montageApplies`, `montageScreen`,
   `versionLabel`, `whenText`, `versionRows(project)`, `downloadHref(url)`,
+  `loopbackUrl(url)` (адрес стола — только 127.0.0.1/localhost/[::1]),
   `screenFlags({status, finished, phone, telegram})` (в том числе
-  `deskLinkMissing` — стол открыт, ссылки нет),
-  `notices({status, model, feedError})`, `orientation(canvas)`,
-  `durationText({status, model, project})`.
+  `deskLinkMissing` — стол открыт, ссылки нет; `deskCloseOnly` — ролик
+  принят, а стол открыт), `notices({status, model, feedError})`,
+  `orientation(canvas)`, `durationSeconds`/`durationText({status, model, project})`.
+- `length-text.js` — `lengthClock(seconds)` («00:03,5»), `lengthWords(seconds)`
+  («3,5 с»), `sceneSeconds(project)`: одна длина на шапку и пилюлю превью.
 - `montage-layers-model.js` — схема слоёв: `fmtTime`, `fmtLen`, `volumeText`,
   `sceneNames`, `clipDetail`, `modelDuration(model)`, `layerRows(model, project)`.
 - `montage-api.js` — `montageUrl`, `getMontage(projectId, part, fetch, signal)`,
@@ -116,11 +119,20 @@
   `historyBlock` (раскрытая история не сворачивается перерисовкой):
   части «Сборки» для фото и монтажа.
 - `montage-notices.js` · `montage-file.js` · `montage-desk.js` ·
-  `montage-versions.js` · `montage-layers.js` — плашки; файл («Скачать»,
-  «Показать в папке», путь и «Скопировать путь»); главные кнопки и
-  монтажный стол; версии с «Сделать текущей»; схема слоёв с пометкой
+  `montage-versions.js` · `montage-layers.js` — плашки (кнопка сборки у них
+  не дублируется — она одна, главная); файл («Скачать», «Показать в папке»,
+  путь и «Скопировать путь»); главные кнопки и монтажный стол; версии с
+  «Сделать текущей» (листалка помнит прокрутку); схема слоёв с пометкой
   «обновляется…». Стол и «Показать в папке» — только на компьютере.
-  Стили — `styles/v2/montage.css` (подключает `boot.js`).
+  У всех кнопок и ссылок — метки фокуса `markControlHooks` (`data-hook=
+  "card-control"`), поэтому перерисовка по опросу фокус не теряет; прежние
+  имена (`am-block`, `am-download`, `am-desk-go`, `am-file-path`,
+  `v2-final-slot`) — в `data-part`. Стили — `styles/v2/montage.css`
+  (подключает `boot.js`).
+- `montage-action.js` — `actionButton({slot, projectId, targetId, action, …,
+  send, after})`: кнопка прямого действия («Открыть/Закрыть стол»,
+  «Показать в папке», «Сделать текущей»), чьё «летит» и отказ переживают
+  перерисовку.
 - `screen-scenario.js` · `screen-video.js` · `screen-audio.js` ·
   `screen-assembly.js` — `render*Screen(root, {state, screen})`, внизу каждого
   `renderFooter(snapshot, {screen})`.
@@ -172,7 +184,8 @@
   показываются никогда. Решение предлагается только на стадии, которой
   принадлежит коллекция результата (`studio/decision_cards.STAGE_COLLECTIONS`).
 - `shell.js` — `renderShellV2(root, state)`, `setViewedScreen`, `currentScreen`,
-  `metaLine`. Рисует шапку (мета, название, пилюля, «💬 Агент», степпер) и
+  `metaLine(project, {seconds})` (на «Сборке» с монтажом длина — как у
+  пилюли превью), `montageRepaintWanted(state, projectId)`. Рисует шапку (мета, название, пилюля, «💬 Агент», степпер) и
   **заголовок экрана** (kicker, H1, подсказка) — экраны свои заголовки не
   рисуют; справа от заголовка пустой `[data-hook="v2-screen-aside"]` для
   управления экрана. Стили каркаса — `styles/v2/shell.css`.
@@ -204,7 +217,8 @@
   слой звука — «Звук · История», сборка — «Ролик · История».
 - `studio:montage-updated` · `{projectId}` — опрос монтажа принёс новое
   (или кнопка экрана закончила запрос, пока экран перерисовали —
-  `repaintMontage`); слушает `boot.js` и перерисовывает оболочку.
+  `repaintMontage`); слушает `boot.js` и перерисовывает оболочку, только
+  если открыта «Сборка» этого проекта (`montageRepaintWanted`).
 
 ## Что делать волне 2
 
@@ -242,3 +256,5 @@ node --experimental-vm-modules --no-warnings skills/aimaster/scripts/check_stati
 
 `snapshot.fixture.mjs` — срез живого проекта владельца (revision 62): менять
 его руками не надо, а `projectWith({...})` даёт копию с правками для теста.
+`montage-fake-dom.mjs` — маленький DOM для `montage-screen.test.mjs`:
+блоки «Сборки» рисуются в node и проверяются по меткам, тексту и событиям.

@@ -37,11 +37,12 @@ export function createMontageFeed({
   let lastStatus = null;           // последний удачный статус
   let statusError = null;          // отказ последнего статуса
   let shown = null;                // последняя удачная схема: {model, key — для какого ключа спрошена}
-  let staleTicks = 0;              // опросов статуса подряд, пока схема на экране не свежая
+  let staleTicks = 0;              // опросов по таймеру подряд, пока схема на экране не свежая
 
   /** Пересобрать entry и, если он изменился, оповестить. `tick` — публикует
-   * опрос статуса (он двигает счёт отставшей схемы). Сбой в `notify` не
-   * роняет опрос и не оставляет `refresh()` без ответа. */
+   * опрос по таймеру (только он двигает счёт отставшей схемы: `refresh()`
+   * после действия или возврата на вкладку зовут и дважды подряд). Сбой в
+   * `notify` не роняет опрос и не оставляет `refresh()` без ответа. */
   function publish(id, tick = false) {
     const facts = {
       status: lastStatus, statusError, model: shown?.model, shownKey: shown?.key,
@@ -76,8 +77,9 @@ export function createMontageFeed({
   }
 
   /** Одна попытка статуса: публикуется сразу (`onStatus` отпускает того,
-   * кто ждал именно её — `refresh()`), схема — следом и отдельно. */
-  async function statusAttempt(id, myGeneration, genSignal, onStatus) {
+   * кто ждал именно её — `refresh()`), схема — следом и отдельно. `timed` —
+   * попытка по таймеру (`tick()`), а не `refresh()`. */
+  async function statusAttempt(id, myGeneration, genSignal, onStatus, timed) {
     const status = await requestWithTimeout(load, id, "", { ms: statusTimeoutMs, genSignal });
     if (generation !== myGeneration) {
       onStatus?.();
@@ -88,19 +90,19 @@ export function createMontageFeed({
     const decision = status.ok ? tracker.onStatus(status.body) : "idle";
     // Схему — раньше публикации: `onStatus` уже записал её в полёт.
     if (decision === "start") startModel(id, myGeneration, genSignal);
-    publish(id, true);
+    publish(id, timed);
     onStatus?.();
   }
 
-  async function runStatus(id, myGeneration, genSignal, onStatus) {
+  async function runStatus(id, myGeneration, genSignal, onStatus, timed) {
     busyGeneration = myGeneration;
     try {
-      await statusAttempt(id, myGeneration, genSignal, onStatus);
-      while (queued && generation === myGeneration) {
+      await statusAttempt(id, myGeneration, genSignal, onStatus, timed);
+      while (queued && generation === myGeneration) { // добор — это refresh(), не таймер
         queued = false;
         const waiters = queuedWaiters;
         queuedWaiters = [];
-        await statusAttempt(id, myGeneration, genSignal, () => waiters.forEach((resolve) => resolve()));
+        await statusAttempt(id, myGeneration, genSignal, () => waiters.forEach((resolve) => resolve()), false);
       }
     } finally {
       if (busyGeneration === myGeneration) busyGeneration = null;
@@ -131,7 +133,7 @@ export function createMontageFeed({
     /** Опрос по таймеру: статус этого поколения уже летит — пропускаем. */
     tick() {
       if (!projectId || busyGeneration === generation) return Promise.resolve();
-      return runStatus(projectId, generation, generationController?.signal);
+      return runStatus(projectId, generation, generationController?.signal, null, true);
     },
     /** Явный запрос (после действия или возврата на вкладку): резолвится по
      * СВОЕМУ статусу, схему не ждёт; статус летит — досдаём один раз следом. */
@@ -144,7 +146,7 @@ export function createMontageFeed({
       }
       const id = projectId;
       const signal = generationController?.signal;
-      return new Promise((resolve) => { runStatus(id, myGeneration, signal, resolve); });
+      return new Promise((resolve) => { runStatus(id, myGeneration, signal, resolve, false); });
     },
     current(id) {
       return id && id === projectId ? entry : null;

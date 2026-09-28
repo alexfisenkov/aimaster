@@ -2,54 +2,36 @@
 // изменилось. «Сделать текущей» — прямое действие дашборда (POST
 // …/montage/restore): локально, бесплатно, обратимо — версии не удаляются.
 // «Принять» — главная кнопка подвала «Принять ролик» (решение `approve`
-// стадии «Сборка»): она принимает текущую версию.
+// стадии «Сборка»): она принимает текущую версию. Экран перерисовывается по
+// каждому ответу опроса: куда пролистана листалка, помнит `scrolled` по
+// проекту; что летит и чем кончилось — montage-action.js.
 
-import { buildStatusLine, markControlHooks, noteCardFocusPending } from "../card-forms.js";
 import { badge } from "./board-bits.js";
 import { el } from "./dom.js";
+import { actionButton } from "./montage-action.js";
 import { postMontage, refusalText } from "./montage-api.js";
-import { repaintMontage } from "./montage-feed.js";
 import { versionRows } from "./montage-model.js";
 import { showToast } from "./toast.js";
 
-// «проект:версия» — перерисовка экрана посреди запроса не вернёт кнопку
-// раньше ответа и не потеряет текст отказа (он живёт до следующего нажатия).
-const pending = new Set();
-const refusals = new Map();
+const scrolled = new Map(); // проект → scrollLeft листалки
 
 function restoreButton(project, revision, row, onChanged) {
   const key = `${project.id}:${row.id}`;
-  const targetId = `montage:${key}`;
   const wrap = el("div", "am-version-actions");
-  const busy = pending.has(key);
-  const button = el("button", "v2-chat-button", busy ? "Отправляется…" : "Сделать текущей");
-  button.type = "button";
-  button.disabled = busy;
-  markControlHooks(button, targetId, "restore");
-  const status = buildStatusLine();
-  status.textContent = busy ? "" : refusals.get(key) || "";
-  button.addEventListener("click", async () => {
-    noteCardFocusPending(targetId, "restore");
-    pending.add(key);
-    refusals.delete(key);
-    button.disabled = true;
-    button.textContent = "Отправляется…";
-    status.textContent = "";
-    const result = await postMontage(project.id, "restore", { version: row.id, expected_revision: revision });
-    pending.delete(key);
-    button.disabled = false;
-    button.textContent = "Сделать текущей";
-    if (result.ok) {
-      showToast(`Текущая версия — ${row.label}`);
-      onChanged(project.id);
-      return;
-    }
-    refusals.set(key, refusalText(result));
-    status.textContent = refusals.get(key);
-    if (result.code === "revision_conflict") onChanged(project.id);
-    else if (!wrap.isConnected) repaintMontage(project.id); // экран перерисовали, пока ждали
-  });
-  wrap.append(button, status);
+  wrap.append(actionButton({
+    slot: `restore:${key}`, projectId: project.id, targetId: `montage:${key}`, action: "restore",
+    label: "Сделать текущей", busyLabel: "Отправляется…", className: "v2-chat-button",
+    send: async () => {
+      const result = await postMontage(project.id, "restore", { version: row.id, expected_revision: revision });
+      if (result.ok) {
+        showToast(`Текущая версия — ${row.label}`);
+        onChanged(project.id);
+        return "";
+      }
+      if (result.code === "revision_conflict") onChanged(project.id);
+      return refusalText(result);
+    },
+  }));
   return wrap;
 }
 
@@ -66,6 +48,14 @@ function versionItem(project, revision, row, flags, onChanged) {
   return item;
 }
 
+/** Листалка встаёт на прежнее место, когда её уже вставили в страницу:
+ * до этого у неё нет ширины и `scrollLeft` не ставится. */
+function keepScroll(projectId, list) {
+  list.addEventListener("scroll", () => scrolled.set(projectId, list.scrollLeft), { passive: true });
+  const left = scrolled.get(projectId);
+  if (left) queueMicrotask(() => { list.scrollLeft = left; });
+}
+
 export function renderVersions({ project, revision, flags, onChanged }) {
   const rows = versionRows(project);
   const box = el("section", "v2-card am-versions");
@@ -80,6 +70,7 @@ export function renderVersions({ project, revision, flags, onChanged }) {
   const list = el("ol", "am-version-list");
   list.setAttribute("aria-label", "Версии ролика, новые первыми");
   for (const row of rows) list.append(versionItem(project, revision, row, flags, onChanged));
+  keepScroll(project.id, list);
   box.append(list);
   if (flags.restore) box.append(el("p", "am-versions-hint", "«Принять ролик» внизу принимает текущую версию."));
   return box;

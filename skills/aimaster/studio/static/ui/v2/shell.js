@@ -13,7 +13,10 @@
 import { requestAgentPrompt } from "../chat-prompt-dialog.js";
 import { projectRef } from "./chat-prompts.js";
 import { el, restoreCardFocus, cardFocusNote } from "./dom.js";
-import { hideMontage } from "./montage-feed.js";
+import { lengthWords, sceneSeconds } from "./length-text.js";
+import { readEntry } from "./montage-entry.js";
+import { hideMontage, montageState } from "./montage-feed.js";
+import { durationSeconds, montageScreen } from "./montage-model.js";
 import { renderPath } from "./path-nav.js";
 import { renderAssemblyScreen } from "./screen-assembly.js";
 import { renderAudioScreen } from "./screen-audio.js";
@@ -58,14 +61,15 @@ function scenesWord(count) {
   return `${count} сцен`;
 }
 
-/** «видео · кадр за кадром · 30 с · 6 сцен» — строка над названием. */
-export function metaLine(project) {
+/** «видео · кадр за кадром · 30 с · 6 сцен» — строка над названием. Длина —
+ * по сценам, а на экране «Сборка» с монтажом — та же, что на пилюле превью
+ * (`seconds`), чтобы шапка и пилюля не расходились. */
+export function metaLine(project, { seconds = sceneSeconds(project) } = {}) {
   const scenes = Array.isArray(project?.scenes) ? project.scenes : [];
-  const endMs = scenes.at(-1)?.end_ms;
   return [
     TYPE_WORDS[project?.type] || "",
     MODE_WORDS[project?.gen_mode] || "",
-    Number.isFinite(endMs) ? `${Math.round(endMs / 1000)} с` : "",
+    lengthWords(seconds),
     scenes.length ? scenesWord(scenes.length) : "",
     project?.mode === "autopilot" ? "автопилот: тратит кредиты без подтверждения" : "",
   ].filter(Boolean).join(" · ");
@@ -102,11 +106,25 @@ function agentButton(project, revision) {
   return agent;
 }
 
-function topbar(snapshot) {
+/** Длина для шапки: на «Сборке» с монтажом — как у пилюли превью. */
+function shownSeconds(project, screen) {
+  if (screen !== "assembly" || !montageScreen(project)) return sceneSeconds(project);
+  const { status, model } = readEntry(montageState(project.id));
+  return durationSeconds({ status, model, project });
+}
+
+/** Перерисовать по `studio:montage-updated` — только открытую «Сборку» того
+ * проекта, про который пришло: опрос другого проекта или экрана не трогает. */
+export function montageRepaintWanted(state, projectId) {
+  const project = state?.snapshot?.active_project;
+  return Boolean(project) && project.id === projectId && currentScreen(project) === "assembly";
+}
+
+function topbar(snapshot, screen) {
   const project = snapshot.active_project;
   const bar = el("div", "v2-topbar");
   const identity = el("div", "v2-topbar-id");
-  const meta = metaLine(project);
+  const meta = metaLine(project, { seconds: shownSeconds(project, screen) });
   if (meta) identity.append(el("p", "v2-topbar-meta", meta));
   identity.append(el("p", "v2-topbar-title", project?.title || project?.id || "Проект"));
   bar.append(identity, statusPill(snapshot), agentButton(project, snapshot.revision));
@@ -189,7 +207,7 @@ export function renderShellV2(root, state) {
     const focusKey = topbarFocusKey(topbarContent);
     topbarContent.textContent = "";
     if (project) {
-      topbarContent.append(topbar(snapshot), renderPath(project, { current: screen }));
+      topbarContent.append(topbar(snapshot, screen), renderPath(project, { current: screen }));
       restoreTopbarFocus(topbarContent, focusKey);
     }
   }

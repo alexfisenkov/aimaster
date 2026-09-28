@@ -288,7 +288,8 @@ titles added and why, whether the engine was installed). No questions.
 The «Сборка» step of the dashboard shows the montage of a video or mixed
 project to the person; you read the same facts with `montage status`.
 
-- The preview plays the current version. «Скачать» saves its MP4 as
+- The preview plays the current version; its length (under 10 s with
+  tenths, «00:03,5») is the one the header shows («3,5 с»). «Скачать» saves its MP4 as
   «<project title>-vNNN.mp4»; «Показать в папке» opens Finder, Explorer or the
   Linux file manager at it; the path is shown from above the workspace folder,
   and «Скопировать путь» copies exactly that short path.
@@ -298,9 +299,14 @@ project to the person; you read the same facts with `montage status`.
   version (`stage approve`, as before).
 - The layer scheme is read-only: the six tracks with clips by time; a tap
   shows the clip and the piece of its source. «обновляется…» over it means
-  the engine is still reading the montage after an edit; «не обновилась» —
-  the reading failed, the reason is in a notice above. «Есть несобранные
-  правки» means `unrendered_changes`.
+  the scheme on screen is older than the montage for more than one poll
+  (5 s): the engine is still reading it after an edit or a build.
+  «не обновилась» means the same lag while the dashboard's last read failed —
+  either the montage status poll or the scheme read; the reason is in a
+  notice above. When the very first read fails, the scheme card says it
+  could not be read. «Есть несобранные правки» means `unrendered_changes`;
+  that notice only states the fact — the one «Собрать ролик → чат» is the
+  main button next to the file.
 - «Открыть монтажный стол» opens Studio in a new tab through `opener_url`;
   «Закрыть стол» stops it. A desk that is open but came back without `url`
   (Montage desk) is shown with «закройте стол и откройте заново». On a phone
@@ -308,8 +314,10 @@ project to the person; you read the same facts with `montage status`.
 - Chat buttons send ready prompts: «Собрать ролик → чат» (Guided flow, step
   3), «Установить → чат» (Engine check — the person has already said «да»)
   and «Обновить клипы → чат» (Keeping the draft current). After «Принять
-  ролик» the screen keeps its notices but has no chat buttons, no desk and
-  no «Сделать текущей».
+  ролик» the screen keeps its notices but has no chat buttons, no
+  «Сделать текущей» and no «Открыть монтажный стол»; a desk left open shows
+  only «Закрыть стол», and the screen's polls no longer keep it alive, so it
+  also stops after the 60 idle minutes (Montage desk).
 
 ## Retelling a diff
 
@@ -336,8 +344,9 @@ commands. Before your own edits while the desk may be open, read
 concurrent mouse edit then refuses your edit instead of being overwritten.
 `montage close` stops Studio and its browser. A desk opened from the
 dashboard stops by itself after 60 minutes in which neither the «Сборка»
-screen asked about it (it asks every 5 s while its tab is visible) nor
-`current/index.html` changed, and when the dashboard stops. A desk opened
+screen asked about it (it asks every 5 s while its tab is visible; once the
+video is approved, its asking no longer counts) nor `current/index.html`
+changed, and when the dashboard stops. A desk opened
 with `montage open` stops only with `montage close` — until the dashboard
 opens the same desk; from then on the dashboard rule applies to it too.
 `montage status` → `desk.state` shows `open` or `closed`. Extra
