@@ -22,7 +22,10 @@ from smoke_kit import SCRIPTS, decode
 from studio.montage.proc_tree import group_kwargs, kill_tree
 
 MJS = SCRIPTS / "check_assembly_screen.mjs"
-PHASE_BUDGET = 180.0  # секунд на фазу — у узла и у оркестратора
+# Секунд на фазу — у узла и у оркестратора; обычная фаза идёт 1–35 с. Худший
+# случай всех четырёх запусков (6 фаз): 6 × 150 + 4 × 60 = 1140 с — под него
+# и срок шага в CI (timeout-minutes, .github/workflows/ci.yml).
+PHASE_BUDGET = 150.0
 LAUNCH_MARGIN = 60.0
 
 

@@ -13,12 +13,14 @@ ffmpeg) наследуют задание, а когда процесс дашб
 Столы, открытые командой агента (`montage open`), в задание не входят: CLI
 выходит, а стол остаётся до `montage close` (канон references/montage.md).
 Задание создаётся при первом столе; не вышло (политика системы, старая
-Windows) — стол всё равно открывается, просто без этой страховки. Между
+Windows) — стол всё равно открывается, просто без этой страховки, а в
+stderr дашборда уходит одна строка по-русски: мягко, но видно. Между
 запуском процесса и включением в задание — доли миллисекунды: Node к этому
 времени ещё не успевает запустить своих детей."""
 
 from __future__ import annotations
 
+import sys
 import threading
 from functools import partial
 
@@ -26,9 +28,20 @@ from ..platform_compat import IS_WINDOWS
 from .desk import StudioDesk
 
 
+NO_JOB = ("монтажный стол (процесс {pid}) открыт без задания Windows ({error}): если процесс "
+          "дашборда убьют, стол останется — закройте его montage close")
+
+
+def _to_stderr(line: str) -> None:
+    try:
+        print(line, file=sys.stderr, flush=True)
+    except (OSError, ValueError):
+        pass  # stderr закрыт — стол всё равно нужен
+
+
 class DeskJob:
-    def __init__(self, *, windows: bool = IS_WINDOWS, api=None):
-        self.windows, self._api = windows, api
+    def __init__(self, *, windows: bool = IS_WINDOWS, api=None, warn=_to_stderr):
+        self.windows, self._api, self.warn = windows, api, warn
         self._job = None
         self._lock = threading.Lock()
 
@@ -49,7 +62,8 @@ class DeskJob:
                 if self._job is None:
                     self._job = api.kill_on_close_job()
                 api.assign(self._job, process.pid)
-        except OSError:
+        except OSError as error:
+            self.warn(NO_JOB.format(pid=process.pid, error=error))
             return False
         return True
 

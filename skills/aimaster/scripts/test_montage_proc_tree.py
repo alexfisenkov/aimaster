@@ -81,12 +81,22 @@ class PublicDescendantsTests(unittest.TestCase):
         # 400 запущен раньше 100: его родитель давно умер, а номер 100 достался нашему
         pairs = [(100, 1), (200, 100), (300, 200), (400, 100), (500, 400)]
         started = {100: "win:50", 200: "win:60", 300: "win:70", 400: "win:10", 500: "win:80"}.get
-        self.assertEqual(set(proc_tree.descendants(100, pairs=pairs, windows=True, started=started)),
-                         {200, 300})
+        self.assertEqual(set(proc_tree.descendants(100, snapshot=lambda: pairs, windows=True,
+                                                   started=started)), {200, 300})
 
-    def test_windows_keeps_a_child_whose_start_time_cannot_be_read(self):
-        started = {100: "win:50"}.get  # время ребёнка не прочиталось — решит проверка вызывающего
-        self.assertEqual(proc_tree.descendants(100, pairs=[(200, 100)], windows=True, started=started), [200])
+    def test_windows_keeps_an_unverified_child_but_not_its_subtree(self):
+        pairs = [(100, 1), (200, 100), (300, 200), (400, 300)]
+        started = {100: "win:50", 300: "win:70", 400: "win:80"}.get  # время 200 не прочиталось
+        self.assertEqual(proc_tree.descendants(100, snapshot=lambda: pairs, windows=True, started=started),
+                         [200])
+
+    def test_windows_drops_pairs_that_changed_before_the_second_snapshot(self):
+        # между снимком и чтением времени 300 ушёл, его номер достался процессу чужого 999
+        snapshots = iter([[(100, 1), (200, 100), (300, 200), (310, 300)],
+                          [(100, 1), (200, 100), (300, 999), (310, 300)]])
+        started = {100: "win:50", 200: "win:60", 300: "win:90", 310: "win:95"}.get
+        self.assertEqual(proc_tree.descendants(100, snapshot=lambda: next(snapshots), windows=True,
+                                               started=started), [200])
 
     def test_real_grandchild_is_found_on_this_system(self):
         code = ("import subprocess, sys, time; c = subprocess.Popen([sys.executable, '-c', "

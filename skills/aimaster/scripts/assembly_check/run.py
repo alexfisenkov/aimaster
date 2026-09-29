@@ -18,7 +18,7 @@ from smoke_kit import SmokeError
 from studio.montage import engine
 from . import project
 from .browser import run_phases
-from .dashboard import STOP_CODES, Dashboard, DashboardError
+from .dashboard import STOP_CODES, Dashboard, DashboardError, code_text
 from .engine_copy import fingerprint
 from .processes import Processes
 from .stages import main_flow
@@ -74,7 +74,8 @@ class Run:
 
     def stop(self, board: Dashboard) -> int:
         code = board.stop()
-        self.report.add(f"dashboard.stop.{board.name}", code in STOP_CODES, f"дашборд остановлен, код {code}")
+        self.report.add(f"dashboard.stop.{board.name}", code in STOP_CODES,
+                        f"дашборд остановлен, код {code_text(code)}")
         return code
 
     def phases(self, board: Dashboard, *names: str) -> dict:

@@ -29,6 +29,12 @@ class DashboardError(Exception):
     pass
 
 
+def code_text(code) -> str:
+    """Код выхода для отчёта: коды Windows (NTSTATUS, 0xC000013A) — шестнадцатеричными."""
+
+    return f"{code:#x}" if isinstance(code, int) and code > 255 else str(code)
+
+
 def port_refused(port: int, *, wait: float = 0.0, host: str = "127.0.0.1") -> bool:
     """Порт не принимает соединения (сразу или в пределах `wait` секунд)."""
 

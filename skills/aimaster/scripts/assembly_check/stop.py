@@ -28,7 +28,7 @@ from pathlib import Path
 
 from smoke_kit import cli
 from . import project
-from .dashboard import STOP_CODES, DashboardError, port_refused
+from .dashboard import STOP_CODES, DashboardError, code_text, port_refused
 from .engine_copy import release
 
 DESK_GONE_WAIT = 20.0
@@ -66,8 +66,7 @@ def stop_and_verify(run, board) -> None:
     report.add("exit.desk_record", bool(desk) and desk["pid"] in processes.known,
                f"стол открыт дашбордом: pid {desk['pid']}, порт {desk['port']}" if desk else "записи стола нет")
     code = board.stop()
-    report.add("exit.dashboard_stopped", code in STOP_CODES, f"дашборд остановлен, код {code:#x}"
-               if code and code > 255 else f"дашборд остановлен, код {code}")
+    report.add("exit.dashboard_stopped", code in STOP_CODES, f"дашборд остановлен, код {code_text(code)}")
     if desk:
         desk_gone(run, desk["port"])
     left = processes.wait_gone(GONE_WAIT)

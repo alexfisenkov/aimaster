@@ -12,10 +12,11 @@
 // stdout на каждую законченную фазу: {phase, checks: [{id, ok, detail,
 // required?}], shots, data}. Упавшая фаза — проверка «<фаза>.crash», дальше
 // идут следующие; не уложилась в срок — «<фаза>.timeout», и узел выходит
-// (фаза держит страницу — следующим её не отдать). Браузер закрывается всегда.
+// (фаза держит страницу — следующим её не отдать). Браузер закрывается всегда:
+// не закрылся за 10 с — процесс браузера останавливается, узел всё равно выходит.
 
 import fs from "node:fs";
-import { Checks, launch } from "./assembly_check/lib.mjs";
+import { Checks, launch, sleep } from "./assembly_check/lib.mjs";
 import { after } from "./assembly_check/phase_after.mjs";
 import { desk } from "./assembly_check/phase_desk.mjs";
 import { desktop } from "./assembly_check/phase_desktop.mjs";
@@ -24,6 +25,7 @@ import { noengine } from "./assembly_check/phase_noengine.mjs";
 import { PHONE, phone } from "./assembly_check/phase_phone.mjs";
 
 const DESKTOP = { width: 1400, height: 900 };
+const CLOSE_WAIT = 10000;
 const PHASES = { desktop, desk, after, noengine, phone, exit };
 
 /** Страница дашборда под нужную ширину; ошибки её консоли — в текущую фазу. */
@@ -63,8 +65,8 @@ async function runPhase(name, cfg, session) {
   try {
     await pageFor(session, name === "phone" ? PHONE : DESKTOP);
     if (!PHASES[name]) throw new Error(`нет такой фазы: ${name}`);
-    outcome = await within(cfg.phaseBudgetMs || 180000, PHASES[name](c, cfg, session));
-    if (outcome === "timeout") c.add("timeout", false, `фаза не уложилась в ${(cfg.phaseBudgetMs || 180000) / 1000} с`);
+    outcome = await within(cfg.phaseBudgetMs || 150000, PHASES[name](c, cfg, session));
+    if (outcome === "timeout") c.add("timeout", false, `фаза не уложилась в ${(cfg.phaseBudgetMs || 150000) / 1000} с`);
   } catch (error) {
     c.add("crash", false, error?.stack || String(error));
     if (session.page) await c.shot(session.page, "crash");
@@ -87,7 +89,11 @@ async function main() {
       }
     }
   } finally {
-    await browser.close().catch(() => null);
+    // Зависшая фаза может подвесить и закрытие браузера: ждём его не дольше
+    // CLOSE_WAIT, потом останавливаем процесс браузера сами и выходим.
+    const closed = await Promise.race([browser.close().then(() => true, () => false),
+      sleep(CLOSE_WAIT).then(() => false)]);
+    if (!closed) browser.process()?.kill("SIGKILL");
   }
 }
 

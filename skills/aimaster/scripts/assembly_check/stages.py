@@ -29,14 +29,12 @@ def prepare(run) -> None:
                    f"montage draft → render: {built.get('version')}, {built.get('duration')} с")
 
 
-
 def owner_render(run) -> None:
     done = project.owner_render(run.env, run.workspace)
     changes = done["diff"].get("changes") or []
     run.report.add("cli.diff", bool(changes), "; ".join(changes) or "montage diff: изменений нет")
     version = done["render"].get("version")
     run.report.add("cli.v002", version == "v002", f"montage render --by owner → {version}")
-
 
 
 def with_engine(run) -> None:
@@ -52,18 +50,15 @@ def with_engine(run) -> None:
                        + ("закрыт" if shut else "принимает соединения" if port else "неизвестен"))
 
 
-
 def without_engine(run) -> None:
     with run.dashboard("no-engine", project.empty_dir(run.root / "движка нет")) as board:
         run.phases(board, "noengine")
-
 
 
 def phone_and_exit(run) -> None:
     with run.dashboard("exit", run.own.prefix) as board:
         run.phases(board, "phone", "exit")
         stop_and_verify(run, board)
-
 
 
 def main_flow(run) -> None:

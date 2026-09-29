@@ -62,7 +62,12 @@ def _ps_pairs(run) -> list[tuple[int, int]]:
     return pairs
 
 
+LEAF = "leaf"  # `keep` у `_walk`: процесс взять, а в его поддерево не спускаться
+
+
 def _walk(pairs, root_pid: int, keep=lambda parent, child: True) -> list[int]:
+    """Потомки по парам (pid, pid родителя); родитель в ответе — раньше детей."""
+
     children_of: dict[int, list[int]] = {}
     for pid, ppid in pairs:
         if pid != ppid:
@@ -73,10 +78,12 @@ def _walk(pairs, root_pid: int, keep=lambda parent, child: True) -> list[int]:
     while frontier:
         parent = frontier.pop()
         for child in children_of.get(parent, ()):
-            if child not in seen and keep(parent, child):
+            verdict = keep(parent, child) if child not in seen else False
+            if verdict:
                 seen.add(child)
                 found.append(child)
-                frontier.append(child)
+                if verdict != LEAF:
+                    frontier.append(child)
     return found
 
 
@@ -87,29 +94,18 @@ def _descendants(root_pid: int, *, run=subprocess.run) -> list[int]:
     return _walk(_ps_pairs(run), root_pid)
 
 
-def _born_after(started):
-    """Windows хранит номер родителя и после его смерти: «ребёнок», запущенный
-    раньше родителя, — сирота чужого процесса с тем же номером."""
-
-    def keep(parent, child):
-        times = [started(parent), started(child)]
-        if any(not (value or "").startswith("win:") for value in times):
-            return True  # время не прочиталось — решит проверка «свой ли» у вызывающего
-        return int(times[1][4:]) >= int(times[0][4:])
-    return keep
-
-
-def descendants(root_pid: int, *, run=subprocess.run, pairs=None, windows=IS_WINDOWS,
+def descendants(root_pid: int, *, run=subprocess.run, snapshot=None, windows=IS_WINDOWS,
                 started=process_started) -> list[int]:
     """Все потомки процесса на любой ОС: macOS и Linux — `ps`, Windows — снимок
-    процессов (`win_processes.process_pairs`), без сирот чужих процессов."""
+    процессов без сирот чужих процессов (`win_tree.py`)."""
 
     if not windows:
         return _descendants(root_pid, run=run)
-    if pairs is None:
+    from .win_tree import windows_descendants
+    if snapshot is None:
         from .win_processes import process_pairs  # только Windows
-        pairs = process_pairs()
-    return _walk(pairs, root_pid, _born_after(started))
+        snapshot = process_pairs
+    return windows_descendants(root_pid, snapshot, started)
 
 
 def _signal_group(pid: int, sig: int) -> None:

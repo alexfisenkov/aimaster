@@ -59,20 +59,24 @@ class DeskJobTests(unittest.TestCase):
 
     def test_one_job_per_dashboard_for_every_desk(self):
         api = FakeApi()
-        job = DeskJob(windows=True, api=api)
+        job = DeskJob(windows=True, api=api, warn=self.fail)
         self.assertTrue(job.adopt(mock.Mock(pid=7)))
         self.assertTrue(job.adopt(mock.Mock(pid=8)))
         self.assertEqual((api.jobs, api.assigned), (1, [("job-1", 7), ("job-1", 8)]))
 
-    def test_failure_is_not_fatal_and_is_retried(self):
-        api = FakeApi(fail_create=True)
-        job = DeskJob(windows=True, api=api)
+    def test_failure_is_not_fatal_is_retried_and_is_said_once_per_desk(self):
+        api, said = FakeApi(fail_create=True), []
+        job = DeskJob(windows=True, api=api, warn=said.append)
         self.assertFalse(job.adopt(mock.Mock(pid=7)))
         api.fail_create = False
         self.assertTrue(job.adopt(mock.Mock(pid=8)))
         api.fail_assign = True
         self.assertFalse(job.adopt(mock.Mock(pid=9)))
         self.assertEqual(api.assigned, [("job-1", 8)])
+        self.assertEqual(len(said), 2)
+        self.assertIn("монтажный стол (процесс 7) открыт без задания Windows (политика запрещает задания)",
+                      said[0])
+        self.assertIn("montage close", said[1])
 
 
 class LaunchWiringTests(_Draft):
@@ -184,8 +188,8 @@ built = BuiltMontage(base)
 built.draft_and_build()
 engine = Engine(node=sys.executable, script=script, prefix=base / "engine", version="0.8.75", browser=None)
 keeper = DeskKeeper(close_desk=lambda paths: StudioDesk(None).close(paths))
-screen = MontageScreen(built.workspace, keeper=keeper, engines=lambda: (engine, ""),
-                       desk_factory=dashboard_desk_factory())
+factory = StudioDesk if sys.argv[5] == "без задания" else dashboard_desk_factory()
+screen = MontageScreen(built.workspace, keeper=keeper, engines=lambda: (engine, ""), desk_factory=factory)
 print(json.dumps({"state": screen.open_desk("p")["state"],
                   "desk": str(built.paths.desk_file)}), flush=True)
 time.sleep(600)
@@ -194,38 +198,51 @@ time.sleep(600)
 
 @unittest.skipUnless(os.name == "nt", "задание Windows (Job Object) — только на Windows")
 class DashboardKilledTests(unittest.TestCase):
+    """Процесс «как дашборд» открывает стол через MontageScreen и убивается
+    TerminateProcess. Со столами дашборда (задание) стол и его ребёнок уходят;
+    контроль — тот же стол без задания переживает родителя: убивает именно задание."""
+
+    def kill_parent(self, mode: str) -> tuple[list[int], list[int]]:
+        """Номера стола и его ребёнка; живые через 10 с после смерти родителя."""
+
+        temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(temp.cleanup)
+        base = Path(temp.name).resolve() / "папка дашборда"
+        base.mkdir()
+        script = base / "fake_preview.py"
+        script.write_text(GRANDCHILD + FAKE_PREVIEW, encoding="utf-8")
+        (base / "parent.py").write_text(PARENT, encoding="utf-8")
+        env = {**os.environ, "AIMASTER_TEST_GRANDCHILD": str(base / "внук.pid"),
+               "AIMASTER_HYPERFRAMES_DIR": str(base / "нет-движка")}
+        parent = subprocess.Popen([sys.executable, str(base / "parent.py"), str(base), str(script),
+                                   str(_SKILL_ROOT), str(_SCRIPTS), mode], env=env, stdout=subprocess.PIPE,
+                                  stdin=subprocess.DEVNULL)
+        pids: list[int] = []
+        self.addCleanup(lambda: [kill_tree(PidHandle(pid)) for pid in pids if process_alive(pid)])
+        try:
+            line = json.loads(parent.stdout.readline() or b"{}")
+            self.assertEqual(line.get("state"), "open")
+            pids += [json.loads(Path(line["desk"]).read_text(encoding="utf-8"))["pid"],
+                     int((base / "внук.pid").read_text(encoding="ascii"))]
+            self.assertTrue(all(process_alive(pid) for pid in pids))
+            parent.kill()  # TerminateProcess: ни finally, ни хранителя столов
+            parent.wait(timeout=30)
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and any(process_alive(pid) for pid in pids):
+                time.sleep(0.2)
+            return pids, [pid for pid in pids if process_alive(pid)]
+        finally:
+            if parent.poll() is None:
+                parent.kill()
+            parent.stdout.close()
+
     def test_desk_of_a_killed_dashboard_goes_with_it(self):
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp:
-            base = Path(temp).resolve() / "папка дашборда"
-            base.mkdir()
-            script = base / "fake_preview.py"
-            script.write_text(GRANDCHILD + FAKE_PREVIEW, encoding="utf-8")
-            (base / "parent.py").write_text(PARENT, encoding="utf-8")
-            env = {**os.environ, "AIMASTER_TEST_GRANDCHILD": str(base / "внук.pid"),
-                   "AIMASTER_HYPERFRAMES_DIR": str(base / "нет-движка")}
-            parent = subprocess.Popen([sys.executable, str(base / "parent.py"), str(base), str(script),
-                                       str(_SKILL_ROOT), str(_SCRIPTS)], env=env, stdout=subprocess.PIPE,
-                                      stdin=subprocess.DEVNULL)
-            pids = []
-            try:
-                line = json.loads(parent.stdout.readline() or b"{}")
-                self.assertEqual(line.get("state"), "open")
-                pids = [json.loads(Path(line["desk"]).read_text(encoding="utf-8"))["pid"],
-                        int((base / "внук.pid").read_text(encoding="ascii"))]
-                self.assertTrue(all(process_alive(pid) for pid in pids))
-                parent.kill()  # TerminateProcess: ни finally, ни хранителя столов
-                parent.wait(timeout=30)
-                deadline = time.monotonic() + 10
-                while time.monotonic() < deadline and any(process_alive(pid) for pid in pids):
-                    time.sleep(0.2)
-                self.assertEqual([pid for pid in pids if process_alive(pid)], [])
-            finally:
-                if parent.poll() is None:
-                    parent.kill()
-                parent.stdout.close()
-                for pid in pids:
-                    if process_alive(pid):
-                        kill_tree(PidHandle(pid))
+        _pids, alive = self.kill_parent("с заданием")
+        self.assertEqual(alive, [])
+
+    def test_control_desk_without_the_job_outlives_the_killed_parent(self):
+        pids, alive = self.kill_parent("без задания")
+        self.assertEqual(alive, pids)  # уборка — в addCleanup
 
 
 if __name__ == "__main__":
