@@ -28,6 +28,7 @@ from .projection import ProjectionError, build_snapshot
 from .questions import LateAnswerConflict, QuestionError, secure_sqlite_path
 from .runner import open_ledger
 from .store import RevisionConflict, StoreError
+from .telegram_rich import message_text
 from .telegram_sections import (
     PROJECT_TYPES as _PROJECT_TYPES,
     SECTION_LABELS as _SECTION_LABELS,
@@ -659,7 +660,7 @@ class TelegramBotController:
         if isinstance(chat_id, bool) or not isinstance(chat_id, int):
             chat_id = None
         chat_type = chat.get("type") if isinstance(chat, dict) else None
-        text = message.get("text")
+        text = message_text(message)
         return update_id, sender_id, chat_id, chat_type, text
 
     def handle_update(self, update) -> list[TelegramReply]:
