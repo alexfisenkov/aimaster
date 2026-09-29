@@ -16,9 +16,9 @@ async function openDesk(c, browser, page) {
   const closeText = await text(page, '[data-hook="am-desk"] [data-action="desk-close"]');
   const url = new URL(link.href);
   const rel = new Set(link.rel.split(/\s+/));
-  c.add("desk.open", link.text === "Перейти к монтажному столу ↗" && closeText === "Закрыть стол",
+  c.add("open", link.text === "Перейти к монтажному столу ↗" && closeText === "Закрыть стол",
     `«${link.text}», «${closeText}»`);
-  c.add("desk.link", url.protocol === "http:" && url.hostname === "127.0.0.1" && rel.has("noopener")
+  c.add("link", url.protocol === "http:" && url.hostname === "127.0.0.1" && rel.has("noopener")
     && rel.has("noreferrer") && link.target === "_blank", `${url.origin}, rel="${link.rel}"`);
   c.data.deskUrl = link.href;
   return link.href;
