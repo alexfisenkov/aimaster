@@ -69,6 +69,39 @@ class DescendantsTests(unittest.TestCase):
         self.assertEqual(proc_tree._descendants(100, run=fake_run), [200])
 
 
+class PublicDescendantsTests(unittest.TestCase):
+    """`descendants` — на любой ОС: macOS и Linux — `ps`, Windows — снимок процессов."""
+
+    def test_posix_reads_ps(self):
+        def fake_run(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 0, "100 1\n200 100\n300 200\n", "")
+        self.assertEqual(set(proc_tree.descendants(100, run=fake_run, windows=False)), {200, 300})
+
+    def test_windows_skips_orphans_of_a_process_that_had_the_parent_number(self):
+        # 400 запущен раньше 100: его родитель давно умер, а номер 100 достался нашему
+        pairs = [(100, 1), (200, 100), (300, 200), (400, 100), (500, 400)]
+        started = {100: "win:50", 200: "win:60", 300: "win:70", 400: "win:10", 500: "win:80"}.get
+        self.assertEqual(set(proc_tree.descendants(100, pairs=pairs, windows=True, started=started)),
+                         {200, 300})
+
+    def test_windows_keeps_a_child_whose_start_time_cannot_be_read(self):
+        started = {100: "win:50"}.get  # время ребёнка не прочиталось — решит проверка вызывающего
+        self.assertEqual(proc_tree.descendants(100, pairs=[(200, 100)], windows=True, started=started), [200])
+
+    def test_real_grandchild_is_found_on_this_system(self):
+        code = ("import subprocess, sys, time; c = subprocess.Popen([sys.executable, '-c', "
+                "'import time; time.sleep(60)']); print(c.pid, flush=True); time.sleep(60)")
+        parent = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                                  **proc_tree.group_kwargs())
+        try:
+            grandchild = int(parent.stdout.readline())
+            self.assertIn(grandchild, proc_tree.descendants(parent.pid))
+        finally:
+            proc_tree.kill_tree(parent)
+            parent.wait(timeout=30)
+            parent.stdout.close()
+
+
 @unittest.skipUnless(_POSIX_SIGNALS, "проверка сигналов POSIX (killpg/SIGKILL)")
 class KillTreePosixSequencingTests(unittest.TestCase):
     """Порядок важен: сперва SIGTERM всем (дать шанс на штатное закрытие,

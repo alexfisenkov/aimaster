@@ -48,35 +48,68 @@ def _taskkill_path() -> str:
     return str(Path(root) / "System32" / "taskkill.exe")
 
 
-def _descendants(root_pid: int, *, run=subprocess.run) -> list[int]:
-    """Все потомки root_pid (обход дерева ppid из `ps -A`), собранный ДО
-    убийства — после SIGTERM/SIGKILL дерево читать уже поздно."""
-
+def _ps_pairs(run) -> list[tuple[int, int]]:
     try:
         proc = run(["/bin/ps", "-A", "-o", "pid=,ppid="], stdin=subprocess.DEVNULL,
                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5, text=True)
     except (OSError, subprocess.SubprocessError):
         return []
-    children_of: dict[int, list[int]] = {}
+    pairs = []
     for line in (proc.stdout or "").splitlines():
         parts = line.split()
-        if len(parts) != 2:
-            continue
-        try:
-            pid, ppid = int(parts[0]), int(parts[1])
-        except ValueError:
-            continue
-        children_of.setdefault(ppid, []).append(pid)
+        if len(parts) == 2 and all(part.isdigit() for part in parts):
+            pairs.append((int(parts[0]), int(parts[1])))
+    return pairs
+
+
+def _walk(pairs, root_pid: int, keep=lambda parent, child: True) -> list[int]:
+    children_of: dict[int, list[int]] = {}
+    for pid, ppid in pairs:
+        if pid != ppid:
+            children_of.setdefault(ppid, []).append(pid)
     found: list[int] = []
-    seen: set[int] = set()
+    seen: set[int] = {root_pid}
     frontier = [root_pid]
     while frontier:
-        for child in children_of.get(frontier.pop(), ()):
-            if child not in seen:
+        parent = frontier.pop()
+        for child in children_of.get(parent, ()):
+            if child not in seen and keep(parent, child):
                 seen.add(child)
                 found.append(child)
                 frontier.append(child)
     return found
+
+
+def _descendants(root_pid: int, *, run=subprocess.run) -> list[int]:
+    """Все потомки root_pid (обход дерева ppid из `ps -A`), собранный ДО
+    убийства — после SIGTERM/SIGKILL дерево читать уже поздно."""
+
+    return _walk(_ps_pairs(run), root_pid)
+
+
+def _born_after(started):
+    """Windows хранит номер родителя и после его смерти: «ребёнок», запущенный
+    раньше родителя, — сирота чужого процесса с тем же номером."""
+
+    def keep(parent, child):
+        times = [started(parent), started(child)]
+        if any(not (value or "").startswith("win:") for value in times):
+            return True  # время не прочиталось — решит проверка «свой ли» у вызывающего
+        return int(times[1][4:]) >= int(times[0][4:])
+    return keep
+
+
+def descendants(root_pid: int, *, run=subprocess.run, pairs=None, windows=IS_WINDOWS,
+                started=process_started) -> list[int]:
+    """Все потомки процесса на любой ОС: macOS и Linux — `ps`, Windows — снимок
+    процессов (`win_processes.process_pairs`), без сирот чужих процессов."""
+
+    if not windows:
+        return _descendants(root_pid, run=run)
+    if pairs is None:
+        from .win_processes import process_pairs  # только Windows
+        pairs = process_pairs()
+    return _walk(pairs, root_pid, _born_after(started))
 
 
 def _signal_group(pid: int, sig: int) -> None:

@@ -30,6 +30,8 @@ def launch(desk, paths: MontagePaths) -> dict:
                                          "--port", str(port)],
                            cwd=paths.current, log_path=log, **extra)
     try:  # с первой строки после запуска: Ctrl+C здесь не оставит Studio и Chrome без записи
+        if desk.adopt is not None:
+            desk.adopt(process)  # до того, как Node запустит детей; не вышло — стол всё равно нужен
         started = desk.started(process.pid)
         desk_children.remember(paths, process, started)
         return _await_ready(desk, paths, process, port, log, started)

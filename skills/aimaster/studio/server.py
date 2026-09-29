@@ -17,6 +17,7 @@ from .http_write import write_response
 from .ledger import ActionLedger
 from .loopback_http import LoopbackThreadingHTTPServer
 from .montage.desk import StudioDesk
+from .montage.desk_job import dashboard_desk_factory
 from .montage_screen import EngineLookup, MontageScreen
 from .questions import QuestionStore
 from .store import ProjectStore
@@ -198,9 +199,12 @@ def serve(workspace: Path, host: str = "127.0.0.1", port: int = 0) -> RunningSer
     decision_worker = DecisionWorker(store, ledger, wake_event=wake_event)
 
     # План Б, экран «Сборка»: столы, открытые дашбордом, — под присмотром
-    # хранителя (простой, выход сервера). Сам дашборд ролик не собирает.
+    # хранителя (простой, выход сервера); на Windows ещё и в задании этого
+    # процесса (desk_job.py) — стол уходит, даже если дашборд убит. Сам
+    # дашборд ролик не собирает.
     desk_keeper = DeskKeeper(close_desk=lambda paths: StudioDesk(None).close(paths))
-    montage = MontageScreen(workspace, keeper=desk_keeper, engines=EngineLookup())
+    montage = MontageScreen(workspace, keeper=desk_keeper, engines=EngineLookup(),
+                            desk_factory=dashboard_desk_factory())
 
     httpd = _LoopbackHTTPServer((host, port), _Handler)
     assigned_port = httpd.server_address[1]

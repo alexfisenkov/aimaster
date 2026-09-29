@@ -68,9 +68,10 @@ def _forgotten_note(record: dict | None, seen: str, outcome: str | None) -> dict
 class StudioDesk:
     def __init__(self, engine: Engine | None, *, popen=None, clock=time.monotonic,
                  sleep=time.sleep, alive=process_alive, config=fetch_config,
-                 started=process_started, kill=stop_process):
+                 started=process_started, kill=stop_process, adopt=None):
         self.engine, self.popen, self.clock, self.sleep = engine, popen, clock, sleep
         self.alive, self.config, self.started, self.kill = alive, config, started, kill
+        self.adopt = adopt  # стол дашборда — в его задание Windows (desk_job.py); CLI — None
 
     def _check(self, paths: MontagePaths) -> tuple[str | None, dict | None, str]:
         text = record_text(paths)

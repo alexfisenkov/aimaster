@@ -346,7 +346,8 @@ concurrent mouse edit then refuses your edit instead of being overwritten.
 dashboard stops by itself after 60 minutes in which neither the «Сборка»
 screen asked about it (it asks every 5 s while its tab is visible; once the
 video is approved, its asking no longer counts) nor `current/index.html`
-changed, and when the dashboard stops. A desk opened
+changed, and when the dashboard stops (on Windows even when the dashboard
+process is killed: the desks it launched run in its job object). A desk opened
 with `montage open` stops only with `montage close` — until the dashboard
 opens the same desk; from then on the dashboard rule applies to it too.
 `montage status` → `desk.state` shows `open` or `closed`. Extra
