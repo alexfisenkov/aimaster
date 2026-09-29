@@ -40,8 +40,12 @@ git diff --check
 
 ```bash
 python3 skills/aimaster/scripts/check_assembly_screen.py
-python3 skills/aimaster/scripts/check_assembly_screen.py --reveal   # по желанию: откроет Finder
+python3 skills/aimaster/scripts/check_assembly_screen.py --reveal   # по желанию
 ```
+
+`--reveal` нажимает «Показать в папке» по-настоящему: откроется Finder или
+Проводник, и его окно останется открытым на временной папке прогона (сама
+папка в конце удаляется) — закройте его руками.
 
 Она повторяет ручной проход экрана перед выпуском `2026.09.29`: скачивание,
 стол и правка мышью в Studio, новая версия, «Сделать текущей», без движка,

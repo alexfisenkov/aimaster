@@ -10,6 +10,7 @@ import fs from "node:fs";
 import { sleep, until } from "./lib.mjs";
 
 const CLIP = 'button[aria-label^="V 2,"]';
+export const SHIFT = 0.5; // секунды: клип 2 длится 1 с — сдвиг на полширины
 const LOOPBACK = /^https?:\/\/127\.0\.0\.1(:\d+)?\//;
 const LOCAL = /^(data|blob|about|chrome|devtools):/;
 
@@ -67,7 +68,7 @@ export async function dragClip(c, cfg, studio) {
   const label = await studio.$eval(CLIP, (node) => node.getAttribute("aria-label"));
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
-  const shift = box.width * 0.5; // клип 2 длится 1 с — полширины = 0,5 с
+  const shift = box.width * SHIFT; // клип 2 длится 1 с: ширина клипа — секунда
   await studio.mouse.move(x, y);
   await studio.mouse.down();
   for (let i = 1; i <= 10; i += 1) {

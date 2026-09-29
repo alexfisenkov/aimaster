@@ -1,11 +1,15 @@
 """Запуск браузерных фаз (`scripts/check_assembly_screen.mjs`) узлом движка.
 
-Настройки фаз — JSON-файлом, ответ — последней строкой stdout. Узел идёт своей
-группой процессов (`proc_tree.group_kwargs`): не уложился в срок — узел
-останавливается целиком, с браузером (`kill_tree`). Номер браузера узел
-пишет в файл учёта сразу после запуска; пока узел работает, этот номер
-записывается в учёт процессов вместе со временем запуска — после выхода
-узла его номер мог бы уже достаться чужому процессу."""
+Настройки — JSON-файлом; ответ — по строке JSON на каждую законченную фазу
+(`{"phase", "checks", "shots", "data"}`), так что упавший или зависший узел
+не уносит результаты уже пройденных фаз. Срок — `PHASE_BUDGET` на фазу: узел
+сам отмечает фазу, не уложившуюся в него, а оркестратор останавливает узел
+целиком (`kill_tree`), если тот не вышел за сумму сроков и запас на запуск.
+
+Учёт процессов: у каждого запуска свой файл номеров браузера (пустой при
+старте). Пока узел жив, он и все его потомки (браузер, его процессы)
+записываются каждые полсекунды — потомки нашего живого узла не могут быть
+чужими; номер из файла подписывается «браузер фаз», только если он среди них."""
 
 from __future__ import annotations
 
@@ -18,46 +22,61 @@ from smoke_kit import SCRIPTS, decode
 from studio.montage.proc_tree import group_kwargs, kill_tree
 
 MJS = SCRIPTS / "check_assembly_screen.mjs"
-PHASE_TIMEOUT = 900.0  # все фазы одного запуска; обычно — десятки секунд
+PHASE_BUDGET = 180.0  # секунд на фазу — у узла и у оркестратора
+LAUNCH_MARGIN = 60.0
 
 
-def _pids(pid_file: Path) -> list[int]:
+def _pids(pid_file: Path) -> set[int]:
     try:
-        return [int(line) for line in pid_file.read_text(encoding="ascii").split() if line.isdigit()]
+        return {int(line) for line in pid_file.read_text(encoding="ascii").split() if line.isdigit()}
     except OSError:
-        return []
+        return set()
 
 
-def _answer(out: str, code: int, err: str) -> dict:
-    for line in reversed(out.strip().splitlines()):
+def answers(out: str, phases: list[str], code: int, err: str) -> dict:
+    """Строки фаз из вывода узла → {checks, shots, data}; фаза без строки — провал."""
+
+    found = {}
+    for line in out.splitlines():
         try:
-            answer = json.loads(line)
+            item = json.loads(line)
         except ValueError:
             continue
-        if isinstance(answer, dict) and isinstance(answer.get("checks"), list):
-            return answer
-    return {"checks": [{"id": "browser.crash", "ok": False,
-                        "detail": f"узел завершился с кодом {code} без ответа: {err.strip()[-1500:]}"}]}
+        if isinstance(item, dict) and item.get("phase") in phases and isinstance(item.get("checks"), list):
+            found[item["phase"]] = item
+    result = {"checks": [], "shots": [], "data": {}}
+    for phase in phases:
+        item = found.get(phase)
+        if item is None:
+            result["checks"].append({"id": f"{phase}.no_result", "ok": False, "detail": (
+                f"фаза не прошла: узел завершился с кодом {code}; {err.strip()[-1200:] or 'без вывода'}")})
+            continue
+        result["checks"] += item["checks"]
+        result["shots"] += item.get("shots") or []
+        result["data"][phase] = item.get("data") or {}
+    return result
 
 
 def run_phases(node: str, settings: dict, work: Path, processes, env: dict, *,
-               timeout: float = PHASE_TIMEOUT) -> dict:
+               budget: float = PHASE_BUDGET) -> dict:
     name = "-".join(settings["phases"])
-    config, out_file, err_file = (work / f"фазы-{name}.{kind}" for kind in ("json", "out", "err"))
+    config, out_file, err_file, pid_file = (work / f"фазы-{name}.{kind}" for kind in ("json", "out", "err", "pid"))
+    pid_file.write_text("", encoding="ascii")
+    settings = {**settings, "pidFile": str(pid_file), "phaseBudgetMs": int(budget * 1000)}
     config.write_text(json.dumps(settings, ensure_ascii=False), encoding="utf-8")
-    pid_file = Path(settings["pidFile"])
     with open(out_file, "wb") as out, open(err_file, "wb") as err:
         proc = subprocess.Popen([node, str(MJS), str(config)], cwd=str(SCRIPTS), env=env, stdin=subprocess.DEVNULL,
                                 stdout=out, stderr=err, **group_kwargs())
     processes.add(proc.pid, "узел браузерных фаз")
-    deadline = time.monotonic() + timeout
+    deadline = time.monotonic() + budget * len(settings["phases"]) + LAUNCH_MARGIN
     while proc.poll() is None and time.monotonic() < deadline:
+        processes.add(proc.pid, "узел браузерных фаз", with_children=True)
         for pid in _pids(pid_file):
-            processes.add(pid, "браузер фаз", with_children=True)
+            if pid in processes.known and processes.known[pid][0].startswith("узел браузерных фаз → "):
+                processes.known[pid] = ("браузер фаз", processes.known[pid][1])
         time.sleep(0.5)
     if proc.poll() is None:
         kill_tree(proc)
         proc.wait(timeout=30)
-        return {"checks": [{"id": f"{name}.timeout", "ok": False,
-                            "detail": f"браузерные фазы не уложились в {timeout:.0f} с"}]}
-    return _answer(decode(out_file.read_bytes()), proc.returncode, decode(err_file.read_bytes()))
+    return answers(decode(out_file.read_bytes()), settings["phases"], proc.returncode,
+                   decode(err_file.read_bytes()))

@@ -1,9 +1,9 @@
 """Отчёт проверки: `{ok, checks: [{id, ok, detail, required}], shots: [...]}`.
 
 `ok` — все обязательные проверки пройдены и хоть одна проверка была.
-Необязательная (`required: false`) — то, что на этой системе известно как
-ограничение (на Windows дашборд, остановленный Ctrl+Break, не успевает
-закрыть свой стол): она видна в отчёте, но код выхода не портит.
+Необязательная (`required: false`) — не проверка экрана, а обстоятельство
+прогона (не сделался снимок, не удалось подчистить за провалившейся
+проверкой): она видна в отчёте, но код выхода не портит.
 Коды выхода: 0 — пройдено, 1 — не пройдено, 2 — движка нет (без
 --require-engine проверять нечего)."""
 
@@ -35,10 +35,12 @@ class Report:
         return bool(ok)
 
     def merge(self, answer: dict) -> None:
-        """Ответ браузерных фаз: их проверки обязательны все."""
+        """Ответ браузерных фаз: проверка обязательна, если не сказано
+        `required: false` (так помечен, например, несделанный снимок)."""
 
         for item in answer.get("checks") or []:
-            self.add(str(item.get("id")), item.get("ok") is True, item.get("detail", ""))
+            self.add(str(item.get("id")), item.get("ok") is True, item.get("detail", ""),
+                     required=item.get("required") is not False)
         self.shots += [str(shot) for shot in answer.get("shots") or []]
 
     @property

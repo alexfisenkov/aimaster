@@ -12,11 +12,12 @@
 агента — `creator_studio.py montage …` отдельными процессами; дашборд —
 `creator_studio.py serve --port 0`; браузер — chrome-headless-shell движка
 через puppeteer-core движка (check_assembly_screen.mjs и фазы в
-assembly_check/). Шаги — assembly_check/run.py.
+assembly_check/). Шаги — assembly_check/stages.py, прогон — run.py.
 
---reveal нажимает «Показать в папке» по-настоящему (откроется Finder или
-Проводник — только на своём компьютере); без него проверяется, что кнопка есть
-и что запрос без CSRF отклонён. --shots — куда сложить снимки экрана (по
+--reveal нажимает «Показать в папке» по-настоящему: откроется Finder или
+Проводник, и его окно останется открытым на временной папке прогона (сама
+папка в конце удаляется) — только на своём компьютере. Без него проверяется,
+что кнопка есть и что запрос без CSRF отклонён. --shots — куда сложить снимки экрана (по
 умолчанию — во временную папку, которая удаляется; --keep её оставляет).
 Отчёт — JSON `{ok, checks: [{id, ok, detail, required}], shots, seconds}`
 с --json, иначе — строки по-русски. Код 0 — все обязательные проверки прошли.
@@ -43,7 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Сквозная проверка экрана «Сборка» на настоящем движке.")
     parser.add_argument("--json", action="store_true", help="отчёт JSON в stdout")
     parser.add_argument("--reveal", action="store_true",
-                        help="нажать «Показать в папке» по-настоящему (откроет файловый менеджер)")
+                        help="нажать «Показать в папке» по-настоящему: откроется Finder или Проводник, "
+                             "и окно останется открытым на временной папке (её удалят в конце)")
     parser.add_argument("--shots", type=Path, default=None, help="папка для снимков экрана")
     parser.add_argument("--keep", action="store_true", help="оставить временную папку прогона")
     parser.add_argument("--require-engine", action="store_true",

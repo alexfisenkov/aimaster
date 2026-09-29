@@ -5,12 +5,14 @@
 //   node check_assembly_screen.mjs <настройки.json>
 //
 // Настройки: phases (по порядку, в одном браузере: desktop, desk, after,
-// noengine, phone, exit), baseUrl, projectId, title, workspace, indexPath,
-// enginePrefix, shots, profile, pidFile, modules (node_modules движка —
-// оттуда puppeteer-core), browser (chrome-headless-shell из записи движка),
-// reveal. Ответ — одна строка JSON в stdout: {checks: [{id, ok, detail}],
-// shots: [...], data: {...}}. Упавшая фаза — проверка «<фаза>.crash»,
-// следующие фазы идут дальше. Браузер закрывается всегда.
+// noengine, phone, exit), phaseBudgetMs (срок одной фазы), baseUrl,
+// projectId, title, workspace, indexPath, enginePrefix, shots, profile,
+// pidFile, modules (node_modules движка — оттуда puppeteer-core), browser
+// (chrome-headless-shell из записи движка), reveal. Ответ — строка JSON в
+// stdout на каждую законченную фазу: {phase, checks: [{id, ok, detail,
+// required?}], shots, data}. Упавшая фаза — проверка «<фаза>.crash», дальше
+// идут следующие; не уложилась в срок — «<фаза>.timeout», и узел выходит
+// (фаза держит страницу — следующим её не отдать). Браузер закрывается всегда.
 
 import fs from "node:fs";
 import { Checks, launch } from "./assembly_check/lib.mjs";
@@ -39,37 +41,57 @@ async function pageFor(session, viewport) {
   return page;
 }
 
+function emit(name, c) {
+  process.stdout.write(`${JSON.stringify({ phase: name, checks: c.checks, shots: c.shots, data: c.data })}\n`);
+}
+
+/** Фаза в пределах срока: "done" или "timeout". */
+async function within(ms, work) {
+  let timer;
+  const late = new Promise((resolve) => { timer = setTimeout(() => resolve("timeout"), ms); });
+  try {
+    return await Promise.race([work.then(() => "done"), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function runPhase(name, cfg, session) {
+  const c = new Checks(cfg, name);
+  session.current = c;
+  let outcome = "done";
+  try {
+    await pageFor(session, name === "phone" ? PHONE : DESKTOP);
+    if (!PHASES[name]) throw new Error(`нет такой фазы: ${name}`);
+    outcome = await within(cfg.phaseBudgetMs || 180000, PHASES[name](c, cfg, session));
+    if (outcome === "timeout") c.add("timeout", false, `фаза не уложилась в ${(cfg.phaseBudgetMs || 180000) / 1000} с`);
+  } catch (error) {
+    c.add("crash", false, error?.stack || String(error));
+    if (session.page) await c.shot(session.page, "crash");
+  }
+  c.add("console", c.errors.length === 0, c.errors.length ? c.errors.slice(0, 5).join(" | ")
+    : "ошибок в консоли нет");
+  emit(name, c);
+  return outcome;
+}
+
 async function main() {
   const cfg = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-  const result = { checks: [], shots: [], data: {} };
   const browser = await launch(cfg, DESKTOP);
   const session = { browser, page: null, viewport: null, state: {} };
   try {
     for (const name of cfg.phases) {
-      const c = new Checks(cfg, name);
-      session.current = c;
-      try {
-        await pageFor(session, name === "phone" ? PHONE : DESKTOP);
-        if (!PHASES[name]) throw new Error(`нет такой фазы: ${name}`);
-        await PHASES[name](c, cfg, session);
-      } catch (error) {
-        c.add("crash", false, error?.stack || String(error));
-        if (session.page) await c.shot(session.page, "crash");
+      if (await runPhase(name, cfg, session) === "timeout") {
+        process.exitCode = 1;
+        break;
       }
-      c.add("console", c.errors.length === 0, c.errors.length ? c.errors.slice(0, 5).join(" | ")
-        : "ошибок в консоли нет");
-      result.checks.push(...c.checks);
-      result.shots.push(...c.shots);
-      result.data[name] = c.data;
     }
   } finally {
     await browser.close().catch(() => null);
   }
-  process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
 main().catch((error) => {
-  process.stdout.write(`${JSON.stringify({ checks: [{ id: "browser.crash", ok: false,
-    detail: error?.stack || String(error) }], shots: [], data: {} })}\n`);
+  process.stderr.write(`${error?.stack || error}\n`); // фазы без строки оркестратор отметит сам
   process.exitCode = 1;
-});
+}).finally(() => process.exit());

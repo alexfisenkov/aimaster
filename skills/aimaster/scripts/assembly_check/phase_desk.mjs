@@ -8,7 +8,13 @@
 // render --by owner, бесплатно, без «платное действие».
 
 import { openDeskFromScreen, promptOf, text, until } from "./lib.mjs";
-import { dragClip, external, openStudio } from "./studio.mjs";
+import { SHIFT, dragClip, external, openStudio } from "./studio.mjs";
+
+/** «0:03.5» (как fmtTime схемы) → 3.5. */
+const seconds = (clock) => {
+  const [minutes, rest] = String(clock).split(":");
+  return Number(minutes) * 60 + Number(rest);
+};
 
 async function openDesk(c, browser, page) {
   const link = await openDeskFromScreen(browser, page);
@@ -35,7 +41,9 @@ async function waitBanner(c, page, before) {
     const now = document.querySelector(".am-ruler span:last-child")?.textContent;
     return now && now !== was ? now : "";
   }, before, { timeout: 15000 });
-  c.add("dashboard.schema_end", Boolean(end), `конец схемы: ${before} → ${end || "не изменился"}`);
+  const moved = end ? seconds(end) - seconds(before) : 0; // клип 2 сдвинут на 0,5 с — ролик на столько же длиннее
+  c.add("dashboard.schema_end", Math.abs(moved - SHIFT) <= 0.15,
+    `конец схемы: ${before} → ${end || "не изменился"} (ждали +${SHIFT} с ± 0,15)`);
   await c.shot(page, "unrendered");
 }
 

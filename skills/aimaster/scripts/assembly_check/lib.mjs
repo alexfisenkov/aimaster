@@ -48,8 +48,10 @@ export class Checks {
     this.errors = [];
   }
 
-  add(id, ok, detail = "") {
-    this.checks.push({ id: `${this.phase}.${id}`, ok: Boolean(ok), detail: String(detail) });
+  add(id, ok, detail = "", { required = true } = {}) {
+    const check = { id: `${this.phase}.${id}`, ok: Boolean(ok), detail: String(detail) };
+    if (!required) check.required = false;
+    this.checks.push(check);
     return Boolean(ok);
   }
 
@@ -68,8 +70,8 @@ export class Checks {
     try {
       await page.screenshot({ path: file, ...options });
       this.shots.push(file);
-    } catch (error) {
-      this.errors.push(`снимок ${name}: ${error?.message || error}`);
+    } catch (error) { // снимок — не проверка экрана: провал виден, но код выхода не портит
+      this.add(`shot.${name}`, false, `снимок не сделан: ${error?.message || error}`, { required: false });
     }
   }
 
@@ -130,14 +132,14 @@ export async function promptOf(page, selector) {
  * или null. Вкладку, которую экран открыл сам по нажатию, закрываем —
  * ссылку проверка открывает в своей новой странице. */
 export async function openDeskFromScreen(browser, page, timeout = 90000) {
-  const popup = new Promise((resolve) => browser.once("targetcreated", resolve));
+  const popup = browser.waitForTarget((target) => target.opener() === page.target(), { timeout: 5000 })
+    .catch(() => null);
   await click(page, '[data-hook="am-desk"] [data-action="desk-open"]');
   const link = await page.waitForSelector('[data-part="am-desk-go"]', { timeout })
     .then(() => page.$eval('[data-part="am-desk-go"]', (a) => ({
       href: a.href, rel: a.rel, target: a.target, text: a.textContent.trim() })))
     .catch(() => null);
-  const target = await Promise.race([popup, sleep(5000).then(() => null)]);
-  const tab = target ? await target.page().catch(() => null) : null;
+  const tab = await (await popup)?.page().catch(() => null);
   await tab?.close().catch(() => null);
   return link;
 }

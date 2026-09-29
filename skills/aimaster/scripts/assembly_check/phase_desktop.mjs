@@ -86,8 +86,8 @@ export async function desktop(c, cfg, { page, state }) {
         status: slot.querySelector(".v2-final-status")?.textContent,
         duration: slot.querySelector(".v2-final-duration")?.textContent };
     });
-    return [view.orientation === "portrait" && view.status === "текущая v1" && view.duration === "00:03",
-      JSON.stringify(view)];
+    return [view.orientation === "portrait" && Math.abs(view.ratio - 16 / 9) <= 0.05
+      && view.status === "текущая v1" && view.duration === "00:03", JSON.stringify(view)];
   });
   await c.step("file.card", async () => {
     const title = await text(page, '[data-hook="am-file"] .v2-card-title');

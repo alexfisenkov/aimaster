@@ -45,7 +45,8 @@ async function restoreV1(c, cfg, page) {
       const snapshot = await (await fetch(`/api/projects/${encodeURIComponent(id)}/snapshot`)).json();
       return snapshot.active_project.history.at(-1);
     }, cfg.projectId);
-    return [last?.actor === "you", `последняя запись истории: ${last?.kind} от ${last?.actor}`];
+    return [last?.kind === "montage-restored" && last?.actor === "you",
+      `последняя запись истории: ${last?.kind} от ${last?.actor}`];
   });
   await c.shot(page, "restored");
 }

@@ -71,6 +71,9 @@ class Dashboard:
         self.kill()
         raise DashboardError(f"дашборд не напечатал адрес за {START_TIMEOUT:.0f} с; stderr: {tail}")
 
+    def running(self) -> bool:
+        return self.proc is not None and self.proc.poll() is None
+
     @property
     def port(self) -> int:
         return int(self.base_url.rsplit(":", 1)[1])

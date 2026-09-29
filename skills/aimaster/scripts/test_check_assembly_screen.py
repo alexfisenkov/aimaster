@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Проверка экрана «Сборка» без браузера: разбор аргументов, отчёт и коды
-выхода, путь «движка нет», учёт процессов (чужой процесс с тем же номером не
-трогается), своя папка движка (проходит проверки `engine.locate()`, общая —
-не меняется, ссылка на её пакеты снимается без захода внутрь), разбор ответа
-браузерных фаз, порт стола и разбор модулей *.mjs проверки."""
+выхода, путь «движка нет», своя папка движка (проходит проверки
+`engine.locate()`, общая — не меняется, ссылка на её пакеты снимается без
+захода внутрь), первая строка дашборда, порт стола и разбор модулей *.mjs
+проверки. Учёт процессов, ответ узла и уборка — test_check_assembly_processes.py."""
 
 from __future__ import annotations
 
@@ -27,11 +27,10 @@ for _path in (str(_SCRIPTS.parent), str(_SCRIPTS)):
 
 import check_assembly_screen  # noqa: E402
 from assembly_check import run as run_module  # noqa: E402
-from assembly_check.browser import _answer  # noqa: E402
-from assembly_check.dashboard import port_refused  # noqa: E402
+from assembly_check import dashboard as dashboard_module  # noqa: E402
+from assembly_check.dashboard import Dashboard, DashboardError, port_refused  # noqa: E402
 from assembly_check.engine_copy import (fingerprint, is_dir_link, make_own_engine,  # noqa: E402
                                         release)
-from assembly_check.processes import Processes  # noqa: E402
 from assembly_check.report import FAILED, NO_ENGINE, PASSED, Report, exit_code  # noqa: E402
 from studio.montage import engine  # noqa: E402
 from studio.montage.prefix_layout import (gsap_problem, hyperframes_problem,  # noqa: E402
@@ -128,64 +127,6 @@ class EngineMissingTests(unittest.TestCase):
             self.assertEqual(check_assembly_screen.main(["--json"], run=passing), PASSED)
 
 
-class FakeOs:
-    """Номер → время запуска; «живые» и «убитые» — как у настоящих процессов."""
-
-    def __init__(self, stamps, children=None):
-        self.stamps, self.tree, self.killed = dict(stamps), children or {}, []
-
-    def started(self, pid):
-        return self.stamps.get(pid)
-
-    def alive(self, pid):
-        return pid in self.stamps
-
-    def kill(self, handle):
-        self.killed.append(handle.pid)
-        self.stamps.pop(handle.pid, None)
-
-    def children(self, pid):
-        """Все потомки, как `proc_tree._descendants`."""
-        found = []
-        for child in self.tree.get(pid, []):
-            found += [child] + self.children(child)
-        return found
-
-    def ledger(self):
-        return Processes(started=self.started, alive=self.alive, kill=self.kill, children=self.children)
-
-
-class ProcessesTests(unittest.TestCase):
-    def test_left_and_stop_only_touch_the_same_process(self):
-        fake = FakeOs({10: "t10", 20: "t20"})
-        ledger = fake.ledger()
-        ledger.add(10, "дашборд")
-        ledger.add(20, "стол")
-        ledger.add(30, "уже вышел")  # время запуска не прочиталось — не записан
-        self.assertEqual(sorted(ledger.known), [10, 20])
-        fake.stamps[20] = "чужой"  # номер 20 достался чужому процессу
-        self.assertEqual(ledger.left(), ["дашборд (pid 10)"])
-        self.assertEqual(ledger.stop_left(), ["дашборд (pid 10)"])
-        self.assertEqual(fake.killed, [10])
-        self.assertEqual(ledger.left(), [])
-
-    def test_desk_is_recorded_only_with_the_start_time_from_its_record(self):
-        fake = FakeOs({7: "запуск стола"})
-        ledger = fake.ledger()
-        ledger.add(7, "стол", expected="другое время")
-        self.assertEqual(ledger.known, {})
-        ledger.add(7, "стол", expected="запуск стола")
-        self.assertEqual(ledger.known, {7: ("стол", "запуск стола")})
-
-    @unittest.skipIf(os.name == "nt", "потомков читает ps — только macOS и Linux")
-    def test_children_are_recorded_while_the_parent_is_alive(self):
-        fake = FakeOs({1: "a", 2: "b", 3: "c"}, children={1: [2], 2: [3]})
-        ledger = fake.ledger()
-        ledger.add(1, "браузер", with_children=True)
-        self.assertEqual(sorted(ledger.known), [1, 2, 3])
-        self.assertEqual(ledger.known[3][0], "браузер → потомок")
-
-
 class OwnEngineTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix="aimaster-screencheck-test-")
@@ -231,15 +172,53 @@ class OwnEngineTests(unittest.TestCase):
         release(self.root / "не было")  # своей папки не завели — нечего снимать
 
 
-class BrowserAnswerTests(unittest.TestCase):
-    def test_last_json_line_wins(self):
-        out = 'шум\n{"checks": [{"id": "a", "ok": true}], "shots": []}\n'
-        self.assertEqual(_answer(out, 0, "")["checks"][0]["id"], "a")
+class FakeServe:
+    """Popen дашборда: пишет в файл вывода то, что ему дали, и живёт или выходит."""
 
-    def test_no_answer_is_a_crash_with_stderr(self):
-        answer = _answer("не JSON", 1, "Error: нет браузера")
-        self.assertEqual((answer["checks"][0]["id"], answer["checks"][0]["ok"]), ("browser.crash", False))
-        self.assertIn("нет браузера", answer["checks"][0]["detail"])
+    def __init__(self, lines, code=None):
+        self.lines, self.code, self.pid, self.killed = lines, code, 4321, False
+
+    def __call__(self, argv, **kwargs):
+        self.argv = argv
+        kwargs["stdout"].write(self.lines)
+        kwargs["stderr"].write("Traceback: порт занят".encode("utf-8"))
+        return self
+
+    def poll(self):
+        return self.code
+
+    def kill(self):
+        self.killed, self.code = True, -9
+
+    def wait(self, timeout=None):
+        return self.code
+
+
+class DashboardStartTests(unittest.TestCase):
+    def start(self, fake):
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(dashboard_module, "START_TIMEOUT", 1.0), \
+                mock.patch.object(dashboard_module.subprocess, "Popen", fake):
+            board = Dashboard({}, Path(temp) / "рабочая", Path(temp) / "журналы", "engine")
+            return board, board.start()
+
+    def test_first_line_gives_the_address(self):
+        fake = FakeServe(b'{"base_url": "http://127.0.0.1:5555/"}\r\n{"other": 1}\n')
+        board, url = self.start(fake)
+        self.assertEqual((url, board.port), ("http://127.0.0.1:5555", 5555))
+        self.assertEqual(fake.argv[-4:-2], ["serve", str(board.workspace)])
+        self.assertEqual(fake.argv[-2:], ["--port", "0"])
+
+    def test_half_a_line_is_not_an_address_and_exit_is_reported(self):
+        fake = FakeServe(b'{"base_url": "http://127.0', code=1)
+        with self.assertRaises(DashboardError) as caught:
+            self.start(fake)
+        self.assertIn("порт занят", str(caught.exception))
+
+    def test_silent_dashboard_is_killed_after_the_timeout(self):
+        fake = FakeServe(b"")
+        with self.assertRaises(DashboardError):
+            self.start(fake)
+        self.assertTrue(fake.killed)
 
 
 class PortTests(unittest.TestCase):

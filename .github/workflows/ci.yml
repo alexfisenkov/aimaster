@@ -129,8 +129,10 @@ jobs:
 
       # Экран «Сборка» в браузере (chrome-headless-shell и puppeteer-core движка): дашборд,
       # стол и правка мышью в Studio, v2 командой агента, «Сделать текущей», без движка,
-      # телефон, выход дашборда. Без --reveal: на CI открывать папку некому.
+      # телефон, выход дашборда (стол уходит с ним и на Windows — задание дашборда).
+      # Без --reveal: на CI открывать папку некому. Срок фазы — 3 мин, шага — 20.
       - name: Assembly screen end-to-end in the browser (check_assembly_screen.py)
+        timeout-minutes: 20
         shell: bash
         run: python skills/aimaster/scripts/check_assembly_screen.py --require-engine --json --shots screencheck-shots | tee screencheck-report.json
 
