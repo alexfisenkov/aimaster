@@ -52,4 +52,5 @@ git status --short --branch
 git log -3 --oneline --decorate
 python3 -m unittest discover -s skills/aimaster/scripts -p 'test_*.py'
 node --experimental-vm-modules --no-warnings skills/aimaster/scripts/check_static_modules.mjs
+python3 skills/aimaster/scripts/check_assembly_screen.py   # экран «Сборка» в браузере; без движка — код 2
 ```

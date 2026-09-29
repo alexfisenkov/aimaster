@@ -127,6 +127,23 @@ jobs:
           AIMASTER_REQUIRE_ENGINE: "1"
         run: python -m unittest discover -s skills/aimaster/scripts -p "test_montage_e2e.py" -v
 
+      # Экран «Сборка» в браузере (chrome-headless-shell и puppeteer-core движка): дашборд,
+      # стол и правка мышью в Studio, v2 командой агента, «Сделать текущей», без движка,
+      # телефон, выход дашборда. Без --reveal: на CI открывать папку некому.
+      - name: Assembly screen end-to-end in the browser (check_assembly_screen.py)
+        shell: bash
+        run: python skills/aimaster/scripts/check_assembly_screen.py --require-engine --json --shots screencheck-shots | tee screencheck-report.json
+
+      - name: Upload assembly screen shots and logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screencheck-${{ matrix.os }}
+          path: |
+            screencheck-shots
+            screencheck-report.json
+          if-no-files-found: ignore
+
       - name: Clean-machine smoke with the installed engine (montage draft, render v001)
         run: python skills/aimaster/scripts/smoke_clean_machine.py --with-engine
 
