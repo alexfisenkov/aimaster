@@ -1,0 +1,2247 @@
+{
+  "schema_version": 1,
+  "bundle_version": "2026-11-05.1",
+  "entries": [
+    {
+      "id": "gemini-images",
+      "title": "Gemini Images: полная практическая инструкция",
+      "path": "authored/gemini-images.md",
+      "sha256": "bb76d25d9eea00f5c82ffbfdc0d9fafe6194015b13ac6b48f384978ee84a52b8",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "google"
+      ],
+      "model_families": [
+        "nano-banana"
+      ],
+      "models": [],
+      "versions": [
+        "2.1",
+        "2",
+        "pro"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "Gemini Images: полная практическая инструкция",
+        "original_sha256": "bb76d25d9eea00f5c82ffbfdc0d9fafe6194015b13ac6b48f384978ee84a52b8",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-11-02",
+        "review_status": "authored-source",
+        "source_path": "H/инструкции NBP/gemini-images-current-instruction.md"
+      }
+    },
+    {
+      "id": "marketplace-cards",
+      "title": "Карточки товара для маркетплейсов: мастер-инструкция",
+      "path": "authored/marketplace-cards.md",
+      "sha256": "b1b223ec5b6db5639e42213c4f86eeef9fc24e8efad0b7d256ca71373afdff21",
+      "kind": "scenario",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "marketplace-card"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "Карточки товара для маркетплейсов: мастер-инструкция",
+        "original_sha256": "b1b223ec5b6db5639e42213c4f86eeef9fc24e8efad0b7d256ca71373afdff21",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-11-02",
+        "review_status": "authored-source",
+        "source_path": "H/инструкции NBP/marketplace-cards-current-instruction.md"
+      }
+    },
+    {
+      "id": "midjourney",
+      "title": "Midjourney: мастер-инструкция V8.2",
+      "path": "authored/midjourney.md",
+      "sha256": "d274700c5698fe13de93cb701c015a41ee95bf6a26a03d3460318f2a94ab1d1e",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "midjourney"
+      ],
+      "model_families": [
+        "midjourney"
+      ],
+      "models": [],
+      "versions": [
+        "8.2"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "Midjourney: мастер-инструкция V8.2",
+        "original_sha256": "d274700c5698fe13de93cb701c015a41ee95bf6a26a03d3460318f2a94ab1d1e",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-11-04",
+        "review_status": "authored-source",
+        "source_path": "H/MJ миджорни инструкции/midjourney-current-instruction.md"
+      }
+    },
+    {
+      "id": "seedance-2",
+      "title": "ULTIMATE ИНСТРУКЦИЯ ДЛЯ ChatGPT: Создание промптов для Seedance 2.0",
+      "path": "authored/seedance-2.md",
+      "sha256": "ddfe1b329b8172a2e052ba039c8603b9a698d2bf8861580400c4320dbf588058",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "bytedance"
+      ],
+      "model_families": [
+        "seedance"
+      ],
+      "models": [],
+      "versions": [
+        "2.0"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "ULTIMATE ИНСТРУКЦИЯ ДЛЯ ChatGPT: Создание промптов для Seedance 2.0",
+        "original_sha256": "ddfe1b329b8172a2e052ba039c8603b9a698d2bf8861580400c4320dbf588058",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-04-21",
+        "review_status": "authored-source",
+        "source_path": "H/инструкция seedance 2.0 - инструкция и скилл к этой нейронке/seedance-2.0-chatgpt-instruction.md"
+      }
+    },
+    {
+      "id": "seedance-2-system",
+      "title": "Системный промпт для ChatGPT: Seedance 2.0 Prompt Engineer",
+      "path": "authored/seedance-2-system.md",
+      "sha256": "6bf23fce94176907d6bd0a1b1339aec6e34836420aab0d3c5dc59a0a5bd9c344",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "bytedance"
+      ],
+      "model_families": [
+        "seedance"
+      ],
+      "models": [],
+      "versions": [
+        "2.0"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "Системный промпт для ChatGPT: Seedance 2.0 Prompt Engineer",
+        "original_sha256": "6bf23fce94176907d6bd0a1b1339aec6e34836420aab0d3c5dc59a0a5bd9c344",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-05-21",
+        "review_status": "authored-source",
+        "source_path": "H/инструкция seedance 2.0 - инструкция и скилл к этой нейронке/seedance-2.0-system-prompt.md"
+      }
+    },
+    {
+      "id": "runway-seedance-operator",
+      "title": "Runway + Seedance 2.0: операторский плейбук",
+      "path": "authored/runway-seedance-operator.md",
+      "sha256": "c0e369bd7c3e52f38696f179ad4e9ab33eba59013f219568f13a1d539beaa3df",
+      "kind": "scenario",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "operator"
+      ],
+      "providers": [
+        "runway"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "Runway + Seedance 2.0: операторский плейбук",
+        "original_sha256": "c0e369bd7c3e52f38696f179ad4e9ab33eba59013f219568f13a1d539beaa3df",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-05-21",
+        "review_status": "legacy-methodology",
+        "source_path": "H/Работа с нейросетями/Seedance 2.0 - Runway генерации/RUNWAY_SEEDANCE_OPERATOR_PLAYBOOK.md"
+      }
+    },
+    {
+      "id": "runway-seedance-automation",
+      "title": "Skill: Runway Seedance Batch Operator",
+      "path": "authored/runway-seedance-automation.md",
+      "sha256": "f3b3a61d3299a065629af08c1907fe8c641ac6721d4d7ac450980fe85f4af530",
+      "kind": "scenario",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "operator"
+      ],
+      "providers": [
+        "runway"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "Skill: Runway Seedance Batch Operator",
+        "original_sha256": "f3b3a61d3299a065629af08c1907fe8c641ac6721d4d7ac450980fe85f4af530",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-05-21",
+        "review_status": "authored-source",
+        "source_path": "H/Работа с нейросетями/Seedance 2.0 - Runway генерации/RUNWAY_AUTOMATION_SKILL.md"
+      }
+    },
+    {
+      "id": "kling-3",
+      "title": "Ultimate Гайд по Kling 3.0: Полная Инструкция для ChatGPT",
+      "path": "authored/kling-3.md",
+      "sha256": "908f622f3861230e54352c0f404039f768ffedbf2a3eed7e80cce897087a1aae",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "kling"
+      ],
+      "model_families": [
+        "kling"
+      ],
+      "models": [],
+      "versions": [
+        "3.0"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "Ultimate Гайд по Kling 3.0: Полная Инструкция для ChatGPT",
+        "original_sha256": "908f622f3861230e54352c0f404039f768ffedbf2a3eed7e80cce897087a1aae",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-02-15",
+        "review_status": "authored-source",
+        "source_path": "H/инструкция kling 3.0 и O3/Kling-3-Master-Guide.md"
+      }
+    },
+    {
+      "id": "kling-3-syntx",
+      "title": "KLING_3_0_SYNTX_V1",
+      "path": "authored/kling-3-syntx.md",
+      "sha256": "13769197242cce68420e8c7b2350099138064e2900dc70f9f211207a4e89c6f9",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [
+        "kling"
+      ],
+      "models": [],
+      "versions": [
+        "3.0"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "KLING_3_0_SYNTX_V1",
+        "original_sha256": "13769197242cce68420e8c7b2350099138064e2900dc70f9f211207a4e89c6f9",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-06-12",
+        "review_status": "authored-source",
+        "source_path": "H/инструкция kling 3.0 и O3/kling-3.0-syntx.txt"
+      }
+    },
+    {
+      "id": "veo",
+      "title": "Ultimate Гайд по Google VEO: Полная Инструкция для ChatGPT",
+      "path": "authored/veo.md",
+      "sha256": "919243d94871435f7b5e098e6506a95ae670c0ec6d5ceb07046e93e1cee25c6f",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "google"
+      ],
+      "model_families": [
+        "veo"
+      ],
+      "models": [],
+      "versions": [
+        "legacy-unspecified"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "Ultimate Гайд по Google VEO: Полная Инструкция для ChatGPT",
+        "original_sha256": "919243d94871435f7b5e098e6506a95ae670c0ec6d5ceb07046e93e1cee25c6f",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-02-04",
+        "review_status": "legacy-methodology",
+        "source_path": "H/VEO prompt instr/VEO_Prompt_Engineer_Ultimate_User_Instruction.md"
+      }
+    },
+    {
+      "id": "veo-system",
+      "title": "Системный промпт для ChatGPT: VEO Prompt Engineer",
+      "path": "authored/veo-system.md",
+      "sha256": "a8f15d8452ff173a09f5b8bcc2943ed329cd98b97bd45388f129d4b378542eda",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "google"
+      ],
+      "model_families": [
+        "veo"
+      ],
+      "models": [],
+      "versions": [
+        "legacy-unspecified"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "Системный промпт для ChatGPT: VEO Prompt Engineer",
+        "original_sha256": "a8f15d8452ff173a09f5b8bcc2943ed329cd98b97bd45388f129d4b378542eda",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-02-04",
+        "review_status": "legacy-methodology",
+        "source_path": "H/VEO prompt instr/veo-system-prompt.md"
+      }
+    },
+    {
+      "id": "grok-aurora",
+      "title": "ИНСТРУКЦИЯ ДЛЯ ChatGPT: Создание промптов Grok Aurora (Grok Imagine)",
+      "path": "authored/grok-aurora.md",
+      "sha256": "931ebb3d209c1426c9e2cb974bdfeab4e10e6a0db010b53e4a8e489976c0162d",
+      "kind": "prompt",
+      "modalities": [
+        "image",
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "xai"
+      ],
+      "model_families": [
+        "aurora"
+      ],
+      "models": [],
+      "versions": [
+        "legacy-unspecified"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "ИНСТРУКЦИЯ ДЛЯ ChatGPT: Создание промптов Grok Aurora (Grok Imagine)",
+        "original_sha256": "931ebb3d209c1426c9e2cb974bdfeab4e10e6a0db010b53e4a8e489976c0162d",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-01-31",
+        "review_status": "legacy-methodology",
+        "source_path": "H/инструкции grok/grok-aurora-chatgpt-instruction.md"
+      }
+    },
+    {
+      "id": "grok-aurora-system",
+      "title": "Системный промпт для ChatGPT: Grok Aurora Prompt Engineer",
+      "path": "authored/grok-aurora-system.md",
+      "sha256": "b551fb790fc023c95e385a82d7ced3f9d5a5d6fb676cce51af007a74466b0b92",
+      "kind": "prompt",
+      "modalities": [
+        "image",
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "xai"
+      ],
+      "model_families": [
+        "aurora"
+      ],
+      "models": [],
+      "versions": [
+        "legacy-unspecified"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "Системный промпт для ChatGPT: Grok Aurora Prompt Engineer",
+        "original_sha256": "b551fb790fc023c95e385a82d7ced3f9d5a5d6fb676cce51af007a74466b0b92",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-01-31",
+        "review_status": "legacy-methodology",
+        "source_path": "H/инструкции grok/grok-aurora-system-prompt.md"
+      }
+    },
+    {
+      "id": "suno",
+      "title": "Мастер-инструкция AI-помощника по созданию русскоязычных песен в Suno",
+      "path": "authored/suno.md",
+      "sha256": "cdc341ae5c562d182705028c230e76ce073f7154e6266af5a7282f5977ae0287",
+      "kind": "prompt",
+      "modalities": [
+        "audio"
+      ],
+      "tasks": [
+        "music"
+      ],
+      "providers": [
+        "suno"
+      ],
+      "model_families": [
+        "suno"
+      ],
+      "models": [],
+      "versions": [
+        "legacy-unspecified"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "Мастер-инструкция AI-помощника по созданию русскоязычных песен в Suno",
+        "original_sha256": "cdc341ae5c562d182705028c230e76ce073f7154e6266af5a7282f5977ae0287",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-07-25",
+        "review_status": "legacy-methodology",
+        "source_path": "E/Инструкция - SUNO нейронка по аудио/Skill — Создание песен в SUNO/Инструкция.md"
+      }
+    },
+    {
+      "id": "elevenlabs",
+      "title": "Мастер-инструкция AI-помощника по озвучке в ElevenLabs",
+      "path": "authored/elevenlabs.md",
+      "sha256": "98b6fcbf7e5058166cb4bd113f1cf7ab61486c6c364512898d5b5673d2f191ca",
+      "kind": "prompt",
+      "modalities": [
+        "audio"
+      ],
+      "tasks": [
+        "tts"
+      ],
+      "providers": [
+        "elevenlabs"
+      ],
+      "model_families": [
+        "elevenlabs"
+      ],
+      "models": [],
+      "versions": [
+        "legacy-unspecified"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "Мастер-инструкция AI-помощника по озвучке в ElevenLabs",
+        "original_sha256": "98b6fcbf7e5058166cb4bd113f1cf7ab61486c6c364512898d5b5673d2f191ca",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-07-25",
+        "review_status": "legacy-methodology",
+        "source_path": "E/Инструкция - ElevenLabs нейронка по озвучке/Skill — Озвучка в ElevenLabs/Инструкция.md"
+      }
+    },
+    {
+      "id": "ugc-scenarios",
+      "title": "МАСТЕР-ИНСТРУКЦИЯ ДЛЯ GPTS: Сценарист UGC-роликов — версия 2",
+      "path": "authored/ugc-scenarios.md",
+      "sha256": "cd737360e7c303ab7d55bea40975dcdf1e102c3181d07a1880831a8a08563c66",
+      "kind": "scenario",
+      "modalities": [
+        "scenario",
+        "video"
+      ],
+      "tasks": [
+        "ugc-script"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "МАСТЕР-ИНСТРУКЦИЯ ДЛЯ GPTS: Сценарист UGC-роликов — версия 2",
+        "original_sha256": "cd737360e7c303ab7d55bea40975dcdf1e102c3181d07a1880831a8a08563c66",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-05-19",
+        "review_status": "authored-source",
+        "source_path": "H/Сценарии UGC/UGC_СЦЕНАРИИ_МАСТЕР_ИНСТРУКЦИЯ_v2.md"
+      }
+    },
+    {
+      "id": "ugc-gpts",
+      "title": "Ты — GPTS-бот \"Сценарист UGC-роликов\" — версия 2.",
+      "path": "authored/ugc-gpts.md",
+      "sha256": "553185a22ca5b9567a36f6c967352b5bf38fcf690be194b343792521173f5b87",
+      "kind": "scenario",
+      "modalities": [
+        "scenario",
+        "video"
+      ],
+      "tasks": [
+        "ugc-script"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "Ты — GPTS-бот \"Сценарист UGC-роликов\" — версия 2.",
+        "original_sha256": "553185a22ca5b9567a36f6c967352b5bf38fcf690be194b343792521173f5b87",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-05-19",
+        "review_status": "authored-source",
+        "source_path": "H/Сценарии UGC/UGC_СЦЕНАРИИ_GPTS_INSTRUCTIONS_v2.txt"
+      }
+    },
+    {
+      "id": "expert-scenarios",
+      "title": "МАСТЕР-ИНСТРУКЦИЯ ДЛЯ GPTS: Сценарист экспертных роликов",
+      "path": "authored/expert-scenarios.md",
+      "sha256": "c5306f6066a105b5f56b29f68aae05485b72e360950f5cb2054e86485f4ffe7b",
+      "kind": "scenario",
+      "modalities": [
+        "scenario",
+        "video"
+      ],
+      "tasks": [
+        "expert-script"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "МАСТЕР-ИНСТРУКЦИЯ ДЛЯ GPTS: Сценарист экспертных роликов",
+        "original_sha256": "c5306f6066a105b5f56b29f68aae05485b72e360950f5cb2054e86485f4ffe7b",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-05-21",
+        "review_status": "authored-source",
+        "source_path": "H/Экспертные сценарии/ЭКСПЕРТНЫЕ_СЦЕНАРИИ_МАСТЕР_ИНСТРУКЦИЯ.md"
+      }
+    },
+    {
+      "id": "expert-gpts",
+      "title": "Ты — GPTS-бот \"Сценарист экспертных роликов\".",
+      "path": "authored/expert-gpts.md",
+      "sha256": "94202c661c988fc3a98e847c7284cb552a19f67650ee2545d3ab34e93a8b6180",
+      "kind": "scenario",
+      "modalities": [
+        "scenario",
+        "video"
+      ],
+      "tasks": [
+        "expert-script"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "Ты — GPTS-бот \"Сценарист экспертных роликов\".",
+        "original_sha256": "94202c661c988fc3a98e847c7284cb552a19f67650ee2545d3ab34e93a8b6180",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-05-21",
+        "review_status": "authored-source",
+        "source_path": "H/Экспертные сценарии/ЭКСПЕРТНЫЕ_СЦЕНАРИИ_GPTS_INSTRUCTIONS.txt"
+      }
+    },
+    {
+      "id": "cinemaster",
+      "title": "CineMaster AI — Универсальный Кинематографический Модуль для ChatGPT",
+      "path": "authored/cinemaster.md",
+      "sha256": "d2f5f70eb34a884b84e64607f152f8aad83578fbc85492ad0fa728ead7722460",
+      "kind": "scenario",
+      "modalities": [
+        "image",
+        "video"
+      ],
+      "tasks": [
+        "shot-plan"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "CineMaster AI — Универсальный Кинематографический Модуль для ChatGPT",
+        "original_sha256": "d2f5f70eb34a884b84e64607f152f8aad83578fbc85492ad0fa728ead7722460",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-02-15",
+        "review_status": "authored-source",
+        "source_path": "H/CINEmaster - система камер и объективов/CINEMASTER_CHATGPT_INSTRUCTION.md"
+      }
+    },
+    {
+      "id": "cinemaster-system",
+      "title": "CineMaster — Инъекция в системный промпт",
+      "path": "authored/cinemaster-system.md",
+      "sha256": "d679ffa69e05f57f8a9230fa80b58e2e9eafa907c05f2a2980c99293d5570402",
+      "kind": "scenario",
+      "modalities": [
+        "image",
+        "video"
+      ],
+      "tasks": [
+        "shot-plan"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "CineMaster — Инъекция в системный промпт",
+        "original_sha256": "d679ffa69e05f57f8a9230fa80b58e2e9eafa907c05f2a2980c99293d5570402",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-02-15",
+        "review_status": "authored-source",
+        "source_path": "H/CINEmaster - система камер и объективов/CineMaster-SystemPrompt-Injection.md"
+      }
+    },
+    {
+      "id": "image-quality",
+      "title": "AI-Image-Humanization-Prompt-System",
+      "path": "authored/image-quality.md",
+      "sha256": "d4ef97dddd440f76f869be655272885aaaa4a2eabd16c6d832036cbd4a76b380",
+      "kind": "scenario",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "quality-review"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "AI-Image-Humanization-Prompt-System",
+        "original_sha256": "d4ef97dddd440f76f869be655272885aaaa4a2eabd16c6d832036cbd4a76b380",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-03-12",
+        "review_status": "authored-source",
+        "source_path": "H/КАЧЕСТВО инструкция/Инструкция КАЧЕСТВО.md"
+      }
+    },
+    {
+      "id": "youtube-metadata",
+      "title": "ULTIMATE ИНСТРУКЦИЯ ДЛЯ ChatGPT: YouTube Metadata Strategist",
+      "path": "authored/youtube-metadata.md",
+      "sha256": "ecdbdaf3d21d990c3839036406944b9fb9c9b3ecc09dda5da08495d12fe7fc0f",
+      "kind": "scenario",
+      "modalities": [
+        "text"
+      ],
+      "tasks": [
+        "youtube-metadata"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "ULTIMATE ИНСТРУКЦИЯ ДЛЯ ChatGPT: YouTube Metadata Strategist",
+        "original_sha256": "ecdbdaf3d21d990c3839036406944b9fb9c9b3ecc09dda5da08495d12fe7fc0f",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-03-12",
+        "review_status": "authored-source",
+        "source_path": "H/Для Ютуба/инструкция для ChatGPT по описанию для YouTube.md"
+      }
+    },
+    {
+      "id": "youtube-system",
+      "title": "Системный промпт-роутер: YouTube Content Assistant",
+      "path": "authored/youtube-system.md",
+      "sha256": "2ad1e946590ec07d61151e4fc5bac7ca7afe67cb11766dcf6e58b2fde7b10cfe",
+      "kind": "scenario",
+      "modalities": [
+        "text"
+      ],
+      "tasks": [
+        "youtube-metadata"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "Системный промпт-роутер: YouTube Content Assistant",
+        "original_sha256": "2ad1e946590ec07d61151e4fc5bac7ca7afe67cb11766dcf6e58b2fde7b10cfe",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Verbatim canonical source. Historical interface and model claims require route-specific recheck.",
+        "source_date": "2026-03-12",
+        "review_status": "authored-source",
+        "source_path": "H/Для Ютуба/system-prompt-router.md"
+      }
+    },
+    {
+      "id": "seedream-5-pro",
+      "title": "Seedream 5.0 Pro: изображения и редактирование",
+      "path": "current/seedream-5-pro.md",
+      "sha256": "9a9fcaa16400a6147bf8f24b50526eb47c351898973526050b26a947de593444",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "bytedance"
+      ],
+      "model_families": [
+        "seedream"
+      ],
+      "models": [],
+      "versions": [
+        "5.0-pro"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "9a9fcaa16400a6147bf8f24b50526eb47c351898973526050b26a947de593444",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://seed.bytedance.com/en/blog/beyond-generation-it-understands-design-introducing-seedream-5-0-pro"
+        ],
+        "changes": "New authored route, separate from historical corpus.",
+        "source_date": "2026-11-05",
+        "review_status": "source-checked-route",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "higgsfield",
+      "title": "Higgsfield: выбор модели и производство кадров",
+      "path": "current/higgsfield.md",
+      "sha256": "887b9a41e9ce82e9fd4d40ac8ac740b6ca97482d95b7b95795bdb83777b7636d",
+      "kind": "scenario",
+      "modalities": [
+        "image",
+        "video"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "higgsfield"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "887b9a41e9ce82e9fd4d40ac8ac740b6ca97482d95b7b95795bdb83777b7636d",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://higgsfield.ai/enterprise-help-center/platform/ai-models"
+        ],
+        "changes": "New authored route, separate from historical corpus.",
+        "source_date": "2026-11-05",
+        "review_status": "source-checked-route",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "magnific",
+      "title": "Magnific: творческая обработка и увеличение изображения",
+      "path": "current/magnific.md",
+      "sha256": "aebc3680ce333f5bb369aa61e0c2e0c1d20a2cc8ab14bafbf841e56c71d1df35",
+      "kind": "scenario",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit",
+        "upscale"
+      ],
+      "providers": [
+        "magnific"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "aebc3680ce333f5bb369aa61e0c2e0c1d20a2cc8ab14bafbf841e56c71d1df35",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://www.magnific.com/magnific-ai"
+        ],
+        "changes": "New authored route, separate from historical corpus.",
+        "source_date": "2026-11-05",
+        "review_status": "source-checked-route",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "gpt-image",
+      "title": "GPT Image: генерация и редактирование",
+      "path": "current/gpt-image.md",
+      "sha256": "96ac00ef7bf0c60828317eaec8e7fb9fe40e8a8cbf10efd5e54675e7d5f9e02b",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "openai"
+      ],
+      "model_families": [
+        "gpt-image"
+      ],
+      "models": [],
+      "versions": [
+        "2.5"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "96ac00ef7bf0c60828317eaec8e7fb9fe40e8a8cbf10efd5e54675e7d5f9e02b",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://developers.openai.com/api/docs/guides/image-generation"
+        ],
+        "changes": "New authored route, separate from historical corpus.",
+        "source_date": "2026-11-05",
+        "review_status": "source-checked-route",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "seedance-2-5",
+      "title": "Seedance 2.5: видеосцена и мультимодальные референсы",
+      "path": "current/seedance-2-5.md",
+      "sha256": "fbec09632b8b1b40171d48d111e96e4d167fa5dd994d777b827fad4dfd072724",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "bytedance"
+      ],
+      "model_families": [
+        "seedance"
+      ],
+      "models": [],
+      "versions": [
+        "2.5"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "fbec09632b8b1b40171d48d111e96e4d167fa5dd994d777b827fad4dfd072724",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://seed.bytedance.com/en/blog/one-take-creation-flexible-referencing-introducing-seedance-2-5"
+        ],
+        "changes": "New authored creative method; clarified portability while keeping vendor controls route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "source-checked-route",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "kling-4",
+      "title": "Kling 4.0: режиссура генерируемого видео",
+      "path": "current/kling-4.md",
+      "sha256": "3ceb7bf1f2497e0756fb3ae9fd1e162a2ab76ad5b3ed588abfcc46519e9690a5",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "kling"
+      ],
+      "model_families": [
+        "kling"
+      ],
+      "models": [],
+      "versions": [
+        "4.0"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "3ceb7bf1f2497e0756fb3ae9fd1e162a2ab76ad5b3ed588abfcc46519e9690a5",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://ir.kuaishou.com/news-releases/news-release-details/kling-ai-officially-launches-next-generation-kling-40-raising/"
+        ],
+        "changes": "New authored route, separate from historical corpus.",
+        "source_date": "2026-11-05",
+        "review_status": "source-checked-route",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "grok-imagine",
+      "title": "Grok Imagine: изображение и видео",
+      "path": "current/grok-imagine.md",
+      "sha256": "1fa6507cc91db50610a78515e952eb203b687074e4d10b44f238fa17e59f2ae9",
+      "kind": "prompt",
+      "modalities": [
+        "image",
+        "video"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "xai"
+      ],
+      "model_families": [
+        "imagine"
+      ],
+      "models": [],
+      "versions": [
+        "1.5",
+        "2.0"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "1fa6507cc91db50610a78515e952eb203b687074e4d10b44f238fa17e59f2ae9",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://docs.x.ai/developers/model-capabilities/imagine"
+        ],
+        "changes": "New authored route, separate from historical corpus.",
+        "source_date": "2026-11-05",
+        "review_status": "source-checked-route",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "suno-v6",
+      "title": "Suno v6: песня с русским текстом",
+      "path": "current/suno-v6.md",
+      "sha256": "4d5422d702e51edc2097612cc47f785338048d4464a71519ea40f29714779fc5",
+      "kind": "prompt",
+      "modalities": [
+        "audio"
+      ],
+      "tasks": [
+        "music"
+      ],
+      "providers": [
+        "suno"
+      ],
+      "model_families": [
+        "suno"
+      ],
+      "models": [],
+      "versions": [
+        "v6",
+        "v6-wild",
+        "v6-mini"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "4d5422d702e51edc2097612cc47f785338048d4464a71519ea40f29714779fc5",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://help.suno.com/en/articles/13924737"
+        ],
+        "changes": "New authored route, separate from historical corpus.",
+        "source_date": "2026-11-05",
+        "review_status": "source-checked-route",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "elevenlabs-current",
+      "title": "ElevenLabs: выбор TTS модели и русская озвучка",
+      "path": "current/elevenlabs-current.md",
+      "sha256": "c551caa72fc03c7cb1fd9de178956febd0fe574379f5c08d4b50d32da4c0f71f",
+      "kind": "prompt",
+      "modalities": [
+        "audio"
+      ],
+      "tasks": [
+        "tts"
+      ],
+      "providers": [
+        "elevenlabs"
+      ],
+      "model_families": [
+        "eleven"
+      ],
+      "models": [],
+      "versions": [
+        "v4",
+        "v4-turbo",
+        "v3",
+        "multilingual-v2",
+        "flash-v2.5"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "c551caa72fc03c7cb1fd9de178956febd0fe574379f5c08d4b50d32da4c0f71f",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://elevenlabs.io/docs/overview/capabilities/text-to-speech"
+        ],
+        "changes": "New authored route, separate from historical corpus.",
+        "source_date": "2026-11-05",
+        "review_status": "source-checked-route",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "veo-3-1",
+      "title": "Veo 3.1: видеопромпт с отдельной проверкой поверхности",
+      "path": "current/veo-3-1.md",
+      "sha256": "4d5a7dbca8880a226d099f889cc818b3d95a79c2a4c6290918bdcd99e33c4f74",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "google"
+      ],
+      "model_families": [
+        "veo"
+      ],
+      "models": [],
+      "versions": [
+        "3.1"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "4d5a7dbca8880a226d099f889cc818b3d95a79c2a4c6290918bdcd99e33c4f74",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://ai.google.dev/gemini-api/docs/veo"
+        ],
+        "changes": "New authored route, separate from historical corpus.",
+        "source_date": "2026-11-05",
+        "review_status": "source-checked-route",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "nano-banana-2-1",
+      "title": "Nano Banana 2.1: проверка версии перед генерацией",
+      "path": "current/nano-banana-2-1.md",
+      "sha256": "6bdd0a06bc1f30c3d18db0ee340d40aee5b06dad760658c1f8b447a6f9df9377",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "google"
+      ],
+      "model_families": [
+        "nano-banana"
+      ],
+      "models": [],
+      "versions": [
+        "2.1"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "6bdd0a06bc1f30c3d18db0ee340d40aee5b06dad760658c1f8b447a6f9df9377",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://deepmind.google/models/model-cards/nano-banana-2-1/"
+        ],
+        "changes": "New authored creative method; clarified portability while keeping vendor controls route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "source-checked-route",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "personal-reels-style",
+      "title": "Личный стиль сценариев: подключение по желанию автора",
+      "path": "current/personal-reels-style.md",
+      "sha256": "2d6a89618c2fb8fccd460c02240b0d53fe3f5ef7fc27bb2574bebdf0bf799bd5",
+      "kind": "scenario",
+      "modalities": [
+        "scenario",
+        "video"
+      ],
+      "tasks": [
+        "personal-script"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "2d6a89618c2fb8fccd460c02240b0d53fe3f5ef7fc27bb2574bebdf0bf799bd5",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "New authored route, separate from historical corpus.",
+        "source_date": "2026-11-05",
+        "review_status": "new-methodology",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "syntx-director-v5",
+      "title": "SYNTX Director V5.2: тематическая маршрутизация",
+      "path": "current/syntx-director-v5.md",
+      "sha256": "c65259eb9c278945a5930de6f008da833d8da49213948618313711d038391f7b",
+      "kind": "scenario",
+      "modalities": [
+        "scenario"
+      ],
+      "tasks": [
+        "route"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "AIMaster original route",
+        "original_sha256": "c65259eb9c278945a5930de6f008da833d8da49213948618313711d038391f7b",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "New route replacing unlicensed compiled upload package.",
+        "source_date": "2026-11-05",
+        "review_status": "new-methodology",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "syntx-director-v5-00",
+      "title": "Синтекс-Режиссёр V5.2 — router",
+      "path": "authored/syntx-director-v5-00.md",
+      "sha256": "353d394f34c0b931a2d229700b6f9a85bbfec9c862f7b7d3abf5b96917a5d6cc",
+      "kind": "scenario",
+      "modalities": [
+        "scenario"
+      ],
+      "tasks": [
+        "route"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "Синтекс-Режиссёр V5.2 — router",
+        "original_sha256": "15ddb06926e066cc499ce0149310094666ed8a21f47face66ceb2dff01581dcd",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Full compiled module preserved; historical model and interface claims require route-specific review. Added relative links to bundled full guides.",
+        "source_date": "2026-07-02",
+        "review_status": "historical",
+        "source_path": "H/Синтекс агент/агент версия 5/upload/00_ROUTER_PROJECT_INSTRUCTIONS_CHATGPT.md"
+      }
+    },
+    {
+      "id": "syntx-director-v5-01",
+      "title": "01 Nano Banana Pro Image System",
+      "path": "authored/syntx-director-v5-01.md",
+      "sha256": "a6ff4b513829ff6bb3ee1cd84e8ed2953d8723fabf64b38c24cb9062e360b71c",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [
+        "nano-banana"
+      ],
+      "models": [],
+      "versions": [
+        "pro"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "01 Nano Banana Pro Image System",
+        "original_sha256": "f17501866eb1e3f7f5f7da6500887594ce8d2bbe7933091ddef977a5f99741d6",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Removed copied web documentation/tutorial blocks (original lines 29-4561 and 5868-6548); retained full authored Pro and marketplace methods. Added relative links to bundled full guides.",
+        "source_date": "2026-07-02",
+        "review_status": "sanitized-historical",
+        "source_path": "H/Синтекс агент/агент версия 5/upload/01_NANO_BANANA_PRO_IMAGE_SYSTEM.md"
+      }
+    },
+    {
+      "id": "syntx-director-v5-02",
+      "title": "02 Nano Banana 2 Image System",
+      "path": "authored/syntx-director-v5-02.md",
+      "sha256": "527f3f9d00387c6def31cc085c01220e4cae37817fb980ee8d252009bf93c0d2",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [
+        "nano-banana"
+      ],
+      "models": [],
+      "versions": [
+        "2"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "02 Nano Banana 2 Image System",
+        "original_sha256": "48b29131ec536070793c1b0facbfac568e4e5a83d11b96eafe7999e8a7d00665",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Full compiled module preserved; historical model and interface claims require route-specific review. Added relative links to bundled full guides.",
+        "source_date": "2026-07-02",
+        "review_status": "historical",
+        "source_path": "H/Синтекс агент/агент версия 5/upload/02_NANO_BANANA_2_IMAGE_SYSTEM.md"
+      }
+    },
+    {
+      "id": "syntx-director-v5-03",
+      "title": "03 Seedance 2 Video System",
+      "path": "authored/syntx-director-v5-03.md",
+      "sha256": "f4167c7dae6ebb11a85b57414d7816dacde56c56114411a445030ebcb67beb4e",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [
+        "seedance"
+      ],
+      "models": [],
+      "versions": [
+        "2.0"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "03 Seedance 2 Video System",
+        "original_sha256": "8fa862b05b1a68458434ae81e96add124405e7f49e5e46b5ac5e9de188932de1",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Full compiled module preserved; historical model and interface claims require route-specific review. Added relative links to bundled full guides.",
+        "source_date": "2026-07-02",
+        "review_status": "historical",
+        "source_path": "H/Синтекс агент/агент версия 5/upload/03_SEEDANCE_2_VIDEO_SYSTEM.md"
+      }
+    },
+    {
+      "id": "syntx-director-v5-04",
+      "title": "04 CineMaster Video Language System",
+      "path": "authored/syntx-director-v5-04.md",
+      "sha256": "d435731eebdf896a4236e3e8e99bfd9b18c17160c7703a3044e712e2c08613dc",
+      "kind": "scenario",
+      "modalities": [
+        "image",
+        "video"
+      ],
+      "tasks": [
+        "shot-plan"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "04 CineMaster Video Language System",
+        "original_sha256": "7dd8d331990b9aca909c19fb2dce8ab339200ab4cb0dd1dcb142ae25b4af3771",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Removed third-party general video guide (original lines 1258-1981); retained complete CineMaster modules. Added relative links to bundled full guides.",
+        "source_date": "2026-07-02",
+        "review_status": "sanitized-historical",
+        "source_path": "H/Синтекс агент/агент версия 5/upload/04_CINEMASTER_VIDEO_LANGUAGE_SYSTEM.md"
+      }
+    },
+    {
+      "id": "syntx-director-v5-05",
+      "title": "05 Scriptwriting System",
+      "path": "authored/syntx-director-v5-05.md",
+      "sha256": "c9748c6c1ff58526dc6e4bdb1fd67c45d018413ec4343f42436cc932912a318c",
+      "kind": "scenario",
+      "modalities": [
+        "scenario",
+        "video"
+      ],
+      "tasks": [
+        "ugc-script",
+        "expert-script"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "05 Scriptwriting System",
+        "original_sha256": "65eb8b39c91467585c4d34aa365748e10141caac4f35f68c26271fc7a6cb885a",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Removed private LT/competitor source block (original lines 4695-5525); retained complete UGC and expert scenario modules. Added relative links to bundled full guides.",
+        "source_date": "2026-07-02",
+        "review_status": "sanitized-historical",
+        "source_path": "H/Синтекс агент/агент версия 5/upload/05_SCRIPTWRITING_SYSTEM.md"
+      }
+    },
+    {
+      "id": "syntx-director-v5-06",
+      "title": "06 Quality Humanization System",
+      "path": "authored/syntx-director-v5-06.md",
+      "sha256": "495170f66f4fa8dea8a9de23ecc5e275a0acf9d4bbcf09c1bb7caf655bc8d283",
+      "kind": "scenario",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "quality-review"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "06 Quality Humanization System",
+        "original_sha256": "e85d82bdedc0dd93c59bd5efd741038ae7373884be454cd22a5e4224953b7d45",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Removed duplicate DOCX export and third-party Artem section (original lines 11624-13643); retained complete main and authored quality manuals. Added relative links to bundled full guides.",
+        "source_date": "2026-07-02",
+        "review_status": "sanitized-historical",
+        "source_path": "H/Синтекс агент/агент версия 5/upload/06_QUALITY_HUMANIZATION_SYSTEM.md"
+      }
+    },
+    {
+      "id": "syntx-director-v5-07",
+      "title": "07 Character Continuity System",
+      "path": "authored/syntx-director-v5-07.md",
+      "sha256": "12d19c49a1a716d13fc243652519bafa287ee4e8a5f90c11935494456085f59f",
+      "kind": "scenario",
+      "modalities": [
+        "image",
+        "video"
+      ],
+      "tasks": [
+        "continuity"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "07 Character Continuity System",
+        "original_sha256": "4f19003351fe58a73fc19c36a760f9a9b18671c036b00ccb53b08acbc323fedb",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Full compiled module preserved; historical model and interface claims require route-specific review. Added relative links to bundled full guides.",
+        "source_date": "2026-07-02",
+        "review_status": "historical",
+        "source_path": "H/Синтекс агент/агент версия 5/upload/07_CHARACTER_CONTINUITY_SYSTEM.md"
+      }
+    },
+    {
+      "id": "syntx-director-v5-08",
+      "title": "08 Operator QA Examples System",
+      "path": "authored/syntx-director-v5-08.md",
+      "sha256": "88696637030d26668aea3ca0355169c166a4e9902eb691ac1cf14f0b8023dd88",
+      "kind": "scenario",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "quality-review"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "08 Operator QA Examples System",
+        "original_sha256": "630c2b39a647c0c84f8b9b1975ba60374cbaf7694c89490bfa22a5e0690c61da",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Full compiled module preserved; historical model and interface claims require route-specific review. Added relative links to bundled full guides.",
+        "source_date": "2026-07-02",
+        "review_status": "historical",
+        "source_path": "H/Синтекс агент/агент версия 5/upload/08_OPERATOR_QA_EXAMPLES_SYSTEM.md"
+      }
+    },
+    {
+      "id": "syntx-director-v5-99",
+      "title": "99 Source Map And Routing Notes",
+      "path": "authored/syntx-director-v5-99.md",
+      "sha256": "d51e0906c28816128908cacc9323984241ea2f3728a47560401d559b6617598a",
+      "kind": "scenario",
+      "modalities": [
+        "scenario"
+      ],
+      "tasks": [
+        "route"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "99 Source Map And Routing Notes",
+        "original_sha256": "64cacbfe32e5a86e4c2cf1f991ef7409ebf1b0d0c7b64f55b72c13b47dc8f57a",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Full compiled module preserved; historical model and interface claims require route-specific review. Added relative links to bundled full guides.",
+        "source_date": "2026-07-02",
+        "review_status": "historical",
+        "source_path": "H/Синтекс агент/агент версия 5/upload/99_SOURCE_MAP_AND_ROUTING_NOTES.md"
+      }
+    },
+    {
+      "id": "personal-lt-style",
+      "title": "Личный сценарный стиль: авторская методика (opt-in)",
+      "path": "authored/personal-lt-style.md",
+      "sha256": "0c9e146d52307135abcdac5980e851dc9fbb77fe33399eb4f527979e80c6568a",
+      "kind": "scenario",
+      "modalities": [
+        "scenario",
+        "video"
+      ],
+      "tasks": [
+        "personal-script"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "GPTS Knowledge: Сценарии в стиле ЛТ",
+        "original_sha256": "65eb8b39c91467585c4d34aa365748e10141caac4f35f68c26271fc7a6cb885a",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "Kept authored sections 4695-4876 and 5027-5404; excluded competitor library 4877-5026 and dependent GPTS instructions 5405-5525.",
+        "source_date": "2026-06-23",
+        "review_status": "opt-in-sanitized",
+        "source_path": "H/Синтекс агент/агент версия 5/upload/05_SCRIPTWRITING_SYSTEM.md"
+      }
+    },
+    {
+      "id": "visual-reference-style",
+      "title": "Визуальные референсы, типаж и консистентность",
+      "path": "current/visual-reference-style.md",
+      "sha256": "bb7e9f8ee534d4e1d013dee42821237335269dae6a7019fe1cbb329f0b0284ef",
+      "kind": "scenario",
+      "modalities": [
+        "image",
+        "video"
+      ],
+      "tasks": [
+        "reference-style",
+        "continuity"
+      ],
+      "providers": [
+        "*"
+      ],
+      "model_families": [],
+      "models": [],
+      "versions": [],
+      "family_all_versions": false,
+      "model_agnostic": true,
+      "provenance": {
+        "author_source_title": "AIMaster original safe visual-reference method",
+        "original_sha256": "bb7e9f8ee534d4e1d013dee42821237335269dae6a7019fe1cbb329f0b0284ef",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [],
+        "changes": "New full method replacing excluded personal face-style router; no face-based identity or sensitive-property inference.",
+        "source_date": "2026-11-05",
+        "review_status": "new-methodology",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "nano-banana-2-1-magnific",
+      "title": "Nano Banana 2.1: проверка версии перед генерацией — magnific route",
+      "path": "current/nano-banana-2-1.md",
+      "sha256": "6bdd0a06bc1f30c3d18db0ee340d40aee5b06dad760658c1f8b447a6f9df9377",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "magnific"
+      ],
+      "model_families": [
+        "nano-banana"
+      ],
+      "models": [
+        "imagen-nano-banana-2-1"
+      ],
+      "versions": [
+        "2.1"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "6bdd0a06bc1f30c3d18db0ee340d40aee5b06dad760658c1f8b447a6f9df9377",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://deepmind.google/models/model-cards/nano-banana-2-1/"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "Magnific image model catalog, read 2026-11-05"
+      }
+    },
+    {
+      "id": "seedance-2-5-magnific",
+      "title": "Seedance 2.5: видеосцена и мультимодальные референсы — magnific route",
+      "path": "current/seedance-2-5.md",
+      "sha256": "fbec09632b8b1b40171d48d111e96e4d167fa5dd994d777b827fad4dfd072724",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "magnific"
+      ],
+      "model_families": [
+        "seedance"
+      ],
+      "models": [
+        "pro-2.5",
+        "bytedance-seedance-pro-2.5"
+      ],
+      "versions": [
+        "2.5"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "fbec09632b8b1b40171d48d111e96e4d167fa5dd994d777b827fad4dfd072724",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://seed.bytedance.com/en/blog/one-take-creation-flexible-referencing-introducing-seedance-2-5"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "Magnific video model catalog, read 2026-11-05; mode and slug"
+      }
+    },
+    {
+      "id": "nano-banana-2-1-syntx",
+      "title": "Nano Banana 2.1: проверка версии перед генерацией — syntx route",
+      "path": "current/nano-banana-2-1.md",
+      "sha256": "6bdd0a06bc1f30c3d18db0ee340d40aee5b06dad760658c1f8b447a6f9df9377",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [
+        "banana"
+      ],
+      "models": [
+        "banana-2.1"
+      ],
+      "versions": [
+        "2.1"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "6bdd0a06bc1f30c3d18db0ee340d40aee5b06dad760658c1f8b447a6f9df9377",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://deepmind.google/models/model-cards/nano-banana-2-1/"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "SYNTX dated official-public snapshot 2026-10-29; not account entitlement"
+      }
+    },
+    {
+      "id": "seedance-2-5-syntx",
+      "title": "Seedance 2.5: видеосцена и мультимодальные референсы — syntx route",
+      "path": "current/seedance-2-5.md",
+      "sha256": "fbec09632b8b1b40171d48d111e96e4d167fa5dd994d777b827fad4dfd072724",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [
+        "seedance"
+      ],
+      "models": [
+        "seedance-2.5"
+      ],
+      "versions": [
+        "2.5"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "fbec09632b8b1b40171d48d111e96e4d167fa5dd994d777b827fad4dfd072724",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://seed.bytedance.com/en/blog/one-take-creation-flexible-referencing-introducing-seedance-2-5"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "SYNTX dated official-public snapshot 2026-10-29; not account entitlement"
+      }
+    },
+    {
+      "id": "gpt-image-2-5-flare-syntx",
+      "title": "GPT Image: генерация и редактирование — syntx route",
+      "path": "current/gpt-image.md",
+      "sha256": "96ac00ef7bf0c60828317eaec8e7fb9fe40e8a8cbf10efd5e54675e7d5f9e02b",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [
+        "sora-images"
+      ],
+      "models": [
+        "gpt-image-2.5-flare"
+      ],
+      "versions": [
+        "2.5"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "96ac00ef7bf0c60828317eaec8e7fb9fe40e8a8cbf10efd5e54675e7d5f9e02b",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://developers.openai.com/api/docs/guides/image-generation"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "SYNTX dated official-public snapshot 2026-10-29; not account entitlement"
+      }
+    },
+    {
+      "id": "gpt-image-2-5-sunburst-syntx",
+      "title": "GPT Image: генерация и редактирование — syntx route",
+      "path": "current/gpt-image.md",
+      "sha256": "96ac00ef7bf0c60828317eaec8e7fb9fe40e8a8cbf10efd5e54675e7d5f9e02b",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [
+        "sora-images"
+      ],
+      "models": [
+        "gpt-image-2.5-sunburst"
+      ],
+      "versions": [
+        "2.5"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "96ac00ef7bf0c60828317eaec8e7fb9fe40e8a8cbf10efd5e54675e7d5f9e02b",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://developers.openai.com/api/docs/guides/image-generation"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "SYNTX dated official-public snapshot 2026-10-29; not account entitlement"
+      }
+    },
+    {
+      "id": "seedream-5-pro-syntx",
+      "title": "Seedream 5.0 Pro: изображения и редактирование — syntx route",
+      "path": "current/seedream-5-pro.md",
+      "sha256": "9a9fcaa16400a6147bf8f24b50526eb47c351898973526050b26a947de593444",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [
+        "seedream"
+      ],
+      "models": [
+        "seedream-5.0-pro"
+      ],
+      "versions": [
+        "5.0-pro"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "9a9fcaa16400a6147bf8f24b50526eb47c351898973526050b26a947de593444",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://seed.bytedance.com/en/blog/beyond-generation-it-understands-design-introducing-seedream-5-0-pro"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "SYNTX dated official-public snapshot 2026-10-29; not account entitlement"
+      }
+    },
+    {
+      "id": "kling-4-omni-syntx",
+      "title": "Kling 4.0: режиссура генерируемого видео — syntx route",
+      "path": "current/kling-4.md",
+      "sha256": "3ceb7bf1f2497e0756fb3ae9fd1e162a2ab76ad5b3ed588abfcc46519e9690a5",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [
+        "kling"
+      ],
+      "models": [
+        "kling_4_omni"
+      ],
+      "versions": [
+        "4.0"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "3ceb7bf1f2497e0756fb3ae9fd1e162a2ab76ad5b3ed588abfcc46519e9690a5",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://ir.kuaishou.com/news-releases/news-release-details/kling-ai-officially-launches-next-generation-kling-40-raising/"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "SYNTX dated official-public snapshot 2026-10-29; not account entitlement"
+      }
+    },
+    {
+      "id": "kling-4-keyframes-syntx",
+      "title": "Kling 4.0: режиссура генерируемого видео — syntx route",
+      "path": "current/kling-4.md",
+      "sha256": "3ceb7bf1f2497e0756fb3ae9fd1e162a2ab76ad5b3ed588abfcc46519e9690a5",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "syntx"
+      ],
+      "model_families": [
+        "kling"
+      ],
+      "models": [
+        "kling_4_keyframes"
+      ],
+      "versions": [
+        "4.0"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "3ceb7bf1f2497e0756fb3ae9fd1e162a2ab76ad5b3ed588abfcc46519e9690a5",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://ir.kuaishou.com/news-releases/news-release-details/kling-ai-officially-launches-next-generation-kling-40-raising/"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "SYNTX dated official-public snapshot 2026-10-29; not account entitlement"
+      }
+    },
+    {
+      "id": "seedance-2-5-higgsfield",
+      "title": "Seedance 2.5: видеосцена и мультимодальные референсы — higgsfield route",
+      "path": "current/seedance-2-5.md",
+      "sha256": "fbec09632b8b1b40171d48d111e96e4d167fa5dd994d777b827fad4dfd072724",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "higgsfield"
+      ],
+      "model_families": [
+        "seedance"
+      ],
+      "models": [],
+      "versions": [
+        "2.5"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "fbec09632b8b1b40171d48d111e96e4d167fa5dd994d777b827fad4dfd072724",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://seed.bytedance.com/en/blog/one-take-creation-flexible-referencing-introducing-seedance-2-5",
+          "https://higgsfield.ai/enterprise-help-center/platform/ai-models"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "Higgsfield official model family page, updated 2026-11-01; exact model ID not claimed"
+      }
+    },
+    {
+      "id": "seedream-5-pro-higgsfield",
+      "title": "Seedream 5.0 Pro: изображения и редактирование — higgsfield route",
+      "path": "current/seedream-5-pro.md",
+      "sha256": "9a9fcaa16400a6147bf8f24b50526eb47c351898973526050b26a947de593444",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "higgsfield"
+      ],
+      "model_families": [
+        "seedream"
+      ],
+      "models": [],
+      "versions": [
+        "5.0-pro"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "9a9fcaa16400a6147bf8f24b50526eb47c351898973526050b26a947de593444",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://seed.bytedance.com/en/blog/beyond-generation-it-understands-design-introducing-seedream-5-0-pro",
+          "https://higgsfield.ai/enterprise-help-center/platform/ai-models"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "Higgsfield official model family page, updated 2026-11-01; exact model ID not claimed"
+      }
+    },
+    {
+      "id": "gpt-image-2-5-higgsfield",
+      "title": "GPT Image: генерация и редактирование — higgsfield route",
+      "path": "current/gpt-image.md",
+      "sha256": "96ac00ef7bf0c60828317eaec8e7fb9fe40e8a8cbf10efd5e54675e7d5f9e02b",
+      "kind": "prompt",
+      "modalities": [
+        "image"
+      ],
+      "tasks": [
+        "generate",
+        "edit"
+      ],
+      "providers": [
+        "higgsfield"
+      ],
+      "model_families": [
+        "gpt-image"
+      ],
+      "models": [],
+      "versions": [
+        "2.5"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "96ac00ef7bf0c60828317eaec8e7fb9fe40e8a8cbf10efd5e54675e7d5f9e02b",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://developers.openai.com/api/docs/guides/image-generation",
+          "https://higgsfield.ai/enterprise-help-center/platform/ai-models"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "Higgsfield official model family page, updated 2026-11-01; exact model ID not claimed"
+      }
+    },
+    {
+      "id": "kling-4-higgsfield",
+      "title": "Kling 4.0: режиссура генерируемого видео — higgsfield route",
+      "path": "current/kling-4.md",
+      "sha256": "3ceb7bf1f2497e0756fb3ae9fd1e162a2ab76ad5b3ed588abfcc46519e9690a5",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "higgsfield"
+      ],
+      "model_families": [
+        "kling"
+      ],
+      "models": [],
+      "versions": [
+        "4.0"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "3ceb7bf1f2497e0756fb3ae9fd1e162a2ab76ad5b3ed588abfcc46519e9690a5",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://ir.kuaishou.com/news-releases/news-release-details/kling-ai-officially-launches-next-generation-kling-40-raising/",
+          "https://higgsfield.ai/enterprise-help-center/platform/ai-models"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "Higgsfield official model family page, updated 2026-11-01; exact model ID not claimed"
+      }
+    },
+    {
+      "id": "veo-3-1-higgsfield",
+      "title": "Veo 3.1: видеопромпт с отдельной проверкой поверхности — higgsfield route",
+      "path": "current/veo-3-1.md",
+      "sha256": "4d5a7dbca8880a226d099f889cc818b3d95a79c2a4c6290918bdcd99e33c4f74",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "higgsfield"
+      ],
+      "model_families": [
+        "veo"
+      ],
+      "models": [],
+      "versions": [
+        "3.1"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "4d5a7dbca8880a226d099f889cc818b3d95a79c2a4c6290918bdcd99e33c4f74",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://ai.google.dev/gemini-api/docs/veo",
+          "https://higgsfield.ai/enterprise-help-center/platform/ai-models"
+        ],
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "source_date": "2026-11-05",
+        "review_status": "route-adaptation",
+        "source_path": "new-authored-supplement",
+        "route_evidence": "Higgsfield official model family page, updated 2026-11-01; exact model ID not claimed"
+      }
+    }
+  ]
+}
