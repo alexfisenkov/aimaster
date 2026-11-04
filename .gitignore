@@ -5,6 +5,7 @@
 .журналы/
 .реестры/
 .critics/
+.aispa-work/
 
 # Локальные настройки и секреты
 .env
@@ -21,3 +22,4 @@ workspaces/
 media/
 node_modules/
 .superpowers/
+.aispa-work/serve.*
