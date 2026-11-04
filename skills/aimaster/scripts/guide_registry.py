@@ -349,6 +349,9 @@ def _model_rank(entry: dict[str, Any], args: argparse.Namespace) -> int | None:
             return 300
     if entry["model_agnostic"] and version is not None and (model is not None or family is not None):
         return 200
+    if (entry["kind"] == "scenario" and entry["model_agnostic"]
+            and model is None and family is None and version is None):
+        return 200
     if entry["kind"] == "scenario" and not (
         entry["models"]
         or entry["model_families"]

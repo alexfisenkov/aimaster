@@ -393,21 +393,20 @@ def attach(workspace, library_id, *, file, expected_revision=None) -> dict:
 def list_entries(workspace, *, kind=None) -> dict:
     if kind is not None and kind not in KIND_FOLDERS:
         raise LibraryError(f"kind must be one of {sorted(KIND_FOLDERS)}")
-    entries = read_entries(workspace)
+    # Index replacement is atomic; derive every response field from one read.
+    index = (read_index(library_root(workspace)) if (Path(workspace) / LIBRARY_DIR_NAME).exists()
+             else {"revision": 0, "entries": []})
+    entries = [dict(entry, notes=entry.get("notes", ""), tags=entry.get("tags", []),
+                    updated_at=entry.get("updated_at", entry["added_at"])) for entry in index["entries"]]
     if kind is not None:
         entries = [entry for entry in entries if entry["kind"] == kind]
-    revision = read_index(library_root(workspace))["revision"] if (Path(workspace) / LIBRARY_DIR_NAME).exists() else 0
-    return {"library": LIBRARY_DIR_NAME, "revision": revision, "count": len(entries), "entries": entries}
+    return {"library": LIBRARY_DIR_NAME, "revision": index["revision"], "count": len(entries), "entries": entries}
 
 
 def read_entries(workspace) -> list[dict]:
     """Every entry, or `[]` when the workspace has no `library/` yet."""
 
-    if not (Path(workspace) / LIBRARY_DIR_NAME).exists():
-        return []
-    entries = read_index(library_root(workspace))["entries"]
-    return [dict(entry, notes=entry.get("notes", ""), tags=entry.get("tags", []),
-                 updated_at=entry.get("updated_at", entry["added_at"])) for entry in entries]
+    return list_entries(workspace)["entries"]
 
 
 def get_entry(workspace, library_id) -> tuple[Path, dict]:

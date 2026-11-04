@@ -347,6 +347,15 @@ def attach_reference(
         if (attachment_kind == "voice" and library_entry is not None and library_entry.get("voice_of")
                 and reference.get("library_id") and library_entry["voice_of"] != reference["library_id"]):
             raise AuthoringError("this voice belongs to a different library identity")
+        voice_id = reference.get("voice", {}).get("library_id")
+        if attachment_kind != "voice" and voice_id and library_id != reference.get("library_id"):
+            from .library import LibraryError, get_entry
+            try:
+                _, attached_voice = get_entry(assets_index.root, voice_id)
+            except LibraryError as error:
+                raise AuthoringError("attached voice library identity is unavailable; reconcile the voice first") from error
+            if attached_voice.get("voice_of") is not None and attached_voice["voice_of"] != library_id:
+                raise AuthoringError("attached voice belongs to a different library identity")
         try:
             domain.attach_reference_asset(
                 state, reference_id, asset_id, attachment_kind=attachment_kind
