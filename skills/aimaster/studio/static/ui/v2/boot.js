@@ -14,6 +14,8 @@ import { montageRepaintWanted, renderShellV2, setViewedScreen } from "./shell.js
 import { createRailDrawer } from "./rail-drawer.js";
 import { attachViewerV2, repaintViewer } from "./viewer.js";
 import { refreshMontage } from "./montage-feed.js";
+import { applyFamilyPreference, readFamilyPreference } from "./family.js";
+import { loadFamilyData } from "./family-data.js";
 
 const LAST_PROJECT_KEY = "aimaster.v2.lastProject";
 
@@ -83,6 +85,7 @@ async function fetchJson(path) {
 }
 
 export function bootV2() {
+  applyFamilyPreference(readFamilyPreference());
   // Просмотрщик v1 слушает `studio:open-viewer` со строгим списком
   // `kind: image|video|audio` и событие v2 (`{version: 2, target, tab}`)
   // молча пропускает; просмотрщик v2 наоборот берёт только `version: 2`.
@@ -97,6 +100,7 @@ export function bootV2() {
   const store = createStore();
   const pageUrl = new URL(window.location.href);
   let lastOpenedId = null;
+  let lastFamilyRevision = null;
   const controller = createAppController({
     store,
     fetchSnapshot: (id) => fetchJson(`/api/projects/${encodeURIComponent(id)}/snapshot`),
@@ -113,9 +117,11 @@ export function bootV2() {
       const openedId = state?.snapshot?.active_project?.id;
       // Открытый по `?project=` тоже попадает в память: в следующий раз
       // голый адрес откроет его, а не спросит заново.
-      if (openedId && openedId !== lastOpenedId) {
+      if (openedId && (openedId !== lastOpenedId || state.snapshot.revision !== lastFamilyRevision)) {
         lastOpenedId = openedId;
+        lastFamilyRevision = state.snapshot.revision;
         rememberProject(openedId);
+        loadFamilyData(openedId);
       }
       repaintViewer();
       renderShellV2(shellRoot, state);
@@ -166,6 +172,13 @@ export function bootV2() {
   document.addEventListener("studio:refresh-snapshot", (event) => {
     controller.requestRefresh(event?.detail?.projectId);
   });
+  document.addEventListener("studio:family-data", (event) => {
+    if (event?.detail?.projectId === store.getState()?.snapshot?.active_project?.id) renderShellV2(shellRoot, store.getState());
+  });
+  document.addEventListener("studio:family-preference", () => {
+    renderShellV2(shellRoot, store.getState());
+    renderProjectRail(railRoot, store.getState());
+  });
   document.addEventListener("studio:project-selected", (event) => {
     const projectId = event?.detail?.projectId;
     if (typeof projectId !== "string" || !projectId) return;
@@ -199,6 +212,7 @@ export function bootV2() {
   // только если он ещё есть в списке: несуществующий `preferredProjectId`
   // контроллер считает ошибкой и показал бы экран отказа вместо выбора.
   controller.loadProjectIndex().then(() => {
+    if (pageUrl.searchParams.get("project")) return;
     const { status, projects } = store.getState();
     if (status !== "choose" && status !== "empty") return;
     const last = rememberedProject();
@@ -206,6 +220,5 @@ export function bootV2() {
       openProjectAt(last);
       return;
     }
-    if (status === "choose") rail.open();
   });
 }

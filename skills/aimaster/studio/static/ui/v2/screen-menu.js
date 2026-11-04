@@ -7,6 +7,7 @@ import { requestAgentPrompt } from "../chat-prompt-dialog.js";
 import { el } from "./dom.js";
 import { isPhone } from "./responsive.js";
 import { openSheet } from "./sheet.js";
+import { t } from "./locale.js";
 
 /**
  * @param {{label: string, request: {title: string, prompt: string}}[]} items
@@ -18,10 +19,10 @@ export function screenMenu(items, { title = "" } = {}) {
   const box = el("details", "v2-screen-menu");
   box.dataset.hook = "v2-screen-menu";
   const summary = el("summary", "v2-screen-menu-button", "···");
-  summary.setAttribute("aria-label", "Ещё действия");
+  summary.setAttribute("aria-label", t("Ещё действия"));
   const menu = el("div", "v2-screen-menu-items");
   for (const item of list) {
-    const button = el("button", "v2-screen-menu-item", item.label);
+    const button = el("button", "v2-screen-menu-item", t(item.label));
     button.type = "button";
     button.addEventListener("click", () => {
       box.open = false;
@@ -33,10 +34,10 @@ export function screenMenu(items, { title = "" } = {}) {
     if (!isPhone()) return;
     event.preventDefault();
     openSheet({
-      title,
+      title: t(title),
       returnFocus: summary,
       items: list.map((item) => ({
-        label: item.label,
+        label: t(item.label),
         onSelect: () => requestAgentPrompt(item.request, summary),
       })),
     });

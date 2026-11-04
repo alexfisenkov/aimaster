@@ -3,6 +3,7 @@
 // строит вызывающий — здесь он только показывается и копируется.
 
 import { showToast } from "./v2/toast.js";
+import { t } from "./i18n.js";
 
 let dialogRefs = null;
 let returnFocus = null;
@@ -30,18 +31,18 @@ function buildDialog() {
 
   const heading = document.createElement("h2");
   heading.id = "chat-prompt-dialog-title";
-  heading.textContent = "Запрос для агента";
+  heading.textContent = t("Запрос для агента");
   const description = document.createElement("p");
   description.id = "chat-prompt-dialog-description";
   description.className = "chat-prompt-dialog-description";
-  description.textContent = "Скопируйте текст и отправьте его агенту в рабочий чат.";
+  description.textContent = t("Скопируйте текст и отправьте его агенту в рабочий чат.");
   const attachment = document.createElement("p");
   attachment.className = "chat-prompt-dialog-attachment";
   attachment.hidden = true;
   const textarea = document.createElement("textarea");
   textarea.readOnly = true;
   textarea.rows = 8;
-  textarea.setAttribute("aria-label", "Текст запроса агенту");
+  textarea.setAttribute("aria-label", t("Текст запроса агенту"));
   const status = document.createElement("p");
   status.className = "chat-prompt-dialog-status";
   status.setAttribute("role", "status");
@@ -51,10 +52,10 @@ function buildDialog() {
   const copy = document.createElement("button");
   copy.type = "button";
   copy.className = "chat-prompt-copy";
-  copy.textContent = "Скопировать запрос";
+  copy.textContent = t("Скопировать запрос");
   const close = document.createElement("button");
   close.type = "submit";
-  close.textContent = "Закрыть";
+  close.textContent = t("Закрыть");
   close.className = "chat-prompt-close";
   controls.append(close, copy);
   form.append(heading, description, attachment, textarea, status, controls);
@@ -67,11 +68,11 @@ function buildDialog() {
     try {
       await copyText(textarea);
       status.dataset.tone = "ok";
-      status.textContent = "Скопировано. Вернитесь в чат и отправьте запрос агенту.";
-      showToast("Запрос скопирован");
+      status.textContent = t("Скопировано. Вернитесь в чат и отправьте запрос агенту.");
+      showToast(t("Запрос скопирован"));
     } catch {
       status.dataset.tone = "warn";
-      status.textContent = "Не удалось скопировать автоматически. Выделите текст и скопируйте вручную.";
+      status.textContent = t("Не удалось скопировать автоматически. Выделите текст и скопируйте вручную.");
       textarea.focus();
       textarea.select();
     }
@@ -83,14 +84,18 @@ function buildDialog() {
     if (returnFocus?.isConnected) returnFocus.focus();
     returnFocus = null;
   });
-  return { dialog, heading, attachment, textarea, status };
+  return { dialog, heading, description, attachment, textarea, status, copy, close };
 }
 
 export function openAgentPrompt({ title, prompt, attachmentHint = "", trigger = null } = {}) {
   if (!dialogRefs) dialogRefs = buildDialog();
   if (dialogRefs.dialog.open) dialogRefs.dialog.close();
   returnFocus = trigger;
-  dialogRefs.heading.textContent = title || "Запрос для агента";
+  dialogRefs.description.textContent = t("Скопируйте текст и отправьте его агенту в рабочий чат.");
+  dialogRefs.textarea.setAttribute("aria-label", t("Текст запроса агенту"));
+  dialogRefs.copy.textContent = t("Скопировать запрос");
+  dialogRefs.close.textContent = t("Закрыть");
+  dialogRefs.heading.textContent = t(title || "Запрос для агента");
   dialogRefs.textarea.value = typeof prompt === "string" ? prompt : "";
   dialogRefs.attachment.textContent = attachmentHint;
   dialogRefs.attachment.hidden = !attachmentHint;

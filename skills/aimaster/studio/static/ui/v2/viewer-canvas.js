@@ -9,6 +9,7 @@ import { variantCounts } from "./counts.js";
 import { variantState, versionsMadeBy } from "./variants.js";
 import { chatButton, el } from "./dom.js";
 import { renderMedia } from "./viewer-media.js";
+import { t } from "./locale.js";
 
 /** Пометки плёнки — четыре из спецификации плюс «принят» и «убран». */
 export const VARIANT_MARKS = Object.freeze({
@@ -128,11 +129,11 @@ export function slotOptions(project, scene) {
  * @returns {string}
  */
 export function canvasCaption({ index, total, mark, promptLabel, solo } = {}) {
-  if (!Number.isFinite(index) || !Number.isFinite(total) || total < 1) return "Вариантов пока нет";
-  if (solo) return mark || "Файл";
-  const parts = [`Вариант ${index} из ${total}`];
-  if (mark) parts.push(mark);
-  if (promptLabel) parts.push(`по промпту ${promptLabel}`);
+  if (!Number.isFinite(index) || !Number.isFinite(total) || total < 1) return t("Вариантов пока нет");
+  if (solo) return t(mark || "Файл");
+  const parts = [t("Вариант {index} из {total}", { index, total })];
+  if (mark) parts.push(t(mark));
+  if (promptLabel) parts.push(t("по промпту {prompt}", { prompt: promptLabel }));
   return parts.join(" · ");
 }
 
@@ -144,9 +145,9 @@ export function canvasCaption({ index, total, mark, promptLabel, solo } = {}) {
  */
 export function tileMark(item) {
   if (!item) return "";
-  if (item.state === "selected") return `✓ ${item.mark}`;
-  if (item.state === "new" || !item.mark) return `вариант ${item.index}`;
-  return item.mark;
+  if (item.state === "selected") return `✓ ${t(item.mark)}`;
+  if (item.state === "new" || !item.mark) return t("вариант {index}", { index: item.index });
+  return t(item.mark);
 }
 
 /**
@@ -155,7 +156,7 @@ export function tileMark(item) {
  * @returns {string}
  */
 export function captionMark(state) {
-  return CAPTION_WORDS[state] || CAPTION_WORDS.new;
+  return t(CAPTION_WORDS[state] || CAPTION_WORDS.new);
 }
 
 /**
@@ -236,20 +237,20 @@ export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark,
   const canvas = el("div", "v2-viewer-canvas");
   canvas.dataset.hook = "v2-viewer-canvas";
   const shown = strip.items[shownIndex - 1];
-  if (shown) canvas.append(arrow("‹", "Предыдущий вариант (←)", () => onShow(shownIndex - 1), shownIndex <= 1));
+  if (shown) canvas.append(arrow("‹", t("Предыдущий вариант (←)"), () => onShow(shownIndex - 1), shownIndex <= 1));
   const frame = el("div", "v2-viewer-frame");
   frame.dataset.media = mediaKind || "image";
   if (shown) {
     frame.dataset.dim = String(shown.dim === true);
-    frame.append(renderMedia(shown.version, mediaKind, { size: "big", label: shown.version?.caption || "Вариант" }));
-    if (stageMark) frame.append(el("span", "v2-viewer-stage-mark", stageMark));
+    frame.append(renderMedia(shown.version, mediaKind, { size: "big", label: shown.version?.caption || t("Вариант") }));
+    if (stageMark) frame.append(el("span", "v2-viewer-stage-mark", t(stageMark)));
   } else {
     frame.dataset.empty = "true";
-    frame.append(el("p", "v2-viewer-empty", emptyText || "Вариантов пока нет — попросите агента сделать первый."));
-    if (addRequest) frame.append(chatButton("＋ Попросить вариант", addRequest, "v2-viewer-ask"));
+    frame.append(el("p", "v2-viewer-empty", emptyText || t("Вариантов пока нет — попросите агента сделать первый.")));
+    if (addRequest) frame.append(chatButton(t("＋ Попросить вариант"), addRequest, "v2-viewer-ask"));
   }
   canvas.append(frame);
-  if (shown) canvas.append(arrow("›", "Следующий вариант (→)", () => onShow(shownIndex + 1), shownIndex >= strip.total));
+  if (shown) canvas.append(arrow("›", t("Следующий вариант (→)"), () => onShow(shownIndex + 1), shownIndex >= strip.total));
   if (strip.total > 1) attachSwipe(canvas, shownIndex, onShow);
   wrap.append(canvas);
   if (shown) {
@@ -266,16 +267,16 @@ export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark,
     tile.dataset.state = item.state;
     tile.dataset.dim = String(item.dim);
     tile.setAttribute("aria-current", String(item.index === shownIndex));
-    tile.setAttribute("aria-label", `Вариант ${item.index}${item.mark ? `, ${item.mark}` : ""}`);
+    tile.setAttribute("aria-label", t("Вариант {index}{mark}", { index: item.index, mark: item.mark ? `, ${t(item.mark)}` : "" }));
     tile.append(renderMedia(item.version, mediaKind, { size: "tile" }));
-    tile.append(el("span", "v2-viewer-tile-mark", strip.solo ? item.mark : tileMark(item)));
+    tile.append(el("span", "v2-viewer-tile-mark", strip.solo ? t(item.mark || "") : tileMark(item)));
     tile.addEventListener("click", () => onShow(item.index));
     film.append(tile);
   }
   if (addRequest && strip.total > 0) {
     const plus = chatButton("＋", addRequest, "v2-viewer-tile-add");
-    plus.setAttribute("aria-label", "Ещё вариант");
-    plus.title = "Ещё вариант";
+    plus.setAttribute("aria-label", t("Ещё вариант"));
+    plus.title = t("Ещё вариант");
     film.append(plus);
   }
   if (film.childElementCount) wrap.append(film);

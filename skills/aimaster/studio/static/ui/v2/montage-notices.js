@@ -9,9 +9,10 @@
 import { markControlHooks } from "../card-forms.js";
 import { chatButton, el } from "./dom.js";
 import { updateMontageClips } from "./screen-prompts.js";
+import { t } from "./locale.js";
 
 function refreshButton(project, revision, key) {
-  const button = chatButton("Обновить клипы → чат", updateMontageClips(project, revision));
+  const button = chatButton(t("Обновить клипы → чат"), updateMontageClips(project, revision));
   markControlHooks(button, `montage:${project.id}`, `refresh:${key}`);
   return button;
 }

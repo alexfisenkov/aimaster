@@ -8,6 +8,7 @@ import { audioTiles } from "./audio-model.js";
 import { statusLine, waveform } from "./board-bits.js";
 import { el, openViewer } from "./dom.js";
 import { renderFooter } from "./footer.js";
+import { t } from "./locale.js";
 
 function layerTile(tile) {
   const button = el("button", "v2-layer");
@@ -49,7 +50,7 @@ export function renderAudioScreen(root, { state, screen = "audio" } = {}) {
   surface.dataset.hook = "v2-screen-audio";
   if (!project) {
     surface.setAttribute("aria-busy", "true");
-    surface.append(el("p", "", "Загружаем звук…"));
+    surface.append(el("p", "", t("Загружаем звук…")));
     root.append(surface);
     return;
   }
@@ -60,7 +61,7 @@ export function renderAudioScreen(root, { state, screen = "audio" } = {}) {
   surface.append(grid);
   if (tiles.every((tile) => tile.total === 0)) {
     surface.append(el("p", "v2-section-hint",
-      "Звука пока нет. Если он не нужен — шаг можно пропустить кнопкой внизу; иначе попросите агента сделать слои."));
+      t("Звука пока нет. Если он не нужен — шаг можно пропустить кнопкой внизу; иначе попросите агента сделать слои.")));
   }
   surface.append(renderFooter(snapshot, { screen }));
   root.append(surface);

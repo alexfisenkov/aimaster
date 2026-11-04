@@ -29,6 +29,7 @@ import {
 } from "./viewer-canvas.js";
 import { promptPlace, promptVersions, renderPromptPanel, variantsByPrompt } from "./viewer-prompt.js";
 import { renderAssemblyParts, renderReferenceUsage, renderViewerZones, whereUsed } from "./viewer-zones.js";
+import { t } from "./locale.js";
 
 const TABS = Object.freeze({
   scene: [["frames", "Кадры"], ["video", "Видео"], ["history", "История"]],
@@ -58,15 +59,15 @@ function headline(project, target) {
     const own = reference?.local === true ? whereUsed(project, target.id)[0] : null;
     return { title: reference?.label || target.id, time: own ? `только ${own.label.split(" · ")[0].toLowerCase()}` : "" };
   }
-  if (target.kind === "layer") return { title: LAYER_TITLES[target.id] || target.id, time: "" };
-  if (target.kind === "assembly") return { title: "Финальный ролик", time: "" };
-  if (target.id === "oneshot") return { title: "Ролик одним заходом", time: "" };
+  if (target.kind === "layer") return { title: t(LAYER_TITLES[target.id] || target.id), time: "" };
+  if (target.kind === "assembly") return { title: t("Финальный ролик"), time: "" };
+  if (target.id === "oneshot") return { title: t("Ролик одним заходом"), time: "" };
   const scenes = scenesInOrder(project);
   const index = scenes.findIndex((item) => item?.scene_id === target.id);
   if (index < 0) return { title: target.id, time: "" };
   const scene = scenes[index];
   const time = Number.isFinite(scene.start_ms) ? `${clock(scene.start_ms)}–${clock(scene.end_ms)}` : "";
-  return { title: `Сцена ${index + 1} · ${scene.title || target.id}`, time };
+  return { title: t("Сцена {number} · {title}", { number: index + 1, title: scene.title || target.id }), time };
 }
 
 function countsTarget(target, tab, slot) {
@@ -100,17 +101,17 @@ function soloFor(project, target, counts) {
  */
 function keepLabel(target, tab) {
   if (target.kind === "assembly") return null;
-  if (target.kind === "reference") return "Оставить эту картинку";
-  if (tab === "audio") return "Оставить этот звук";
-  return tab === "video" ? "Оставить этот клип" : "Оставить этот кадр";
+  if (target.kind === "reference") return t("Оставить эту картинку");
+  if (tab === "audio") return t("Оставить этот звук");
+  return t(tab === "video" ? "Оставить этот клип" : "Оставить этот кадр");
 }
 
 /** Заголовок блока промпта справа — как в макете. */
 function promptTitle(target, tab) {
-  if (target.kind === "reference") return "Промпт";
-  if (target.kind === "assembly") return "Задание на сборку";
-  if (tab === "audio") return "Промпт звука";
-  return tab === "video" ? "Промпт движения" : "Промпт кадра";
+  if (target.kind === "reference") return t("Промпт");
+  if (target.kind === "assembly") return t("Задание на сборку");
+  if (tab === "audio") return t("Промпт звука");
+  return t(tab === "video" ? "Промпт движения" : "Промпт кадра");
 }
 
 /** Чем назвать материал в тосте после решения. */
@@ -140,13 +141,13 @@ function historyPane(snapshot, target) {
   pane.dataset.hook = "v2-viewer-history";
   const sceneId = target.kind === "scene" ? target.id : null;
   if (!renderDecisionHistory(pane, snapshot, sceneId)) {
-    pane.append(el("p", "v2-viewer-empty-line", "Решений по этому месту ещё не было."));
+    pane.append(el("p", "v2-viewer-empty-line", t("Решений по этому месту ещё не было.")));
   }
   const entries = formatHistoryEntries(snapshot?.active_project?.history);
   if (entries.length) {
-    pane.append(el("h3", "v2-viewer-subtitle", "Что происходило в проекте"));
+    pane.append(el("h3", "v2-viewer-subtitle", t("Что происходило в проекте")));
     const list = el("ul", "v2-viewer-history-list");
-    for (const entry of entries) list.append(el("li", "", `${entry.actorLabel}: ${entry.text}`));
+    for (const entry of entries) list.append(el("li", "", `${t(entry.actorLabel)}: ${t(entry.text)}`));
     pane.append(list);
   }
   return pane;
@@ -297,9 +298,9 @@ function rightColumn(snapshot, project, prompts, chat, strip) {
   // Вместо пустой листалки показываем, что собрано и из чего.
   if (view.target.kind === "assembly" && !prompts.total) {
     const about = el("section", "v2-viewer-prompt");
-    about.append(el("h3", "v2-viewer-subtitle", "Что собрано"));
+    about.append(el("h3", "v2-viewer-subtitle", t("Что собрано")));
     about.append(el("p", "v2-viewer-prompt-text",
-      project?.assembly?.summary || "Описания сборки агент не оставил."));
+      project?.assembly?.summary || t("Описания сборки агент не оставил.")));
     column.append(about);
     const parts = renderAssemblyParts(project);
     if (parts) column.append(parts);
@@ -341,7 +342,7 @@ function paint() {
   root.textContent = "";
   const card = el("div", "v2-viewer-card");
   if (!project) {
-    card.append(el("p", "v2-viewer-empty", "Загружаем проект…"));
+    card.append(el("p", "v2-viewer-empty", t("Загружаем проект…")));
     root.append(card);
     return;
   }
@@ -352,7 +353,7 @@ function paint() {
   const tabs = el("nav", "v2-viewer-tabs");
   tabs.setAttribute("role", "tablist");
   for (const [id, label] of tabsFor(view.target)) {
-    const button = el("button", "v2-viewer-tab", label);
+    const button = el("button", "v2-viewer-tab", t(label));
     button.type = "button";
     button.setAttribute("role", "tab");
     button.setAttribute("aria-selected", String(id === view.tab));
@@ -361,8 +362,8 @@ function paint() {
   }
   const close = el("button", "v2-viewer-close", "✕");
   close.type = "button";
-  close.setAttribute("aria-label", "Закрыть просмотрщик");
-  close.title = "Закрыть (Esc)";
+  close.setAttribute("aria-label", t("Закрыть просмотрщик"));
+  close.title = t("Закрыть (Esc)");
   close.addEventListener("click", () => closeViewer());
   bar.append(heading, tabs, close);
 

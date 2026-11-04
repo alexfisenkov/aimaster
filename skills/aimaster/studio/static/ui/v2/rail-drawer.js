@@ -11,15 +11,16 @@
 // её поиск и кнопки остаются в порядке обхода Tab и в дереве доступности.
 
 import { isPhone, onViewportChange } from "./responsive.js";
+import { t } from "./locale.js";
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), [tabindex="0"]';
 const COLLAPSED_KEY = "aimaster.v2.railCollapsed";
 
 function readCollapsed() {
   try {
-    return window.localStorage.getItem(COLLAPSED_KEY) === "1";
+    return window.localStorage.getItem(COLLAPSED_KEY) !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -61,10 +62,10 @@ export function createRailDrawer() {
     root.inert = !visible;
     if (phone) {
       toggle?.setAttribute("aria-expanded", String(open));
-      if (label) label.textContent = open ? "Закрыть панель проектов" : "Открыть панель проектов";
+      if (label) label.textContent = t(open ? "Закрыть панель проектов" : "Открыть панель проектов");
     } else {
       toggle?.setAttribute("aria-expanded", String(!collapsed));
-      if (label) label.textContent = "Показать панель проектов";
+      if (label) label.textContent = t("Показать панель проектов");
     }
   }
 
@@ -114,6 +115,7 @@ export function createRailDrawer() {
     toggle?.focus();
   });
   document.addEventListener("studio:rail-hide", hideRail);
+  document.addEventListener("studio:family-preference", paint);
   document.addEventListener("keydown", (event) => {
     if (!phone || !open || !root) return;
     if (event.key === "Escape") {

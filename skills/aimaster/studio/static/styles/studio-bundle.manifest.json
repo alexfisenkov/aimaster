@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "canonical_eol": "LF",
+  "sources": [
+    {
+      "path": "styles/tokens.css",
+      "bytes": 2581,
+      "sha256": "4595045fd45c41b47564b9a3be0591b4c3a303a6d0f3a3c4b877cea6fcf5c93d"
+    },
+    {
+      "path": "styles/base.css",
+      "bytes": 2992,
+      "sha256": "7d74603ef07cfae633587c1cc84648de8bd2b16c40c6089ea866d8abe582496d"
+    },
+    {
+      "path": "styles/layout.css",
+      "bytes": 16517,
+      "sha256": "9a1d79e97252fbe8bb993233ea97d0eb1496711dc56bb2fb904a4a08edae75fd"
+    },
+    {
+      "path": "styles/media.css",
+      "bytes": 11278,
+      "sha256": "1c919b66bdb6a13e1107beb75cb82491b885cdfe0af0be1d6e67b6f37e60f73d"
+    },
+    {
+      "path": "styles/scenario.css",
+      "bytes": 13649,
+      "sha256": "dd84a78c5897c02337831364a368cde9d93733523428372359a7b476dc03991c"
+    },
+    {
+      "path": "styles/step-scenario.css",
+      "bytes": 5568,
+      "sha256": "7db3a5e1e76795f3730938741e34c5aa5cffd4ab38c54b6a8684c806ac94fffb"
+    },
+    {
+      "path": "styles/plan.css",
+      "bytes": 15902,
+      "sha256": "f37f8d9beff241773a790071b80ae623e81e35188bbfe05818439ce1bf6571b7"
+    },
+    {
+      "path": "styles/audio.css",
+      "bytes": 2012,
+      "sha256": "1d7c91a11a7b1a82b49247cae8fac4008a0a5956bdd375d5f34822866be86e9a"
+    },
+    {
+      "path": "styles/assembly.css",
+      "bytes": 3779,
+      "sha256": "460ef601bb61dd8b1dda83d50ac24ab7ebd1fbf9a1cb9742330b5f12e004c3dd"
+    },
+    {
+      "path": "styles/positions.css",
+      "bytes": 5314,
+      "sha256": "442275036d8fdcb83d46cb0f1635348e764adf03cdcb5885ed97b9997fe0a1cc"
+    },
+    {
+      "path": "styles/actions.css",
+      "bytes": 8933,
+      "sha256": "6ab256c99edb4ead6d854f9ee82b88845574a8205851f6c35003c2d5788d462f"
+    },
+    {
+      "path": "styles/shell.css",
+      "bytes": 2981,
+      "sha256": "ffa5bb04304f977cb34fea5983c7559352ba3bf0914f07cd353484a5ad07064c"
+    },
+    {
+      "path": "styles/history.css",
+      "bytes": 1886,
+      "sha256": "3b0812aecf8ad1e3ac250aefc4751d8628fb77df00e818aa702a899d0f88ed02"
+    },
+    {
+      "path": "styles/more-menu.css",
+      "bytes": 1360,
+      "sha256": "d3c8e265d053f3bf381dcb2f88f7ff182fa09a2d1e1a9167299d637fa0e7ed7f"
+    },
+    {
+      "path": "styles/chat-prompt-dialog.css",
+      "bytes": 3004,
+      "sha256": "a312d0555c822b22356e027e039760448526c9b7ebfe3f74eb028215538a5e78"
+    },
+    {
+      "path": "styles/v2/tokens-v2.css",
+      "bytes": 3639,
+      "sha256": "be4f888f460a28f88f8a43a392d9fdb4947608d5408a8abe3f0dfedffc685ac3"
+    },
+    {
+      "path": "styles/v2/board.css",
+      "bytes": 33304,
+      "sha256": "2e2b4cc50f86e08310ade33beb8123d44f746990fe5f090ccffd790eae96721c"
+    },
+    {
+      "path": "styles/v2/shell.css",
+      "bytes": 19331,
+      "sha256": "a2907fee2744f2d6da949eebab949b9da1a29c1c426160b741de67405b122b3c"
+    },
+    {
+      "path": "styles/v2/family.css",
+      "bytes": 8073,
+      "sha256": "38790e1f0f26ed824b465186787a89ac4be4431a3a2b412500b52e207392e150"
+    }
+  ],
+  "bundle": {
+    "path": "styles/studio-bundle.css",
+    "bytes": 162849,
+    "sha256": "abb0754ee5fcaf7e0077a0704063afce2cb593e6270ec6243af7ef4b01e92bad"
+  }
+}

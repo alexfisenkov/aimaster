@@ -13,6 +13,7 @@ import { renderShelf } from "./reference-shelf.js";
 import { renderSceneRow, scenesInOrder } from "./scene-row.js";
 import { changeGenMode } from "./screen-prompts.js";
 import { promptGroups } from "./variants.js";
+import { t } from "./locale.js";
 
 const MODES = Object.freeze([
   Object.freeze({ id: "per_scene", label: "Кадр за кадром", hint: "Каждая сцена — свой промпт и свой клип. Можно переделать одну, не трогая остальные." }),
@@ -30,12 +31,12 @@ function genModeRow(project, revision) {
   const section = el("section", "v2-mode");
   section.dataset.hook = "v2-mode";
   const row = el("div", "v2-mode-row");
-  row.append(el("span", "v2-mode-label", "Как делаем ролик"));
+  row.append(el("span", "v2-mode-label", t("Как делаем ролик")));
   const group = el("div", "v2-seg");
   group.setAttribute("role", "group");
-  group.setAttribute("aria-label", "Как делаем ролик");
+  group.setAttribute("aria-label", t("Как делаем ролик"));
   for (const mode of MODES) {
-    const button = el("button", "v2-seg-option", mode.label);
+    const button = el("button", "v2-seg-option", t(mode.label));
     button.type = "button";
     button.dataset.hook = "v2-mode-option";
     button.dataset.mode = mode.id;
@@ -48,7 +49,7 @@ function genModeRow(project, revision) {
     group.append(button);
   }
   row.append(group);
-  section.append(row, el("p", "v2-mode-hint", MODES.find((mode) => mode.id === selected).hint));
+  section.append(row, el("p", "v2-mode-hint", t(MODES.find((mode) => mode.id === selected).hint)));
   return section;
 }
 
@@ -60,10 +61,10 @@ function oneShotPrompt(project, revision) {
   const section = el("section", "v2-card v2-oneshot");
   section.dataset.hook = "v2-oneshot";
   const head = el("div", "v2-card-head");
-  head.append(el("h2", "v2-card-title", "Промпт на весь ролик"));
+  head.append(el("h2", "v2-card-title", t("Промпт на весь ролик")));
   section.append(head);
   if (!current) {
-    section.append(el("p", "v2-section-hint", "Промпта пока нет — попросите агента его написать."));
+    section.append(el("p", "v2-section-hint", t("Промпта пока нет — попросите агента его написать.")));
     return section;
   }
   const versions = promptGroups(collection).get(current.prompt_id) || [current];
@@ -71,7 +72,7 @@ function oneShotPrompt(project, revision) {
   head.append(el("span", "v2-card-meta", `v${number || 1} из ${versions.length}`));
   section.append(
     el("p", "v2-oneshot-text", current.text || ""),
-    chatButton("Изменить → чат", editPrompt({
+    chatButton(t("Изменить → чат"), editPrompt({
       project, revision, promptVersion: current, what: "всего ролика",
     }), "v2-chat-button v2-card-button"),
   );
@@ -90,7 +91,7 @@ export function renderFramesScreen(root, { state, readOnly = false, screen = "fr
   surface.dataset.hook = "v2-screen-frames";
   if (!project) {
     surface.setAttribute("aria-busy", "true");
-    surface.append(el("p", "", "Загружаем кадры…"));
+    surface.append(el("p", "", t("Загружаем кадры…")));
     root.append(surface);
     return;
   }
@@ -105,10 +106,10 @@ export function renderFramesScreen(root, { state, readOnly = false, screen = "fr
   list.dataset.hook = "v2-scenes";
   const head = el("div", "v2-section-head");
   head.append(
-    el("h2", "v2-section-title", "Сцены"),
+    el("h2", "v2-section-title", t("Сцены")),
     el("span", "v2-section-note", scenes.length
       ? `${scenes.length} · нажмите на кадр, чтобы выбрать вариант`
-      : "Сцен пока нет — они появятся после раскадровки."),
+      : t("Сцен пока нет — они появятся после раскадровки.")),
   );
   list.append(head);
   scenes.forEach((scene, index) => list.append(renderSceneRow(project, snapshot.revision, scene, index + 1)));

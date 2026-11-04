@@ -11,6 +11,7 @@
 import { promptGroups, versionsMadeBy } from "./variants.js";
 import { chatButton, el } from "./dom.js";
 import { editPrompt } from "./chat-prompts.js";
+import { t } from "./locale.js";
 
 const TAG = /@(?:IMG|VID|VOICE)_\d{2,}/g;
 
@@ -122,11 +123,11 @@ export function splitTags(text) {
  * @param {number} index номер версии с 1
  */
 export function promptMeta(version, index) {
-  if (!version) return "промпта пока нет";
+  if (!version) return t("промпта пока нет");
   const parts = [`v${index || 1}`];
   const status = STATUS_WORDS[version.status];
-  if (status) parts.push(status);
-  if (version.stale === true) parts.push("устарел");
+  if (status) parts.push(t(status));
+  if (version.stale === true) parts.push(t("устарел"));
   return parts.join(" · ");
 }
 
@@ -149,22 +150,22 @@ export function variantsByPrompt(prompt, items) {
   const made = list
     .filter((item) => versionsMadeBy(prompt.version_id, [item.version]).length > 0)
     .map((item) => item.index);
-  return made.length ? `по нему варианты ${made.join(", ")}` : "вариантов по нему нет";
+  return made.length ? t("по нему варианты {items}", { items: made.join(", ") }) : t("вариантов по нему нет");
 }
 
 function versionNav(state, shownIndex, onShow) {
   const nav = el("div", "v2-viewer-ver");
   const back = el("button", "v2-viewer-ver-step", "‹");
   back.type = "button";
-  back.setAttribute("aria-label", "Предыдущая версия промпта");
+  back.setAttribute("aria-label", t("Предыдущая версия промпта"));
   back.disabled = shownIndex <= 1;
   back.addEventListener("click", () => onShow(shownIndex - 1));
   const forward = el("button", "v2-viewer-ver-step", "›");
   forward.type = "button";
-  forward.setAttribute("aria-label", "Следующая версия промпта");
+  forward.setAttribute("aria-label", t("Следующая версия промпта"));
   forward.disabled = shownIndex >= state.total;
   forward.addEventListener("click", () => onShow(shownIndex + 1));
-  nav.append(back, el("span", "v2-viewer-ver-label", `v${shownIndex} из ${state.total}`), forward);
+  nav.append(back, el("span", "v2-viewer-ver-label", t("v{index} из {total}", { index: shownIndex, total: state.total })), forward);
   return nav;
 }
 
@@ -185,7 +186,7 @@ export function renderPromptPanel({ project, revision, state, shownIndex, title,
   block.append(head);
   const shown = state.versions[shownIndex - 1] || null;
   if (!shown) {
-    block.append(el("p", "v2-viewer-empty-line", "Промпта пока нет — попросите агента его написать."));
+    block.append(el("p", "v2-viewer-empty-line", t("Промпта пока нет — попросите агента его написать.")));
     return block;
   }
   const text = el("p", "v2-viewer-prompt-text");
@@ -196,7 +197,7 @@ export function renderPromptPanel({ project, revision, state, shownIndex, title,
     [promptMeta(shown, shownIndex), madeBy].filter(Boolean).join(" · "));
   meta.dataset.hook = "v2-viewer-prompt-meta";
   block.append(text, meta, chatButton(
-    "Изменить промпт → чат",
+    t("Изменить промпт → чат"),
     editPrompt({ ...chat, project, revision, promptVersion: shown, what: editWhat }),
     "v2-viewer-link",
   ));

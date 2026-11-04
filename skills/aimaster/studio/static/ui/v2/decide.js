@@ -16,6 +16,7 @@ import { resolveCardActions } from "../card-model.js";
 import { buildMoreMenu } from "../more-menu.js";
 import { chatButton } from "./dom.js";
 import { editPrompt, moreVariants, uploadFrame } from "./chat-prompts.js";
+import { t } from "./locale.js";
 
 /** Какая стадия владеет решениями по этой коллекции результатов
  * (`studio/decision_cards.py`, `STAGE_COLLECTIONS`). Решение по карточке
@@ -140,8 +141,8 @@ function mainButton({ actions, version, revision, projectId, label, row, status,
     projectId,
     row,
     status,
-    label: chosen ? (mark === "принят" ? "✓ Принят" : "✓ Выбран") : label,
-    successText: "Решение отправлено.",
+    label: chosen ? t(mark === "принят" ? "✓ Принят" : "✓ Выбран") : label,
+    successText: t("Решение отправлено."),
     requireActionSuccess: true,
     onSettled: settledWith("approve", context),
   });
@@ -172,12 +173,12 @@ function splitRejectForm(wrap) {
   form.classList.add("v2-viewer-reject");
   form.dataset.hook = "v2-viewer-reject";
   const caption = form.querySelector(".card-comment-label > span");
-  if (caption) caption.textContent = "Что не так с этим вариантом? Комментарий увидит агент.";
+  if (caption) caption.textContent = t("Что не так с этим вариантом? Комментарий увидит агент.");
   const actions = form.querySelector(".card-comment-actions");
   const submit = actions?.querySelector('button[type="submit"]');
   const cancel = actions?.querySelector('button[type="button"]');
   if (submit) {
-    submit.textContent = "Отклонить вариант";
+    submit.textContent = t("Отклонить вариант");
     submit.classList.add("v2-viewer-danger");
   }
   // Сначала «Отмена», потом необратимое — как в макете.
@@ -237,7 +238,7 @@ export function renderDecideRow(context) {
   if (context.secondary || version) buttons.append(context.secondary
     ? chatButton(context.secondary.label, context.secondary.request, "v2-viewer-secondary")
     : chatButton(
-      "＋ Ещё вариант",
+      t("＋ Ещё вариант"),
       moreVariants({ ...chat, promptVersion: context.promptVersion, selectedVariant: version }),
       "v2-viewer-secondary",
     ));
@@ -257,7 +258,7 @@ export function renderDecideRow(context) {
         key: draftKey(projectId, "v2-viewer", resultTargetId(version)),
         row: buttons,
         status,
-        toggleLabel: MENU_LABELS.reject,
+        toggleLabel: t(MENU_LABELS.reject),
         requireActionSuccess: true,
         onSettled: settledWith("reject", context),
       }));
@@ -271,7 +272,7 @@ export function renderDecideRow(context) {
         projectId,
         row: buttons,
         status,
-        label: MENU_LABELS[actionType],
+        label: t(MENU_LABELS[actionType]),
         requireActionSuccess: true,
         onSettled: settledWith(actionType, context),
       }));
@@ -279,13 +280,13 @@ export function renderDecideRow(context) {
     items.push({ id: actionType, content: wrap });
   }
   if (context.chatMenu !== false) {
-    const upload = chatButton("Загрузить свой файл → чат", uploadFrame(chat), "more-menu-item");
+    const upload = chatButton(t("Загрузить свой файл → чат"), uploadFrame(chat), "more-menu-item");
     if (items.length) upload.classList.add("v2-viewer-menu-split");
     items.push({ id: "upload", content: upload });
     items.push({
       id: "edit-prompt",
       content: chatButton(
-        "Изменить промпт → чат",
+        t("Изменить промпт → чат"),
         editPrompt({ ...chat, promptVersion: context.promptVersion, what: context.editWhat }),
         "more-menu-item",
       ),
@@ -301,8 +302,8 @@ export function renderDecideRow(context) {
     const trigger = menu.querySelector('[data-more-hook="trigger"]');
     if (trigger) {
       trigger.textContent = "···";
-      trigger.setAttribute("aria-label", "Ещё действия");
-      trigger.title = "Ещё действия";
+      trigger.setAttribute("aria-label", t("Ещё действия"));
+      trigger.title = t("Ещё действия");
     }
     // Пункт отказа открывает форму под рядом — меню при этом закрывается,
     // иначе на телефоне шторка закрывала бы саму форму.

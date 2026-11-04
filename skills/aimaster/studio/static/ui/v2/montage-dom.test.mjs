@@ -65,9 +65,9 @@ test("экран «Сборка» и его части загружаются; �
   assert.equal(parts.sceneDuration(PROJECT), "00:35");
 });
 
-test("оболочка останавливает опрос монтажа вне «Сборки», boot подключает стили и перерисовку", () => {
+test("оболочка сохраняет опрос монтажа на обзоре и останавливает вне «Сборки» в виде этапов", () => {
   const shell = fs.readFileSync(new URL("./shell.js", import.meta.url), "utf8");
-  assert.match(shell, /if \(screen !== "assembly"\) hideMontage\(\);/);
+  assert.match(shell, /if \(screen !== "assembly" && readFamilyPreference\(\).view !== "overview"\) hideMontage\(\);/);
   const boot = fs.readFileSync(new URL("./boot.js", import.meta.url), "utf8");
   assert.match(boot, /ensureStylesheet\("\/static\/styles\/v2\/montage\.css"\)/);
   assert.match(boot, /addEventListener\("studio:montage-updated"/);

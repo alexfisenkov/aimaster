@@ -65,6 +65,7 @@ export const HISTORY_KIND_TEXT = Object.freeze({
   "scenes-ready": () => "Раскадровка готова",
   "assembly-ready": () => "Финал собран",
   "montage-drafted": () => "Черновой монтаж собран",
+  "montage-improvement-opened": () => "Монтаж открыт для улучшения",
   "montage-built": (entry) => {
     const id = entry?.params?.target_id;
     return typeof id === "string" && id ? `Монтаж: собрана версия ${id}` : "Монтаж: собрана версия";

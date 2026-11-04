@@ -4,6 +4,7 @@
 // Чистые функции, без DOM.
 
 import { unresolvedEntries } from "./unresolved.js";
+import { t } from "./locale.js";
 
 export const SCREENS = Object.freeze(["scenario", "frames", "video", "audio", "assembly"]);
 
@@ -100,7 +101,7 @@ export function pathState(project) {
       : state === "current"
         ? "вы здесь"
         : index === currentIndex + 1 ? "дальше" : "";
-    return { id: screen, label: SCREEN_LABELS[screen], hint, state };
+    return { id: screen, label: t(SCREEN_LABELS[screen]), hint: t(hint), state };
   });
 }
 
@@ -136,7 +137,7 @@ export function primaryAction(project) {
   }
   const remaining = items.map((item) => item.label);
   return {
-    label,
+    label: t(label),
     stage,
     enabled: Boolean(stage) && readiness?.can_approve === true && remaining.length === 0,
     remaining,
@@ -167,14 +168,14 @@ export function projectFinished(snapshot) {
 export function projectStatus(snapshot) {
   const project = snapshot?.active_project;
   if (!project) return null;
-  if (projectFinished(snapshot)) return { text: "Проект завершён", tone: "ok", count: 0 };
+  if (projectFinished(snapshot)) return { text: t("Проект завершён"), tone: "ok", count: 0 };
   const screen = screenForStage(project.stage);
   if (!screen) return null;
   const { remaining } = primaryAction(project);
-  const label = SCREEN_LABELS[screen];
+  const label = t(SCREEN_LABELS[screen]);
   return remaining.length
-    ? { text: `${label} · осталось ${remaining.length}`, tone: "warn", count: remaining.length }
-    : { text: `${label} · можно одобрять`, tone: "ok", count: 0 };
+    ? { text: t("{label} · осталось {count}", { label, count: remaining.length }), tone: "warn", count: remaining.length }
+    : { text: t("{label} · можно одобрять", { label }), tone: "ok", count: 0 };
 }
 
 /**
@@ -190,6 +191,6 @@ export function screenHeading(project, screen) {
   const step = pathState(project).find((item) => item.id === screen);
   const kicker = index < 0
     ? ""
-    : `Шаг ${index + 1} из ${screens.length}${step?.state === "done" ? " · одобрен" : ""}`;
-  return { kicker, title: SCREEN_LABELS[screen] || "", hint: SCREEN_HINTS[screen] || "" };
+    : t(step?.state === "done" ? "Шаг {index} из {total} · одобрен" : "Шаг {index} из {total}", { index: index + 1, total: screens.length });
+  return { kicker, title: t(SCREEN_LABELS[screen] || ""), hint: t(SCREEN_HINTS[screen] || "") };
 }

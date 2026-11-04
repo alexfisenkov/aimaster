@@ -10,6 +10,7 @@ import { SCREEN_LABELS, primaryAction, projectFinished, screenForStage } from ".
 import { el, openViewer } from "./dom.js";
 import { requestScreen } from "./path-nav.js";
 import { openSheet } from "./sheet.js";
+import { t } from "./locale.js";
 
 /**
  * Чем одобряется каждая стадия. Пять стадий-вех сервер принимает общим
@@ -96,7 +97,7 @@ function goTo(item, trigger) {
 function remainingChips(items) {
   const box = el("div", "v2-footer-remaining");
   box.dataset.hook = "v2-remaining";
-  box.append(el("span", "v2-footer-remaining-label", "Осталось решить:"));
+  box.append(el("span", "v2-footer-remaining-label", t("Осталось решить:")));
   const list = el("ul", "v2-footer-chips");
   for (const item of items) {
     const li = el("li");
@@ -105,7 +106,7 @@ function remainingChips(items) {
       chip = el("button", "v2-footer-chip", item.label);
       chip.type = "button";
       chip.dataset.hook = "v2-remaining-item";
-      chip.title = "Открыть это место";
+      chip.title = t("Открыть это место");
       chip.addEventListener("click", () => goTo(item, chip));
     } else {
       chip = el("span", "v2-footer-chip", item.label);
@@ -123,15 +124,15 @@ function remainingPlate(items) {
   plate.type = "button";
   plate.dataset.hook = "v2-remaining-plate";
   plate.append(
-    el("span", "", `Осталось решить: ${items.length}`),
-    el("span", "v2-footer-plate-more", "показать ›"),
+    el("span", "", t("Осталось решить: {count}", { count: items.length })),
+    el("span", "v2-footer-plate-more", t("показать ›")),
   );
   plate.addEventListener("click", () => openSheet({
-    title: "Осталось решить",
+    title: t("Осталось решить"),
     returnFocus: plate,
     items: items.map((item) => ({
       label: item.label,
-      hint: item.target ? "" : "подробности — у агента в чате",
+      hint: item.target ? "" : t("подробности — у агента в чате"),
       onSelect: () => goTo(item, plate),
     })),
   }));
@@ -142,7 +143,7 @@ function remainingPlate(items) {
 function backButton(project, finished) {
   const screen = screenForStage(project?.stage);
   if (!screen) return null;
-  const label = `Вернуться к шагу «${finished ? SCREEN_LABELS.assembly : SCREEN_LABELS[screen]}»`;
+  const label = t("Вернуться к шагу «{step}»", { step: t(finished ? SCREEN_LABELS.assembly : SCREEN_LABELS[screen]) });
   const button = el("button", "v2-primary v2-primary-back", label);
   button.type = "button";
   button.dataset.hook = "v2-back-to-stage";
@@ -172,7 +173,7 @@ export function renderFooter(snapshot, { screen } = {}) {
 
   if (mode === "past" || mode === "done") {
     const finished = projectFinished(snapshot);
-    left.append(note(finished ? FOOTER_NOTICES.done : FOOTER_NOTICES.past, "v2-footer-summary"));
+    left.append(note(t(finished ? FOOTER_NOTICES.done : FOOTER_NOTICES.past), "v2-footer-summary"));
     if (mode === "past") {
       const back = backButton(project, finished);
       if (back) row.append(back);
@@ -183,7 +184,7 @@ export function renderFooter(snapshot, { screen } = {}) {
   if (action.items.length) {
     left.append(remainingChips(action.items), remainingPlate(action.items));
   } else {
-    left.append(note(FOOTER_NOTICES.ready, "v2-remaining"));
+    left.append(note(t(FOOTER_NOTICES.ready), "v2-remaining"));
   }
   const actionType = DIRECT_STAGES[action.stage];
   const key = footerFlightKey(project?.id, action.stage);

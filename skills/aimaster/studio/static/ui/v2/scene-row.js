@@ -17,6 +17,7 @@ import { clipZone, continuationZone } from "./scene-zones-video.js";
 import { openSheet } from "./sheet.js";
 import { clipBadge, framesBadge } from "./status-tone.js";
 import { clipStatus } from "./video-model.js";
+import { t } from "./locale.js";
 
 const PROMPT_STATUS = Object.freeze({
   approved: "готов",
@@ -95,16 +96,16 @@ function sceneAddButton(project, revision, scene) {
   const button = el("button", "v2-scene-add", "＋");
   button.type = "button";
   button.dataset.hook = "v2-scene-add";
-  button.setAttribute("aria-label", "Добавить в сцену");
+  button.setAttribute("aria-label", t("Добавить в сцену"));
   const planned = plannedSlots(scene);
   const ask = (request) => requestAgentPrompt(request, button);
   button.addEventListener("click", () => openSheet({
-    title: "Добавить в сцену",
+    title: t("Добавить в сцену"),
     returnFocus: button,
     items: [
-      { label: "Референс только для этой сцены", onSelect: () => ask(addReference("other", project, revision, { sceneId: scene?.scene_id })) },
-      { label: "Видеореференс", onSelect: () => ask(addReference("video", project, revision)) },
-      { label: "Свой кадр", onSelect: () => ask(uploadFrame({ project, revision, sceneId: scene?.scene_id, slot: planned.length ? "last" : "first" })) },
+      { label: t("Референс только для этой сцены"), onSelect: () => ask(addReference("other", project, revision, { sceneId: scene?.scene_id })) },
+      { label: t("Видеореференс"), onSelect: () => ask(addReference("video", project, revision)) },
+      { label: t("Свой кадр"), onSelect: () => ask(uploadFrame({ project, revision, sceneId: scene?.scene_id, slot: planned.length ? "last" : "first" })) },
     ],
   }));
   return button;
@@ -137,14 +138,14 @@ export function renderSceneRow(project, revision, scene, position, { mode = "fra
   const open = el("button", "v2-scene-open", String(position));
   open.type = "button";
   open.dataset.hook = "v2-scene-open";
-  open.setAttribute("aria-label", `Открыть сцену ${position}: ${scene?.title || ""}`.trim());
+  open.setAttribute("aria-label", t("Открыть сцену {number}: {title}", { number: position, title: scene?.title || "" }).trim());
   open.addEventListener("click", () => openViewer(
     { kind: "scene", id: scene?.scene_id }, { tab, slot: video ? "video" : undefined, trigger: open },
   ));
 
   const titleLine = el("div", "v2-scene-titleline");
   titleLine.append(
-    el("b", "v2-scene-title", scene?.title || `Сцена ${position}`),
+    el("b", "v2-scene-title", scene?.title || t("Сцена {number}", { number: position })),
     el("span", "v2-time v2-scene-time", `${clock(scene?.start_ms)}–${clock(scene?.end_ms)}`),
   );
   const state = sceneBadge(project, scene, video);

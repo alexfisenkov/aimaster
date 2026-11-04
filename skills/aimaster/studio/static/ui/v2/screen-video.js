@@ -9,6 +9,7 @@ import { renderFooter } from "./footer.js";
 import { renderSceneRow, scenesInOrder } from "./scene-row.js";
 import { clipStatus } from "./video-model.js";
 import { renderPreview } from "./preview.js";
+import { t } from "./locale.js";
 
 /** Плитка одного клипа на весь ролик — режим «одним заходом». */
 function oneShotClip(project) {
@@ -16,12 +17,12 @@ function oneShotClip(project) {
   const box = el("section", "v2-oneclip");
   box.dataset.hook = "v2-oneclip";
   const head = el("div", "v2-section-head");
-  head.append(el("h2", "v2-section-title", "Клип всего ролика"));
+  head.append(el("h2", "v2-section-title", t("Клип всего ролика")));
   box.append(head);
   const button = el("button", "v2-big-preview");
   button.type = "button";
   button.dataset.hook = "v2-oneclip-slot";
-  button.setAttribute("aria-label", `Клип всего ролика: ${status.text}`);
+  button.setAttribute("aria-label", `${t("Клип всего ролика")}: ${status.text}`);
   button.append(
     renderPreview(status.selected, { kind: status.selected ? "video" : "none", label: "Клип всего ролика", emptyText: "клипа нет" }),
     ...(status.selected ? [playMark("v2-play v2-play-big")] : []),
@@ -31,7 +32,7 @@ function oneShotClip(project) {
     { kind: "scene", id: "oneshot" }, { tab: "video", slot: "video", trigger: button },
   ));
   box.append(button);
-  if (status.total === 0) box.append(el("p", "v2-section-hint", "Клипов пока нет — попросите агента сгенерировать вариант."));
+  if (status.total === 0) box.append(el("p", "v2-section-hint", t("Клипов пока нет — попросите агента сгенерировать вариант.")));
   return box;
 }
 
@@ -47,7 +48,7 @@ export function renderVideoScreen(root, { state, screen = "video" } = {}) {
   surface.dataset.hook = "v2-screen-video";
   if (!project) {
     surface.setAttribute("aria-busy", "true");
-    surface.append(el("p", "", "Загружаем видео…"));
+    surface.append(el("p", "", t("Загружаем видео…")));
     root.append(surface);
     return;
   }
@@ -59,7 +60,7 @@ export function renderVideoScreen(root, { state, screen = "video" } = {}) {
   const scenes = scenesInOrder(project);
   const list = el("section", "v2-scenes");
   list.dataset.hook = "v2-scenes";
-  if (!scenes.length) list.append(el("p", "v2-section-hint", "Сцен пока нет — они появятся после раскадровки."));
+  if (!scenes.length) list.append(el("p", "v2-section-hint", t("Сцен пока нет — они появятся после раскадровки.")));
   else if (project.gen_mode === "one_shot") {
     list.append(el("p", "v2-section-hint", "Ролик делается целиком, поэтому своих клипов у сцен может и не быть."));
   }

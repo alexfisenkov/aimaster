@@ -17,6 +17,7 @@ import { postMontage, refusalText } from "./montage-api.js";
 import { refreshMontage } from "./montage-feed.js";
 import { loopbackUrl } from "./montage-model.js";
 import { assembleFinal, assembleLabel, installMontage } from "./screen-prompts.js";
+import { t } from "./locale.js";
 
 const PHONE_HINT = "Монтажный стол открывается на компьютере. Здесь можно смотреть версии "
   + "и просить правки словами в чате.";
@@ -28,8 +29,8 @@ function blankTab() {
     const tab = window.open("", "_blank");
     if (!tab) return null;
     tab.opener = null;
-    tab.document.title = "Монтажный стол";
-    tab.document.body.textContent = "Открываю монтажный стол…";
+    tab.document.title = t("Монтажный стол");
+    tab.document.body.textContent = t("Открываю монтажный стол…");
     return tab;
   } catch {
     return null;
@@ -71,13 +72,13 @@ function deskBox(content) {
 
 function openDesk(project) {
   return deskBox([deskButton(project, {
-    action: "desk-open", label: "Открыть монтажный стол", className: "v2-primary v2-primary-back",
-    busyText: "Запускаю монтажный стол…", send: () => openDeskRequest(project),
+    action: "desk-open", label: t("Открыть монтажный стол"), className: "v2-primary v2-primary-back",
+    busyText: t("Запускаю монтажный стол…"), send: () => openDeskRequest(project),
   })]);
 }
 
 function goLink(project, url) {
-  const link = el("a", "v2-primary v2-primary-back", "Перейти к монтажному столу ↗");
+  const link = el("a", "v2-primary v2-primary-back", t("Перейти к монтажному столу ↗"));
   link.href = url;
   link.target = "_blank";
   link.rel = "noopener noreferrer";
@@ -88,12 +89,12 @@ function goLink(project, url) {
 
 function deskIsOpen(project, flags) {
   const parts = [];
-  if (flags.deskCloseOnly) parts.push(el("p", "am-note am-desk-left", LEFT_OPEN));
+  if (flags.deskCloseOnly) parts.push(el("p", "am-note am-desk-left", t(LEFT_OPEN)));
   else if (flags.deskUrl) parts.push(goLink(project, flags.deskUrl));
-  else parts.push(el("p", "am-note am-desk-nolink", NO_LINK));
+  else parts.push(el("p", "am-note am-desk-nolink", t(NO_LINK)));
   parts.push(deskButton(project, {
-    action: "desk-close", label: "Закрыть стол", className: "am-link-button",
-    busyText: "Закрываю стол…", send: () => closeDeskRequest(project),
+    action: "desk-close", label: t("Закрыть стол"), className: "am-link-button",
+    busyText: t("Закрываю стол…"), send: () => closeDeskRequest(project),
   }));
   return deskBox(parts);
 }
@@ -107,9 +108,9 @@ function markedChat(project, action, label, request, className) {
 function engineMissing(project, revision, reason) {
   const box = el("div", "am-engine");
   box.dataset.hook = "am-engine-missing";
-  box.append(el("p", "am-engine-title", "Монтажный стол не установлен"));
+  box.append(el("p", "am-engine-title", t("Монтажный стол не установлен")));
   if (reason) box.append(el("p", "am-engine-reason", reason));
-  box.append(markedChat(project, "install", "Установить → чат", installMontage(project, revision)));
+  box.append(markedChat(project, "install", t("Установить → чат"), installMontage(project, revision)));
   return box;
 }
 
@@ -120,11 +121,11 @@ export function renderMainActions({ project, revision, status, flags }) {
     box.append(engineMissing(project, revision, status?.engine?.reason));
   }
   if (flags.desk === "closed") box.append(openDesk(project));
-  if (flags.desk === "busy") box.append(el("p", "am-note", "Монтажный стол открывается или закрывается…"));
+  if (flags.desk === "busy") box.append(el("p", "am-note", t("Монтажный стол открывается или закрывается…")));
   if (flags.desk === "open") box.append(deskIsOpen(project, flags));
-  if (flags.deskHint) box.append(el("p", "am-note", PHONE_HINT));
+  if (flags.deskHint) box.append(el("p", "am-note", t(PHONE_HINT)));
   if (flags.build) {
-    box.append(markedChat(project, "build", assembleLabel(project), assembleFinal(project, revision),
+    box.append(markedChat(project, "build", t(assembleLabel(project)), assembleFinal(project, revision),
       "v2-primary v2-primary-back"));
   }
   return box;

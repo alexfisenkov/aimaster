@@ -7,6 +7,7 @@ import { playMark, statusLine } from "./board-bits.js";
 import { clock, el, openViewer } from "./dom.js";
 import { clipStatus, continuationLine } from "./video-model.js";
 import { renderPreview } from "./preview.js";
+import { t } from "./locale.js";
 
 /**
  * Превью клипа сцены: первый кадр выбранного варианта, «▶» и статус.
@@ -25,7 +26,7 @@ export function clipZone(project, scene, position) {
   // На телефоне превью во всю ширину карточки, и сцена подписывается прямо
   // на нём: «Сцена 2 · 00:03–00:06».
   const time = `${clock(scene?.start_ms)}–${clock(scene?.end_ms)}`;
-  const tag = el("span", "v2-clip-tag v2-phone-only", `${Number.isFinite(position) ? `Сцена ${position}` : "Сцена"} · ${time}`);
+  const tag = el("span", "v2-clip-tag v2-phone-only", `${Number.isFinite(position) ? t("Сцена {number}", { number: position }) : t("Сцена")} · ${time}`);
   button.append(tag, statusLine(status.text, status.tone, "v2-status v2-clip-status"));
   button.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -42,9 +43,9 @@ export function continuationZone(project, scene) {
   box.dataset.zone = "continuation";
   box.dataset.warn = String(line.warn);
   box.append(
-    el("span", "v2-continuation-title", "Продолжение"),
+    el("span", "v2-continuation-title", t("Продолжение")),
     el("span", "v2-continuation-text", line.detail),
   );
-  if (line.warn) box.append(el("span", "v2-continuation-warn", "сцену меняли — проверьте связь"));
+  if (line.warn) box.append(el("span", "v2-continuation-warn", t("сцену меняли — проверьте связь")));
   return box;
 }

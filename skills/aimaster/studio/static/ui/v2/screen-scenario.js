@@ -10,6 +10,7 @@ import { screenMenu } from "./screen-menu.js";
 import { editScenario, reopenScenario } from "./screen-prompts.js";
 import { screenForStage } from "./screen-map.js";
 import { scriptVersions, storyboardRows } from "./scenario-model.js";
+import { t } from "./locale.js";
 
 /** Текст сценария с листалкой ‹ v1 из 3 ›: листается на месте. */
 function scriptBlock(project) {
@@ -17,10 +18,10 @@ function scriptBlock(project) {
   const box = el("section", "v2-card v2-script");
   box.dataset.hook = "v2-script";
   const top = el("div", "v2-card-head");
-  top.append(el("h2", "v2-card-title", "Текст сценария"));
+  top.append(el("h2", "v2-card-title", t("Текст сценария")));
   box.append(top);
   if (!versions.length) {
-    box.append(el("p", "v2-section-hint", "Сценария пока нет — попросите агента его написать."));
+    box.append(el("p", "v2-section-hint", t("Сценария пока нет — попросите агента его написать.")));
     return box;
   }
   let shown = activeIndex;
@@ -31,17 +32,17 @@ function scriptBlock(project) {
   const text = el("p", "v2-script-text");
   const reason = el("p", "v2-script-reason");
   for (const arrow of [back, forward]) arrow.type = "button";
-  back.setAttribute("aria-label", "Предыдущая версия сценария");
-  forward.setAttribute("aria-label", "Следующая версия сценария");
+  back.setAttribute("aria-label", t("Предыдущая версия сценария"));
+  forward.setAttribute("aria-label", t("Следующая версия сценария"));
 
   const paint = () => {
     const version = versions[shown];
-    label.textContent = `v${shown + 1} из ${versions.length}`;
-    meta.textContent = shown === activeIndex
+    label.textContent = t("v{index} из {total}", { index: shown + 1, total: versions.length });
+    meta.textContent = t(shown === activeIndex
       ? "активная версия · сейчас в работе"
-      : shown < activeIndex ? "прежняя версия" : "более новая версия, не в работе";
+      : shown < activeIndex ? "прежняя версия" : "более новая версия, не в работе");
     text.textContent = version?.text || "";
-    reason.textContent = version?.reason ? `Почему так: ${version.reason}` : "";
+    reason.textContent = version?.reason ? t("Почему так: {reason}", { reason: version.reason }) : "";
     reason.hidden = !version?.reason;
     back.disabled = shown === 0;
     forward.disabled = shown === versions.length - 1;
@@ -62,9 +63,9 @@ function storyboard(project) {
   const rows = storyboardRows(project);
   const list = el("section", "v2-card v2-storyboard");
   list.dataset.hook = "v2-storyboard";
-  list.append(el("h2", "v2-card-title", `Раскадровка · ${rows.length}`));
+  list.append(el("h2", "v2-card-title", t("Раскадровка · {count}", { count: rows.length })));
   if (!rows.length) {
-    list.append(el("p", "v2-section-hint", "Сцен пока нет — попросите агента разбить сценарий на сцены."));
+    list.append(el("p", "v2-section-hint", t("Сцен пока нет — попросите агента разбить сценарий на сцены.")));
     return list;
   }
   for (const row of rows) {
@@ -93,7 +94,7 @@ export function renderScenarioScreen(root, { state, screen = "scenario" } = {}) 
   surface.dataset.hook = "v2-screen-scenario";
   if (!project) {
     surface.setAttribute("aria-busy", "true");
-    surface.append(el("p", "", "Загружаем сценарий…"));
+    surface.append(el("p", "", t("Загружаем сценарий…")));
     root.append(surface);
     return;
   }

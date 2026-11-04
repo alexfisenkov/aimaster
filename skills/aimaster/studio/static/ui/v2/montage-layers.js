@@ -14,6 +14,7 @@
 import { markControlHooks } from "../card-forms.js";
 import { el } from "./dom.js";
 import { fmtTime, layerRows, modelDuration } from "./montage-layers-model.js";
+import { t } from "./locale.js";
 
 const HINT = "Нажмите на блок — покажу, что это за клип и какой кусок исходника взят.";
 let chosen = "";
@@ -44,9 +45,9 @@ function track(projectId, row, detail, grid) {
   line.dataset.layer = row.layer;
   const lane = el("div", "am-lane");
   lane.dataset.empty = String(!row.blocks.length);
-  if (!row.blocks.length) lane.append(el("span", "am-lane-empty", "пусто"));
+  if (!row.blocks.length) lane.append(el("span", "am-lane-empty", t("пусто")));
   for (const item of row.blocks) lane.append(block(projectId, item, detail, grid));
-  line.append(el("span", "am-track-label", row.label), lane);
+  line.append(el("span", "am-track-label", t(row.label)), lane);
   return line;
 }
 
@@ -59,9 +60,9 @@ function hintText(engine, exists, model, error) {
 
 function heading(lagging, error) {
   const head = el("div", "v2-card-head");
-  head.append(el("h2", "v2-card-title", "Схема монтажа"));
+  head.append(el("h2", "v2-card-title", t("Схема монтажа")));
   if (lagging) {
-    const mark = el("span", "am-layers-mark", error ? "не обновилась" : "обновляется…");
+    const mark = el("span", "am-layers-mark", t(error ? "не обновилась" : "обновляется…"));
     mark.dataset.hook = "am-layers-mark";
     mark.dataset.tone = error ? "error" : "wait";
     head.append(mark);
@@ -75,7 +76,7 @@ export function renderLayers({ project, model, engine, exists, lagging = false, 
   const rows = exists !== false && engine === "installed" && model ? layerRows(model, project) : [];
   box.append(heading(lagging && rows.length > 0, Boolean(error)));
   if (!rows.length) {
-    box.append(el("p", "v2-section-hint", hintText(engine, exists, model, error)));
+    box.append(el("p", "v2-section-hint", t(hintText(engine, exists, model, error))));
     return box;
   }
   const grid = el("div", "am-tracks");

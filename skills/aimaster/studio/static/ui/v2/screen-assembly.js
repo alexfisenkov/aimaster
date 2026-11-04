@@ -24,6 +24,9 @@ import {
 import { renderNotices } from "./montage-notices.js";
 import { renderVersions } from "./montage-versions.js";
 import { inTelegram, isPhone } from "./responsive.js";
+import { renderOverlayEditor } from "./overlay-editor.js";
+import { renderMontageFamily } from "./montage-family.js";
+import { t } from "./locale.js";
 
 function isReady(project) {
   const url = project?.assembly?.asset_url;
@@ -41,7 +44,7 @@ function plainLayout(surface, snapshot, project, finished) {
   const layout = el("div", "v2-final-layout");
   const side = el("div", "v2-final-side");
   side.append(summaryCard(project, snapshot.revision, { ready, finished }), historyBlock(project));
-  const statusText = finished ? "принят" : ready ? "ждёт вашего решения" : "ещё не собран";
+  const statusText = t(finished ? "принят" : ready ? "ждёт вашего решения" : "ещё не собран");
   layout.append(finalPreview(project, { ready, statusText, durationText: sceneDuration(project) }), side);
   surface.append(layout);
 }
@@ -57,7 +60,7 @@ function montageLayout(surface, snapshot, project, finished) {
   if (list.length) surface.append(renderNotices(list, { project, revision, actions: flags.build }));
   const ready = isReady(project);
   const current = project?.montage?.current_version;
-  const statusText = finished ? "принят" : ready && current ? `текущая ${versionLabel(current)}` : "ещё не собран";
+  const statusText = finished ? t("принят") : ready && current ? `текущая ${versionLabel(current)}` : t("ещё не собран");
   const top = el("div", "am-top");
   const side = el("div", "am-side");
   const actions = renderMainActions({ project, revision, status, flags });
@@ -74,6 +77,12 @@ function montageLayout(surface, snapshot, project, finished) {
       project, model: schema, engine: flags.engine, exists: status ? status.exists : null, lagging, error,
     }),
     historyBlock(project));
+  const family = renderMontageFamily({ project, revision, status, model, finished });
+  if (family) surface.append(family);
+  if (!finished) {
+    const editor = renderOverlayEditor({ project, snapshot, model, status });
+    if (editor) surface.append(editor);
+  }
 }
 
 /**
@@ -88,7 +97,7 @@ export function renderAssemblyScreen(root, { state, screen = "assembly" } = {}) 
   surface.dataset.hook = "v2-screen-assembly";
   if (!project) {
     surface.setAttribute("aria-busy", "true");
-    surface.append(el("p", "", "Загружаем сборку…"));
+    surface.append(el("p", "", t("Загружаем сборку…")));
     root.append(surface);
     return;
   }

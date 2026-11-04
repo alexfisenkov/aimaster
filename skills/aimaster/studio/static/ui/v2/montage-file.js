@@ -13,9 +13,10 @@ import { actionButton } from "./montage-action.js";
 import { postMontage, refusalText } from "./montage-api.js";
 import { downloadHref, versionRows } from "./montage-model.js";
 import { showToast } from "./toast.js";
+import { t } from "./locale.js";
 
 function downloadLink(project, href) {
-  const link = el("a", "v2-chat-button", "Скачать");
+  const link = el("a", "v2-chat-button", t("Скачать"));
   link.href = href;
   link.setAttribute("download", "");
   markControlHooks(link, `montage:${project.id}`, "download");
@@ -26,7 +27,7 @@ function downloadLink(project, href) {
 function revealButton(project) {
   const wrap = actionButton({
     slot: `reveal:${project.id}`, projectId: project.id, targetId: `montage:${project.id}`,
-    action: "reveal", label: "Показать в папке", className: "v2-chat-button", busyText: "Открываю папку…",
+    action: "reveal", label: t("Показать в папке"), className: "v2-chat-button", busyText: t("Открываю папку…"),
     send: async () => {
       const result = await postMontage(project.id, "reveal");
       return result.ok ? "" : refusalText(result);
@@ -56,12 +57,12 @@ function pathLine(project, shown) {
   const line = el("div", "am-file-path");
   const text = el("code", "am-file-path-text", shown);
   text.dataset.part = "am-file-path";
-  const copy = el("button", "am-link-button", "Скопировать путь");
+  const copy = el("button", "am-link-button", t("Скопировать путь"));
   copy.type = "button";
   markControlHooks(copy, `montage:${project.id}`, "copy-path");
   copy.addEventListener("click", async () => {
-    showToast((await copyPath(text, shown)) ? "Путь скопирован"
-      : "Не получилось скопировать — путь выделен, скопируйте его сами");
+    showToast(t((await copyPath(text, shown)) ? "Путь скопирован"
+      : "Не получилось скопировать — путь выделен, скопируйте его сами"));
   });
   line.append(text, copy);
   return line;
@@ -71,9 +72,9 @@ export function renderFileCard({ project, status, flags }) {
   const current = versionRows(project).find((row) => row.current) || null;
   const card = el("section", "v2-card am-file");
   card.dataset.hook = "am-file";
-  card.append(el("h2", "v2-card-title", current ? `Ролик ${current.label}` : "Ролик"));
+  card.append(el("h2", "v2-card-title", current ? `${t("Ролик")} ${current.label}` : t("Ролик")));
   if (!current) {
-    card.append(el("p", "v2-section-hint", "Ролик ещё не собран — первую версию соберёт агент."));
+    card.append(el("p", "v2-section-hint", t("Ролик ещё не собран — первую версию соберёт агент.")));
     return card;
   }
   const shown = status?.current_version === current.id ? status?.file?.shown || null : null;

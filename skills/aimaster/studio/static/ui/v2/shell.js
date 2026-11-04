@@ -26,6 +26,9 @@ import { renderVideoScreen } from "./screen-video.js";
 import {
   SCREEN_LABELS, projectStatus, screenForStage, screenHeading, screensFor,
 } from "./screen-map.js";
+import { familyLabel, readFamilyPreference, saveFamilyPreference } from "./family.js";
+import { renderOverview } from "./overview.js";
+import { t } from "./locale.js";
 
 const TYPE_WORDS = Object.freeze({ video: "видео", photo: "фото", mixed: "видео и фото" });
 const MODE_WORDS = Object.freeze({ per_scene: "кадр за кадром", one_shot: "одним заходом" });
@@ -53,6 +56,7 @@ export function currentScreen(project) {
 }
 
 function scenesWord(count) {
+  if (typeof document !== "undefined" && document.documentElement?.lang === "en") return t(count === 1 ? "{count} сцена" : "{count} сцен", { count });
   const tail = count % 100;
   const last = count % 10;
   if (tail >= 11 && tail <= 14) return `${count} сцен`;
@@ -67,11 +71,11 @@ function scenesWord(count) {
 export function metaLine(project, { seconds = sceneSeconds(project) } = {}) {
   const scenes = Array.isArray(project?.scenes) ? project.scenes : [];
   return [
-    TYPE_WORDS[project?.type] || "",
-    MODE_WORDS[project?.gen_mode] || "",
-    lengthWords(seconds),
+    t(TYPE_WORDS[project?.type] || ""),
+    t(MODE_WORDS[project?.gen_mode] || ""),
+    typeof document !== "undefined" && document.documentElement?.lang === "en" && Number.isFinite(seconds) ? `${seconds} s` : lengthWords(seconds),
     scenes.length ? scenesWord(scenes.length) : "",
-    project?.mode === "autopilot" ? "автопилот: тратит кредиты без подтверждения" : "",
+    project?.mode === "autopilot" ? t("полный автомат") : "",
   ].filter(Boolean).join(" · ");
 }
 
@@ -94,11 +98,11 @@ function agentButton(project, revision) {
   agent.dataset.hook = "v2-agent";
   const icon = el("span", "v2-agent-icon", "💬");
   icon.setAttribute("aria-hidden", "true");
-  agent.append(icon, el("span", "v2-agent-word", "Агент"));
+  agent.append(icon, el("span", "v2-agent-word", t("Агент")));
   agent.addEventListener("click", () => requestAgentPrompt({
     title: "Продолжить проект в чате",
     prompt: project?.mode === "autopilot"
-      ? `Открой ${projectRef(project, revision)}. Проект в автопилоте: продолжай по references/autopilot.md `
+      ? `Открой ${projectRef(project, revision)}. Проект в полном автомате: продолжай по references/autopilot.md `
         + `без вопросов до готового ролика и в конце пришли отчёт.`
       : `Открой ${projectRef(project, revision)}. Покажи, на каком шаге проект и что осталось решить, `
         + `и предложи ближайший допустимый шаг. Ничего не генерируй и не меняй без моего подтверждения.`,
@@ -117,7 +121,8 @@ function shownSeconds(project, screen) {
  * проекта, про который пришло: опрос другого проекта или экрана не трогает. */
 export function montageRepaintWanted(state, projectId) {
   const project = state?.snapshot?.active_project;
-  return Boolean(project) && project.id === projectId && currentScreen(project) === "assembly";
+  return Boolean(project) && project.id === projectId
+    && (readFamilyPreference().view === "overview" || currentScreen(project) === "assembly");
 }
 
 function topbar(snapshot, screen) {
@@ -128,6 +133,21 @@ function topbar(snapshot, screen) {
   if (meta) identity.append(el("p", "v2-topbar-meta", meta));
   identity.append(el("p", "v2-topbar-title", project?.title || project?.id || "Проект"));
   bar.append(identity, statusPill(snapshot), agentButton(project, snapshot.revision));
+  const prefs = readFamilyPreference();
+  const controls = el("div", "am-family-controls");
+  const views = el("div", "am-family-views"); views.setAttribute("role", "group"); views.setAttribute("aria-label", "Dashboard view");
+  for (const view of ["stages", "overview"]) {
+    const button = el("button", "am-family-choice", familyLabel(view, prefs.locale)); button.type = "button";
+    button.dataset.hook = `family-${view}`; button.setAttribute("aria-pressed", String(prefs.view === view));
+    button.addEventListener("click", () => { saveFamilyPreference({ ...prefs, view }); document.dispatchEvent(new Event("studio:family-preference")); }); views.append(button);
+  }
+  const language = el("button", "am-family-choice", prefs.locale.toUpperCase()); language.type = "button"; language.dataset.hook = "family-language";
+  language.setAttribute("aria-label", familyLabel("language", prefs.locale));
+  language.addEventListener("click", () => { saveFamilyPreference({ ...prefs, locale: prefs.locale === "ru" ? "en" : "ru" }); document.dispatchEvent(new Event("studio:family-preference")); });
+  const theme = el("select", "am-family-select"); theme.dataset.hook = "family-theme"; theme.setAttribute("aria-label", familyLabel("theme", prefs.locale));
+  for (const name of ["system", "light", "dark"]) { const option = el("option", "", familyLabel(name, prefs.locale)); option.value = name; option.selected = prefs.theme === name; theme.append(option); }
+  theme.addEventListener("change", () => { saveFamilyPreference({ ...prefs, theme: theme.value }); document.dispatchEvent(new Event("studio:family-preference")); });
+  controls.append(views, language, theme); bar.append(controls);
   return bar;
 }
 
@@ -173,12 +193,12 @@ function renderPicker(state) {
   const empty = state?.status === "empty";
   const box = el("section", "v2-screen v2-screen-picker");
   box.dataset.hook = "v2-picker";
-  box.append(el("h1", "v2-screen-title", empty ? "Проектов пока нет" : "Выберите проект"));
+  box.append(el("h1", "v2-screen-title", t(empty ? "Проектов пока нет" : "Выберите проект")));
   box.append(el("p", "v2-screen-hint", empty
-    ? "Заведите проект в чате — он появится здесь сам."
-    : `Проектов в мастерской: ${state?.projects?.length ?? 0}. Откройте любой из списка слева.`));
+    ? t("Заведите проект в чате — он появится здесь сам.")
+    : t("Проектов в мастерской: {count}. Откройте любой из списка слева.", { count: state?.projects?.length ?? 0 })));
   if (!empty) {
-    const show = el("button", "v2-chat-button", "Показать список проектов");
+    const show = el("button", "v2-chat-button", t("Показать список проектов"));
     show.type = "button";
     show.dataset.hook = "v2-open-rail";
     show.addEventListener("click", () => document.dispatchEvent(
@@ -202,12 +222,13 @@ export function renderShellV2(root, state) {
   const project = snapshot?.active_project;
   const screen = project ? currentScreen(project) : null;
   // Опрос монтажа нужен только экрану «Сборка» (montage-feed.js).
-  if (screen !== "assembly") hideMontage();
+  if (screen !== "assembly" && readFamilyPreference().view !== "overview") hideMontage();
   if (topbarContent) {
     const focusKey = topbarFocusKey(topbarContent);
     topbarContent.textContent = "";
     if (project) {
-      topbarContent.append(topbar(snapshot, screen), renderPath(project, { current: screen }));
+      topbarContent.append(topbar(snapshot, screen));
+      if (readFamilyPreference().view === "stages") topbarContent.append(renderPath(project, { current: screen }));
       restoreTopbarFocus(topbarContent, focusKey);
     }
   }
@@ -220,7 +241,10 @@ export function renderShellV2(root, state) {
   const inner = el("div", "v2-main-inner");
   main.append(inner);
   if (state?.error) {
-    inner.append(el("p", "v2-error", "Не удалось загрузить проект. Обновите страницу."));
+    inner.append(el("p", "v2-error", t("Не удалось загрузить проект.")));
+    const retry = el("button", "v2-chat-button", t("Повторить")); retry.type = "button";
+    retry.addEventListener("click", () => document.dispatchEvent(new Event("studio:retry-snapshot")));
+    inner.append(retry);
     return;
   }
   if (!project) {
@@ -234,17 +258,19 @@ export function renderShellV2(root, state) {
       return;
     }
     main.setAttribute("aria-busy", "true");
-    inner.append(el("p", "v2-loading", "Загружаем проект…"));
+    inner.append(el("p", "v2-loading", t("Загружаем проект…")));
     return;
   }
   main.removeAttribute("aria-busy");
-  inner.append(screenHead(project, screen));
+  const overview = readFamilyPreference().view === "overview";
+  if (!overview) inner.append(screenHead(project, screen));
   const area = el("div", "v2-area");
   area.dataset.screen = screen;
-  area.setAttribute("aria-label", SCREEN_LABELS[screen] || "");
+  area.setAttribute("aria-label", t(SCREEN_LABELS[screen] || ""));
   inner.append(area);
   const render = SCREEN_RENDERERS[screen];
-  if (render) render(area, { state, readOnly: false, screen });
+  if (overview) renderOverview(area, { state, renderers: SCREEN_RENDERERS, language: readFamilyPreference().locale });
+  else if (render) render(area, { state, readOnly: false, screen });
   else area.append(el("p", "v2-loading", "Этот экран ещё не готов."));
   // Подвал — на всю ширину и липкий снизу: он живёт вне колонки контента.
   const footer = area.querySelector('[data-hook="v2-footer"]');

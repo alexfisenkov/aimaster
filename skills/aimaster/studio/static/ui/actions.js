@@ -255,7 +255,8 @@ export async function postAction(actionType, targetId, payload, expectedRevision
     return result;
   }
   const body = result.body;
-  return { ok: true, actionId: body.action_id, revision: body.revision, status: body.status };
+  return { ok: true, actionId: body.action_id, revision: body.revision, status: body.status,
+    ...(typeof body.copy_request === "string" ? { copyRequest: body.copy_request } : {}) };
 }
 
 /**

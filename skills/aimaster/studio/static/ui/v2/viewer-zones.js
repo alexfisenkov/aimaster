@@ -16,6 +16,7 @@ import { AUDIO_LAYERS } from "./audio-model.js";
 import { selectedResultVersion } from "./variants.js";
 import { inFrameZone, localZone, videoReferenceZone } from "./scene-zones.js";
 import { el, openViewer } from "./dom.js";
+import { t } from "./locale.js";
 
 function scenesInOrder(project) {
   return [...(project?.scenes || [])]
@@ -83,7 +84,7 @@ export function renderUsedIn(title, items) {
   if (!Array.isArray(items) || !items.length) return null;
   const block = el("section", "v2-viewer-used");
   block.dataset.hook = "v2-viewer-used";
-  block.append(el("h3", "v2-viewer-subtitle", title));
+  block.append(el("h3", "v2-viewer-subtitle", t(title)));
   const list = el("div", "v2-viewer-used-items");
   for (const item of items) {
     const pill = el("button", "v2-viewer-used-item", item.label);

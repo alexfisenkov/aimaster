@@ -18,6 +18,7 @@ import {
   resolveTypeLabel,
   STAGE_LABELS,
 } from "./state.js";
+import { t } from "./i18n.js";
 
 const FILTER_LABELS = Object.freeze({
   all: "Все",
@@ -60,8 +61,8 @@ function buildSkeleton(root) {
   hide.type = "button";
   hide.className = "rail-hide";
   hide.dataset.hook = "rail-hide";
-  hide.setAttribute("aria-label", "Скрыть панель проектов");
-  hide.title = "Скрыть панель проектов";
+  hide.setAttribute("aria-label", t("Скрыть панель проектов"));
+  hide.title = t("Скрыть панель проектов");
   const wide = document.createElement("span");
   wide.className = "rail-hide-wide";
   wide.setAttribute("aria-hidden", "true");
@@ -83,7 +84,7 @@ function buildSkeleton(root) {
   const searchLabel = document.createElement("label");
   searchLabel.className = "rail-search-label";
   searchLabel.setAttribute("for", "rail-search-input");
-  searchLabel.textContent = "Поиск проектов";
+  searchLabel.textContent = t("Поиск проектов");
   const searchInput = document.createElement("input");
   searchInput.type = "search";
   searchInput.id = "rail-search-input";
@@ -97,12 +98,12 @@ function buildSkeleton(root) {
   const filterGroup = document.createElement("div");
   filterGroup.className = "rail-filters";
   filterGroup.setAttribute("role", "group");
-  filterGroup.setAttribute("aria-label", "Фильтр проектов");
+  filterGroup.setAttribute("aria-label", t("Фильтр проектов"));
   const filterButtons = new Map();
   for (const filter of PROJECT_FILTERS) {
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = FILTER_LABELS[filter];
+    button.textContent = t(FILTER_LABELS[filter]);
     button.dataset.filter = filter;
     button.setAttribute("aria-pressed", "false");
     button.addEventListener("click", () => emitFilterChanged(filter));
@@ -126,7 +127,7 @@ function buildSkeleton(root) {
   channelLink.href = "https://t.me/masterskaya_video";
   channelLink.target = "_blank";
   channelLink.rel = "noreferrer noopener";
-  channelLink.textContent = "Канал";
+  channelLink.textContent = t("Канал");
   footer.append(channelLink);
 
   root.append(brand, searchWrap, filterGroup, listRegion, footer);
@@ -169,7 +170,7 @@ function paintList(refs, projects, filter, query, selectedProjectId) {
   const refocusProjectId = resolveRefocusProjectId(visible, focusedProjectId);
 
   if (visible.length === 0) {
-    emptyMessage.textContent = projects.length === 0 ? "Проектов пока нет." : "Ничего не найдено.";
+    emptyMessage.textContent = t(projects.length === 0 ? "Проектов пока нет." : "Ничего не найдено.");
     emptyMessage.hidden = false;
     list.hidden = true;
     return;
@@ -195,7 +196,7 @@ function paintList(refs, projects, filter, query, selectedProjectId) {
       ? STAGE_LABELS[project.stage]
       : undefined;
     const typeLabel = resolveTypeLabel(project?.type);
-    const metaParts = [typeLabel, stageLabel].filter(Boolean);
+    const metaParts = [typeLabel, stageLabel].filter(Boolean).map((word) => t(word));
     const title = document.createElement("span");
     title.className = "rail-project-title";
     title.textContent = displayTitle;
@@ -246,6 +247,11 @@ export function renderProjectRail(root, state) {
     refs = buildSkeleton(root);
     root.__railRefs = refs;
   }
+  root.querySelector('.rail-hide')?.setAttribute('aria-label', t('Скрыть панель проектов'));
+  root.querySelector('.rail-search-label').textContent = t('Поиск проектов');
+  root.querySelector('.rail-filters')?.setAttribute('aria-label', t('Фильтр проектов'));
+  root.querySelector('.rail-channel-link').textContent = t('Канал');
+  for (const [key, button] of refs.filterButtons) button.textContent = t(FILTER_LABELS[key]);
 
   if (refs.searchInput.value !== query) {
     refs.searchInput.value = query;

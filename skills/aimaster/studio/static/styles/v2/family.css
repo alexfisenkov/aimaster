@@ -1,0 +1,54 @@
+/* AIMaster family skin; local OFL fonts, compact app density. */
+@font-face { font-family: Onest; src: url('/static/fonts/onest-cyrillic-wght-normal.woff2') format('woff2'); font-weight: 100 900; unicode-range: U+0400-052F,U+2DE0-2DFF,U+A640-A69F; font-display: swap; }
+@font-face { font-family: Onest; src: url('/static/fonts/onest-latin-wght-normal.woff2') format('woff2'); font-weight: 100 900; unicode-range: U+0000-03FF; font-display: swap; }
+@font-face { font-family: Unbounded; src: url('/static/fonts/unbounded-cyrillic-wght-normal.woff2') format('woff2'); font-weight: 100 900; unicode-range: U+0400-052F,U+2DE0-2DFF,U+A640-A69F; font-display: swap; }
+@font-face { font-family: Unbounded; src: url('/static/fonts/unbounded-latin-wght-normal.woff2') format('woff2'); font-weight: 100 900; unicode-range: U+0000-03FF; font-display: swap; }
+
+:root { --family-paper: #F4F5F6; --family-ink: #181A1C; --family-graphite: #171717; --family-silver: #C7C9CC; }
+:root[data-theme="dark"] { color-scheme: dark; --v2-bg: #121316; --v2-surface: #202226; --v2-ink: #F1F2F4; --v2-ink-2: #D5D7DB; --v2-muted: #C1C3C8; --v2-line: #414349; --v2-line-2: #52545A; --v2-soft: #303238; --v2-primary: #383A40; --v2-primary-fg: #fff; --v2-board-bg: #202226; --v2-board-sunken: #121316; --v2-line-soft: #414349; --v2-warn-bg: #3D3217; --v2-warn-ink: #FDE68A; --v2-ok-bg: #123523; --v2-ok-ink: #86EFAC; }
+@media (prefers-color-scheme: dark) { :root[data-theme="system"] { color-scheme: dark; --v2-bg: #121316; --v2-surface: #202226; --v2-ink: #F1F2F4; --v2-ink-2: #D5D7DB; --v2-muted: #C1C3C8; --v2-line: #414349; --v2-line-2: #52545A; --v2-soft: #303238; --v2-primary: #383A40; --v2-board-bg: #202226; --v2-board-sunken: #121316; --v2-line-soft: #414349; --v2-warn-bg: #3D3217; --v2-warn-ink: #FDE68A; --v2-ok-bg: #123523; --v2-ok-ink: #86EFAC; } }
+:root[data-theme="dark"] { --color-bg:#121316; --color-surface:#202226; --color-surface-sunken:#121316; --color-surface-muted:#303238; --color-border:#414349; --color-border-soft:#6B6E75; --color-border-strong:#8A8D94; --color-text:#F1F2F4; --color-text-secondary:#D5D7DB; --color-text-muted:#C1C3C8; --color-text-subtle:#B9BBC1; --color-text-placeholder:#B9BBC1; --color-accent-bg:#123523; --color-attention-bg:#3D3217; --color-danger-bg:#431C22; --color-focus-ring:#93C5FD; }
+@media (prefers-color-scheme:dark) { :root[data-theme="system"] { --color-bg:#121316; --color-surface:#202226; --color-surface-sunken:#121316; --color-surface-muted:#303238; --color-border:#414349; --color-border-soft:#6B6E75; --color-border-strong:#8A8D94; --color-text:#F1F2F4; --color-text-secondary:#D5D7DB; --color-text-muted:#C1C3C8; --color-text-subtle:#B9BBC1; --color-text-placeholder:#B9BBC1; --color-accent-bg:#123523; --color-attention-bg:#3D3217; --color-danger-bg:#431C22; --color-focus-ring:#93C5FD; } }
+:root[data-theme="dark"] body[data-ui="v2"] .v2-footer { background: #202226; color: #F1F2F4; }
+@media (prefers-color-scheme:dark) { :root[data-theme="system"] body[data-ui="v2"] .v2-footer { background: #202226; color: #F1F2F4; } }
+
+body[data-ui="v2"] { --v2-fs-14: 1rem; --v2-fs-13: .875rem; font-family: Onest, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 1rem; }
+body[data-ui="v2"] .topbar { background: var(--v2-bg); }
+body[data-ui="v2"] .v2-topbar { grid-template-columns: minmax(0,1fr) auto auto; grid-template-areas: "id pill agent" "controls controls controls"; }
+.am-family-controls { grid-area: controls; display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; margin-top: 10px; }
+.am-family-views { display: inline-flex; padding: 3px; border: 1px solid var(--v2-line); border-radius: 12px; background: var(--v2-surface); }
+.am-family-choice,.am-family-select { min-height: 44px; border: 1px solid var(--v2-line); border-radius: 10px; padding: 0 12px; background: var(--v2-surface); color: var(--v2-ink); font: 600 13px Onest,sans-serif; cursor: pointer; }
+.am-family-views .am-family-choice { border: 0; }
+.am-family-choice[aria-pressed="true"] { background: var(--v2-primary); color: #fff; }
+.am-family-choice:focus-visible,.am-family-select:focus-visible,.am-overlay-editor :focus-visible { outline: 2px solid var(--v2-ink); outline-offset: 2px; }
+.am-overview { display: grid; gap: 18px; min-width: 0; }
+.am-overview-hero { background: linear-gradient(165deg,#202123,#0E0E10); color: #fff; border-radius: 22px; }
+.am-overview-hero .v2-section-hint { color: #C7C9CC; }
+.am-eyebrow { font: 600 11px Unbounded,Onest,sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #C7C9CC; }
+.am-overview-title { margin: 8px 0; font: 600 clamp(18px,2vw,28px)/1.3 Unbounded,Onest,sans-serif; overflow-wrap: anywhere; }
+.am-overview-step { min-width: 0; }
+.am-step-title { margin: 0 0 10px; font: 600 17px Unbounded,Onest,sans-serif; }
+.am-overview-step .v2-screen { margin: 0; }
+.am-library-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(190px,1fr)); gap: 10px; margin-top: 12px; }
+.am-library-card { min-width: 0; border: 1px solid var(--v2-line); border-radius: 14px; padding: 12px; background: var(--v2-soft); overflow-wrap: anywhere; }
+.am-library-card h3 { margin: 0; font-size: 14px; }.am-library-card p { margin: 6px 0 0; color: var(--v2-muted); font-size: 12px; }
+.am-guide-details,.am-advanced-actions { min-width:0; margin-top:10px; border:1px solid var(--v2-line); border-radius:12px; background:var(--v2-surface); }
+.am-guide-details summary,.am-advanced-actions summary { min-height:44px; display:flex; align-items:center; padding:8px 14px; color:var(--v2-ink); font-weight:600; cursor:pointer; }
+.am-guide-details p { margin:0; padding:0 14px 14px; color:var(--v2-muted); }
+.am-advanced-actions > .am-family-actions { margin:0; border:0; box-shadow:none; }
+.am-family-action { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.am-family-action-status { color: var(--v2-muted); overflow-wrap: anywhere; font-size: 12px; }
+.am-family-action button { min-height: 44px; }
+.am-overlay-editor { margin-top: 18px; }.am-overlay-tools { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+.am-overlay-tools select,.am-overlay-tools input { min-height: 44px; border: 1px solid var(--v2-line); border-radius: 10px; background: var(--v2-surface); color: var(--v2-ink); padding: 4px 8px; font: inherit; }
+.am-overlay-color { width: 52px; }.am-overlay-width { width: 86px; }
+.am-overlay-stage { position: relative; width: min(100%,720px); aspect-ratio: var(--am-canvas-ratio,16 / 9); background: #0E0E10; overflow: hidden; border-radius: 12px; }
+.am-overlay-media,.am-overlay-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.am-overlay-media { object-fit: contain; }.am-overlay-canvas { touch-action: none; cursor: crosshair; }
+.am-overlay-existing { cursor: move; }.am-overlay-draft { pointer-events: none; stroke-dasharray: 12 6; }
+.am-overlay-editor > button { min-height: 44px; margin: 10px 10px 0 0; }
+.am-overlay-status { min-height: 1.4em; color: var(--v2-muted); }
+.am-format-actions { margin-top: 18px; }.am-format-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }.am-format-buttons > * { min-height: 44px; }.am-format-preview { display: block; width: min(100%,640px); max-height: 360px; object-fit: contain; margin-top: 12px; }.am-format-preview[hidden] { display: none; }
+body[data-ui="v2"] .v2-thumb img,body[data-ui="v2"] .v2-thumb video,body[data-ui="v2"] .v2-viewer-tile-media { object-fit: contain; }
+@media (max-width:759px) { body[data-ui="v2"] .v2-topbar { grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "id agent" "pill agent" "controls controls"; } .am-family-controls { justify-content: flex-start; margin-top: 6px; } .am-overview { gap: 14px; } .am-overview-hero { border-radius: 16px; } }
+@media (prefers-reduced-motion:reduce) { body[data-ui="v2"] *,body[data-ui="v2"] *::before,body[data-ui="v2"] *::after { scroll-behavior: auto!important; animation-duration: .01ms!important; transition-duration: .01ms!important; } }

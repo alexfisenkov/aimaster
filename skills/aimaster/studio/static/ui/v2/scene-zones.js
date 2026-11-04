@@ -16,6 +16,7 @@ import { variantCounts, variantStatus } from "./counts.js";
 import { chatButton, el, openViewer } from "./dom.js";
 import { renderPreview } from "./preview.js";
 import { statusTone } from "./status-tone.js";
+import { t } from "./locale.js";
 
 const USAGE_WORDS = Object.freeze({
   reference: "пример",
@@ -32,7 +33,7 @@ const SLOT_WORDS = Object.freeze({ first: "первый", last: "последн�
 function zone(title, name) {
   const row = el("div", "v2-zone");
   row.dataset.zone = name;
-  row.append(el("span", "v2-zone-title", title));
+  row.append(el("span", "v2-zone-title", t(title)));
   const items = el("div", "v2-zone-items");
   row.append(items);
   return { row, items };
@@ -45,7 +46,7 @@ function markEmpty(row, empty) {
 
 function plus(label, request) {
   const button = chatButton("＋", request, "v2-plus");
-  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-label", t(label));
   return button;
 }
 
@@ -67,8 +68,8 @@ function avatar(project, reference, included, onClick) {
   node.type = "button";
   node.dataset.kind = reference.kind;
   node.dataset.included = String(included);
-  node.title = `${name}: ${included ? "в кадре — нажмите, чтобы убрать" : "не в кадре — нажмите, чтобы добавить"}`;
-  node.setAttribute("aria-label", `${name}: ${included ? "в кадре" : "не в кадре"}`);
+  node.title = `${name}: ${t(included ? "в кадре — нажмите, чтобы убрать" : "не в кадре — нажмите, чтобы добавить")}`;
+  node.setAttribute("aria-label", `${name}: ${t(included ? "в кадре" : "не в кадре")}`);
   const file = referenceFile(project, reference);
   // Нет файла — первая буква имени на тёмном квадрате: подпись «нет
   // картинки» в 34px не влезает, а буква говорит, кто это.
@@ -101,7 +102,7 @@ export function inFrameZone(project, revision, scene) {
   const shared = (project?.references || []).filter((item) => item?.local !== true && item.kind !== "video");
   const included = new Set(scene?.links?.reference_ids || []);
   markEmpty(row, !shared.length);
-  if (!shared.length) items.append(el("span", "v2-zone-none", "нет общих референсов"));
+  if (!shared.length) items.append(el("span", "v2-zone-none", t("нет общих референсов")));
   for (const reference of shared) {
     const inside = included.has(reference.reference_id);
     items.append(avatar(project, reference, inside, (node) => requestAgentPrompt(
@@ -119,7 +120,7 @@ export function localZone(project, revision, scene) {
     (item) => item?.local === true && item.scene_id === scene?.scene_id && item.kind !== "video",
   );
   markEmpty(row, !locals.length);
-  if (!locals.length) items.append(el("span", "v2-zone-none", "нет"));
+  if (!locals.length) items.append(el("span", "v2-zone-none", t("нет")));
   for (const reference of locals) items.append(localChip(project, reference));
   items.append(plus(
     "Добавить референс только для этой сцены",
@@ -135,7 +136,7 @@ export function videoReferenceZone(project, revision, scene) {
     (item) => item?.kind === "video" && item.scene_id === scene?.scene_id,
   );
   markEmpty(row, !videos.length);
-  if (!videos.length) items.append(el("span", "v2-zone-none", "нет"));
+  if (!videos.length) items.append(el("span", "v2-zone-none", t("нет")));
   for (const reference of videos) {
     const name = reference.label || reference.reference_id;
     const chip = el("button", "v2-ref-chip v2-ref-chip-video");
@@ -164,7 +165,7 @@ export function framesZone(project, revision, scene) {
   const { row, items } = zone("Кадры", "frames");
   const planned = plannedSlots(scene);
   markEmpty(row, !planned.length);
-  if (!planned.length) items.append(el("span", "v2-zone-none", "без кадров"));
+  if (!planned.length) items.append(el("span", "v2-zone-none", t("без кадров")));
   for (const slot of planned) {
     const counts = variantCounts(project, { sceneId: scene.scene_id, slot });
     const status = variantStatus(counts);

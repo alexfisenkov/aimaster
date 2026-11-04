@@ -6,10 +6,11 @@
 // `…/montage/model` (схема, несобранные правки, ошибки движка).
 
 import { lengthClock, sceneSeconds } from "./length-text.js";
+import { t } from "./locale.js";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
-const WHO = Object.freeze({ owner: "Вы", agent: "Агент", autopilot: "Автопилот" });
+const WHO = Object.freeze({ owner: "Вы", agent: "Агент", autopilot: "Полный автомат" });
 
 /** Монтаж — у видео и смешанных проектов; фото собирается картинкой. */
 export function montageApplies(project) {
@@ -44,7 +45,7 @@ export function versionRows(project) {
   return list.map((item) => ({
     id: item.id,
     label: versionLabel(item.id),
-    who: WHO[item.by] || WHO.agent,
+    who: t(WHO[item.by] || WHO.agent),
     when: whenText(item.created_at),
     summary: typeof item.summary === "string" && item.summary.trim() ? item.summary.trim() : "без описания",
     current: item.id === montage.current_version,

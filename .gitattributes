@@ -1,5 +1,12 @@
+# Публичные текстовые исходники имеют одинаковые LF-байты в macOS/Linux/Windows
+# checkout: catalog/guide SHA и verified tree не должны зависеть от autocrlf.
+* text=auto eol=lf
+
+# WOFF2 — бинарный файл, Git не переводит его строки.
+*.woff2 -text -eol
+
 # Шрифт монтажа (skills/aimaster/studio/montage/fonts/): .woff2 бинарны, а
 # OFL.txt/fonts.json должны доходить до Windows-агентов байт в байт — sha256
 # в fonts.json сверяется с реальным файлом (typeface.verify_bundle), и
 # CRLF-перевод строк в OFL.txt сломал бы эту проверку.
-skills/aimaster/studio/montage/fonts/* -text
+skills/aimaster/studio/montage/fonts/* -text -eol

@@ -9,6 +9,7 @@
 
 import { markControlHooks } from "../card-forms.js";
 import { formatHistoryEntries } from "../history-panel.js";
+import { t } from "./locale.js";
 import { AUDIO_LAYERS } from "./audio-model.js";
 import { playMark } from "./board-bits.js";
 import { chatButton, el, openViewer } from "./dom.js";
@@ -104,20 +105,20 @@ export function historyBlock(project) {
   box.addEventListener("toggle", () => { historyOpen = box.open; });
   const summary = el("summary", "v2-history-summary");
   summary.append(
-    el("span", "v2-history-title", `История решений · ${entries.length}`),
-    el("span", "v2-history-toggle v2-when-closed", "показать"),
-    el("span", "v2-history-toggle v2-when-open", "скрыть"),
+    el("span", "v2-history-title", t("История решений · {count}", { count: entries.length })),
+    el("span", "v2-history-toggle v2-when-closed", t("показать")),
+    el("span", "v2-history-toggle v2-when-open", t("скрыть")),
   );
   box.append(summary);
   if (!entries.length) {
-    box.append(el("p", "v2-section-hint", "Решений пока нет."));
+    box.append(el("p", "v2-section-hint", t("Решений пока нет.")));
     return box;
   }
   const list = el("ol", "v2-history-list");
   for (const entry of entries) {
     const row = el("li", "v2-history-row");
     row.dataset.actor = entry.actor;
-    row.append(el("span", "v2-history-actor", entry.actorLabel), el("span", "v2-history-text", entry.text));
+    row.append(el("span", "v2-history-actor", t(entry.actorLabel)), el("span", "v2-history-text", t(entry.text)));
     list.append(row);
   }
   box.append(list);
