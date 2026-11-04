@@ -64,6 +64,7 @@ def create_project(store: ProjectStore, project_id: str, title: str, project_typ
             "mode": mode,
             "status": "active",
             "order": len(existing),
+            "assembly_mode": "materials" if project_type == "photo" else None,
         },
         "milestones": {},
         "script": {"active_version_id": None, "versions": []},
@@ -82,6 +83,45 @@ def create_project(store: ProjectStore, project_id: str, title: str, project_typ
         raise AuthoringError(str(error)) from error
     ProjectStore._atomic_replace(project_dir / "state.json", state)
     return {"project_id": project_id, "revision": 0}
+
+
+def set_assembly_mode(store, project_id, expected_revision, mode):
+    """Record the owner's delivery choice and reopen only the final review."""
+    if mode not in {"montage", "materials"}:
+        raise AuthoringError("assembly mode must be montage or materials")
+
+    def change(state):
+        project = require_project(state)
+        if project.get("type") == "photo" and mode != "materials":
+            raise AuthoringError("photo projects deliver materials")
+        if project.get("assembly_mode", "montage") != mode:
+            state.setdefault("milestones", {})["assembly"] = "draft"
+        project["assembly_mode"] = mode
+        domain.append_history(state, "you", "assembly-mode-set", domain.derive_view_stage(state)["current_stage"], mode=mode)
+        from .decision_stages import apply_project_status
+        apply_project_status(state)
+
+    _, state = mutate(store, project_id, expected_revision, change)
+    return {"project_id": project_id, "revision": state["revision"], "assembly_mode": mode}
+
+
+def set_guide_choice(store, workspace, project_id, expected_revision, choice, *, catalog_path=None):
+    from .guide_catalog import CHOICE_SCOPE, resolve_choice, validate_choice
+    choice = validate_choice(choice)
+
+    def change(state):
+        if choice["stage"] not in domain._stage_sequence(state):
+            raise AuthoringError("guide stage is not part of this project")
+        resolve_choice(workspace, choice, catalog_path=catalog_path)
+        project = require_project(state)
+        choices = project.setdefault("guide_choices", [])
+        key = tuple(choice[field] for field in CHOICE_SCOPE)
+        choices[:] = [item for item in choices if tuple(item[field] for field in CHOICE_SCOPE) != key]
+        choices.append(choice)
+        domain.append_history(state, "you", "guide-choice-set", choice["stage"])
+
+    _, state = mutate(store, project_id, expected_revision, change)
+    return {"project_id": project_id, "revision": state["revision"], "choice": choice}
 
 
 def set_mode(

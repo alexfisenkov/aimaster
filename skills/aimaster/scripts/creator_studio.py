@@ -215,6 +215,17 @@ def command_project_create(args):
     )
 
 
+def command_project_set_assembly_mode(args):
+    _print(authoring.set_assembly_mode(authoring.open_store(args.workspace), args.project,
+                                       args.expected_revision, args.mode))
+
+
+def command_project_set_guide_choice(args):
+    choice = json.loads(args.file.read_text(encoding="utf-8"))
+    _print(authoring.set_guide_choice(authoring.open_store(args.workspace), args.workspace, args.project,
+                                      args.expected_revision, choice, catalog_path=args.builtin_catalog))
+
+
 def command_script_add_version(args):
     store = authoring.open_store(args.workspace)
     _print(
@@ -340,7 +351,7 @@ def command_reference_add(args):
         # and create an uploaded reference from it.
         if asset_id is not None:
             raise ValueError("--from-library and --asset-id are mutually exclusive")
-        materialized = materialize_library_entry(args.workspace, args.from_library)
+        materialized = materialize_library_entry(args.workspace, args.from_library, file_index=args.library_file_index)
         entry, library_id = materialized["entry"], args.from_library
         if entry["kind"] == "voice":
             raise ValueError("a voice entry attaches to a character: use `reference attach --from-library`")
@@ -364,6 +375,7 @@ def command_reference_add(args):
         usage=args.usage,
         scene_id=args.scene,
         all_scenes=args.all_scenes,
+        library_id=library_id,
     )
     if library_id is not None:
         result = {**result, "library_id": library_id, "asset_id": asset_id, "kind": kind}
@@ -377,7 +389,7 @@ def command_reference_attach(args):
     if (asset_id is None) == (args.from_library is None):
         raise ValueError("reference attach needs exactly one of --asset-id or --from-library")
     if args.from_library is not None:
-        asset_id = materialize_library_entry(args.workspace, args.from_library)["asset"]["asset_id"]
+        asset_id = materialize_library_entry(args.workspace, args.from_library, file_index=args.library_file_index)["asset"]["asset_id"]
     result = authoring.attach_reference(
         store,
         assets,
@@ -385,6 +397,7 @@ def command_reference_attach(args):
         args.expected_revision,
         reference_id=args.reference,
         asset_id=asset_id,
+        library_id=args.from_library,
     )
     if args.from_library is not None:
         result = {**result, "library_id": args.from_library, "asset_id": asset_id}
@@ -675,6 +688,11 @@ def command_assembly_set(args):
     )
 
 
+def command_assembly_materials(args):
+    from studio.completion import prepare_materials
+    _print(prepare_materials(args.workspace, args.project, args.expected_revision))
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -796,6 +814,19 @@ def _add_decision_subcommands(subparsers) -> None:
 def _add_project_subcommands(subparsers) -> None:
     project_cmd = subparsers.add_parser("project", help="create a project")
     project_sub = project_cmd.add_subparsers(dest="subcommand", required=True)
+    assembly_mode_cmd = project_sub.add_parser("set-assembly-mode", help="choose montage or materials delivery")
+    assembly_mode_cmd.add_argument("workspace", type=Path)
+    assembly_mode_cmd.add_argument("project")
+    assembly_mode_cmd.add_argument("--mode", required=True, choices=("montage", "materials"))
+    assembly_mode_cmd.add_argument("--expected-revision", required=True, type=int)
+    assembly_mode_cmd.set_defaults(handler=command_project_set_assembly_mode)
+    guide_cmd = project_sub.add_parser("set-guide-choice", help="save an exact builtin/user/none guide choice")
+    guide_cmd.add_argument("workspace", type=Path)
+    guide_cmd.add_argument("project")
+    guide_cmd.add_argument("--file", required=True, type=Path)
+    guide_cmd.add_argument("--builtin-catalog", type=Path)
+    guide_cmd.add_argument("--expected-revision", required=True, type=int)
+    guide_cmd.set_defaults(handler=command_project_set_guide_choice)
     project_create_cmd = project_sub.add_parser("create", help="create a new project at revision 0")
     project_create_cmd.add_argument("workspace", type=Path)
     project_create_cmd.add_argument("project_id")
@@ -1052,6 +1083,7 @@ def _add_reference_subcommands(subparsers) -> None:
     reference_add_cmd.add_argument("--asset-id", default=None, dest="asset_id")
     reference_add_cmd.add_argument("--from-library", default=None, dest="from_library",
                                    help="library_id: copy that library file into media/ and use it")
+    reference_add_cmd.add_argument("--library-file-index", type=int, default=0, help="zero-based file within the selected library identity")
     reference_add_cmd.add_argument("--source", choices=("upload", "generate"), default="upload")
     reference_add_cmd.add_argument(
         "--usage",
@@ -1072,6 +1104,7 @@ def _add_reference_subcommands(subparsers) -> None:
     reference_attach_cmd.add_argument("--asset-id", default=None, dest="asset_id")
     reference_attach_cmd.add_argument("--from-library", default=None, dest="from_library",
                                       help="library_id (e.g. a voice entry) instead of --asset-id")
+    reference_attach_cmd.add_argument("--library-file-index", type=int, default=0)
     reference_attach_cmd.add_argument("--expected-revision", required=True, type=int, dest="expected_revision")
     reference_attach_cmd.set_defaults(handler=command_reference_attach)
 
@@ -1212,6 +1245,11 @@ def _add_question_list_subcommand(question_sub) -> None:
 def _add_assembly_subcommands(subparsers) -> None:
     assembly_cmd = subparsers.add_parser("assembly", help="write the final assembly result")
     assembly_sub = assembly_cmd.add_subparsers(dest="subcommand", required=True)
+    materials_cmd = assembly_sub.add_parser("materials", help="prepare a portable set of selected materials")
+    materials_cmd.add_argument("workspace", type=Path)
+    materials_cmd.add_argument("project")
+    materials_cmd.add_argument("--expected-revision", required=True, type=int)
+    materials_cmd.set_defaults(handler=command_assembly_materials)
     assembly_set_cmd = assembly_sub.add_parser(
         "set", help="link the registered final-deliverable asset"
     )

@@ -192,6 +192,11 @@ class ProjectStore:
                     raise RevisionConflict(expected_revision, current_revision)
                 candidate = copy.deepcopy(current)
                 mutation(candidate)
+                if (candidate.get("milestones", {}).get("assembly") == "approved"
+                        and current.get("milestones", {}).get("assembly") != "approved"
+                        and candidate.get("project", {}).get("assembly_mode", "montage") == "materials"):
+                    from .completion import verify_assembly
+                    verify_assembly(candidate, project_path)
                 candidate["revision"] = current_revision + 1
                 self._atomic_replace(state_path, candidate)
                 return copy.deepcopy(candidate)

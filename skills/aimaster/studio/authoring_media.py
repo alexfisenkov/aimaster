@@ -213,6 +213,20 @@ def add_result_version(
     }
 
 
+def _library_binding(assets_index, library_id, asset_id):
+    if library_id is None:
+        return None
+    from .library import get_entry, sha256_of
+    safe_id(library_id, "library_id")
+    if asset_id is None:
+        raise AuthoringError("a library binding requires a materialized asset")
+    _, entry = get_entry(assets_index.root, library_id)
+    path, _ = assets_index.resolve(asset_id)
+    if sha256_of(path) not in {item["sha256"] for item in entry["files"]}:
+        raise AuthoringError("library identity does not own the attached asset")
+    return entry
+
+
 def add_reference(
     store: ProjectStore,
     assets_index: AssetIndex,
@@ -226,6 +240,7 @@ def add_reference(
     usage: str = "reference",
     scene_id: str | None = None,
     all_scenes: bool = False,
+    library_id: str | None = None,
 ) -> dict:
     """Create a tagged project or scene-local reference.
 
@@ -234,6 +249,7 @@ def add_reference(
     """
 
     name = optional_bounded_text(name, "name")
+    _library_binding(assets_index, library_id, asset_id)
     if scene_id is not None:
         safe_id(scene_id, "scene_id")
     if asset_id is not None:
@@ -268,6 +284,8 @@ def add_reference(
             raise AuthoringError(str(error)) from error
         if asset_id is not None:
             domain.find_reference(state, entry["reference_id"])["asset_id"] = asset_id
+        if library_id is not None:
+            domain.find_reference(state, entry["reference_id"])["library_id"] = library_id
         return entry["reference_id"]
 
     reference_id, new_state = mutate(store, project_id, expected_revision, mutator)
@@ -304,9 +322,11 @@ def attach_reference(
     *,
     reference_id: str,
     asset_id: str,
+    library_id: str | None = None,
 ) -> dict:
     safe_id(reference_id, "reference_id")
     safe_id(asset_id, "asset_id")
+    library_entry = _library_binding(assets_index, library_id, asset_id)
     _, mime_type = assets_index.resolve(asset_id)
     role = assets_index.role_of(asset_id)
     if role == "voice" or mime_type.startswith("audio/"):
@@ -323,12 +343,21 @@ def attach_reference(
 
     def mutator(state):
         _require_reference_writable(state, "reference attach")
+        reference = domain.find_reference(state, reference_id)
+        if (attachment_kind == "voice" and library_entry is not None and library_entry.get("voice_of")
+                and reference.get("library_id") and library_entry["voice_of"] != reference["library_id"]):
+            raise AuthoringError("this voice belongs to a different library identity")
         try:
             domain.attach_reference_asset(
                 state, reference_id, asset_id, attachment_kind=attachment_kind
             )
         except domain.DomainValidationError as error:
             raise AuthoringError(str(error)) from error
+        binding = reference["voice"] if attachment_kind == "voice" else reference
+        if library_id is None:
+            binding.pop("library_id", None)
+        else:
+            binding["library_id"] = library_id
 
     _, new_state = mutate(store, project_id, expected_revision, mutator)
     return {"project_id": project_id, "reference_id": reference_id, "revision": new_state["revision"]}

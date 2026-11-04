@@ -64,6 +64,8 @@ HISTORY_KINDS = {
     "script-ready": frozenset(),
     "scenes-ready": frozenset(),
     "assembly-ready": frozenset(),
+    "assembly-mode-set": frozenset({"mode"}),
+    "guide-choice-set": frozenset(),
     "frame-plan-set": frozenset({"scene_id", "first", "last"}),
     "gen-mode-set": frozenset({"mode"}),
     "video-mode-set": frozenset({"scene_id", "mode"}),
@@ -983,7 +985,8 @@ def _validate_history_params(kind: str, params) -> dict:
         if params["field"] not in allowed_fields:
             raise DomainValidationError("history.params.field is not supported")
     if "mode" in params:
-        modes = _HISTORY_MODES if kind == "mode-set" else _GENERATION_MODES if kind == "gen-mode-set" else _VIDEO_MODES
+        modes = ({"montage", "materials"} if kind == "assembly-mode-set" else
+                 _HISTORY_MODES if kind == "mode-set" else _GENERATION_MODES if kind == "gen-mode-set" else _VIDEO_MODES)
         if not isinstance(params["mode"], str) or params["mode"] not in modes:
             raise DomainValidationError("history.params.mode is not supported")
     if "action" in params and params["action"] not in _HISTORY_PAID_ACTIONS:
@@ -1515,6 +1518,32 @@ def _next_group_version_id(group_value, taken) -> str:
         if suffix.isdigit():
             highest = max(highest, int(suffix))
     return f"{group_value}-v{highest + 1}"
+
+
+def select_result_version(state: dict, collection: str, result: dict) -> None:
+    """An explicit acceptance selects that exact version for its existing owner.
+
+    Appending a candidate advances the working pointer; accepting an older
+    candidate must move it back. Retain every sibling and its decision history.
+    Legacy groups use their already-established scene links, never name matching.
+    """
+    from .domain_positions import group_owner, owner_links
+    group = result.get("result_id")
+    identity = result.get("version_id", group)
+    _require_non_empty_string(identity, "selected result identity")
+    owner = group_owner(state, group, collection)
+    if owner is not None:
+        owner_links(state, owner, create=True)[owner["result_link"]] = identity
+        return
+    link_key = {"image_results": "image_result_id", "video_results": "video_result_id", "audio_results": "audio_result_id"}.get(collection)
+    if link_key is None:
+        raise DomainValidationError("selection requires a result collection")
+    siblings = {item.get("version_id", item.get("result_id")) for item in state.get(collection, [])
+                if item.get("result_id") == group}
+    for scene in state.get("scenes", []):
+        links = scene.get("links", {})
+        if links.get(link_key) in siblings:
+            links[link_key] = identity
 
 
 def _append_group_version(

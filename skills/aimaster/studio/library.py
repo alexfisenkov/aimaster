@@ -48,7 +48,7 @@ _KIND_MEDIA = {
 }
 _DEFAULT_MEDIA = frozenset({"image", "video"})
 _ENTRY_KEYS = {"library_id", "kind", "label", "aliases", "files", "added_at"}
-_OPTIONAL_KEYS = {"voice_of", "source"}
+_OPTIONAL_KEYS = {"voice_of", "source", "notes", "tags", "updated_at"}
 _UNSAFE_NAME = re.compile(r"[^0-9A-Za-zА-Яа-яЁё._-]+")
 
 
@@ -120,6 +120,7 @@ def _validate_entry(entry, position):
         raise LibraryError(f"entries[{position}].label must be a non-empty string")
     if not isinstance(entry["aliases"], list) or not all(isinstance(a, str) for a in entry["aliases"]):
         raise LibraryError(f"entries[{position}].aliases must be a list of strings")
+    _validate_details(entry.get("notes", ""), entry.get("tags", []))
     files = entry["files"]
     if not isinstance(files, list) or not files:
         raise LibraryError(f"entries[{position}].files must be a non-empty list")
@@ -174,6 +175,21 @@ def locked_index(library: Path):
         before = json.dumps(index, sort_keys=True, ensure_ascii=False)
         yield index
         if json.dumps(index, sort_keys=True, ensure_ascii=False) != before:
+            # Preserve the exact prior bytes before every mutation (including imports).
+            prior = library / INDEX_NAME
+            history = library / ".history"
+            if history.is_symlink():
+                raise LibraryError("library history must not be a symlink")
+            history.mkdir(exist_ok=True)
+            backup = history / f"index-r{index['revision']}.json"
+            if prior.exists():
+                if backup.exists() and backup.read_bytes() != prior.read_bytes():
+                    raise LibraryError("library revision backup conflicts with current index")
+                if not backup.exists():
+                    with backup.open("xb") as handle:
+                        handle.write(prior.read_bytes())
+                        handle.flush()
+                        os.fsync(handle.fileno())
             index["revision"] = int(index.get("revision", 0)) + 1
             write_index_atomic(library, index)
 
@@ -306,16 +322,72 @@ def add_file(index, library, *, kind, label, aliases=(), source_file, voice_of=N
     return entry, True, False
 
 
-def add(workspace, *, kind, label, aliases=(), file, voice_of=None) -> dict:
+def _validate_details(notes, tags):
+    if not isinstance(notes, str):
+        raise LibraryError("notes must be a string")
+    if not isinstance(tags, (list, tuple)) or not all(isinstance(tag, str) and tag.strip() for tag in tags):
+        raise LibraryError("tags must be non-empty strings")
+
+
+def add(workspace, *, kind, label, aliases=(), file, voice_of=None, notes=None, tags=()) -> dict:
+    _validate_details(notes if notes is not None else "", tags)
     library = library_root(workspace, create=True)
     with locked_index(library) as index:
         entry, created, merged = add_file(
             index, library, kind=kind, label=label, aliases=aliases,
             source_file=file, voice_of=voice_of,
         )
+        if notes is not None:
+            entry["notes"] = notes
+        if tags:
+            entry["tags"] = list(dict.fromkeys([*entry.get("tags", []), *tags]))
+        if created or merged or notes is not None or tags:
+            entry["updated_at"] = _now()
         result = {"library_id": entry["library_id"], "created": created,
                   "aliases_added": merged, "entry": json.loads(json.dumps(entry))}
     return result
+
+
+def edit(workspace, library_id, *, notes=None, aliases=(), tags=None, expected_revision=None) -> dict:
+    """Explicit identity edit; aliases merge, notes/tags replace when supplied."""
+    _validate_details(notes if notes is not None else "", tags if tags is not None else [])
+    if not all(isinstance(alias, str) and alias.strip() for alias in aliases):
+        raise LibraryError("aliases must be non-empty strings")
+    library = library_root(workspace)
+    with locked_index(library) as index:
+        if expected_revision is not None and expected_revision != index["revision"]:
+            raise LibraryError("library revision does not match expected_revision")
+        entry = find_entry(index, library_id)
+        if entry is None:
+            raise LibraryError(f"unknown library entry: {library_id}")
+        if notes is not None:
+            entry["notes"] = notes
+        if tags is not None:
+            entry["tags"] = list(dict.fromkeys(tags))
+        _merge_aliases(entry, aliases)
+        entry["updated_at"] = _now()
+    return {"library_id": library_id, "revision": index["revision"], "entry": entry}
+
+
+def attach(workspace, library_id, *, file, expected_revision=None) -> dict:
+    """Attach a reference only to the identity explicitly selected by the caller."""
+    library = library_root(workspace)
+    with locked_index(library) as index:
+        if expected_revision is not None and expected_revision != index["revision"]:
+            raise LibraryError("library revision does not match expected_revision")
+        entry = find_entry(index, library_id)
+        if entry is None:
+            raise LibraryError(f"unknown library entry: {library_id}")
+        # Reuse signature/size/kind validation and the deterministic media copier.
+        candidate, created, _ = add_file(index, library, kind=entry["kind"], label=entry["label"],
+                                         source_file=file, voice_of=entry.get("voice_of"))
+        if candidate is not entry:
+            if not created:
+                raise LibraryError("file already belongs to a different identity")
+            entry["files"].extend(candidate["files"])
+            index["entries"].remove(candidate)
+            entry["updated_at"] = _now()
+    return {"library_id": library_id, "revision": index["revision"], "entry": entry}
 
 
 def list_entries(workspace, *, kind=None) -> dict:
@@ -324,7 +396,8 @@ def list_entries(workspace, *, kind=None) -> dict:
     entries = read_entries(workspace)
     if kind is not None:
         entries = [entry for entry in entries if entry["kind"] == kind]
-    return {"library": LIBRARY_DIR_NAME, "count": len(entries), "entries": entries}
+    revision = read_index(library_root(workspace))["revision"] if (Path(workspace) / LIBRARY_DIR_NAME).exists() else 0
+    return {"library": LIBRARY_DIR_NAME, "revision": revision, "count": len(entries), "entries": entries}
 
 
 def read_entries(workspace) -> list[dict]:
@@ -332,7 +405,9 @@ def read_entries(workspace) -> list[dict]:
 
     if not (Path(workspace) / LIBRARY_DIR_NAME).exists():
         return []
-    return read_index(library_root(workspace))["entries"]
+    entries = read_index(library_root(workspace))["entries"]
+    return [dict(entry, notes=entry.get("notes", ""), tags=entry.get("tags", []),
+                 updated_at=entry.get("updated_at", entry["added_at"])) for entry in entries]
 
 
 def get_entry(workspace, library_id) -> tuple[Path, dict]:

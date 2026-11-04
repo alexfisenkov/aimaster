@@ -101,6 +101,9 @@ class Base(unittest.TestCase):
 
     def project_at_references(self, pid, mode="guided"):
         cli("project", "create", self.ws, pid, "--title", pid, "--type", "video", "--mode", mode)
+        if mode == "autopilot":
+            cli("project", "set-assembly-mode", self.ws, pid, "--mode", "materials",
+                "--expected-revision", self.rev(pid))
         cli("script", "add-version", self.ws, pid, "--text", "Два героя в кафе.", "--reason", "v1",
             "--expected-revision", self.rev(pid))
         scenes = self.root / f"{pid}-scenes.json"

@@ -30,7 +30,18 @@ def command_library_list(args):
 
 def command_library_add(args):
     _print(library.add(args.workspace, kind=args.kind, label=args.label,
-                       aliases=args.alias or (), file=args.file, voice_of=args.voice_of))
+                       aliases=args.alias or (), file=args.file, voice_of=args.voice_of,
+                       notes=args.notes, tags=args.tag or ()))
+
+
+def command_library_edit(args):
+    _print(library.edit(args.workspace, args.library_id, notes=args.notes,
+                        aliases=args.alias or (), tags=args.tag, expected_revision=args.expected_revision))
+
+
+def command_library_attach(args):
+    _print(library.attach(args.workspace, args.library_id, file=args.file,
+                          expected_revision=args.expected_revision))
 
 
 def command_library_import(args):
@@ -114,9 +125,27 @@ def add_workspace_subcommands(subparsers) -> None:
     add_cmd.add_argument("--label", required=True)
     add_cmd.add_argument("--alias", action="append", default=None)
     add_cmd.add_argument("--file", required=True, type=Path)
+    add_cmd.add_argument("--notes")
+    add_cmd.add_argument("--tag", action="append")
     add_cmd.add_argument("--voice-of", default=None, dest="voice_of",
                          help="library_id of the character this voice belongs to")
     add_cmd.set_defaults(handler=command_library_add)
+
+    edit_cmd = library_sub.add_parser("edit", help="edit one saved identity")
+    edit_cmd.add_argument("workspace", type=Path)
+    edit_cmd.add_argument("library_id")
+    edit_cmd.add_argument("--notes")
+    edit_cmd.add_argument("--alias", action="append")
+    edit_cmd.add_argument("--tag", action="append")
+    edit_cmd.add_argument("--expected-revision", type=int)
+    edit_cmd.set_defaults(handler=command_library_edit)
+
+    attach_cmd = library_sub.add_parser("attach", help="attach another file to a selected identity")
+    attach_cmd.add_argument("workspace", type=Path)
+    attach_cmd.add_argument("library_id")
+    attach_cmd.add_argument("--file", required=True, type=Path)
+    attach_cmd.add_argument("--expected-revision", required=True, type=int)
+    attach_cmd.set_defaults(handler=command_library_attach)
 
     import_cmd = library_sub.add_parser("import", help="collect references from all projects")
     import_cmd.add_argument("workspace", type=Path)

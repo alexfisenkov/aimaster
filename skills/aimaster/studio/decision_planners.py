@@ -64,6 +64,7 @@ from .domain import (
     set_video_mode,
     toggle_scene_reference,
     validate_prompt_tags,
+    select_result_version,
 )
 
 
@@ -101,6 +102,8 @@ def _plan_card_decision(target_id, decision_value, payload):
             target["status"] = decision_value
         else:
             target["decision"] = decision_value
+            if decision_value == "approved":
+                select_result_version(state, collection, target)
         append_decision(target, decision_value, comment)
         append_history(
             state,

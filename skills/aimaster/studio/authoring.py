@@ -63,7 +63,7 @@ from .authoring_media import (
     toggle_scene_reference,
 )
 from .authoring_milestones import reopen_scenario, set_milestone
-from .authoring_projects import create_project, set_mode, add_script_version
+from .authoring_projects import create_project, set_mode, add_script_version, set_assembly_mode, set_guide_choice
 from .authoring_qa import set_assembly
 from .authoring_questions import answer_question, create_question, list_questions
 from .authoring_scenes import (
@@ -87,6 +87,8 @@ __all__ = [
     "open_questions",
     "create_project",
     "set_mode",
+    "set_assembly_mode",
+    "set_guide_choice",
     "add_script_version",
     "set_scenes",
     "add_scene",

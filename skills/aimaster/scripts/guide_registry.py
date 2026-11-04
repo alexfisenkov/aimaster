@@ -310,6 +310,9 @@ def command_register(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def command_list(args: argparse.Namespace) -> dict[str, Any]:
+    if getattr(args, "include_builtin", False):
+        from studio.guide_catalog import candidates
+        return candidates(args.workspace, catalog_path=args.builtin_catalog)
     registry, _ = _read_registry(_registry_path(args.workspace))
     return {
         "ok": True,
@@ -370,6 +373,9 @@ def _stale_reason(instructions: Path, entry: dict[str, Any]) -> str | None:
 
 
 def command_match(args: argparse.Namespace) -> dict[str, Any]:
+    if getattr(args, "include_builtin", False):
+        from studio.guide_catalog import match
+        return match(args.workspace, args, catalog_path=args.builtin_catalog)
     registry_path = _registry_path(args.workspace)
     registry, _ = _read_registry(registry_path)
     matches: list[tuple[int, dict[str, Any]]] = []
@@ -422,9 +428,13 @@ def build_parser() -> argparse.ArgumentParser:
     register.set_defaults(handler=command_register)
 
     listing = commands.add_parser("list", help="list registered guide metadata")
+    listing.add_argument("--include-builtin", action="store_true")
+    listing.add_argument("--builtin-catalog", type=Path)
     listing.set_defaults(handler=command_list)
 
     match = commands.add_parser("match", help="find valid guides for an exact writing scope")
+    match.add_argument("--include-builtin", action="store_true")
+    match.add_argument("--builtin-catalog", type=Path)
     match.add_argument("--kind", required=True, choices=sorted(KINDS))
     match.add_argument("--modality", required=True, choices=sorted(MODALITIES))
     match.add_argument("--task", required=True)
@@ -441,7 +451,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = build_parser().parse_args(argv)
         payload = args.handler(args)
-    except (RegistryError, OSError) as error:
+    except (ValueError, OSError) as error:
         print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False, sort_keys=True))
         return 2
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))

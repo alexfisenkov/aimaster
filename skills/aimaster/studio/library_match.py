@@ -60,14 +60,28 @@ def match(workspace, text: str) -> dict:
     entries = read_entries(workspace)
     matched: dict[str, dict] = {}
     for entry in entries:
-        for name in (entry["label"], *entry["aliases"]):
-            if _name_matches(name, entry["kind"], text_stems):
-                matched[entry["library_id"]] = {**entry, "matched_name": name}
-                break
+        reasons = []
+        for field, names in (("label", [entry["label"]]), ("alias", entry["aliases"]),
+                             ("tag", entry.get("tags", [])), ("notes", [entry.get("notes", "")])):
+            for name in names:
+                if _name_matches(name, entry["kind"] if field in {"label", "alias"} else "other", text_stems):
+                    reasons.append({"field": field, "value": name})
+        if reasons:
+            matched[entry["library_id"]] = {**entry, "matched_name": reasons[0]["value"], "reasons": reasons}
     for entry in entries:
         owner = entry.get("voice_of")
         if entry["kind"] == "voice" and owner in matched and entry["library_id"] not in matched:
             matched[entry["library_id"]] = {**entry, "matched_name": matched[owner]["matched_name"],
-                                            "matched_via": "voice_of"}
+                                            "matched_via": "voice_of", "reasons": [{"field": "voice_of", "value": owner}]}
     ordered = [matched[entry["library_id"]] for entry in entries if entry["library_id"] in matched]
-    return {"text": text, "count": len(ordered), "matches": ordered}
+    groups = {}
+    for entry in ordered:
+        if entry.get("matched_via") != "voice_of":
+            for reason in entry["reasons"]:
+                name = name_part(reason["value"]) if entry["kind"] in _NAME_KINDS and reason["field"] in {"label", "alias"} else reason["value"]
+                key = (entry["kind"], tuple(_words(name)))
+                groups.setdefault(key, set()).add(entry["library_id"])
+    ambiguous_ids = {identity for group in groups.values() if len(group) > 1 for identity in group}
+    for entry in ordered:
+        entry["ambiguous"] = entry["library_id"] in ambiguous_ids or entry.get("voice_of") in ambiguous_ids
+    return {"text": text, "count": len(ordered), "matches": ordered, "ambiguous": bool(ambiguous_ids)}

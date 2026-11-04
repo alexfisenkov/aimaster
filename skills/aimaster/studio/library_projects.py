@@ -202,17 +202,21 @@ def _asset_role(kind: str, media: str) -> str:
     return kind if kind in {"character", "location", "product", "style", "other"} else "other"
 
 
-def materialize(workspace, library_id) -> dict:
+def materialize(workspace, library_id, *, file_index=0) -> dict:
     """Copy a library file into `media/library/` and register it as an asset."""
 
     library, entry = get_entry(workspace, library_id)
-    item = entry["files"][0]
+    if isinstance(file_index, bool) or not isinstance(file_index, int) or not 0 <= file_index < len(entry["files"]):
+        raise LibraryError("file_index must select an existing library file")
+    item = entry["files"][file_index]
     source = library_file(library, item["path"])
     if sha256_of(source) != item["sha256"]:
         raise LibraryError("library file changed since it was added")
     media_dir = Path(workspace).resolve(strict=True) / "media" / "library" / KIND_FOLDERS[entry["kind"]]
     media_dir.mkdir(parents=True, exist_ok=True)
     target = media_dir / f"{item['sha256'][:12]}-{source.name}"
+    if target.exists() and (target.is_symlink() or sha256_of(target) != item["sha256"]):
+        raise LibraryError("materialized file conflicts with the library checksum")
     if not target.exists():
         descriptor, temporary = tempfile.mkstemp(dir=media_dir, prefix=".copy.", suffix=".tmp")
         os.close(descriptor)

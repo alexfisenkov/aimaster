@@ -80,7 +80,7 @@ _STATE_KEYS = {
     "history",
     "gen_mode",
 } | _LEGACY_STATE_KEYS
-_PROJECT_KEYS = {"id", "title", "type", "mode", "status", "order", "revision", "stage"}
+_PROJECT_KEYS = {"id", "title", "type", "mode", "status", "order", "revision", "stage", "assembly_mode", "guide_choices"}
 _SCRIPT_KEYS = {"active_version_id", "versions"}
 # Legacy scene-block versions may still carry `script_version_id` from
 # the pre-D01 aggregate-script model. New writers no longer emit it, but
@@ -163,6 +163,7 @@ _PROMPT_SOURCE_KEYS = {
 }
 _PROMPT_PUBLIC_KEYS = _PROMPT_SOURCE_KEYS - {"author", "basis"}
 _REFERENCE_KEYS = {
+    "library_id",
     "links",
     "reference_id",
     "role",
@@ -176,7 +177,7 @@ _REFERENCE_KEYS = {
     "usage",
     "continuity_source_result_id",
 }
-_REFERENCE_VOICE_KEYS = {"enabled", "tag", "asset_id"}
+_REFERENCE_VOICE_KEYS = {"enabled", "tag", "asset_id", "library_id"}
 _REFERENCE_KIND_BY_ROLE = {
     "character": "character",
     "object": "product",
@@ -446,10 +447,22 @@ def _sanitize_project(project, context="project"):
             result[key] = _non_negative_integer(value, field)
         elif key == "type":
             result[key] = _enum(value, {"photo", "video", "mixed"}, field)
+        elif key == "assembly_mode":
+            result[key] = None if value is None else _enum(value, {"montage", "materials"}, field)
+        elif key == "guide_choices":
+            from .guide_catalog import CHOICE_SCOPE, validate_choice
+            try:
+                result[key] = [validate_choice(item) for item in _list(value, field)]
+                scopes = [tuple(item[name] for name in CHOICE_SCOPE) for item in result[key]]
+                if len(set(scopes)) != len(scopes):
+                    raise ValueError("guide choices must have unique scopes")
+            except ValueError as error:
+                raise ProjectionError(str(error)) from error
         elif key == "stage":
             result[key] = _enum(value, set(PHOTO_STAGES + VIDEO_STAGES), field)
         else:
             result[key] = _string(value, field)
+    result.setdefault("assembly_mode", "montage")
     return result
 
 
@@ -721,6 +734,8 @@ def _sanitize_reference(reference, context, asset_url, *, hidden_link_keys=froze
         )
     if "scene_id" in reference:
         result["scene_id"] = _string(reference["scene_id"], f"{context}.scene_id")
+    if "library_id" in reference:
+        result["library_id"] = _string(reference["library_id"], f"{context}.library_id")
     if "asset_id" in reference:
         result["asset_id"] = _string(reference["asset_id"], f"{context}.asset_id")
         result = _add_asset_url(result, context, asset_url)
@@ -736,6 +751,8 @@ def _sanitize_reference(reference, context, asset_url, *, hidden_link_keys=froze
     clean_voice = {"enabled": _boolean(voice.get("enabled"), f"{context}.voice.enabled")}
     if "tag" in voice:
         clean_voice["tag"] = _string(voice["tag"], f"{context}.voice.tag")
+    if "library_id" in voice:
+        clean_voice["library_id"] = _string(voice["library_id"], f"{context}.voice.library_id")
     if "asset_id" in voice:
         clean_voice["asset_id"] = _string(voice["asset_id"], f"{context}.voice.asset_id")
         clean_voice = _add_asset_url(clean_voice, f"{context}.voice", asset_url)
@@ -894,6 +911,21 @@ def _sanitize_assembly(value, asset_url):
     # `assembly`'s own decision history is not a key here -- it lives in
     # `state["stage_decisions"]`, the same shared history every milestone
     # uses (see `_STAGE_DECISION_KEYS`).
+    if isinstance(value, dict) and value.get("kind") == "materials":
+        value = _exact_keys(value, {"kind", "status", "asset_ids", "summary", "manifest"}, "assembly")
+        ids = [_string(item, "assembly.asset_ids") for item in _list(value.get("asset_ids"), "assembly.asset_ids")]
+        if not ids or len(ids) != len(set(ids)):
+            raise ProjectionError("materials asset_ids must be non-empty and unique")
+        manifest = _exact_keys(value.get("manifest"), {"path", "sha256"}, "assembly.manifest")
+        path = _string(manifest.get("path"), "assembly.manifest.path")
+        if not re.fullmatch(r"materials/r[0-9]+/manifest\.json", path):
+            raise ProjectionError("materials manifest path must name an immutable project-relative revision")
+        digest = _string(manifest.get("sha256"), "assembly.manifest.sha256")
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ProjectionError("materials manifest requires a SHA-256 checksum")
+        return {"kind": "materials", "status": _enum(value.get("status"), {"ready"}, "assembly.status"),
+                "asset_ids": ids, "asset_urls": [_add_asset_url({"asset_id": identity}, "assembly", asset_url)["asset_url"] for identity in ids],
+                "summary": _safe_system_text(value.get("summary", ""), "assembly.summary")}
     value = _exact_keys(value, {"status", "asset_id", "summary"}, "assembly")
     result = {}
     for key, item in value.items():

@@ -8,10 +8,16 @@ from .domain_positions import current_member, resolve_position
 
 READINESS_REASONS = frozenset({"blocked", "already_approved", "incomplete_storyboard",
                               "missing_prompts", "unaccepted_positions",
-                              "missing_final_material"})
+                              "missing_final_material", "assembly_choice_required"})
 
 
 def _has_final_material(state):
+    mode = state.get("project", {}).get("assembly_mode", "montage")
+    if mode == "materials":
+        from .completion import materials_ready
+        return materials_ready(state)
+    if state.get("assembly", {}).get("kind") == "materials":
+        return False
     if state.get("project", {}).get("type") == "photo":
         return any(
             position.get("kind") == "image"
@@ -42,6 +48,9 @@ def stage_readiness(state):
             domain.require_storyboard_complete(state)
         except domain.DomainValidationError:
             result["reason"] = "incomplete_storyboard"
+        if (state.get("project", {}).get("mode") == "autopilot"
+                and state.get("project", {}).get("assembly_mode", "montage") is None):
+            result["reason"] = "assembly_choice_required"
     elif stage == "image_plan":
         for position in positions:
             if not position["required"] or position["stage"] not in {"image_results", "motion"}:
@@ -54,8 +63,11 @@ def stage_readiness(state):
     elif stage in {"image_results", "motion", "audio"}:
         if any(p["required"] and p["stage"] == stage and p["status"] != "accepted" for p in positions):
             result["reason"] = "unaccepted_positions"
-    elif stage == "assembly" and not _has_final_material(state):
-        result["reason"] = "missing_final_material"
+    elif stage == "assembly":
+        if state.get("project", {}).get("assembly_mode", "montage") is None:
+            result["reason"] = "assembly_choice_required"
+        elif not _has_final_material(state):
+            result["reason"] = "missing_final_material"
     result["can_approve"] = result["reason"] is None
     return result
 
