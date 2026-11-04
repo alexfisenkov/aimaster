@@ -1,6 +1,7 @@
 """One explicit setup invocation executes the selected available steps."""
 from pathlib import Path
 import tempfile
+import copy
 
 from . import packages, providers
 from .state import default_state_dir, operation_lease, read_state, save_state, now, private_dir
@@ -37,9 +38,15 @@ def setup(package, *, home=None, state_dir=None, agents=("codex", "claude"), sel
                     identity = {**packages.fetch_package("aimaster", package), "origin_status": "verified"}
                 else:
                     identity = packages.source_identity(package, "aimaster", home, runner=run)
+                pending = copy.deepcopy(state)
+                def publish(receipt):
+                    pending["components"]["aimaster"] = receipt
+                    if previous:
+                        pending.setdefault("rollback", {})["aimaster"] = previous
+                    save_state(directory, pending)
                 receipt = packages.install_package(package, "aimaster", directory, home, agents,
-                                                   identity=identity, previous=previous)
-                state["components"]["aimaster"] = receipt
+                                                   identity=identity, previous=previous, publish=publish)
+                state = pending
                 report["components"]["aimaster"] = {"status": "installed", "installed": True,
                                                        "origin_status": receipt.get("origin_status")}
         # Persist each successful component before the next independent network step.
@@ -81,8 +88,12 @@ def setup(package, *, home=None, state_dir=None, agents=("codex", "claude"), sel
                 with tempfile.TemporaryDirectory(prefix="family-editing-", dir=directory) as temporary:
                     source = Path(temporary) / "aiediting"
                     identity = {**packages.fetch_package("aiediting", source), "origin_status": "verified"}
-                    receipt = packages.install_package(source, "aiediting", directory, home, agents, identity=identity)
-                    state["components"]["aiediting"] = receipt
+                    pending = copy.deepcopy(state)
+                    def publish(receipt):
+                        pending["components"]["aiediting"] = receipt
+                        save_state(directory, pending)
+                    packages.install_package(source, "aiediting", directory, home, agents, identity=identity, publish=publish)
+                    state = pending
                     report["components"]["aiediting"] = {"status": "installed", "installed": True}
             except (OSError, ValueError) as error:
                 report["components"]["aiediting"] = {"status": "install_failed", "installed": False,

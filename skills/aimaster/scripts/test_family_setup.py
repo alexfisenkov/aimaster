@@ -97,6 +97,80 @@ class StandaloneTests(unittest.TestCase):
 
 
 class ConnectorTests(unittest.TestCase):
+    def test_official_commit_reachability_and_tree_bytes_are_both_required(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            skill = Path(temporary) / "skill"
+            skill.mkdir()
+            content = b"---\nname: aimaster\n---\n"
+            (skill / "SKILL.md").write_bytes(content)
+            sha = hashlib.sha1(b"blob " + str(len(content)).encode() + b"\0" + content).hexdigest()
+            responses = [{"sha": "a" * 40, "commit": {"tree": {"sha": "b" * 40}}},
+                         {"status": "ahead", "merge_base_commit": {"sha": "a" * 40}},
+                         {"sha": "b" * 40, "tree": [{"path": "skills/aimaster/SKILL.md", "type": "blob", "sha": sha}], "truncated": False}]
+            with mock.patch.object(packages, "download", side_effect=[json.dumps(item).encode() for item in responses]):
+                proof = packages.verify_official_commit(skill, "aimaster", "a" * 40)
+            self.assertEqual(proof["verified_tree_sha"], "b" * 40)
+            (skill / "SKILL.md").write_bytes(content + b"local changes")
+            with mock.patch.object(packages, "download", side_effect=[json.dumps(item).encode() for item in responses]):
+                with self.assertRaisesRegex(ValueError, "dirty_source"):
+                    packages.verify_official_commit(skill, "aimaster", "a" * 40)
+            responses[1]["status"] = "diverged"
+            with mock.patch.object(packages, "download", side_effect=[json.dumps(item).encode() for item in responses]):
+                with self.assertRaisesRegex(ValueError, "unverified_commit"):
+                    packages.verify_official_commit(skill, "aimaster", "a" * 40)
+
+    def test_clean_checkout_unconfirmed_commit_cannot_auto_update(self):
+        from studio.family_setup import updates
+        from studio.family_setup.state import read_state, save_state
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            repository = home / "checkout"
+            skill = repository / "skills/aimaster"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("---\nname: aimaster\n---\n")
+            def runner(argv, **kwargs):
+                if "--show-toplevel" in argv:
+                    return 0, str(repository), ""
+                if "get-url" in argv:
+                    return 0, "https://github.com/alexfisenkov/aimaster.git", ""
+                if "--porcelain" in argv:
+                    return 0, "", ""
+                return 0, "a" * 40, ""
+            with mock.patch.object(packages.shutil, "which", return_value="/fake/git"), \
+                    mock.patch.object(packages, "download", side_effect=OSError("commit not published")):
+                identity = packages.source_identity(skill, "aimaster", home, runner=runner)
+            self.assertEqual(identity["origin_status"], "unverified_commit")
+            directory = home / "family"
+            state = read_state(directory)
+            state.update(home=str(home), agents=["codex"], auto_update={"enabled": True}, components={
+                "aimaster": {**identity, "package": str(skill), "fingerprint": packages.digest_tree(skill), "targets": []}})
+            save_state(directory, state)
+            fetcher = mock.Mock()
+            result = updates.session_start("unpublished", state_dir=directory, fetcher=fetcher)
+            self.assertEqual(result["components"]["aimaster"]["status"], "kept_current")
+            fetcher.assert_not_called()
+
+    def test_concurrent_unrelated_config_edits_are_never_replaced_by_old_backup(self):
+        for agent in ("codex", "claude"):
+            for exit_code in (0, 1):
+                with self.subTest(agent=agent, exit_code=exit_code), tempfile.TemporaryDirectory() as temporary:
+                    home = Path(temporary)
+                    path = providers.config_path(home, agent)
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text('model = "before"\n' if agent == "codex" else '{"theme":"before"}\n')
+                    def runner(argv, **kwargs):
+                        if agent == "codex":
+                            path.write_text('model = "concurrent-edit"\n[mcp_servers.magnific]\nurl = "https://mcp.magnific.com"\n')
+                        else:
+                            path.write_text(json.dumps({"theme": "concurrent-edit", "mcpServers": {
+                                "magnific": {"type": "http", "url": "https://mcp.magnific.com"}}}))
+                        return exit_code, "", ""
+                    result = providers.register_connector(home, home / "state", agent, "magnific",
+                        {"url": "https://mcp.magnific.com"}, ["fake-host"], runner=runner)
+                    current = providers.read_config(home, agent)[1]
+                    self.assertEqual(current["model" if agent == "codex" else "theme"], "concurrent-edit")
+                    self.assertEqual(result["status"], "registration_conflict")
+
     def test_install_deps_upgrades_an_unsupported_node_using_available_manager(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
@@ -252,7 +326,7 @@ class ConnectorTests(unittest.TestCase):
             raw = (directory / "family.json").read_text()
             self.assertNotIn('"inputSchema"', raw)
 
-    def test_corrupt_cli_write_restores_exact_config_bytes(self):
+    def test_corrupt_cli_write_preserves_observed_bytes_and_recovery_backup(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             path = home / ".codex/config.toml"
@@ -265,7 +339,8 @@ class ConnectorTests(unittest.TestCase):
             result = providers.register_connector(home, home / "state", "codex", "magnific",
                 {"url": "https://mcp.magnific.com"}, ["fake-host"], runner=runner)
             self.assertEqual(result["status"], "registration_failed")
-            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(path.read_bytes(), b"not valid TOML [")
+            self.assertEqual(Path(result["backup"]).read_bytes(), before)
 
     def test_registration_readback_repeat_and_conflict_for_both_hosts(self):
         for agent in ("codex", "claude"):

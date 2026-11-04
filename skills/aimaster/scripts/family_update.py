@@ -7,6 +7,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from studio.family_setup import updates
+from studio.family_setup.packages import PackageRecoveryRequired
 from studio.family_setup.snapshots import snapshot_workspace, restore_workspace
 from studio.family_setup.state import default_state_dir
 from studio.platform_compat import ensure_utf8_stdio
@@ -48,6 +49,8 @@ def main(argv=None):
             if not args.session_id:
                 parser.error("session-start requires --session-id")
             result = updates.session_start(args.session_id, state_dir=directory)
+    except PackageRecoveryRequired as error:
+        result = {"ok": False, "status": "recovery_required", "journal": error.journal}
     except (OSError, ValueError) as error:
         result = {"ok": False, "status": "kept_current", "reason": type(error).__name__}
     print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else

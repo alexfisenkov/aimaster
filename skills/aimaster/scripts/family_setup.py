@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from studio.family_setup.state import default_state_dir, OperationBusy, register_workspace
 from studio.family_setup.providers import catalog, record_discovery
+from studio.family_setup.packages import PackageRecoveryRequired
 from studio.family_setup.service import setup, status
 from studio.platform_compat import ensure_utf8_stdio
 
@@ -80,6 +81,8 @@ def main(argv=None):
                 syntx_destination=args.syntx_upload_destination, refresh_official=args.refresh_official)
     except OperationBusy:
         result = {"ok": False, "status": "deferred_busy"}
+    except PackageRecoveryRequired as error:
+        result = {"ok": False, "status": "recovery_required", "journal": error.journal}
     except (OSError, ValueError) as error:
         result = {"ok": False, "status": "setup_failed", "reason": type(error).__name__}
     print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else render(result, args.locale))

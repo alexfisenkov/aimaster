@@ -2,6 +2,7 @@
 from contextlib import ExitStack
 import json
 import hashlib
+import copy
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -43,6 +44,13 @@ def check_current(component, name):
         raise ValueError(component.get("origin_status", "unknown_origin"))
     if component.get("origin", "").lower() != ("https://github.com/" + packages.OFFICIAL[name] + ".git").lower():
         raise ValueError("unknown_origin")
+    # Earlier receipts only recorded a clean local checkout/origin. Do not let
+    # those claims become authorization to replace unpushed/private commits.
+    archive_proof = isinstance(component.get("archive_sha256"), str) and len(component["archive_sha256"]) == 64
+    tree_proof = bool(packages.SHA.fullmatch(component.get("verified_tree_sha", "")))
+    skill_tree_proof = component.get("origin_status") == "skills_cli" and bool(packages.SHA.fullmatch(component.get("tree_sha", "")))
+    if not (archive_proof or tree_proof or skill_tree_proof):
+        packages.verify_official_commit(Path(component["package"]), name, component.get("revision"))
     if packages.digest_tree(Path(component["package"])) != component.get("fingerprint"):
         raise ValueError("dirty_package")
     for target in component.get("targets", []):
@@ -67,12 +75,15 @@ def update_package(name, state, directory, *, fetcher=packages.fetch_package):
             return {"status": "current", "revision": current.get("revision")}
         if name == "aimaster" and not packages.compatibility(stage, state.get("workspaces", [])):
             return {"status": "compatibility_blocked", "restart_required": False}
+        pending = copy.deepcopy(state)
+        def publish(receipt):
+            pending.setdefault("rollback", {})[name] = current
+            pending["components"][name] = receipt
+            save_state(directory, pending)
         receipt = packages.install_package(stage, name, directory, state["home"], state["agents"],
-            identity={**identity, "origin_status": "verified"}, previous=current)
-        # Previous code and target backups remain immutable and addressable.
-        state.setdefault("rollback", {})[name] = current
-        state["components"][name] = receipt
-        save_state(directory, state)
+            identity={**identity, "origin_status": "verified"}, previous=current, publish=publish)
+        state.clear()
+        state.update(pending)
         return {"status": "updated", "revision": receipt["revision"], "restart_required": True}
 
 
@@ -174,6 +185,9 @@ def session_start(session_id, *, state_dir=None, fetcher=packages.fetch_package,
                     continue
                 try:
                     results[name] = update_package(name, state, directory, fetcher=fetcher)
+                except packages.PackageRecoveryRequired as error:
+                    return {"ok": False, "status": "recovery_required", "journal": error.journal,
+                            "components": results}
                 except (OSError, ValueError) as error:
                     reason = str(error) if isinstance(error, ValueError) and re_safe_reason(str(error)) else type(error).__name__
                     results[name] = {"status": "kept_current", "reason": reason}
@@ -189,8 +203,12 @@ def session_start(session_id, *, state_dir=None, fetcher=packages.fetch_package,
                 results["connectors"] = {"status": "kept_current"}
             state["last_session"], state["last_check"] = session_id, now()
             state["last_results"] = results
-            save_state(directory, state)
-            write_json(directory / "receipts" / ("update-" + uuid.uuid4().hex + ".json"), results)
+            try:
+                save_state(directory, state)
+                write_json(directory / "receipts" / ("update-" + uuid.uuid4().hex + ".json"), results)
+            except OSError:
+                return {"ok": False, "status": "report_write_failed", "components": results,
+                        "restart_required": any(item.get("restart_required") for item in results.values())}
             return {"ok": True, "status": "checked", "components": results,
                     "restart_required": any(item.get("restart_required") for item in results.values())}
     except OperationBusy:
@@ -237,12 +255,14 @@ def rollback(name, *, state_dir=None, runner=packages.run):
             if name == "aimaster" and not packages.compatibility(Path(previous["package"]), state.get("workspaces", [])):
                 return {"ok": False, "status": "compatibility_blocked", "data_unchanged": True,
                         "next_step": "Use a separate compatible workspace snapshot; the current package and data remain active."}
-            restored = packages.install_package(Path(previous["package"]), name, directory, state["home"],
-                state["agents"], previous=current, identity={key: previous[key] for key in
-                    ("origin", "origin_status", "revision") if key in previous})
-            state["components"][name] = restored
-            state["rollback"][name] = current
-            save_state(directory, state)
+            pending = copy.deepcopy(state)
+            def publish(receipt):
+                pending["components"][name] = receipt
+                pending["rollback"][name] = current
+                save_state(directory, pending)
+            packages.install_package(Path(previous["package"]), name, directory, state["home"],
+                state["agents"], previous=current, publish=publish, identity={key: previous[key] for key in
+                    ("origin", "origin_status", "revision", "archive_sha256", "tree_sha", "verified_tree_sha", "provenance") if key in previous})
             return {"ok": True, "status": "rolled_back", "restart_required": True}
     except OperationBusy:
         return {"ok": False, "status": "deferred_busy"}

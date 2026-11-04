@@ -93,5 +93,10 @@ def operation_lease(state_dir=None, owner="operation", ttl=3600):
             try:
                 yield
             finally:
-                write_json(directory / "operation.json", {"owner": str(owner), "pid": os.getpid(),
-                           "finished_at": now(), "active": False})
+                try:
+                    write_json(directory / "operation.json", {"owner": str(owner), "pid": os.getpid(),
+                               "finished_at": now(), "active": False})
+                except OSError:
+                    # Diagnostic metadata must not replace the committed result
+                    # with an exception. The OS lock still releases on this exit.
+                    pass

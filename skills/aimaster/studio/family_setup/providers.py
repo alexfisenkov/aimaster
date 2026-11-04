@@ -108,19 +108,22 @@ def register_connector(home, state_dir, agent, name, expected, executable, *, ru
         argv += ["--", expected["command"], *expected.get("args", [])]
     # The expected entry is constructed internally: no token-bearing headers/env accepted.
     code, _, _ = runner(argv, env=host_env(home), timeout=60)
-    after_raw = path.read_bytes() if path.exists() else b""
+    parsed = False
     try:
         _, after = read_config(home, agent)
+        parsed = True
         preserved = _without_entry(before, agent, name) == _without_entry(after, agent, name)
         verified = matches(_entry(after, agent, name), expected)
     except (OSError, ValueError):
         preserved, verified = False, False
     if code or not preserved or not verified:
-        # Restore only the bytes just observed; never overwrite a concurrent later edit.
-        if after_raw is not None and path.exists() and path.read_bytes() == after_raw:
-            write_bytes(path, raw)
-        return {**base, "status": "registration_failed", "backup": str(backup),
-                "next_step": "Review the host CLI/version and private configuration backup, then retry setup."}
+        # A CLI write and a user's concurrent write are not distinguishable by
+        # comparing current bytes with bytes just read. Never restore the whole
+        # old configuration here: that would erase unrelated edits. Keep the
+        # observed file and the private recovery backup for explicit review.
+        return {**base, "status": "registration_conflict" if parsed and not preserved else "registration_failed",
+                "backup": str(backup), "observed_configured": verified, "config_preserved": True,
+                "next_step": "Review the observed host configuration and private backup; no whole-file rollback was performed."}
     return {**base, "installed": True, "configured": True, "status": "auth_pending", "restart_required": True,
             "backup": str(backup), "next_step": login_step}
 

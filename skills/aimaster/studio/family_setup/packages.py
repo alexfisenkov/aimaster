@@ -14,11 +14,18 @@ from urllib.parse import urlparse
 import uuid
 import zipfile
 
-from .state import private_dir, write_json
+from .state import private_dir, write_json, write_bytes
 
 OFFICIAL = {"aimaster": "alexfisenkov/aimaster", "aiediting": "alexfisenkov/AIEditing"}
 IGNORED = {"__pycache__", ".DS_Store", ".aimaster-install.json"}
 SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+class PackageRecoveryRequired(RuntimeError):
+    """Compensation failed; the prepared journal identifies every old target."""
+    def __init__(self, journal):
+        super().__init__("package_recovery_required")
+        self.journal = str(journal)
 
 
 def run(argv, *, cwd=None, env=None, timeout=120):
@@ -114,7 +121,48 @@ def fetch_package(name, destination):
                     shutil.copyfileobj(source, output)
     fingerprint = validate_package(destination, name)
     return {"origin": f"https://github.com/{repository}.git", "revision": sha,
-            "archive_sha256": hashlib.sha256(payload).hexdigest(), "fingerprint": fingerprint}
+            "archive_sha256": hashlib.sha256(payload).hexdigest(), "fingerprint": fingerprint,
+            "provenance": "official_archive"}
+
+
+def _blob_map(package):
+    result = {}
+    for path in Path(package).rglob("*"):
+        relative = path.relative_to(package)
+        if path.is_symlink():
+            raise ValueError("package_contains_symlink")
+        if any(part in IGNORED for part in relative.parts) or path.suffix == ".pyc":
+            continue
+        if path.is_file():
+            payload = path.read_bytes()
+            result[relative.as_posix()] = hashlib.sha1(b"blob " + str(len(payload)).encode() + b"\0" + payload).hexdigest()
+    return result
+
+
+def verify_official_commit(package, name, revision):
+    """A local origin/HEAD is only a claim. Verify reachability and actual files."""
+    if not isinstance(revision, str) or not SHA.fullmatch(revision):
+        raise ValueError("unverified_commit")
+    repository = OFFICIAL[name]
+    try:
+        metadata = json.loads(download(f"https://api.github.com/repos/{repository}/commits/{revision}", 1024 * 1024))
+        tree_sha = metadata["commit"]["tree"]["sha"]
+        comparison = json.loads(download(f"https://api.github.com/repos/{repository}/compare/{revision}...main", 8 * 1024 * 1024))
+        if metadata.get("sha") != revision or not SHA.fullmatch(tree_sha) or \
+                comparison.get("status") not in {"ahead", "identical"} or comparison.get("merge_base_commit", {}).get("sha") != revision:
+            raise ValueError("unverified_commit")
+        tree = json.loads(download(f"https://api.github.com/repos/{repository}/git/trees/{tree_sha}?recursive=1", 8 * 1024 * 1024))
+        if tree.get("sha") != tree_sha or tree.get("truncated") or not isinstance(tree.get("tree"), list):
+            raise ValueError("unverified_commit")
+        prefix = f"skills/{name}/"
+        expected = {item["path"][len(prefix):]: item["sha"] for item in tree["tree"]
+                    if item.get("type") == "blob" and item.get("path", "").startswith(prefix)}
+    except (OSError, ValueError, KeyError, TypeError):
+        raise ValueError("unverified_commit") from None
+    if not expected or _blob_map(package) != expected:
+        raise ValueError("dirty_source")
+    return {"verified_tree_sha": tree_sha, "verified_fingerprint": digest_tree(package),
+            "provenance": "official_commit_tree"}
 
 
 def source_identity(package, name, home, *, runner=run):
@@ -134,7 +182,13 @@ def source_identity(package, name, home, *, runner=run):
                 return {"origin_status": "dirty_source"}
             code, sha, _ = runner([git, "-C", root, "rev-parse", "HEAD"])
             if code == 0 and SHA.fullmatch(sha.strip()):
-                return {"origin_status": "verified", "origin": wanted + ".git", "revision": sha.strip()}
+                if (Path(root).resolve() / "skills" / name) != package:
+                    return {"origin_status": "unknown_origin"}
+                try:
+                    proof = verify_official_commit(package, name, sha.strip())
+                except ValueError as error:
+                    return {"origin_status": str(error), "origin": wanted + ".git", "revision": sha.strip()}
+                return {"origin_status": "verified", "origin": wanted + ".git", "revision": sha.strip(), **proof}
     lock = Path(home) / ".agents" / ".skill-lock.json"
     if Path(home).resolve() == Path.home().resolve() and os.environ.get("XDG_STATE_HOME"):
         lock = Path(os.environ["XDG_STATE_HOME"]) / "skills/.skill-lock.json"
@@ -169,7 +223,7 @@ def source_identity(package, name, home, *, runner=run):
     return {"origin_status": "unknown_origin"}
 
 
-def install_package(package, name, state_dir, home, agents, *, identity=None, previous=None):
+def install_package(package, name, state_dir, home, agents, *, identity=None, previous=None, publish=None):
     """Copy into immutable managed storage and connect only owned targets.
 
     Retain the original directory/link itself under backups; user-edited targets
@@ -183,12 +237,15 @@ def install_package(package, name, state_dir, home, agents, *, identity=None, pr
     import install
     package = Path(package).resolve()
     fingerprint = validate_package(package, name)
+    claimed = (identity or {}).get("fingerprint", (identity or {}).get("verified_fingerprint", fingerprint))
+    if claimed != fingerprint:
+        raise ValueError("source_changed_after_verification")
     directory = private_dir(Path(state_dir) / "packages" / name)
     managed = directory / (fingerprint + "-" + uuid.uuid4().hex[:8])
     shutil.copytree(package, managed, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store"))
     if digest_tree(managed) != fingerprint:
         raise ValueError("copy_readback_failed")
-    targets, backups, changed = [], [], []
+    changed = []
     previous = previous or {}
     expected = previous.get("fingerprint", fingerprint)
     selected_targets = [Path(home) / (".agents" if agent == "codex" else ".claude") / "skills" / name for agent in agents]
@@ -200,8 +257,24 @@ def install_package(package, name, state_dir, home, agents, *, identity=None, pr
             ours = target.resolve() == package or str(target) in previous.get("targets", [])
             if not ours or digest_tree(target.resolve()) != expected:
                 raise ValueError("target_conflict")
+    transaction = uuid.uuid4().hex
+    plans = [(target, target.parent / ("." + name + "-backup-" + uuid.uuid4().hex)
+              if os.path.lexists(target) else None) for target in selected_targets]
+    receipt = {"name": name, "package": str(managed), "fingerprint": fingerprint,
+               "targets": [str(target) for target in selected_targets],
+               "backups": [{"target": str(target), "backup": str(backup)} for target, backup in plans if backup],
+               **(identity or {})}
+    family_path = Path(state_dir) / "family.json"
+    family_before = family_path.read_bytes() if publish and family_path.exists() else None
+    family_backup = Path(state_dir) / "transactions" / (transaction + ".family-before.json")
+    if family_before is not None:
+        write_bytes(family_backup, family_before)
+    journal = Path(state_dir) / "transactions" / (transaction + ".json")
+    recovery = {"phase": "prepared", "receipt": receipt, "previous": previous,
+                "family_backup": str(family_backup) if family_before is not None else None}
+    write_json(journal, recovery)  # Must succeed before the first target moves.
     try:
-        for target in selected_targets:
+        for target, backup in plans:
             target.parent.mkdir(parents=True, exist_ok=True)
             exists = os.path.lexists(target)
             if exists:
@@ -209,58 +282,58 @@ def install_package(package, name, state_dir, home, agents, *, identity=None, pr
                 shared_switched = target.resolve() == managed and actual == fingerprint
                 if actual != expected and not shared_switched:
                     raise ValueError("target_conflict")
-            backup = target.parent / ("." + name + "-backup-" + uuid.uuid4().hex)
             if exists:
                 os.replace(target, backup)
-                backups.append({"target": str(target), "backup": str(backup)})
             changed.append((target, backup if exists else None))
             install.connect(managed, target, "family")
             if digest_tree(target.resolve()) != fingerprint:
                 raise ValueError("target_readback_failed")
-            targets.append(str(target))
+        write_json(Path(state_dir) / "receipts" / (name + "-" + transaction + ".json"), receipt)
+        if publish is not None:
+            publish(receipt)
+            committed = json.loads(family_path.read_text(encoding="utf-8"))["components"][name]
+            if committed["fingerprint"] != fingerprint or committed["targets"] != receipt["targets"]:
+                raise ValueError("family_state_readback_failed")
+        write_json(journal, {**recovery, "phase": "committed"})
     except BaseException:
+        compensation_failed = False
         for target, backup in reversed(changed):
-            if os.path.lexists(target):
-                if target.is_symlink():
-                    target.unlink()
-                elif getattr(os.path, "isjunction", lambda _: False)(target):
-                    os.rmdir(target)
+            try:
+                if os.path.lexists(target):
+                    install._discard_partial(target)
+                if backup is not None:
+                    os.replace(backup, target)
+            except OSError:
+                compensation_failed = True
+        if publish is not None:
+            try:
+                if family_before is None:
+                    family_path.unlink(missing_ok=True)
                 else:
-                    shutil.rmtree(target)
-            if backup is not None:
-                os.replace(backup, target)
+                    # Prepared on the same filesystem; rollback does not depend
+                    # on the writer which just failed to save family.json.
+                    os.replace(family_backup, family_path)
+            except OSError:
+                compensation_failed = True
+        for target, backup in plans:
+            try:
+                if backup is None:
+                    compensation_failed |= os.path.lexists(target)
+                else:
+                    compensation_failed |= digest_tree(target.resolve()) != expected
+            except (OSError, ValueError):
+                compensation_failed = True
+        if compensation_failed:
+            raise PackageRecoveryRequired(journal) from None
+        try:
+            write_json(journal, {**recovery, "phase": "rolled_back"})
+        except OSError:
+            pass  # Targets and family state were independently restored/read back.
         raise
-    receipt = {"name": name, "package": str(managed), "fingerprint": fingerprint,
-               "targets": targets, "backups": backups, **(identity or {})}
-    write_json(Path(state_dir) / "receipts" / (name + "-" + uuid.uuid4().hex + ".json"), receipt)
     return receipt
 
 
 def compatibility(package, workspaces):
-    """Run the target reader against separate metadata copies, never live data."""
-    probe = """import json,sys
-from pathlib import Path
-from studio.library import read_index
-from studio.domain import derive_view_stage,derive_project_status
-from studio.projection import validate_state
-root=Path(sys.argv[1])
-if (root/'library/index.json').exists(): read_index(root/'library')
-for path in root.glob('projects/*/state.json'):
- s=json.loads(path.read_text()); validate_state(s); derive_project_status(derive_view_stage(s))
-"""
-    for workspace in workspaces:
-        root = Path(workspace)
-        if not root.is_dir():
-            return False
-        with tempfile.TemporaryDirectory(prefix="aimaster-compat-") as temporary:
-            snapshot = Path(temporary)
-            for source in [root / "library/index.json", *root.glob("projects/*/state.json")]:
-                if source.is_file():
-                    destination = snapshot / source.relative_to(root)
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(source, destination)
-            env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONPATH=str(package))
-            code, _, _ = run([sys.executable, "-c", probe, str(snapshot)], cwd=package, env=env)
-            if code:
-                return False
-    return True
+    """Run target project/library/montage readers on separate safe metadata copies."""
+    from .compatibility import compatible
+    return compatible(package, workspaces)
