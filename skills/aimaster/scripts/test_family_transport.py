@@ -7,6 +7,7 @@ import unittest
 import time
 import io
 import zipfile
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from studio import authoring
@@ -95,6 +96,7 @@ class TelegramAttachmentTests(unittest.TestCase):
                 connector=lambda *args, **kwargs: edge, context_factory=lambda: edge)
         self.assertEqual(probe(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\nnot our app"), TUNNEL_UNREACHABLE)
         self.assertEqual(probe(b'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<script src="/static/mini-app.js"></script>'), TUNNEL_READY)
+    @patch("studio.operator.status", lambda workspace: {"available": True, "status": "ready"})
     def test_photo_download_is_owner_scoped_and_replay_safe(self):
         from studio.telegram_bot import TelegramBotController
         from test_library import png_bytes
@@ -119,6 +121,7 @@ class TelegramAttachmentTests(unittest.TestCase):
             self.assertEqual(attachments[0]["source"], "telegram")
             self.assertTrue((ws / attachments[0]["path"]).is_file())
 
+    @patch("studio.operator.status", lambda workspace: {"available": True, "status": "ready"})
     def test_unselected_document_is_retained_separately_and_voice_has_text_fallback(self):
         from studio.telegram_bot import TelegramBotController
         from test_library import wav_bytes

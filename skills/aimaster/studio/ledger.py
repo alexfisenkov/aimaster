@@ -77,7 +77,7 @@ _GENERATION_CLASS = "generation"
 # Spec 2026-09-23 §2: who issued a grant. `chat` is the `grant` command;
 # `autopilot` is a grant an autopilot project issued to itself inside
 # `enqueue` (see `studio/autopilot.py`).
-GRANT_ISSUERS = frozenset({"chat", "autopilot"})
+GRANT_ISSUERS = frozenset({"chat", "autopilot", "scoped"})
 _AUTOPILOT_ISSUER = "autopilot"
 _AUTOPILOT_GRANT_TTL = timedelta(hours=1)
 _REDACTED = "[redacted]"
@@ -563,9 +563,10 @@ class ActionLedger:
                     # it cannot be stolen by a concurrent target or another action class.
                     scoped_id = f"grant-{uuid.uuid4().hex}"
                     expiry = _utc_now() + timedelta(minutes=15)
-                    connection.execute("INSERT INTO grants (grant_id,project_id,action_class,expires_at,expires_epoch,issued_at) "
-                        "VALUES (?,?,?,?,?,?)", (scoped_id, project_id, action_type, _timestamp(expiry), expiry.timestamp(), _timestamp()))
+                    connection.execute("INSERT INTO grants (grant_id,project_id,action_class,expires_at,expires_epoch,issued_at,issued_by) "
+                        "VALUES (?,?,?,?,?,?,?)", (scoped_id, project_id, action_type, _timestamp(expiry), expiry.timestamp(), _timestamp(), "scoped"))
                     grant = {"grant_id": scoped_id}
+                    grant_issuer = "scoped"
                 else:
                     grant = None
                 grant = grant or connection.execute(
@@ -907,7 +908,10 @@ class ActionLedger:
                 grant_released = False
                 if row["grant_id"] is not None:
                     # Critic 2026-09-23 (finding 1): only a chat-issued grant
-                    # returns to circulation. A self-issued autopilot grant
+                    # returns to circulation. Scoped grants remain bound to
+                    # the original action even when refused before dispatch;
+                    # another target/job must obtain a new explicit grant.
+                    # A self-issued autopilot grant
                     # is voided with its refused action -- released, it
                     # could back a paid action after the project left
                     # autopilot, without anyone in chat approving it.

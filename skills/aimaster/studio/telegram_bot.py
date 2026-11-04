@@ -687,6 +687,19 @@ class TelegramBotController:
         return "AI Мастерская\nВыберите проект или откройте рабочий дашборд."
 
     @staticmethod
+    def _operator_fallback(action, availability):
+        from .operator import fallback_request
+        if availability.get("reason") == "restart_required":
+            message = "Локальный агент требует перезапуска после обновления."
+        elif availability.get("status") == "needs_setup":
+            message = "Локальный агент требует настройки или входа."
+        elif not availability.get("available"):
+            message = "Локальный агент на компьютере выключен."
+        else:
+            message = "Этот запрос уже записан; автоматически повторять его нельзя."
+        return message + "\nСкопируйте этот запрос в чат с агентом:\n\n" + fallback_request(action)
+
+    @staticmethod
     def _envelope(update):
         if not isinstance(update, dict):
             return None
@@ -983,6 +996,10 @@ class TelegramBotController:
             self.state.complete(update_id, text)
             return [TelegramReply(chat_id, text, update_id)]
         if kind == "paid":
+            from .operator import status
+            availability = status(self.workspace)
+            initial = ("queued" if availability["available"] else
+                       "needs_chat_setup" if availability["status"] == "needs_setup" else "needs_chat")
             target_id = request["resolved_target_id"]
             action = self.ledger.enqueue(
                 request["project_id"],
@@ -993,9 +1010,12 @@ class TelegramBotController:
                     request["expected_revision"],
                     f"telegram-{update_id}",
                 ),
+                initial_status=initial,
             )
             mode = (self.store.load(request["project_id"]).get("project") or {}).get("mode")
-            if action["status"] == "queued" and mode == "autopilot":
+            if not availability["available"]:
+                text = self._operator_fallback(action, availability)
+            elif action["status"] == "queued" and mode == "autopilot":
                 text = "Платное действие поставлено в очередь: в автопилоте разрешение выдаётся само."
             elif action["status"] == "queued":
                 text = "Платное действие поставлено в очередь по ранее выданному разрешению."
@@ -1022,6 +1042,26 @@ class TelegramBotController:
             self.state.complete(update_id, text)
             return [TelegramReply(chat_id, text, update_id)]
         if kind == "inbox":
+            from .operator import status
+            availability = status(self.workspace)
+            # A terminal fallback is created at receipt time, not when some
+            # future controller happens to start. Reconcile by the immutable
+            # transport key first, including a crash after enqueue/before reply.
+            action = self.ledger.action_by_key(request["project_id"], f"telegram:{update_id}")
+            if not availability["available"] or action is not None:
+                if action is None:
+                    current = self.store.load(request["project_id"])
+                    action = self.ledger.enqueue(request["project_id"], ActionRequest("continue-in-chat",
+                        derive_view_stage(current)["current_stage"], {"text": request["text"],
+                        "attachments": list(request.get("attachments", ()))},
+                        current["revision"], f"telegram:{update_id}"),
+                        initial_status="needs_chat_setup" if availability["status"] == "needs_setup" else "needs_chat")
+                self.state.claim_uploads([item["update_id"] for item in request.get("attachments", ())], update_id)
+                text = self._operator_fallback(action, availability)
+                if any(item.get("transcription") == "unavailable" for item in request.get("attachments", ())):
+                    text += "\nАудио сохранено; без распознавания пришлите задачу текстом."
+                self.state.complete(update_id, text, action_id=action["action_id"])
+                return [TelegramReply(chat_id, text, update_id)]
             self.state.enqueue_inbox(
                 update_id=update_id,
                 chat_id=chat_id,

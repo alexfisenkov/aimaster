@@ -39,7 +39,7 @@ _JSON_TYPE = "application/json; charset=utf-8"
 _SSE_TYPE = "text/event-stream; charset=utf-8"
 _CSP = (
     "default-src 'none'; script-src 'self' https://telegram.org; style-src 'self'; "
-    "img-src 'self'; media-src 'self'; connect-src 'self'; "
+    "img-src 'self'; media-src 'self'; font-src 'self'; connect-src 'self'; "
     "frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 )
 _ACTION_KEYS = {
@@ -54,7 +54,7 @@ _ANSWER_KEYS = {"revision", "answer"}
 _SINGLE_BYTE_RANGE = re.compile(r"bytes=(\d*)-(\d*)", re.IGNORECASE)
 
 # Static UI hosting (amendment 2026-09-16 to ticket 05): only `GET /` and
-# `GET /static/<path>` are served, only these three extensions are ever
+# `GET /static/<path>` are served, only the listed static extensions are ever
 # returned, and everything else — including a path that resolves outside
 # this root, even via a symlink — is a 404. No directory listing.
 _STATIC_ROOT = Path(__file__).resolve().parent / "static"
@@ -62,6 +62,7 @@ _STATIC_MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
+    ".woff2": "font/woff2",
 }
 
 
