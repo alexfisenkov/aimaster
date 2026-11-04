@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "manifest_version": "2026-11-05",
+  "providers": {
+    "syntx": {
+      "transport": "stdio", "origin": "https://github.com/alexfisenkov/syntx-mcp.git",
+      "auth_method": "syntx_begin_login_then_syntx_check_login", "credential_fields": [],
+      "supported_hosts": ["codex", "claude"], "minimum_runtimes": {"node": "22.13.0", "git": true},
+      "server_rollback": true, "update": "native_updater", "paid_calls": "separate_authorization",
+      "commands": {"check": ["node", "scripts/update-mcp.mjs", "check"], "apply": ["node", "scripts/update-mcp.mjs", "apply"], "rollback": ["node", "scripts/update-mcp.mjs", "rollback"]},
+      "source": "https://github.com/alexfisenkov/syntx-mcp"
+    },
+    "higgsfield": {
+      "transport": "http", "endpoint": "https://mcp.higgsfield.ai/mcp", "auth_method": "oauth_browser",
+      "credential_fields": [], "supported_hosts": ["codex", "claude"], "minimum_runtimes": {},
+      "server_rollback": false, "update": "hosted_discovery_after_restart", "paid_calls": "separate_authorization",
+      "source": "https://higgsfield.ai/enterprise-help-center/platform/integrations"
+    },
+    "magnific": {
+      "transport": "http", "endpoint": "https://mcp.magnific.com", "auth_method": "oauth_browser",
+      "credential_fields": [], "supported_hosts": ["codex", "claude"], "minimum_runtimes": {},
+      "server_rollback": false, "update": "hosted_discovery_after_restart", "paid_calls": "separate_authorization",
+      "source": "https://www.magnific.com/ai/docs/magnific-mcp"
+    },
+    "fal": {
+      "transport": "http", "endpoint": "https://mcp.fal.ai/mcp-relay", "auth_method": "oauth_browser",
+      "credential_fields": [], "supported_hosts": ["codex", "claude"], "minimum_runtimes": {},
+      "server_rollback": false, "update": "hosted_discovery_after_restart", "paid_calls": "separate_authorization",
+      "source": "https://fal.ai/docs/documentation/setting-up/mcp/codex-cli"
+    }
+  }
+}

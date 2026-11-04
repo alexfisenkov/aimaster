@@ -646,15 +646,34 @@ def too_old_python(kind, as_json):
 
 
 def default_repo():
-    """Клон, из которого запущен файл; для установленной копии — из её пометки."""
-    skill = Path(__file__).resolve().parents[1]
-    marker = skill / MARKER
-    if marker.is_file():
-        try:
-            return Path(json.loads(marker.read_text(encoding="utf-8"))["source"]).parents[1]
-        except (OSError, ValueError, KeyError, IndexError):
-            pass
-    return skill.parents[1]
+    """Find the actual package by its marker, including a standalone npx copy."""
+    for candidate in Path(__file__).resolve().parents:
+        if _looks_like_aimaster(candidate) and (candidate / "VERSION").is_file():
+            # Legacy Windows copies record their original source. Resolve that
+            # explicit relationship, rather than assuming any number of parents.
+            marker = candidate / MARKER
+            if marker.is_file():
+                try:
+                    recorded = Path(json.loads(marker.read_text(encoding="utf-8"))["source"]).resolve()
+                    if locate_package(recorded) == recorded:
+                        for ancestor in recorded.parents:
+                            if (ancestor / "skills" / "aimaster").resolve() == recorded:
+                                return ancestor
+                        return recorded
+                except (OSError, ValueError, KeyError, TypeError):
+                    pass
+            return candidate
+    return Path(__file__).resolve().parent
+
+
+def locate_package(path):
+    """Explicit repository or skill directory; never guess by parent count."""
+    path = Path(path).expanduser().resolve()
+    for candidate in (path, path / "skills" / "aimaster"):
+        if _looks_like_aimaster(candidate) and (candidate / "VERSION").is_file() \
+                and (candidate / "scripts").is_dir():
+            return candidate
+    return None
 
 
 def _montage_report(kind, install_deps, update, home):
@@ -728,9 +747,9 @@ def main(argv=None):
         return 0
     repo = Path(args.repo).expanduser() if args.repo else default_repo()
     repo = repo.resolve()
-    source = repo / "skills" / "aimaster"
-    if not _looks_like_aimaster(source):
-        message = "В %s нет skills/aimaster/SKILL.md — укажите клон через --repo" % repo
+    source = locate_package(repo)
+    if source is None:
+        message = "В %s нет пакета aimaster (SKILL.md, VERSION, scripts/) — укажите папку через --repo" % repo
         print(json.dumps({"ok": False, "error": "repo_not_found", "message": message},
                          ensure_ascii=False) if args.json else message)
         return 3

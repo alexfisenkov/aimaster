@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime as _datetime
+import argparse
 import http.client
 import json
 from pathlib import Path
@@ -137,8 +138,22 @@ def _check() -> dict[str, str] | None:
     }
 
 
-def main() -> int:
+def main(argv=None) -> int:
     ensure_utf8_stdio()
+    # No implicit chat identity: the host supplies a stable ID once per session.
+    # Keep the legacy no-argument read-only release check unchanged.
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--session-id")
+    parser.add_argument("--state-dir", type=Path)
+    args = parser.parse_args(argv if argv is not None else [])
+    if args.session_id:
+        from studio.family_setup.updates import session_start
+        try:
+            result = session_start(args.session_id, state_dir=args.state_dir)
+        except (OSError, ValueError):
+            result = {"status": "kept_current"}
+        print(json.dumps(result, ensure_ascii=True, separators=(",", ":")))
+        return 0
     try:
         update = _check()
     except Exception:
@@ -149,4 +164,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))
