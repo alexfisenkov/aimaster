@@ -36,9 +36,16 @@ def command_montage_diff(args):
 
 
 def command_montage_edit(args):
+    overlay = None
+    if args.overlay_file:
+        try:
+            overlay = json.loads(args.overlay_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            from studio.montage import MontageError
+            raise MontageError("файл рисунка должен содержать типизированный JSON") from error
     request = EditRequest(op=args.op, clip=args.clip, at=args.at, seconds=args.seconds,
                           duration=args.duration, value=args.value, fade_in=args.fade_in,
-                          fade_out=args.fade_out, text=args.text)
+                          fade_out=args.fade_out, text=args.text, overlay=overlay)
     _print(service.edit(args.workspace, args.project, args.expected_revision, request,
                         expected_model_hash=args.expected_model_hash))
 
@@ -57,11 +64,46 @@ def command_montage_gsap(args):
 
 
 def command_montage_open(args):
-    _print(service.open_desk(args.workspace, args.project))
+    options = {"edit": True, "expected_revision": args.expected_revision} if args.edit else {}
+    _print(service.open_desk(args.workspace, args.project, **options))
 
 
 def command_montage_close(args):
     _print(service.close_desk(args.workspace, args.project))
+
+
+def command_montage_build(args):
+    _print(service.build(args.workspace, args.project, args.expected_revision,
+                         style=args.style, improve=args.improve))
+
+
+def command_montage_handoff(args):
+    _print(service.handoff(args.workspace, args.project, style=args.style))
+
+
+def command_montage_preset(args):
+    _print(service.apply_preset(args.workspace, args.project, args.expected_revision,
+                                style=args.style, expected_model_hash=args.expected_model_hash))
+
+
+def command_montage_preview(args):
+    _print(service.preview(args.workspace, args.project, style=args.style, duration=args.duration))
+
+
+def command_montage_export(args):
+    _print(service.export(args.workspace, args.project, destination=args.destination, version=args.version))
+
+
+def command_montage_save_style(args):
+    _print(service.save_style(args.workspace, args.project, identity=args.name, label=args.label))
+
+
+def command_montage_styles(args):
+    _print(service.styles(args.workspace))
+
+
+def command_montage_verify_export(args):
+    _print(service.verify_export(args.manifest))
 
 
 def add_montage_subcommands(subparsers) -> None:
@@ -94,6 +136,7 @@ def add_montage_subcommands(subparsers) -> None:
     for flag in ("--at", "--seconds", "--duration", "--value", "--fade-in", "--fade-out"):
         edit.add_argument(flag, type=float, dest=flag[2:].replace("-", "_"))
     edit.add_argument("--text")
+    edit.add_argument("--overlay-file", type=Path, help="типизированный JSON рисунка, без SVG/HTML")
     edit.add_argument("--expected-model-hash", dest="expected_model_hash")
     render = command("render", "собрать MP4 новой версией", command_montage_render, writes=True)
     render.add_argument("--by", choices=BY_VALUES)
@@ -102,5 +145,30 @@ def add_montage_subcommands(subparsers) -> None:
     restore.add_argument("version")
     gsap = command("gsap", "положить GSAP и плагины из движка в assets/ монтажа", command_montage_gsap)
     gsap.add_argument("--plugin", action="append", help="плагин GSAP, например SplitText")
-    command("open", "открыть монтажный стол (HyperFrames Studio)", command_montage_open)
+    opened = command("open", "открыть монтажный стол (HyperFrames Studio)", command_montage_open)
+    opened.add_argument("--edit", action="store_true", help="явно открыть принятую сборку для улучшения")
+    opened.add_argument("--expected-revision", type=int)
     command("close", "закрыть монтажный стол", command_montage_close)
+    build = command("build", "базовый ролик или новая версия улучшения", command_montage_build, writes=True)
+    build.add_argument("--style", help="basic, dynamic, cinematic, auto или user:<id>")
+    build.add_argument("--improve", action="store_true")
+    handoff = command("handoff", "точные выбранные исходники и формат монтажа", command_montage_handoff)
+    handoff.add_argument("--style", default="basic")
+    preset = command("preset", "применить монтажный стиль с возможностью undo", command_montage_preset, writes=True)
+    preset.add_argument("--style", required=True)
+    preset.add_argument("--expected-model-hash")
+    preview = command("preview", "короткая проба стиля на выбранных клипах", command_montage_preview)
+    preview.add_argument("--style", required=True)
+    preview.add_argument("--duration", type=float, default=6)
+    export = command("export", "переносимый комплект готовой версии или материалов", command_montage_export)
+    export.add_argument("--destination", type=Path, required=True)
+    export.add_argument("--version", help="готовая версия vNNN; по умолчанию текущая")
+    save = command("save-style", "сохранить применённый стиль для других проектов", command_montage_save_style)
+    save.add_argument("--name", required=True)
+    save.add_argument("--label")
+    styles = sub.add_parser("styles", help="встроенные и личные монтажные стили")
+    styles.add_argument("workspace", type=Path)
+    styles.set_defaults(handler=command_montage_styles)
+    verify = sub.add_parser("verify-export", help="проверить файлы перенесённого комплекта")
+    verify.add_argument("manifest", type=Path)
+    verify.set_defaults(handler=command_montage_verify_export)

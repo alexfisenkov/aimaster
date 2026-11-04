@@ -81,6 +81,8 @@ def clips_count(count: int) -> str:
 
 
 def clip_name(clip: Clip, names: Mapping[str, str]) -> str:
+    if clip.layer == "overlays":
+        return f"рисунок {clip.id}"
     if clip.layer == "titles":
         return f"титр «{clip.text or clip.id}»"
     if clip.layer == "video":

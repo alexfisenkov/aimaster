@@ -31,6 +31,7 @@ from .locks import held_lock
 from .model import Model
 from .paths import VERSION_ID, MontagePaths
 from .versions import VersionMeta
+from .portable import copy_composition, write_json
 
 
 def _staging_dir(paths: MontagePaths, version: str) -> Path:
@@ -121,6 +122,8 @@ def stage_version(paths: MontagePaths, meta: VersionMeta, model: Model, *,
             with paths.index.open(encoding="utf-8", newline="") as handle:
                 index_text = handle.read()
         _write_durable(staging / "index.html", index_text)
+        files = copy_composition(paths.current, index_text, staging)
+        write_json(staging / "files.json", files)
         _write_durable(staging / "meta.json", _json(meta.to_dict()))
         _write_durable(staging / "model.json", _json(model.to_dict()))
         fsync_directory(staging)

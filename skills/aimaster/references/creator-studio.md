@@ -349,10 +349,23 @@ creator_studio.py montage restore WS P vNNN --expected-revision N
 creator_studio.py montage gsap WS P [--plugin NAME]...
 creator_studio.py montage open WS P
 creator_studio.py montage close WS P
+creator_studio.py montage styles WS
+creator_studio.py montage handoff WS P [--style basic|dynamic|cinematic|auto|user:ID]
+creator_studio.py montage build WS P --expected-revision N [--style auto] [--improve]
+creator_studio.py montage preset WS P --expected-revision N --style cinematic [--expected-model-hash HASH]
+creator_studio.py montage preview WS P --style dynamic [--duration 6]
+creator_studio.py montage save-style WS P --name my-look [--label "My look"]
+creator_studio.py montage open WS P --edit --expected-revision N
+creator_studio.py montage export WS P --destination NEW_FOLDER [--version v001]
+creator_studio.py montage verify-export NEW_FOLDER/manifest.json
 ```
 
 `OP` is one of `move`, `trim-start`, `trim-end`, `split`, `delete`, `volume`,
-`fade`, `title-add`, `title-text`, `undo`. Without the engine, `montage status`
+`fade`, `title-add`, `title-text`, `undo`, `preset`, `overlay-add`, `overlay-update`.
+Drawings use `--overlay-file drawing.json`: typed canvas geometry, color, stroke,
+opacity and optional reveal/scene binding; see [montage.md](montage.md).
+`overlay-add` also requires `--at` and `--duration`; `overlay-update` requires
+`--clip` and preserves timing. No SVG/HTML input is accepted. Without the engine, `montage status`
 returns the exact install command: `engine.install_argv` (a list of arguments)
 and `engine.install` (one line; see [montage](montage.md#engine-check) for
 running it in PowerShell).

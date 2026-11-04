@@ -117,7 +117,8 @@ class CanonMatchesCliTests(DocsTestCase):
     def test_every_command_and_flag_of_the_cli(self):
         parsers = _montage_parsers()
         self.assertEqual(set(parsers), {"draft", "status", "diff", "edit", "render", "restore", "gsap",
-                                        "open", "close"})
+                                        "open", "close", "styles", "handoff", "build", "preset",
+                                        "preview", "save-style", "export", "verify-export"})
         for name, parser in parsers.items():
             self.assertMentions(f"montage {name}", self.canon)
             for action in parser._actions:

@@ -78,6 +78,7 @@ HISTORY_KINDS = {
     "montage-drafted": frozenset(),
     "montage-built": frozenset({"target_id"}),
     "montage-restored": frozenset({"target_id"}),
+    "montage-improvement-opened": frozenset(),
 }
 _HISTORY_ACTORS = frozenset({"you", "agent"})
 _HISTORY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")

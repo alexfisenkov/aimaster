@@ -138,6 +138,44 @@ dashboard; without it the caption is made from the changes.
 Without the engine, `model_hash`, `duration` and `unrendered_changes` are
 `null` and `layers` is empty; versions and paths are still shown.
 
+## Generated-clips formats and portable delivery
+
+`montage styles WS` lists `basic`, `dynamic`, `cinematic` and saved `user:<id>`
+formats. These adapt AIEditing's same-source probes, chosen motion/audio parameters
+and version preservation to generated clips. AIEditing itself remains a workshop;
+its speech/YouTube pipeline is not called by this adapter.
+
+`montage handoff WS P --style cinematic` reads the ordered accepted scenes,
+selected asset IDs, source paths, trimmed durations, aspect ratio and audio.
+The local handoff contains paths for execution; it is never copied into a public export.
+`montage build WS P --expected-revision N [--style auto]` actually drafts, applies
+the format and renders a new MP4. Auto chooses from the current scenario's words;
+guided defaults to the basic cut. Deliver the base before offering improvements.
+`montage preview WS P --style dynamic --duration 6` renders up to 12 seconds of
+these same clips, without editing the desk or project state. Same-source probes
+reuse verified checksummed outputs; changed sources/styles get another probe.
+`montage preset WS P --expected-revision N --style cinematic` is an undoable edit;
+`--expected-model-hash` prevents applying it to a changed desk.
+`montage save-style WS P --name my-look [--label "My look"]` saves only the chosen
+format in the workspace's `.montage-styles/`, for reuse with `--style user:my-look`.
+Existing personal styles are never overwritten; use a new name for a new version.
+
+`montage build WS P --expected-revision N --improve --style cinematic` keeps the
+base and creates the next immutable version. If assembly was approved, explicit
+improvement reopens only its review, preserving the previous delivery on failure.
+For manual edits after approval, `montage open WS P --edit --expected-revision N`
+uses the same reopening transition. Ordinary viewing/export never reopens a project.
+
+`montage export WS P --destination NEW_FOLDER [--version v001]` packages an already
+rendered version: MP4, editable composition, its used local assets/fonts/scripts,
+created titles as `subtitles/titles.srt`, RU/EN instructions and SHA-256 checksums.
+It uses the immutable snapshot, not unsaved desk edits, and refuses an existing
+destination. In materials mode it copies the already prepared and verified
+materials packet, without requiring montage or changing completion.
+`montage verify-export NEW_FOLDER/manifest.json` verifies a moved copy without the
+original workspace. Open `editable/` in HyperFrames Studio to edit and render it;
+the MP4 plays without an editing engine. No transcription is implied by title SRT.
+
 ## Edit operations
 
 - `move --clip ID --at S` — new start; moving past the end makes the video longer.
@@ -154,6 +192,12 @@ Without the engine, `model_hash`, `duration` and `unrendered_changes` are
 - `title-add --text T --at S --duration S` — a title on the «Титры» layer;
   the new id is in `receipt.new_clip`.
 - `title-text --clip ID --text T` — new text of a title.
+- `preset --text JSON` — validated generated-clips format; prefer the named
+  `montage preset --style` command. It changes motion, transition and music level.
+- `overlay-add --overlay-file drawing.json --at S --duration S` — creates a
+  typed SVG drawing (`receipt.new_clip`, e.g. `o-1`) on the `overlays` «Рисунки» layer.
+- `overlay-update --clip ID --overlay-file drawing.json` — replaces that
+  drawing's complete geometry/style/scene data, preserving its current timing.
 - `undo` — takes back your own last edit (repeat for earlier ones); the reply
   has `op`, `ok` and `restored`. Refused when the montage changed after it, for
   example in the desk, or when there is nothing to take back.
@@ -161,6 +205,47 @@ Without the engine, `model_hash`, `duration` and `unrendered_changes` are
 Clip ids come from `status.layers`: videos `v-1`, `v-2`… in scenario order,
 titles `t-1`, `t-2`… as they are added, sound `a-voice`, `a-music`, `a-fx`,
 `a-atmos`, split pieces `<id>-2`. Times are seconds of the finished video.
+
+### Typed drawings on generated clips
+
+Use a frame from the actual clip to choose the target, as in AIEditing's
+Focus/Cursor/Link method. The adapter emits local SVG itself. Never pass raw
+SVG/HTML/CSS, selectors or JavaScript from a client.
+
+```json
+{
+  "type": "rect",
+  "canvas": {"width": 1080, "height": 1920},
+  "geometry": {"x": 100, "y": 200, "width": 400, "height": 300},
+  "color": "#00FF80",
+  "stroke_width": 6,
+  "opacity": 0.9,
+  "draw_on": 0.4,
+  "scene_id": "s1"
+}
+```
+
+Coordinates and stroke width are **canvas pixels**, origin top-left; never CSS
+viewport pixels. The declared width/height must equal the current composition
+canvas. Scale pointer coordinates from the displayed frame to this canvas before
+submitting. Geometry must stay inside it. `rect` and `ellipse` use the bounding
+box above; `arrow` uses `{x1,y1,x2,y2}`; `stroke` uses `{points:[[x,y],...]}` with
+2–1024 points. Color is exactly `#RRGGBB`, stroke width 0.5–100 pixels, opacity
+0–1. Optional `draw_on` is 0–60 seconds (0 means immediate); the existing paused
+GSAP main timeline reveals the stroke from the drawing's current start, including
+after Studio changes that start. A short clip can end before its reveal finishes.
+Optional `scene_id` is null or an existing project scene; it identifies the source
+scene and does not automatically follow future edits of scene timing.
+
+The public service operations are `overlay_add(..., overlay=DATA, at=S, duration=S)`
+and `overlay_update(..., clip=ID, overlay=DATA)`, both with `expected_revision` and
+optional `expected_model_hash`. General `move`, `trim-start`, `trim-end`, `delete`
+and `undo` also work on drawings. Geometry/style changes participate in model hash
+and diff. Read-back returns each typed object as `clip.overlay`, without raw SVG;
+the overlays layer appears only when drawings exist. The desktop Studio supports
+their timeline edits; the separate dashboard drawing UI uses these same operations.
+Shapes remain editable SVG in version snapshots and portable exports, and never
+become subtitles merely because they are graphics.
 
 ## What the draft contains
 

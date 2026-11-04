@@ -13,9 +13,11 @@ from .engine_cli import EngineRunner
 from .index_io import read_index, write_index
 from .model import model_hash, read_model
 from .paths import MontagePaths
+from .preset import preset
+from . import overlays
 
 OPS = ("move", "trim-start", "trim-end", "split", "delete", "volume", "fade", "title-add",
-       "title-text", "undo")
+       "title-text", "undo", "preset", "overlay-add", "overlay-update")
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,7 @@ class EditRequest:
     fade_in: float | None = None
     fade_out: float | None = None
     text: str | None = None
+    overlay: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -52,10 +55,16 @@ def apply_edit(engine: Engine, paths: MontagePaths, request: EditRequest, *,
     if expected_model_hash and expected_model_hash != before:
         raise MontageError("монтаж изменился с тех пор, как вы его читали (например, в монтажном "
                            "столе): прочитайте montage status и повторите")
-    clip = None if request.op == "title-add" else model.clip(need(request.clip, "clip", request.op))
+    clip = None if request.op in {"title-add", "preset", "overlay-add"} else model.clip(need(request.clip, "clip", request.op))
     snapshot = snapshot_before(paths)
     try:
-        receipt = title_add(ctx, request) if clip is None else CLIP_OPS[request.op](ctx, clip, request)
+        if request.op == "overlay-add":
+            receipt = overlays.add(ctx, request)
+        elif request.op == "overlay-update":
+            receipt = overlays.update(ctx, clip, request)
+        else:
+            receipt = (preset(ctx, request) if request.op == "preset" else title_add(ctx, request)
+                       if clip is None else CLIP_OPS[request.op](ctx, clip, request))
     except BaseException:
         write_index(paths.index, read_index(snapshot))
         snapshot.unlink(missing_ok=True)

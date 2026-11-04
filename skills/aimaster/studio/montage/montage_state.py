@@ -81,7 +81,31 @@ def check_writable(state: dict) -> None:
     project = require_project(state)
     if project.get("type") == "photo":
         raise MontageError("у фото-проекта монтажа нет: его сборка — принятая картинка")
+    if project.get("assembly_mode", "montage") != "montage":
+        raise MontageError("сначала явно выберите montage; готовые материалы не требуют монтажа")
     require_stage_not_approved(state, "assembly", "montage")
+
+
+def reopen_for_improvement(workspace, project_id, expected_revision):
+    """Only an explicit edit/improve intent may reopen terminal montage review."""
+    from .context import open_context
+    ctx = open_context(workspace, project_id)
+    require_revision(ctx.state, expected_revision)
+    if ctx.state["project"].get("assembly_mode", "montage") != "montage":
+        raise MontageError("готовые материалы не требуют повторного открытия монтажа")
+    if not montage_section(ctx.state).get("current_version"):
+        raise MontageError("сначала выдайте базовую версию монтажа")
+    if ctx.state.get("milestones", {}).get("assembly") != "approved":
+        check_writable(ctx.state)
+        return {"project_id": project_id, "revision": expected_revision, "reopened": False}
+
+    def reopen(state):
+        if state["milestones"].get("assembly") != "approved":
+            raise MontageError("статус сборки изменился — повторите чтение проекта")
+        state["milestones"]["assembly"] = "ready"
+        domain.append_history(state, "agent", "montage-improvement-opened", "assembly")
+    _, written = _mutate(ctx.store, project_id, expected_revision, reopen)
+    return {"project_id": project_id, "revision": written["revision"], "reopened": True}
 
 
 def load_fresh(store, project_id: str, expected_revision: int) -> dict:

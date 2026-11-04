@@ -20,6 +20,7 @@ from .engine import Engine, cli_timeout
 from .engine_cli import EngineRunner
 from .html_doc import element_attrs
 from .index_io import read_index
+from .overlays import LAYER as OVERLAY_LAYER, read_overlay
 
 _FALLBACK_LAYER = {"video": "video", "img": "video", "image": "video", "audio": "music"}
 
@@ -39,6 +40,8 @@ class Clip:
     asset_id: str | None = None
     src: str | None = None
     text: str | None = None
+    overlay: dict | None = None
+    visual_hash: str | None = None
 
     @property
     def end(self) -> float:
@@ -49,13 +52,19 @@ class Clip:
 class Model:
     duration: float
     clips: tuple[Clip, ...]
+    appearance: str | None = None
 
     def to_dict(self) -> dict:
-        return {"duration": self.duration, "clips": [asdict(clip) for clip in self.clips]}
+        # Keep legacy model hashes unchanged when no overlay fields were recorded.
+        clips = [{key: value for key, value in asdict(clip).items()
+                  if key not in {"overlay", "visual_hash"} or value is not None} for clip in self.clips]
+        return {"duration": self.duration, "clips": clips,
+                **({"appearance": self.appearance} if self.appearance is not None else {})}
 
     @classmethod
     def from_dict(cls, data: dict) -> "Model":
-        return cls(float(data["duration"]), tuple(Clip(**clip) for clip in data.get("clips", [])))
+        return cls(float(data["duration"]), tuple(Clip(**clip) for clip in data.get("clips", [])),
+                   data.get("appearance"))
 
     def clip(self, clip_id: str) -> Clip:
         for clip in self.clips:
@@ -84,8 +93,9 @@ def build_model(timeline: dict, html_text: str) -> Model:
         mark = attrs.get(element_id, {})
         kind = str(row.get("kind") or mark.get("_tag") or "")
         layer = mark.get("data-am-layer")
-        if layer not in LAYERS:
+        if layer not in (*LAYERS, OVERLAY_LAYER):
             layer = _FALLBACK_LAYER.get(kind, "titles")
+        overlay, visual_hash = read_overlay(html_text, element_id, mark)
         volume = row.get("volume")
         clips.append(Clip(
             id=element_id, layer=layer, kind=kind,
@@ -98,10 +108,12 @@ def build_model(timeline: dict, html_text: str) -> Model:
             # обязан отдавать одинаково): split_pairs.same_source сравнивает
             # src у обоих участников через один и тот же источник данных.
             src=mark.get("src") or None,
-            text=(mark.get("_text") or None) if layer == "titles" else None))
-    order = {layer: index for index, layer in enumerate(LAYERS)}
+            text=(mark.get("_text") or None) if layer == "titles" else None,
+            overlay=overlay, visual_hash=visual_hash))
+    order = {layer: index for index, layer in enumerate((*LAYERS, OVERLAY_LAYER))}
     clips.sort(key=lambda clip: (order[clip.layer], clip.start, clip.id))
-    return Model(_num((timeline.get("timeline") or {}).get("duration")), tuple(clips))
+    return Model(_num((timeline.get("timeline") or {}).get("duration")), tuple(clips),
+                 attrs.get("root", {}).get("data-am-format"))
 
 
 def model_hash(model: Model) -> str:
@@ -134,7 +146,9 @@ def layers_view(model: Model) -> list[dict]:
     """Схема слоёв для экрана «Сборка»: все шесть дорожек в постоянном порядке."""
 
     keys = ("id", "kind", "start", "duration", "media_start", "volume", "scene_id", "asset_id", "text")
-    return [{"layer": layer, "label": LAYER_LABELS[layer],
-             "clips": [{key: getattr(clip, key) for key in keys}
+    layers = (*LAYERS, OVERLAY_LAYER) if any(clip.overlay is not None for clip in model.clips) else LAYERS
+    return [{"layer": layer, "label": "Рисунки" if layer == OVERLAY_LAYER else LAYER_LABELS[layer],
+             "clips": [{**{key: getattr(clip, key) for key in keys},
+                        **({"overlay": clip.overlay} if clip.overlay is not None else {})}
                        for clip in model.clips if clip.layer == layer]}
-            for layer in LAYERS]
+            for layer in layers]

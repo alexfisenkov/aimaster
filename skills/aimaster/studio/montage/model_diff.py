@@ -48,6 +48,8 @@ def _timing(old: Clip, new: Clip, name: str, split_parent: bool) -> list[str]:
 
 def _changed(old: Clip, new: Clip, name: str, split_parent: bool) -> list[str]:
     out = []
+    if new.overlay != old.overlay or new.visual_hash != old.visual_hash:
+        out.append(f"{name}: изменена геометрия или оформление рисунка")
     if new.layer == "titles" and new.text != old.text:
         out.append(f"{name}: текст «{old.text}» → «{new.text}»")
     out += _timing(old, new, name, split_parent)
@@ -110,6 +112,8 @@ def diff_models(old: Model | None, new: Model, *, names: Mapping[str, str] | Non
     before = {clip.id: clip for clip in old.clips}
     after = {clip.id: clip for clip in new.clips}
     changes = []
+    if new.appearance != old.appearance:
+        changes.append("изменён монтажный стиль")
     if abs(new.duration - old.duration) > EPS:
         if needs_precise_display(old.duration, new.duration):
             changes.append(f"длина ролика изменилась на {fmt_len_precise(abs(new.duration - old.duration))}")

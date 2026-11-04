@@ -16,16 +16,21 @@ from .edit import EditRequest, apply_edit
 from .engine import locate as locate_engine
 from .engine import require_engine
 from .index_io import read_index
-from .montage_state import check_writable, record_draft
+from .montage_state import check_writable, record_draft, reopen_for_improvement
 from .probe import probe_media
 from .refresh import refresh_draft
 from .service_versions import diff, fresh, put_back_index, render, restore
 from .status import montage_status
 from .vendor import vendor_gsap
 from .workspace_skills import skills_summary
+from .family import apply_preset, build, handoff, save_style, styles
+from .export import export, verify_export
+from .preview import preview
+from .overlays import validate as validate_overlay
 
 __all__ = ["DRAFT_MODES", "close_desk", "diff", "draft", "edit", "gsap", "open_desk", "render",
-           "restore", "status"]
+           "restore", "status", "apply_preset", "build", "handoff", "save_style", "styles",
+           "export", "verify_export", "preview", "reopen_for_improvement", "overlay_add", "overlay_update"]
 DRAFT_MODES = ("new", "refresh", "rebuild")
 
 
@@ -85,12 +90,40 @@ def edit(workspace, project_id, expected_revision, request: EditRequest, *,
          expected_model_hash=None, engine=None, runner=None) -> dict:
     ctx = open_context(workspace, project_id)
     fresh(ctx, expected_revision)
+    if request.op in {"overlay-add", "overlay-update"}:
+        overlay = validate_overlay(request.overlay)
+        if overlay["scene_id"] is not None and not any(
+                scene.get("scene_id") == overlay["scene_id"] for scene in ctx.state.get("scenes", [])):
+            raise MontageError("рисунок ссылается на сцену, которой нет в текущем проекте")
     result = apply_edit(engine or require_engine(), ctx.paths, request,
                         expected_model_hash=expected_model_hash, runner=runner)
     return {"project_id": project_id, "revision": ctx.revision, **result}
 
 
-def open_desk(workspace, project_id, *, engine=None, desk=None) -> dict:
+def overlay_add(workspace, project_id, expected_revision, *, overlay, at, duration,
+                expected_model_hash=None, engine=None, runner=None):
+    return edit(workspace, project_id, expected_revision,
+                EditRequest(op="overlay-add", overlay=overlay, at=at, duration=duration),
+                expected_model_hash=expected_model_hash, engine=engine, runner=runner)
+
+
+def overlay_update(workspace, project_id, expected_revision, *, clip, overlay,
+                   expected_model_hash=None, engine=None, runner=None):
+    return edit(workspace, project_id, expected_revision,
+                EditRequest(op="overlay-update", clip=clip, overlay=overlay),
+                expected_model_hash=expected_model_hash, engine=engine, runner=runner)
+
+
+def open_desk(workspace, project_id, *, engine=None, desk=None, edit=False, expected_revision=None) -> dict:
+    reopened = None
+    if edit:
+        if expected_revision is None:
+            raise MontageError("для открытия на правку нужен expected_revision")
+        state = open_context(workspace, project_id).state
+        if (state.get("montage") or {}).get("current_version"):
+            reopened = reopen_for_improvement(workspace, project_id, expected_revision)
+        else:
+            fresh(open_context(workspace, project_id), expected_revision)
     ctx = open_context(workspace, project_id)
     desk = desk or StudioDesk(engine or require_engine())
     if ctx.paths.index.is_file():  # без черновика стол откажет сам — папок не заводим
@@ -98,7 +131,8 @@ def open_desk(workspace, project_id, *, engine=None, desk=None) -> dict:
     opened = desk.open(ctx.paths)
     url = opened.get("url")  # нет — запись стола указывала не на 127.0.0.1 (desk_record.public)
     page = opener_url(url) if url and opener_file(ctx.paths).is_file() else None
-    return {"project_id": project_id, **opened, "opener_url": page}
+    return {"project_id": project_id, **opened, "opener_url": page,
+            **({"revision": ctx.revision, "reopened": bool(reopened and reopened["reopened"])} if edit else {})}
 
 
 def close_desk(workspace, project_id, *, desk=None) -> dict:

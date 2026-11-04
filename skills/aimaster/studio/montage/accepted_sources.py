@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from ..domain import DomainValidationError
+from ..domain import DomainValidationError, compute_prompt_stale
 from ..domain_positions import current_member, position_specs
 from . import AUDIO_LAYER_NAMES, LAYER_LABELS, MontageError
 
@@ -70,8 +70,13 @@ def _accepted_asset(state, spec) -> str | None:
     if not result:
         return None
     if (result.get("decision") != "approved" or result.get("retired") is True
-            or result.get("hidden") is True or not isinstance(result.get("asset_id"), str)
+            or result.get("hidden") is True or result.get("stale") is True
+            or not isinstance(result.get("asset_id"), str)
             or not result["asset_id"].strip()):
+        return None
+    prompt = current_member(state, spec, "prompt", missing_ok=True)
+    if prompt and (prompt.get("stale") is True or
+                   ("basis" in prompt and compute_prompt_stale(state, prompt, spec))):
         return None
     return result["asset_id"]
 
