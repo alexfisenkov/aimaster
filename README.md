@@ -1,299 +1,34 @@
-# AI Мастерская / aimaster
+# AIMaster
 
-`aimaster` — «AI Мастерская» для вашего AI-агента. Вы приносите идею, а агент
-помогает сделать сценарий, разложить его на кадры, написать промпты, подготовить
-картинки и собрать материалы для ролика. Всё по проекту хранится в отдельной
-папке, а при желании ход работы можно смотреть в браузере.
+AIMaster turns a text or voice idea into a project with a script, shot plan, selected images and video, and a portable collection of materials. A final MP4 is optional. The local dashboard opens the exact project and can submit actions through an explicitly running Codex or Claude controller. You can work in chat, in the dashboard, or through the optional Telegram Mini App. Projects, personal guides and library stay in your own workspace outside the installed skill.
 
-Версия `2026.09.29.1` — предварительный публичный выпуск. Работает на macOS,
-Linux и Windows (нативно, без WSL). Установка на пустой машине проверяется
-автоматически в CI на всех трёх системах; на своём компьютере первый запуск
-всё равно стоит пройти вместе с агентом. Новые выпуски и примечания к ним находятся на странице
-[Releases](https://github.com/alexfisenkov/aimaster/releases).
+Python 3.11+ is required. The package uses Python's standard library and supports macOS, Linux and native Windows. Host login and provider accounts are separate. Generations can use SYNTX, Higgsfield, Magnific or fal when those routes are actually available; each selected service and model is checked live before use. [Русская инструкция](README.ru.md).
 
-Личные проекты, исходники, картинки и свои инструкции храните в постоянной папке
-вне установленной копии `aimaster`. Так обновление программы не затронет ваши
-материалы. Подключение сервисов для создания изображений и видео настраивается
-отдельно; для начала работы оно не обязательно.
+## Install
 
-## Установка — выберите один путь
-
-### Вариант 1. Попросить своего агента
-
-Скопируйте запрос ниже целиком и отдайте его своему агенту. Он сам проверит
-компьютер, выполнит доступные шаги и остановится только там, где нужны ваш
-пароль, системное подтверждение, перезагрузка или вход в аккаунт.
+Give your local coding agent this prompt:
 
 ```text
-Установи навык aimaster из https://github.com/alexfisenkov/aimaster.
-Сначала прочитай https://github.com/alexfisenkov/aimaster/blob/main/INSTALL_WITH_AGENT.md
-и выполни процедуру для моей ОС: проверь Python 3.11+ и Git, недостающее поставь
-через официальный менеджер пакетов (winget, Homebrew или apt), скачай
-репозиторий в постоянную папку и запусти установщик install.py с --install-deps.
-Не спрашивай меня про версии и способы установки — бери то, что указано в
-инструкции, а команду Python для дальнейшей работы — из поля python_cmd
-в выводе установщика. Не перезаписывай существующие папки, не отключай защиты,
-не угадывай пароли и не печатай секреты. Если нужен пароль администратора,
-перезагрузка или вход в аккаунт, попроси меня выполнить только этот шаг.
-
-Не покупай ничего, не настраивай Telegram/MCP, не запускай генерацию и не
-запрашивай логин AI-клиента автоматически. После установки остановись, сообщи
-пути и дай мне первый пример запроса. Не запускай creative/media jobs.
+Install AIMaster from https://github.com/alexfisenkov/aimaster. Read INSTALL_WITH_AGENT.md first. Install free prerequisites through the official OS package manager where permitted, install the skill for my agent, then run its family_setup.py setup --install-deps --json from the actual installed skill folder. Show me any OS/admin/login/OAuth step that only I can complete. Do not invent successful authentication, perform a paid generation, overwrite unrelated MCP entries, or put secrets in chat. Read back the installed paths and setup status. Ask me whether to turn on automatic updates once.
 ```
 
-После установки напишите `$aimaster` в Codex или `/aimaster` в Claude Code.
-В других агентах способ запуска может отличаться. Если навык не появился в
-списке, откройте новый чат или перезапустите приложение.
-
-Нужен агент, который работает на вашем компьютере и умеет обращаться к файлам
-и терминалу. Обычный чат в браузере не сможет установить программу. Codex,
-Claude Code или другой выбранный агент должен быть установлен заранее.
-
-Первый запрос в чате Codex:
-
-```text
-$aimaster Хочу ролик о [идея]. Работай с уточнениями.
-```
-
-В Claude Code замените `$aimaster` на `/aimaster`. Это текст для чата,
-не команда терминала.
-
-После создания проекта агент сразу откроет локальную страницу, где видны
-сценарий, кадры, промпты и результаты. Все решения вы продолжаете писать в чат.
-Другие проекты можно посмотреть через кнопку меню ☰.
-
-Перед сценарием и перед промптами агент спросит про ваши инструкции: использовать
-уже сохранённую, загрузить новую или попробовать без неё. В автопилоте он не
-спрашивает, а берёт сохранённую инструкцию, точно подходящую к задаче и модели. Выбранный документ
-становится руководством для этой задачи. По вашему желанию агент сохранит его
-для следующих проектов отдельно от установки — обновления его не затронут.
-
-Перед генерацией агент проверяет, как выбранный сервис обозначает загруженные
-референсы, и связывает каждый файл с его упоминанием в промпте или полем запроса.
-Обозначения разных сервисов могут отличаться; неподтверждённые теги агент не
-должен придумывать. Если сервис выдал теги вроде `@char1` или `@img2`, каждый
-нужный тег должен попасть в финальный промпт. Встроенная проверка сверяет
-сохранённую карту референсов с финальным текстом и останавливает запуск при
-пропущенном или неточном теге. Реальные теги и поля всё равно сначала
-считываются обратно из выбранного сервиса — локальная проверка их не угадывает.
-
-У каждого пользователя навык ведёт свой список MCP для генерации. Один раз
-добавленный или обнаруженный сервис сохраняется в этом списке. Можно подключить
-несколько сервисов — навык предложит выбор между ними. Предустановленного
-сервиса нет. Навык также запоминает последний выбранный вариант.
-После перезапуска он предлагает сохранённый сервис первым и проверяет,
-доступен ли тот в текущем чате. Личные настройки хранятся отдельно от установки
-и не стираются при обновлении. При желании можно выбрать другой сервис или
-попросить забыть сохранённый выбор.
-
-Проверка подключений делается по-настоящему, а не на словах. Прежде чем
-сказать «MCP не подключён», агент ищет сервис в своём списке инструментов,
-запускает `scripts/detect_tools.py` (он читает настройки Claude Code, Codex,
-Gemini CLI и Cursor без сети и показывает только имена серверов, без ключей) и
-делает бесплатный пробный вызов — например, запрос баланса.
-
-Рабочая папка создаётся командой `workspace init` при первом запуске навыка в
-ней: проекты, медиа, ваши инструкции и библиотека `library/`. В библиотеке
-живут персонажи, голоса, локации и стили, общие для всех проектов. Если папка
-уже использовалась, команда `library import --from-projects` один раз собирает
-туда то, что уже загружено в проекты.
-
-Есть два режима. «С уточнениями» (`guided`) спрашивает о важном и просит
-разрешение на каждую платную генерацию. «Автопилот» (`autopilot`) показывает
-короткий бриф и после вашего «да» не задаёт ни одного вопроса до готового
-ролика: сам берёт подходящих персонажей и голоса из библиотеки, выбирает
-инструкцию, модель и лучшие варианты и сам одобряет этапы. Автопилот тратит
-кредиты без подтверждения и без лимита — при включении агент один раз об этом
-предупредит.
-
-Референсом может быть и видео: пример движения, исходник для изменения или
-ролик, который нужно продолжить. Добавьте его через запрос из дашборда;
-агент уточнит задачу и проверит поддержку выбранной моделью. Локально
-поддерживаются MP4 и WebM. Допустимые форматы и ограничения сервиса проверяются
-отдельно перед отправкой.
-
-Перед генерацией агент проверяет полный актуальный каталог выбранного сервиса,
-отбрасывает модели, несовместимые с вашими референсами и длительностью, и
-показывает несколько подходящих вариантов с возможностью открыть весь список.
-После каждой генерации результат должен сразу сохраниться в проекте и появиться
-в дашборде для просмотра, принятия, доработки или сравнения версий.
-
-Изображения в дашборде показываются целиком без обрезки. Рядом отображаются
-исходный размер и соотношение сторон.
-
-Если вы прикрепили готовый файл персонажа, предмета, локации, стиля, видео или
-голоса, агент использует его как готовый материал. Существующий placeholder
-обновляется, а повторная генерация не предлагается без вашей прямой просьбы о
-новом варианте или преобразовании.
-
-Сохранённые гайды привязываются к точной области: тип материала, задача,
-сервис, семейство, модель и версия. Например, инструкция Nano Banana для
-изображений не будет предлагаться для motion-промптов Seedance.
-
-На этапе планирования можно подготовить будущие промпты, но внешняя генерация
-запускается только на соответствующей стадии результата. Это предотвращает
-ситуацию, когда файл уже получен, но дашборд ещё не может его показать.
-
-В режиме «кадр за кадром» перед каждой сценой после первой агент предлагает
-стратегию непрерывности: продолжить предыдущее принятое видео, использовать его
-последний кадр или сделать независимый клип. Если место, одежда и персонажи
-почти не меняются, рекомендуется продолжение через video-reference — при
-условии, что выбранная модель действительно это поддерживает.
-Выбор сохраняется в проекте; следующая сцена не запускается, пока стратегия и
-нужный видеореференс или первый кадр не подтверждены.
-
-После установки откройте [первые шаги](skills/aimaster/references/getting-started.md).
-Там показано, как выбрать папку для проектов, создать первый ролик, открыть
-страницу проекта в браузере и при желании подключить Telegram.
-
-Telegram может быть текстовым транспортом того же workspace:
-локальный controller принимает сообщения, Codex bridge обрабатывает их на
-включённом компьютере, а Mini App показывает тот же дашборд. Голосовые и медиа-
-вложения находятся в следующем этапе; inline-навигация уже доступна. Живой
-запуск Telegram проверен только на macOS; на Windows и Linux он пока не
-проверялся.
-
-Подключение можно начать без терминала: агент запускает локальное окно `setup-ui`,
-куда пользователь вставляет токен BotFather.
-
-### Вариант 2. Установить вручную в терминале
-
-Нужны Python 3.11+ и Git (без Git можно скачать архив); `pip` не нужен. Для
-монтажа нужен Node.js 22+ — его вместе с движком HyperFrames ставит
-`install.py --install-deps`. Всё остальное делает установщик `install.py`: подключает навык к
-Claude Code (`~/.claude/skills/aimaster`) и к Codex и другим агентам
-(`~/.agents/skills/aimaster`), проверяет необязательные программы и делает
-самопроверку. Он ничего не перезаписывает: если на месте навыка уже лежит
-чужая папка, установщик остановится и скажет об этом.
-
-Монтажный стол (экран «Сборка» → «Открыть монтажный стол») — HyperFrames
-Studio в соседней вкладке. Дашборд открывает его через страницу-переходник,
-которая в этом браузере выключает отправку анонимной статистики Studio её
-разработчикам; стол, открытый по прямой ссылке `url` из ответа
-`montage open`, статистику шлёт. Стол, открытый с дашборда, закрывается сам
-после часа простоя и когда дашборд останавливается.
-
-macOS (нужен [Homebrew](https://brew.sh/)):
-
-```zsh
-python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,11) else 1)' || brew install python@3.12
-command -v git >/dev/null || brew install git
-git clone https://github.com/alexfisenkov/aimaster.git "$HOME/.local/share/aimaster"
-python3 "$HOME/.local/share/aimaster/skills/aimaster/scripts/install.py" --install-deps
-```
-
-Если после установки Python команда `python3` всё ещё старая, запустите
-последнюю строку через `python3.12`.
-
-Ubuntu/Debian:
+If Node/npx is available, the standalone skill-folder command is:
 
 ```sh
-command -v git >/dev/null || { sudo apt update && sudo apt install -y git; }
-python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,11) else "Нужен Python 3.11+")'
-git clone https://github.com/alexfisenkov/aimaster.git "$HOME/.local/share/aimaster"
-python3 "$HOME/.local/share/aimaster/skills/aimaster/scripts/install.py"
+npx skills add https://github.com/alexfisenkov/aimaster/tree/main/skills/aimaster --skill aimaster -g -a codex -a claude-code
 ```
 
-На Linux установщик ничего не ставит сам, а печатает команды `apt` для
-недостающих программ. Если ОС предлагает Python младше 3.11, обновите его по
-официальной документации вашей ОС.
+Find the installed `<skill>` directory from the command's output, then run `python3 <skill>/scripts/family_setup.py setup --install-deps --json` (use `py -3` on Windows if that is the Python command). This setup can be partial when an OS package manager, host login or provider OAuth needs you. A Git clone plus `skills/aimaster/scripts/install.py --install-deps --json` remains a supported fallback; [agent procedure](INSTALL_WITH_AGENT.md) gives the exact steps. Installation of a connector does not prove account access or a usable model. The setup includes all four provider connectors and the AIEditing workshop; it preserves unrelated MCP settings.
 
-Windows (PowerShell, без WSL и без прав администратора):
+In Codex start with `$aimaster Make a short video about …`; in Claude Code use `/aimaster`. Choose guided or fully automatic. For a video, choose whether you want a finished montage or just a portable set of selected materials. The agent creates the project, opens the exact dashboard URL, and records choices there. Full automatic mode asks for a short brief approval, shows a spending warning once, then proceeds without routine follow-up prompts or a media limit. Guided paid buttons authorize one displayed action. Supplied media is kept as input and is not regenerated unless you request that.
 
-```powershell
-py -3 --version
-```
+## Updates and recovery
 
-Если команды `py` нет или версия ниже 3.11, поставьте Python и откройте
-PowerShell заново:
+Automatic updates are an explicit one-time opt-in. On a new idle session, AIMaster checks local AIMaster, SYNTX and AIEditing versions; hosted providers are checked for availability. Working packages and host configuration have backup/rollback receipts. A rollback can be blocked if older code cannot read newer project data; in that case keep current data and restore an older compatible snapshot to a separate folder. Personal projects, guides, library and editing styles are outside installed packages. Hosted provider servers cannot be rolled back by AIMaster. See [architecture](docs/architecture.md) and [release notes](RELEASES.md).
 
-```powershell
-winget install -e --id Python.Python.3.12
-```
+The local and synthetic acceptance harness does not prove account login, credits, native operation on every OS or final publication. Check those in the target environment before relying on them.
 
-Затем:
-
-```powershell
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) { winget install -e --id Git.Git }
-Set-Location $env:LOCALAPPDATA
-git clone https://github.com/alexfisenkov/aimaster.git aimaster
-py -3 aimaster\skills\aimaster\scripts\install.py --install-deps
-```
-
-Если Git только что поставлен, перед `git clone` откройте PowerShell заново.
-Без Git можно скачать архив — команды есть в
-[инструкции для агента](INSTALL_WITH_AGENT.md#windows-powershell-без-wsl).
-На Windows навык подключается через directory junction; если это невозможно,
-ставится копия, и её обновляют командой `install.py --update`.
-
-В конце установщик печатает, куда подключён навык, каких программ не хватает
-(ffmpeg нужен для звука и сборки, cloudflared — для Mini App в Telegram) и
-какой командой запускать Python на этой машине.
-
-WSL остаётся необязательной альтернативой: внутри него всё ставится как в
-разделе Ubuntu/Debian.
-
-Официальные документы о навыках: [OpenAI/Codex](https://learn.chatgpt.com/docs/build-skills)
-и [Claude Code](https://code.claude.com/docs/en/skills). Другие агенты могут
-поддерживать Agent Skills в своих официальных каталогах или принимать прямой
-путь к `SKILL.md`; универсальная установка для любого агента не обещается.
-
-## Обновление
-
-При первом вызове навыка в новом чате агент тихо проверяет новые выпуски.
-Если обновление есть, он предложит установить его перед работой. После
-установки попросит полностью перезапустить приложение и написать «Продолжай»
-в том же чате. Если обновлений нет, сообщений о проверке не будет.
-
-Перед обновлением убедитесь, что личные проекты и свои инструкции лежат вне
-папки установки. Установщик проверяет адрес репозитория, ветку `main` и
-отсутствие ваших изменений в клоне, затем выполняет `git pull --ff-only` и
-показывает номер выпуска. Он ничего не сбрасывает и не прячет.
-
-macOS и Linux:
-
-```sh
-python3 "$HOME/.local/share/aimaster/skills/aimaster/scripts/install.py" --update
-```
-
-Windows:
-
-```powershell
-py -3 "$env:LOCALAPPDATA\aimaster\skills\aimaster\scripts\install.py" --update
-```
-
-Если вы меняли инструкции прямо в установленном клоне, обновление остановится,
-но не удалит изменения. Перенесите своё в отдельную папку осознанно и только
-потом повторите обновление.
-
-Обновление также можно поручить агенту:
-
-```text
-Обнови установленный aimaster по разделу «Обновление» в
-https://github.com/alexfisenkov/aimaster/blob/main/INSTALL_WITH_AGENT.md:
-запусти install.py --update --json из установленного клона. При любых
-локальных изменениях остановись: ничего не сбрасывай, не прячь и не удаляй.
-Покажи метку выпуска из поля update.tag.
-```
-
-Чтобы удалить навык, удалите только созданные при установке ссылки
-(`~/.claude/skills/aimaster`, `~/.agents/skills/aimaster`), предварительно
-проверив, что они ведут в этот клон. Папку с проектами удалять не нужно.
-
-## Авторские условия
-
-`aimaster` можно бесплатно использовать для себя, своей работы и клиентских
-проектов. Можно менять свои инструкции, базу и настройки, а также адаптировать
-текстовые инструкции под себя. Код в `studio/` и `scripts/` нельзя изменять без
-предварительного письменного согласия владельца.
-
-Нельзя выдавать оригинальную или переработанную сборку за свой продукт и нельзя
-распространять изменённую сборку без согласия владельца. Ссылкой на оригинальный
-репозиторий делиться можно. Полные условия находятся в [LICENSE](LICENSE).
-Вопрос по условиям можно задать через
-[GitHub Issues](https://github.com/alexfisenkov/aimaster/issues).
-
-Версии называются по дате: `2026.09.20`. Если в тот же день выходит ещё один
-выпуск, добавляется суффикс: `2026.09.20.1`, затем `2026.09.20.2`.
-
-Авторский канал: [AI Мастерская](https://t.me/masterskaya_video).
+Монтажный стол opens an editable local composition when montage is selected.
+The managed opener disables «анонимной статистики Studio» in that browser
+session; opening its raw URL directly may retain the Studio default. The
+separate local engine runs with telemetry disabled.

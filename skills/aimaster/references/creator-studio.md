@@ -3,10 +3,12 @@
 Creator Studio is the default state and CLI for new `aimaster` projects. After a
 workspace is known or created, start the local dashboard immediately and open
 the returned loopback URL through the host capability when available; otherwise
-give the exact URL to the user. The dashboard is a visual, read-only surface
-with copyable prompts. Chat owns questions, decisions, edits, grants and
-external actions. The UI is branded **AI Мастерская** and never exposes
-provider, model, price, credentials or file paths.
+give the exact `?project=<project-id>` URL to the user. The dashboard has
+project questions, local decisions, library views and actions when an explicit
+controller is available. Agent-required jobs fall back to an exact copyable
+chat request when the controller is offline. The UI is branded **AI Мастерская**;
+credentials and private paths never appear in its public view. Provider/model
+and spending meaning are shown for a paid choice.
 
 This format is independent of legacy `state_cli.py` projects. Pick one format
 per project folder; never mix or migrate them implicitly. Run
@@ -72,8 +74,8 @@ local reference keeps its scene link, receives its own prompt during
 
 Ask only material questions (`guided`; none after brief approval in
 `autopilot`). Prefer the runtime's native choice tool when it is available; otherwise use numbered choices or concise free text in chat. Store
-the accepted answer through the question lifecycle. The dashboard never shows
-question text or choices.
+the accepted answer through the question lifecycle. The dashboard also shows
+current questions and choices; use the same canonical answer lifecycle.
 
 ## Workspace and dashboard
 
@@ -143,9 +145,10 @@ python3 scripts/creator_studio.py serve <workspace> [--port N]
 It prints one `http://127.0.0.1:<port>` address and blocks until Ctrl-C. Append
 `?project=<project-id>` so the page opens the project from the current chat.
 Open that URL through the host capability when available; otherwise provide it
-as a fallback. The loopback dashboard is visual/read-only, with copyable
-prompts; it is not an LLM, does not call providers and cannot wake an inactive
-agent. Decisions and actions remain in chat.
+as a fallback. The dashboard is not an LLM and cannot wake an inactive agent.
+An explicitly started controller executes its queued jobs; see
+[operator and Telegram](operator-telegram.md). Local decisions also work
+without that controller.
 
 ### Read current state without starting the dashboard
 
@@ -329,14 +332,15 @@ creator_studio.py question list WS P
 creator_studio.py assembly set WS P --asset-id ID [--caption "…"] --expected-revision N
 ```
 
-The first accepted answer wins across channels. The dashboard shows only a
-neutral count and sends the user back to chat; it does not render question text
-or options. Telegram is available only through an explicitly launched,
+The first accepted answer wins across channels. The dashboard renders the
+current question and choices; native host choice UI is preferred, with a
+numbered chat fallback on mobile. Telegram uses an explicitly launched,
 owner-configured controller.
 
-For `video` and `mixed` projects the assembly is made by the montage commands —
-read [montage](montage.md) before the `assembly` stage. `assembly set` stays for
-photo projects. A montage build is local and free: no `grant`, no paid action.
+For video/mixed choose `project set-assembly-mode` first. Materials mode uses
+`assembly materials WS P --expected-revision N` and completes with selected
+assets; montage mode uses [montage](montage.md). `assembly set` remains for
+legacy photo delivery. A montage build is local and free.
 
 ```bash
 creator_studio.py montage draft WS P --expected-revision N [--refresh | --rebuild]

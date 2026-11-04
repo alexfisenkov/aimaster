@@ -1,6 +1,9 @@
 # Montage
 
-The assembly of `video` and `mixed` projects is a montage on HyperFrames, an
+Montage is an explicit `assembly_mode=montage` choice for video/mixed projects.
+`assembly_mode=materials` instead completes with a verified selected-assets
+packet and no MP4. Legacy projects without an assembly-mode field keep montage.
+The selected montage runs on HyperFrames, an
 open-source video engine pinned to one version (`studio/montage/engine.json`:
 HyperFrames 0.8.75, GSAP 3.14.2). The working montage is
 `<project>/montage/current/index.html`. Every build is a new version `vNNN`:

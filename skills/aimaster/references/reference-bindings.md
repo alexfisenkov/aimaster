@@ -1,5 +1,50 @@
 # Reference binding for external generations
 
+## Current discovery protocol
+
+For each actual route, operation, model and session: inspect the live schema,
+list the intended canonical assets/roles and selected versions, attach or
+upload only those inputs, inspect returned native mention chips or structured
+fields, and capture the **submitted** request as well as provider read-back.
+Changing input order, model, route or prompt basis invalidates the binding.
+Do not infer native tags from upload order, thumbnails or old examples. An
+upload does not itself issue a tag, and a user-uploaded source is not an
+instruction to generate a new reference. Image and video/continuation routes
+may use different fields. A previous video should be used for extension/edit
+only when the selected endpoint schema actually offers that operation.
+
+On 2026-11-05 a synthetic Magnific Seedance 2.5 test demonstrated one
+route-limited native mechanism: `references[].modifier_key` values `img1` and
+`img2` paired with exact `@img1`/`@img2` mentions. Reversing the reference
+array while keeping the mentioned modifier key selected the same character;
+changing only the mentioned key switched the character. The creation metadata
+returned prompt and reference order but omitted `modifier_key`, so the saved
+submitted arguments and visual permutation were both necessary evidence. The
+two main scene clips used plain structured references without native tags;
+this test does not turn them into tagged generations or establish behavior for
+another route/version. Retain operation receipts privately; do not publish
+creation IDs, balances or user asset URLs.
+
+Three methods are possible: a provider-issued tag/chip read back after upload;
+a client-supplied schema mention key with a separately verified `@key` form;
+or structured field/slot/order only. For the last, use explicit role/type/order
+wording and no invented `@` token. A schema description alone does not prove
+that an output obeys a mention. If exact identity matters and a method is
+unproven for this route/model, run a permitted synthetic permutation test or
+mark it unverified and stop before a paid production call that depends on it.
+
+Permutation method: use two unmistakably different non-person references and
+the cheapest supported settings after cost preflight. A mentions only B with
+B second; B reverses the array while still mentioning B's key; C keeps that
+reversed array but mentions A's key. For position-only wording, reverse the
+named position instead. Avoid naming either subject in the prompt itself.
+Inspect outputs at multiple times, require the main subject to follow the
+selected key/position in all three, and retain date, route, model, schema,
+submitted fields, prompts, result observations and cost in the private
+workspace record. A single failed case is not a pass. In fully automatic mode,
+the approved brief covers project media; a separate test that spends credits
+outside project positions needs explicit authorization or must remain pending.
+
 Complete this procedure **before every external generation** (including vary
 and regenerate), after route/model/mode are verified and before any paid call.
 It is a binding check, not authorization. In `guided`, uploading is an

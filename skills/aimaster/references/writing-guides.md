@@ -1,15 +1,16 @@
 # Writing guides
 
-Use this gate for every new relevant writing task. Do not assume that no
-guide exists: always run the registry match below.
+Use this gate for every new relevant writing task. First list both built-in and
+user metadata; do not guess a catalog task from a UI stage. The catalogue has
+specific `ugc-script`, `expert-script`, `shot-plan` and generation tasks.
+`task=scenario` returning empty says nothing about other scenario guides.
 
 - **Guided:** the user makes the choice. Prefer the runtime's native choice
   UI. If it is unavailable, ask the same concise choices in chat and wait for
   an answer.
-- **Autopilot:** no question. Use the first entry in `matches`; if there is
-  none, write without a guide. Record the decision in `--reason` of the
-  `script add-version` / `prompt add-version` write (for example
-  `autopilot: guide <id>` or `autopilot: no matching guide`). See [autopilot](autopilot.md).
+- **Fully automatic (`autopilot` internally):** no question after approved
+  brief. Apply the brief's guide rule to exact valid candidates; if none,
+  record `source=none`. Do not choose merely the first matching title.
 
 ## When to run the gate
 
@@ -30,8 +31,9 @@ model family, model and version that are actually known. Do not fill an unknown
 scope from context or treat a missing field as a wildcard:
 
 ```bash
-python3 <skill>/scripts/guide_registry.py --workspace <workspace> match \
-  --kind prompt --modality video --task motion \
+python3 <skill>/scripts/guide_registry.py --workspace <workspace> list --include-builtin
+python3 <skill>/scripts/guide_registry.py --workspace <workspace> match --include-builtin \
+  --kind prompt --modality video --task generate \
   --provider <provider> --model-family <family> \
   --model <model> --version <version>
 ```
@@ -47,6 +49,14 @@ Gemini/Nano Banana model from being offered for Seedance motion.
 When one or more valid guides match, name their titles and offer: **use
 “Title”**, **upload a new guide**, or **no guide**. When none matches, offer:
 **upload a guide** or **no guide**.
+
+Persist the exact choice with `creator_studio.py project set-guide-choice WS ID
+--file choice.json --expected-revision N`; the JSON carries stage, kind,
+modality, task, provider, model family, model, version, `source` (`builtin`,
+`user`, `none`), namespaced `ref` and SHA-256. `none` has null ref/hash. Revalidate
+the saved choice and SHA immediately before use. Built-in and user guides with
+the same title remain separate by namespace and ID. Never use an image guide
+for motion or broaden an unknown version.
 
 After choosing a saved guide, read its entire current file before composing.
 If it is missing or unreadable, in `guided` explain that and ask for a
