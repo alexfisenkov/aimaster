@@ -298,7 +298,8 @@ const originalFetch = (input, init) => {
     url: String(input),
     authorization: init && init.headers && init.headers.get ? init.headers.get("Authorization") : null,
   });
-  return Promise.resolve({ ok: true });
+  if (config.networkError) return Promise.reject(new Error("network failed"));
+  return Promise.resolve({ ok: !config.status || config.status < 400, status: config.status || 200 });
 };
 const sandbox = {
   location: {
@@ -321,8 +322,8 @@ vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(scriptPath, "utf8"), sandbox, { filename: scriptPath });
 const patched = sandbox.fetch !== originalFetch;
 if (patched) {
-  sandbox.fetch("/api/projects");
-  sandbox.fetch("https://telegram.org/js/telegram-web-app.js");
+  await Promise.allSettled([sandbox.fetch("/api/projects"),
+    sandbox.fetch("https://telegram.org/js/telegram-web-app.js")]);
 }
 console.log(JSON.stringify({ patched, notices, calls }));
 """
@@ -344,14 +345,14 @@ class MiniAppBrowserAdapterTests(unittest.TestCase):
     def tearDownClass(cls):
         cls._workdir.cleanup()
 
-    def run_adapter(self, hash_value, init_data):
+    def run_adapter(self, hash_value, init_data, **options):
         completed = subprocess.run(
             [
                 "node",
                 "--no-warnings",
                 str(self.harness),
                 str(self.script),
-                json.dumps({"hash": hash_value, "initData": init_data}),
+                json.dumps({"hash": hash_value, "initData": init_data, **options}),
             ],
             capture_output=True,
             text=True,
@@ -405,6 +406,14 @@ class MiniAppBrowserAdapterTests(unittest.TestCase):
         result = self.run_adapter("#mini-app", "")
         self.assertFalse(result["patched"])
         self.assertIn("не получила данные Telegram", result["notices"][0])
+
+    def test_forbidden_api_has_visible_auth_recovery(self):
+        result = self.run_adapter("#mini-app", "auth_date=1&hash=abc", status=403)
+        self.assertIn("вход недействителен", result["notices"][0])
+
+    def test_network_failure_shows_text_fallback_and_preserves_rejection(self):
+        result = self.run_adapter("#mini-app", "auth_date=1&hash=abc", networkError=True)
+        self.assertIn("текстом в боте", result["notices"][0])
 
     def test_plain_local_dashboard_is_left_alone(self):
         result = self.run_adapter("", "")

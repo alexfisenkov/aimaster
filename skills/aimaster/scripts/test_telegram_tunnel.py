@@ -340,8 +340,7 @@ class TunnelSupervisionTests(ChildProcessCase):
             instance.recorded_sleeps, [transport._TUNNEL_PROBE_DELAY, 2.5, 2.5]
         )
 
-    def test_name_this_computer_cannot_resolve_is_still_handed_to_telegram(self):
-        """A resolver that cached an NXDOMAIN must not blind the bot."""
+    def test_unresolved_name_is_not_handed_to_telegram(self):
 
         child = self.child(FIRST_URL)
         instance = self.supervised(
@@ -350,12 +349,12 @@ class TunnelSupervisionTests(ChildProcessCase):
             probe_attempts=3,
         )
 
-        self.until(lambda: instance.ensure() == FIRST_URL, "the unconfirmed URL")
-        self.assertEqual(instance.verification, transport.TUNNEL_UNRESOLVED)
+        instance.ensure()
+        self.until(lambda: child.terminated, "unverified tunnel refusal")
+        self.assertIsNone(instance.ensure())
         self.assertFalse(instance.verified)
-        self.assertFalse(child.terminated)
 
-    def test_a_python_without_certificates_publishes_at_once(self):
+    def test_missing_certificates_never_publish_a_button(self):
         child = self.child(FIRST_URL)
         probes = []
         instance = self.supervised(
@@ -364,13 +363,13 @@ class TunnelSupervisionTests(ChildProcessCase):
             probe_attempts=9,
         )
 
-        self.until(lambda: instance.ensure() == FIRST_URL, "the unverifiable URL")
-        self.assertEqual(instance.verification, transport.TUNNEL_UNVERIFIABLE)
+        instance.ensure()
+        self.until(lambda: child.terminated, "TLS verification refusal")
+        self.assertIsNone(instance.ensure())
         # Repeating a probe cannot conjure a certificate store.
         self.assertEqual(len(probes), 1)
 
-    def test_a_name_that_never_confirms_is_published_after_a_few_restarts(self):
-        """Restarting forever would leave the owner with no button at all."""
+    def test_restart_count_never_turns_an_unknown_tunnel_into_verified(self):
 
         children = [self.child(FIRST_URL), self.child(SECOND_URL), self.child(FIRST_URL)]
         instance = self.supervised(
@@ -380,13 +379,10 @@ class TunnelSupervisionTests(ChildProcessCase):
             unconfirmed_limit=3,
         )
 
-        self.until(lambda: instance.ensure() == FIRST_URL, "the unconfirmed URL")
-        self.assertEqual(instance.verification, transport.TUNNEL_UNCONFIRMED)
-        self.assertIs(instance.process, children[2])
-        self.assertIn(
-            "проверить его с этого компьютера не удалось",
-            transport.tunnel_warning(instance.verification),
-        )
+        instance.ensure()
+        self.until(lambda: all(child.terminated for child in children), "three refused tunnels")
+        self.assertIsNone(instance.ensure())
+        self.assertFalse(instance.verified)
 
     def test_death_during_verification_is_not_advertised(self):
         child = self.child(FIRST_URL)
@@ -534,7 +530,7 @@ class FakeEdgeSocket:
 class TunnelProbeTests(unittest.TestCase):
     """The probe must never ask DNS for the tunnel's own name."""
 
-    def probe(self, answer=b"HTTP/1.1 200 OK\r\n\r\nhi", *, url=FIRST_URL, resolver=None,
+    def probe(self, answer=b'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<script src="/static/mini-app.js"></script>', *, url=FIRST_URL, resolver=None,
               on_wrap=None, addresses=None):
         self.edge = FakeEdgeSocket(answer, on_wrap=on_wrap)
         self.looked_up = []
@@ -577,9 +573,10 @@ class TunnelProbeTests(unittest.TestCase):
         self.assertEqual(self.looked_up, [("studio.example.com", 443)])
         self.assertEqual(self.edge.server_hostname, "studio.example.com")
 
-    def test_answering_dashboard_is_ready_and_redirects_count_too(self):
-        self.assertEqual(self.probe(b"HTTP/1.1 200 OK\r\n\r\n"), transport.TUNNEL_READY)
-        self.assertEqual(self.probe(b"HTTP/1.1 302 Found\r\n\r\n"), transport.TUNNEL_READY)
+    def test_only_dashboard_html_is_ready_and_redirects_are_refused(self):
+        self.assertEqual(self.probe(), transport.TUNNEL_READY)
+        self.assertEqual(self.probe(b"HTTP/1.1 200 OK\r\n\r\n"), transport.TUNNEL_UNREACHABLE)
+        self.assertEqual(self.probe(b"HTTP/1.1 302 Found\r\n\r\n"), transport.TUNNEL_UNREACHABLE)
 
     def test_an_edge_without_a_route_yet_is_unreachable_and_worth_a_retry(self):
         for answer in (b"HTTP/1.1 404 Not Found\r\n\r\n", b"HTTP/1.1 530 \r\n\r\n"):
@@ -834,11 +831,11 @@ class TransportRunLoopTests(RunLoopCase):
         menu_calls = [call for api in FakeBotApi.instances for call in api.menu_urls]
         self.assertEqual(menu_calls, [FIRST_URL, None])
 
-    def test_a_url_this_computer_cannot_open_is_published_with_a_warning(self):
+    def test_an_unverified_url_keeps_text_transport_without_button(self):
         self._run([FIRST_URL], locally_verified=False)
 
-        self.assertEqual(self.controller.mini_app_url, FIRST_URL + "#mini-app")
-        self.assertIn("не разошлось по DNS", self.printed)
+        self.assertIsNone(self.controller.mini_app_url)
+        self.assertFalse(any(api.menu_urls for api in FakeBotApi.instances))
 
     def test_a_verified_url_is_published_without_the_dns_warning(self):
         self._run([FIRST_URL])
@@ -912,7 +909,7 @@ class PermanentMiniAppRunLoopTests(RunLoopCase):
         )
         self.assertEqual(self.mini_app_ports, [8788])
 
-    def test_an_address_that_does_not_answer_is_published_with_a_warning(self):
+    def test_an_address_that_does_not_answer_keeps_text_transport(self):
         self._run(
             [],
             environment=self._settings(),
@@ -920,8 +917,9 @@ class PermanentMiniAppRunLoopTests(RunLoopCase):
             probe_verdict=transport.TUNNEL_UNREACHABLE,
         )
 
-        self.assertEqual(self.controller.mini_app_url, self.PERMANENT_URL + "#mini-app")
-        self.assertIn("не ответил с этого компьютера", self.printed)
+        self.assertIsNone(self.controller.mini_app_url)
+        self.assertIn("Доступен текстовый бот", self.printed)
+        self.assertFalse(any(api.menu_urls for api in FakeBotApi.instances))
 
     def test_an_answering_address_is_published_silently(self):
         self._run([], environment=self._settings(), iterations=1)

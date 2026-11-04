@@ -99,7 +99,8 @@ def _telegram_description(error) -> str:
     description = decoded.get("description") if isinstance(decoded, dict) else None
     if not isinstance(description, str) or not description:
         return ""
-    return ": " + description[:200]
+    from studio.agent_bridge import _sanitize_output
+    return ": " + _sanitize_output(description)[:200]
 
 
 class _NoRedirect(request.HTTPRedirectHandler):
@@ -161,7 +162,7 @@ def build_ssl_context(*, certifi_path=None, system_roots=_macos_system_roots) ->
 def default_opener():
     """urlopen equivalent that verifies TLS with `build_ssl_context`."""
 
-    return request.build_opener(request.HTTPSHandler(context=build_ssl_context())).open
+    return request.build_opener(_NoRedirect, request.HTTPSHandler(context=build_ssl_context())).open
 
 
 class TelegramBotApi:
@@ -181,6 +182,26 @@ class TelegramBotApi:
             else:
                 opener = default_opener()
         self._opener = opener
+        self._file_url = f"{origin}/file/bot{token}/"
+
+    def download_attachment(self, spec):
+        from studio.telegram_intake import MAX_DOWNLOAD
+        result = self._call("getFile", {"file_id": spec["file_id"]}, timeout=15)
+        if not isinstance(result, dict) or type(result.get("file_size", 0)) is not int or result.get("file_size", 0) > MAX_DOWNLOAD:
+            raise TelegramApiError("Telegram attachment exceeds size limit", retryable=False)
+        path = result.get("file_path")
+        if not isinstance(path, str) or not re.fullmatch(r"[A-Za-z0-9_./-]+", path) or any(part in {"", ".", ".."} for part in path.split("/")):
+            raise TelegramApiError("Telegram returned an unsafe file path", retryable=False)
+        try:
+            with self._opener(request.Request(self._file_url + path, method="GET"), timeout=30) as response:
+                if getattr(response, "status", 200) != 200:
+                    raise ValueError
+                data = response.read(MAX_DOWNLOAD + 1)
+        except Exception:
+            raise TelegramApiError("Telegram attachment download failed") from None
+        if not 0 < len(data) <= MAX_DOWNLOAD:
+            raise TelegramApiError("Telegram attachment exceeds size limit", retryable=False)
+        return data
 
     def _call(self, method: str, payload: dict, *, timeout: int):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -318,6 +339,8 @@ def _deliver_pending(controller, api):
 def run_poll_iteration(controller, api, *, timeout=30, after_iteration=None):
     """Deliver the outbox, fetch one update batch and process it in order."""
 
+    if hasattr(api, "download_attachment"):
+        controller.attachment_downloader = api.download_attachment
     _deliver_pending(controller, api)
     updates = api.get_updates(controller.next_offset(), timeout)
     valid = [

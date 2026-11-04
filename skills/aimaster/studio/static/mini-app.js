@@ -36,19 +36,36 @@
     Boolean(webApp && webApp.initData);
   if (!miniMode) return;
 
+  let notice;
+  const showError = (message) => {
+    const first = !notice;
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.style.cssText = "position:fixed;inset:16px auto auto 16px;right:16px;padding:16px;border-radius:12px;background:#fff3cd;color:#5d4500;font:15px -apple-system,BlinkMacSystemFont,sans-serif;z-index:9999";
+      notice.setAttribute?.("role", "alert");
+    }
+    notice.textContent = message;
+    if (first) document.body.prepend(notice);
+    if (notice.appendChild) {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "Повторить / Retry";
+      retry.style.minHeight = "44px";
+      retry.addEventListener("click", () => location.reload());
+      notice.appendChild(retry);
+    }
+  };
+
   if (!webApp || !webApp.initData) {
-    const notice = document.createElement("div");
-    notice.textContent = webApp
+    showError(webApp
       ? "Mini App не получила данные Telegram. Закройте окно и откройте AI Мастерскую из меню бота ещё раз."
-      : "Mini App не смогла загрузить Telegram SDK (telegram.org). Проверьте соединение и откройте AI Мастерскую из меню бота ещё раз.";
-    notice.style.cssText = "position:fixed;inset:16px auto auto 16px;right:16px;padding:16px;border-radius:12px;background:#fff3cd;color:#5d4500;font:15px -apple-system,BlinkMacSystemFont,sans-serif;z-index:9999";
-    document.body.prepend(notice);
+      : "Mini App не смогла загрузить Telegram SDK (telegram.org). Проверьте соединение и откройте AI Мастерскую из меню бота ещё раз.");
     return;
   }
   webApp.ready();
   const originalFetch = globalThis.fetch.bind(globalThis);
-  globalThis.fetch = (input, init = {}) => {
-    const requestInit = { ...init, headers: new Headers(init.headers || {}) };
+  globalThis.fetch = async (input, init = {}) => {
+    const requestInit = { ...init, headers: new Headers(init.headers || input?.headers || {}) };
     // `input` is a string everywhere in this dashboard, but a URL object or
     // a Request must not throw here either -- an exception in this wrapper
     // would take down every fetch on the page, which is the one failure
@@ -63,6 +80,17 @@
     if (url && url.origin === location.origin) {
       requestInit.headers.set("Authorization", `tma ${webApp.initData}`);
     }
-    return originalFetch(input, requestInit);
+    try {
+      const response = await originalFetch(input, requestInit);
+      if (url && url.origin === location.origin && response.status === 403) {
+        showError("Telegram-вход недействителен или устарел. Откройте приложение из меню своего бота снова. / Telegram authentication expired; reopen from your bot.");
+      }
+      return response;
+    } catch (error) {
+      if (url && url.origin === location.origin) {
+        showError("Нет связи с компьютером. Проверьте подключение и повторите. Можно продолжить текстом в боте. / Computer unavailable; retry or use bot text.");
+      }
+      throw error;
+    }
   };
 })();

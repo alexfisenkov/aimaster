@@ -78,12 +78,17 @@ class EngineLookup:
 
 class MontageScreen:
     def __init__(self, workspace, *, keeper: DeskKeeper, engines, desk_factory=StudioDesk,
-                 reveal=reveal_file, reveal_ready: bool | None = None, runner=None):
+                 reveal=reveal_file, reveal_ready: bool | None = None, runner=None, family_state_dir=None):
         self.workspace = Path(workspace)
         self.keeper, self.engines, self.desk_factory = keeper, engines, desk_factory
         self.reveal_file, self.runner = reveal, runner
         self.reveal_ready = reveal_available() if reveal_ready is None else reveal_ready
         self._model_reads = KeyedLocks()
+        self.family_state_dir = family_state_dir
+
+    def family(self, part, project_id, request):
+        from .operator_montage import execute
+        return execute(self, part, project_id, request)
 
     def status(self, project_id: str) -> dict:
         result = service_screen.screen_status(

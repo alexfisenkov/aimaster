@@ -153,6 +153,7 @@ class StudioApplication:
         event_source: Callable[[], Iterable[dict]] | None = None,
         max_body_bytes: int = MAX_BODY_BYTES,
         montage=None,
+        workspace=None,
     ):
         parsed_origin = urlsplit(origin)
         if (
@@ -192,6 +193,11 @@ class StudioApplication:
         self.verified_files = VerifiedFiles()
         # Экран «Сборка» (studio/montage_screen.py); None — маршрутов монтажа нет (404).
         self.montage = montage
+        self.workspace = Path(workspace) if workspace is not None else None
+        if self.workspace is not None:
+            from .operator import package_fingerprint, family_fingerprint
+            self.package_fingerprint = package_fingerprint()
+            self.family_fingerprint = family_fingerprint()
 
     @staticmethod
     def _headers(headers) -> dict[str, str]:
@@ -308,11 +314,28 @@ class StudioApplication:
                 return self.error_response(413, "payload_too_large")
             if method == "POST":
                 self._authorize_write(request_headers)
+                if self.workspace is not None:
+                    from .operator import package_fingerprint, family_fingerprint
+                    if package_fingerprint() != self.package_fingerprint or family_fingerprint() != self.family_fingerprint:
+                        return self.error_response(409, "restart_required")
             elif body:
                 return self.error_response(400, "bad_request")
 
             if method == "GET" and request_path == "/api/session":
                 return self._json_response(200, {"csrf_token": self.csrf_token})
+            if method == "GET" and request_path == "/api/operator" and self.workspace is not None:
+                from .operator import status, package_fingerprint, family_fingerprint
+                result = status(self.workspace)
+                if package_fingerprint() != self.package_fingerprint or family_fingerprint() != self.family_fingerprint:
+                    result.update(available=False, status="needs_setup", reason="restart_required")
+                return self._json_response(200, result)
+            if method == "GET" and request_path == "/api/library" and self.workspace is not None:
+                from .library import list_entries
+                data = list_entries(self.workspace)
+                entries = [{**{key: entry[key] for key in ("library_id", "kind", "label", "aliases", "voice_of") if key in entry},
+                    "notes": entry.get("notes", ""), "tags": entry.get("tags", []), "media_count": len(entry["files"])}
+                    for entry in data["entries"]]
+                return self._json_response(200, {"revision": data["revision"], "entries": entries})
             if method == "GET" and request_path == "/api/projects":
                 return self._projects()
             if method == "GET" and request_path == "/api/events":
@@ -323,6 +346,9 @@ class StudioApplication:
                                      request_headers, body)
             if method == "GET" and request_path.startswith("/api/projects/"):
                 suffix = request_path.removeprefix("/api/projects/")
+                if self.workspace is not None and suffix.endswith("/routes") and "/" not in suffix[:-7]:
+                    from .operator_routes import public_routes
+                    return self._json_response(200, public_routes(self.workspace, suffix[:-7]))
                 if suffix.endswith("/snapshot"):
                     project_id = suffix[: -len("/snapshot")]
                     if project_id and "/" not in project_id:
@@ -402,6 +428,28 @@ class StudioApplication:
 
     def _action(self, headers, body):
         request = self._parse_json(headers, body, _ACTION_KEYS)
+        options = {}
+        if self.workspace is not None:
+            from .runner import CHAT_ACTION_TYPES
+            from .operator import status
+            if request["action_type"] in CHAT_ACTION_TYPES:
+                options = {"deduplicate": True}
+                if not status(self.workspace)["available"]:
+                    options["initial_status"] = "needs_chat"
+                elif request["action_type"] in {"generate", "vary", "regenerate"}:
+                    from .operator_routes import selected_route, uncertain_position, RouteUnavailable
+                    state = self.store.load(request["project_id"])
+                    try:
+                        route = selected_route(self.workspace, state, request["action_type"], request["target_id"])
+                        if uncertain_position(self.ledger, state, request["action_type"], request["target_id"]):
+                            options["initial_status"] = "needs_chat"
+                        spending = request["payload"].get("spending")
+                        if state["project"].get("mode") != "autopilot":
+                            if spending != {"confirmed": True, **{key: route[key] for key in ("route_id", "provider", "model")}}:
+                                raise RouteUnavailable("exact selected route must be confirmed")
+                            options["scoped_grant"] = True
+                    except (RouteUnavailable, ValueError, OSError):
+                        options["initial_status"] = "needs_chat_setup"
         action = self.ledger.enqueue(
             request["project_id"],
             ActionRequest(
@@ -411,13 +459,19 @@ class StudioApplication:
                 expected_revision=request["expected_revision"],
                 idempotency_key=request["idempotency_key"],
             ),
+            **options,
         )
+        fallback = {}
+        if action["status"] in {"needs_chat", "needs_chat_setup", "outcome_unknown"}:
+            from .operator import fallback_request
+            fallback = {"copy_request": fallback_request(action)}
         return self._json_response(
             202,
             {
                 "action_id": action["action_id"],
                 "revision": action["revision"],
                 "status": action["status"],
+                **fallback,
             },
         )
 
@@ -456,7 +510,12 @@ class StudioApplication:
         return max(0, length - suffix), length - 1
 
     def _asset(self, asset_id, range_header=None, *, download=False):
-        opened = open_asset(self.assets, asset_id, self.verified_files)
+        index = self.assets
+        if asset_id.startswith("delivery-") and self.workspace is not None:
+            from .operator_downloads import DeliveryIndex
+            index = DeliveryIndex(self.workspace)
+            download = True
+        opened = open_asset(index, asset_id, self.verified_files)
         try:
             requested = self._requested_byte_range(range_header, opened.size)
             headers = {"Accept-Ranges": "bytes"}

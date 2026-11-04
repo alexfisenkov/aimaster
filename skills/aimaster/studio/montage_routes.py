@@ -24,10 +24,16 @@ from .ledger import InvalidAction
 from .montage import MontageError
 from .montage.paths import VERSION_ID
 
-ROUTE = re.compile(r"/api/projects/([^/]+)/montage(?:/(model|desk|desk/close|restore|reveal))?")
+ROUTE = re.compile(r"/api/projects/([^/]+)/montage(?:/(model|desk|desk/close|restore|reveal|styles|preview|build|export|preset|edit|save-style|open-edit))?")
 _GET = {None: "status", "model": "model"}
 _POST = {"desk": "open_desk", "desk/close": "close_desk", "reveal": "reveal"}
 _RESTORE_KEYS = {"version", "expected_revision"}
+_FAMILY_KEYS = {
+    "preview": {"style", "duration"}, "build": {"expected_revision", "style", "improve"},
+    "export": {"version"}, "preset": {"expected_revision", "expected_model_hash", "style"},
+    "edit": {"expected_revision", "expected_model_hash", "edit"},
+    "save-style": {"identity", "label"}, "open-edit": {"expected_revision"},
+}
 
 
 def match(path: str) -> tuple[str, str | None] | None:
@@ -48,6 +54,22 @@ def route(app, screen, method, project_id, part, headers, body):
     if screen is None:
         return app.error_response(404, "not_found")
     try:
+        if method == "GET" and part == "styles":
+            return app._json_response(200, screen.family(part, project_id, {}))
+        if method == "POST" and part in _FAMILY_KEYS:
+            request = app._parse_json(headers, body, _FAMILY_KEYS[part])
+            if "expected_revision" in request and (type(request["expected_revision"]) is not int or request["expected_revision"] < 0):
+                raise InvalidAction("invalid revision")
+            if "expected_model_hash" in request and (not isinstance(request["expected_model_hash"], str) or not re.fullmatch(r"[a-f0-9]{16}", request["expected_model_hash"])):
+                raise InvalidAction("current model hash is required")
+            if part == "build" and type(request["improve"]) is not bool:
+                raise InvalidAction("improve must be boolean")
+            if part == "edit":
+                from .montage.edit import EditRequest
+                from dataclasses import fields
+                if not isinstance(request["edit"], dict) or not set(request["edit"]).issubset({field.name for field in fields(EditRequest)}):
+                    raise InvalidAction("typed edit required")
+            return app._json_response(200, screen.family(part, project_id, request))
         if method == "GET" and part in _GET:
             return app._json_response(200, getattr(screen, _GET[part])(project_id))
         if method == "POST" and part == "restore":
@@ -57,5 +79,6 @@ def route(app, screen, method, project_id, part, headers, body):
             app._parse_json(headers, body, set())
             return app._json_response(200, getattr(screen, _POST[part])(project_id))
     except (MontageError, AuthoringError) as error:
-        return app.error_response(422, "montage_refused", message=str(error))
+        from .agent_bridge import _sanitize_output
+        return app.error_response(422, "montage_refused", message=_sanitize_output(str(error)))
     return app.error_response(404, "not_found")

@@ -67,31 +67,34 @@ def build_codex_prompt(item: dict) -> str:
 
 
 def run_codex_item(item: dict, *, runner=subprocess.run, timeout=DEFAULT_TIMEOUT_SECONDS) -> str:
-    workspace = _required_text(item, "workspace")
-    prompt = build_codex_prompt(item)
+    """Compatibility one-shot call using the same structured/read-back contract.
+
+    The long-running transport uses Operator, which also owns the ledger. This
+    older direct function never grants external generation authority.
+    """
+    from . import authoring
+    from .domain import derive_view_stage
+    from .operator import SKILL_ROOT, verify_result
+    from .operator_adapters import HostAdapter, AdapterFailure
+    from .family_setup import register_workspace, operation_lease
+    project_id = _required_text(item, "project_id")
+    user_text = _required_text(item, "text")
     try:
-        completed = runner(
-            build_codex_command(Path(workspace)),
-            input=prompt,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-        )
-    except FileNotFoundError:
-        raise AgentBridgeError("Codex CLI is unavailable; setup is required") from None
-    except subprocess.TimeoutExpired:
-        raise AgentBridgeError("agent bridge outcome_unknown: Codex timed out") from None
-    except OSError:
-        raise AgentBridgeError("agent bridge outcome_unknown: local process failed") from None
-    if getattr(completed, "returncode", 1) != 0:
-        raise AgentBridgeError("agent bridge outcome_unknown: Codex returned an error")
-    output = getattr(completed, "stdout", "")
-    if not isinstance(output, str) or not output.strip():
-        raise AgentBridgeError("agent bridge outcome_unknown: Codex returned no response")
-    return _sanitize_output(output.strip())[-MAX_OUTPUT_CHARS:]
+        workspace = Path(_required_text(item, "workspace")).resolve(strict=True)
+        register_workspace(workspace)
+        with operation_lease(owner="telegram-compatibility"):
+            store = authoring.open_store(workspace)
+            before = store.load(project_id)
+            job = {"action_id": "inbox-" + str(item.get("id", 0)), "project_id": project_id,
+                "action_type": "continue-in-chat", "target_id": derive_view_stage(before)["current_stage"],
+                "revision": before["revision"], "grant_id": None, "untrusted_input": {"payload": {"text": user_text}}}
+            result = HostAdapter("codex", run=runner, timeout=timeout)(job, workspace, SKILL_ROOT)
+            verified = verify_result(job, result, before, store.load(project_id), workspace)
+            if verified not in {"succeeded", "needs_chat"}:
+                raise AdapterFailure()
+            return _sanitize_output(result["reply"])[:MAX_OUTPUT_CHARS]
+    except (AdapterFailure, OSError, ValueError, RuntimeError):
+        raise AgentBridgeError("agent bridge outcome_unknown: verified completion unavailable") from None
 
 
 def _sanitize_output(text: str) -> str:
@@ -99,16 +102,23 @@ def _sanitize_output(text: str) -> str:
 
     text = re.sub(r"\b\d{6,20}:[A-Za-z0-9_-]{20,}\b", "[telegram-token-redacted]", text)
     text = re.sub(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b", "[api-key-redacted]", text)
+    text = re.sub(r"\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{16,})\b", "[credential-redacted]", text)
     text = re.sub(r"(?i)authorization\s*:\s*bearer\s+[^\s]+", "Authorization: Bearer [redacted]", text)
-    text = re.sub(r"/(?:Users|private|var/folders|tmp)/[^\s`\"']+", "[local-path-redacted]", text)
-    text = re.sub(r"(?i)\b[A-Z]:[\\/](?:Users|Documents and Settings)[\\/][^\s`\"']+",
+    text = re.sub(r"/(?:Users|home|private|var|tmp|opt|etc|root)/[^\s`\"']+", "[local-path-redacted]", text)
+    text = re.sub(r"(?i)\b[A-Z]:[\\/][^\s`\"']+",
                   "[local-path-redacted]", text)
+    text = re.sub(r"(?<![:/\w])/[A-Za-z0-9_.-]+(?:/[^\s`\"']+)+", "[local-path-redacted]", text)
     text = re.sub(r"(?i)(api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+", r"\1=[redacted]", text)
     return text
 
 
-def process_inbox_once(state, *, runner=run_codex_item):
+def process_inbox_once(state, *, runner=None):
     """Process at most one item; never retry an unknown external outcome."""
+
+    if runner is None:
+        from .operator import Operator
+        with Operator(state.db_path.parent.parent, agent="codex") as controller:
+            return controller.step()
 
     item = state.dequeue_inbox()
     if item is None:

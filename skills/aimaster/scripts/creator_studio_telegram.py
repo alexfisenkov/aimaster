@@ -366,8 +366,8 @@ def probe_tunnel_url(
     permanent address on someone's own domain has stable DNS and is
     resolved normally.
 
-    ``ready`` is any 2xx/3xx.  A 404 (the edge has the tunnel's name but no
-    route to it yet) and 5xx are ``unreachable`` and worth another attempt.
+    ``ready`` requires HTTP 200, HTML and this package's Mini App bootstrap
+    marker. Redirects, login/error pages and 404 tunnels cannot publish a button.
     """
 
     parts = urllib.parse.urlsplit(url)
@@ -377,7 +377,7 @@ def probe_tunnel_url(
     except ValueError:
         # A malformed address must never reach a socket or a request header.
         return TUNNEL_UNREACHABLE
-    if not hostname or not _HOSTNAME_PATTERN.fullmatch(hostname):
+    if not hostname or not _HOSTNAME_PATTERN.fullmatch(hostname) or parts.scheme != "https" or parts.username or parts.password or parts.query or parts.fragment or parts.path not in {"", "/"}:
         return TUNNEL_UNREACHABLE
     target = edge_host if hostname.endswith("." + edge_host) else hostname
     try:
@@ -401,8 +401,8 @@ def probe_tunnel_url(
                 secure.settimeout(timeout)
                 secure.sendall(payload)
                 head = b""
-                while b"\r\n" not in head and len(head) < 512:
-                    chunk = secure.recv(256)
+                while len(head) < 128 * 1024:
+                    chunk = secure.recv(4096)
                     if not chunk:
                         break
                     head += chunk
@@ -417,7 +417,9 @@ def probe_tunnel_url(
         status = int(fields[1])
     except ValueError:
         return TUNNEL_UNREACHABLE
-    return TUNNEL_READY if 200 <= status < 400 else TUNNEL_UNREACHABLE
+    header, separator, body = head.partition(b"\r\n\r\n")
+    html = any(line.lower().startswith(b"content-type: text/html") for line in header.split(b"\r\n"))
+    return TUNNEL_READY if status == 200 and separator and html and b'/static/mini-app.js' in body else TUNNEL_UNREACHABLE
 
 
 class TunnelSupervisor:
@@ -480,7 +482,7 @@ class TunnelSupervisor:
 
         self._start_worker()
         with self._lock:
-            return self.url if self.verification is not None else None
+            return self.url if self.verification == TUNNEL_READY else None
 
     def stop(self):
         """Stop supervising, terminate the tunnel and join both threads."""
@@ -578,16 +580,11 @@ class TunnelSupervisor:
             if verdict == TUNNEL_UNVERIFIABLE:
                 # Repeating the probe cannot change a missing certificate
                 # store, and restarting would punish a healthy tunnel.
-                return TUNNEL_UNVERIFIABLE
+                return None
             verdicts.append(verdict)
             if attempt + 1 < self._probe_attempts:
                 if self._pause(self._probe_interval):
                     return None
-        if verdicts and all(item == TUNNEL_UNRESOLVED for item in verdicts):
-            return TUNNEL_UNRESOLVED
-        self._unconfirmed += 1
-        if self._unconfirmed >= self._unconfirmed_limit and self._alive():
-            return TUNNEL_UNCONFIRMED
         return None
 
     def _alive(self):
@@ -882,6 +879,8 @@ def build_parser():
     subcommands.add_parser("setup-ui")
     run = subcommands.add_parser("run")
     run.add_argument("--workspace", required=True, type=Path)
+    run.add_argument("--agent", choices=("codex", "claude"), help="Explicitly start the shared local controller")
+    run.add_argument("--model", help="Optional per-process host model, never changes global configuration")
     return parser
 
 
@@ -915,7 +914,6 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
             return 2
         if runner is None:
             from creator_studio_bot import main as runner
-        from studio.agent_bridge import process_inbox_once
         from studio.mini_app import serve_mini_app
         from studio.server import serve
 
@@ -923,6 +921,24 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
         mini_app = None
         tunnel = None
         published = None
+        operator_stop = threading.Event()
+        operator_thread = None
+        if args.agent:
+            from studio.operator import Operator
+            from studio.family_setup import OperationBusy
+            def operate():
+                try:
+                    with Operator(workspace, agent=args.agent, model=args.model) as worker:
+                        while not operator_stop.is_set() and not worker.stopping():
+                            try:
+                                worker.step()
+                            except OperationBusy:
+                                pass
+                            operator_stop.wait(1)
+                except (OSError, RuntimeError, ValueError):
+                    print("Local operator unavailable; check operator status or use the host chat.", file=sys.stderr)
+            operator_thread = threading.Thread(target=operate, name="aimaster-operator", daemon=True)
+            operator_thread.start()
 
         def publish(controller, paired_owner, public_url):
             api = TelegramBotApi(stored_value)
@@ -937,7 +953,6 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
 
         def after_iteration(controller):
             nonlocal mini_app, tunnel, published
-            process_inbox_once(controller.state)
             paired_owner = controller.state.paired_owner()
             if paired_owner is None:
                 return
@@ -960,11 +975,11 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
                 if published is None:
                     if probe_tunnel_url(permanent_url) != TUNNEL_READY:
                         print(
-                            f"Постоянный адрес Mini App не ответил с этого компьютера: "
-                            f"{permanent_url}. Публикую как есть — проверьте свой туннель "
-                            f"и что он ведёт на {mini_app.base_url}.",
+                            "Mini App не прошла HTTPS/HTML проверку. Доступен текстовый бот; проверьте туннель.",
                             flush=True,
                         )
+                        controller.set_mini_app_url(None)
+                        return
                     try:
                         publish(controller, paired_owner, permanent_url)
                         published = permanent_url
@@ -976,6 +991,8 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
                 tunnel = TunnelSupervisor(mini_app.base_url)
             try:
                 public_url = tunnel.ensure()
+                if not tunnel.verified:
+                    public_url = None
             except (OSError, RuntimeError, ValueError):
                 # Supervision is best effort: the bot keeps answering over
                 # long polling even when no tunnel can be raised at all.
@@ -1018,6 +1035,10 @@ def main(argv=None, *, token_prompt=getpass.getpass, runner=None):
                 pairing_code=pairing_code,
             )
         finally:
+            operator_stop.set()
+            if operator_thread is not None:
+                # Active jobs keep their lease and finish normally; no paid process kill.
+                operator_thread.join()
             if tunnel is not None:
                 tunnel.stop()
             if mini_app is not None:

@@ -383,6 +383,12 @@ class ActionLedger:
                     # ALTER (critic finding 10): the column now exists.
                     if "duplicate column name" not in str(error).casefold():
                         raise
+            if "execution_revision" not in {row[1] for row in connection.execute("PRAGMA table_info(actions)")}:
+                try:
+                    connection.execute("ALTER TABLE actions ADD COLUMN execution_revision INTEGER")
+                except sqlite3.OperationalError as error:
+                    if "duplicate column name" not in str(error).casefold():
+                        raise
         finally:
             connection.close()
         try:
@@ -497,7 +503,7 @@ class ActionLedger:
             )
         return grant_id
 
-    def enqueue(self, project_id, request) -> dict:
+    def enqueue(self, project_id, request, *, initial_status="queued", scoped_grant=False, deduplicate=False) -> dict:
         project_id = _non_empty_string(project_id, "project_id")
         if not isinstance(request, ActionRequest):
             raise InvalidAction("request must be an ActionRequest")
@@ -517,6 +523,8 @@ class ActionLedger:
                 "payload contains credential-like text that cannot be persisted unchanged"
             )
         payload_json = _json(redacted_payload)
+        if initial_status not in {"queued", "needs_chat", "needs_chat_setup"}:
+            raise InvalidAction("unsupported initial status")
 
         with self._transaction() as connection:
             existing = connection.execute(
@@ -538,12 +546,29 @@ class ActionLedger:
 
             self._verify_revision(project_id, expected_revision)
 
+            if deduplicate:
+                pending = connection.execute("SELECT * FROM actions WHERE project_id=? AND action_type=? "
+                    "AND target_id=? AND status IN ('queued','running','outcome_unknown') ORDER BY created_at LIMIT 1",
+                    (project_id, action_type, target_id)).fetchone()
+                if pending is not None:
+                    return self._action(pending)
+
             action_id = f"action-{uuid.uuid4().hex}"
             grant_id = None
             grant_issuer = None
-            status = "queued"
-            if action_type in GRANT_REQUIRED_ACTIONS:
-                grant = connection.execute(
+            status = initial_status
+            if action_type in GRANT_REQUIRED_ACTIONS and initial_status == "queued":
+                if scoped_grant:
+                    # Created and reserved in this SAME transaction for this request only;
+                    # it cannot be stolen by a concurrent target or another action class.
+                    scoped_id = f"grant-{uuid.uuid4().hex}"
+                    expiry = _utc_now() + timedelta(minutes=15)
+                    connection.execute("INSERT INTO grants (grant_id,project_id,action_class,expires_at,expires_epoch,issued_at) "
+                        "VALUES (?,?,?,?,?,?)", (scoped_id, project_id, action_type, _timestamp(expiry), expiry.timestamp(), _timestamp()))
+                    grant = {"grant_id": scoped_id}
+                else:
+                    grant = None
+                grant = grant or connection.execute(
                     "SELECT grant_id FROM grants "
                     "WHERE project_id = ? AND action_class IN (?, ?) "
                     "AND reserved_action_id IS NULL AND expires_epoch > ? "
@@ -605,7 +630,12 @@ class ActionLedger:
                 # The history fact is the last write: if the project store
                 # refuses it (revision moved, mode no longer autopilot), the
                 # raise rolls back the self-issued grant and the action.
-                self.autopilot.record_grant(project_id, expected_revision, action_type, target_id)
+                granted_state = self.autopilot.record_grant(project_id, expected_revision, action_type, target_id)
+                # The standing-grant history itself advances canonical revision.
+                # Keep request revision immutable for idempotency, but claim the
+                # exact post-grant revision, never mistake our own write for a race.
+                connection.execute("UPDATE actions SET execution_revision=? WHERE action_id=?",
+                                   (granted_state["revision"], action_id))
             return self._action(self._fetch_action(connection, action_id))
 
     def _autopilot_applies(self, project_id) -> bool:
@@ -617,6 +647,25 @@ class ActionLedger:
             raise
         except Exception as error:
             raise RevisionResolutionError("cannot resolve the project mode") from error
+
+    def execution_revision(self, action_id):
+        connection = self._connect()
+        try:
+            row = connection.execute("SELECT expected_revision, execution_revision FROM actions WHERE action_id=?", (action_id,)).fetchone()
+            if row is None:
+                raise ActionNotFound(action_id)
+            return row[1] if row[1] is not None else row[0]
+        finally:
+            connection.close()
+
+    def uncertain_actions(self, project_id):
+        connection = self._connect()
+        try:
+            return [dict(row) for row in connection.execute(
+                "SELECT action_id, action_type, target_id FROM actions WHERE project_id=? AND status='outcome_unknown'",
+                (project_id,))]
+        finally:
+            connection.close()
 
     @staticmethod
     def _issue_autopilot_grant(connection, project_id, action_type) -> str:
@@ -896,7 +945,7 @@ class ActionLedger:
             self._event(connection, action_id, "running", status, detail)
             return self._action(self._fetch_action(connection, action_id))
 
-    def recover_inflight(self, verifier, action_types=None) -> list[dict]:
+    def recover_inflight(self, verifier, action_types=None, *, worker_id=None) -> list[dict]:
         if not callable(verifier):
             raise TypeError("verifier must be callable")
         connection = self._connect()
@@ -931,6 +980,8 @@ class ActionLedger:
 
         recovered = []
         for row in rows:
+            if worker_id is not None and row["worker_id"] != worker_id:
+                continue
             action = self._action(row)
             try:
                 decision = normalize_recovery_decision(verifier(copy.deepcopy(action)))

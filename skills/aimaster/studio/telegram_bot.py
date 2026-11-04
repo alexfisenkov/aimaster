@@ -86,7 +86,10 @@ def navigation_markup(projects, *, mini_app_url=None) -> dict:
 def project_navigation_markup(project_id: str, *, mini_app_url=None) -> dict:
     buttons = []
     if mini_app_url:
-        buttons.append([{"text": "Открыть AI Мастерскую", "web_app": {"url": mini_app_url}}])
+        from urllib.parse import urlsplit, urlunsplit, urlencode
+        parts = urlsplit(mini_app_url)
+        project_url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode({"project": project_id}), parts.fragment))
+        buttons.append([{"text": "Открыть AI Мастерскую", "web_app": {"url": project_url}}])
     buttons.extend([
         [{"text": "Сценарий", "callback_data": f"project:{project_id}:scenario"},
          {"text": "Промпты", "callback_data": f"project:{project_id}:prompts"}],
@@ -231,8 +234,16 @@ class TelegramBotState:
 
                 CREATE INDEX IF NOT EXISTS inbox_next_item
                     ON inbox(status, id);
+                CREATE TABLE IF NOT EXISTS incoming_uploads (
+                    update_id INTEGER PRIMARY KEY, descriptor_json TEXT NOT NULL,
+                    claimed_update_id INTEGER
+                );
                 """
             )
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(inbox)")}
+            for name, declaration in (("expected_revision", "INTEGER"), ("attachments_json", "TEXT"), ("action_id", "TEXT")):
+                if name not in columns:
+                    connection.execute(f"ALTER TABLE inbox ADD COLUMN {name} {declaration}")
         finally:
             connection.close()
         self._secure()
@@ -470,7 +481,7 @@ class TelegramBotState:
             return None
         return dict(row)
 
-    def enqueue_inbox(self, *, update_id, chat_id, workspace, project_id, text):
+    def enqueue_inbox(self, *, update_id, chat_id, workspace, project_id, text, expected_revision=None, attachments=()):
         """Atomically record one selected-project free-form request.
 
         ``update_id`` is the idempotency boundary inherited from Telegram, so a
@@ -507,6 +518,8 @@ class TelegramBotState:
                 "idempotency_key,status,created_at) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)",
                 (update_id, chat_id, workspace, project_id, text, idempotency_key, now),
             )
+            connection.execute("UPDATE inbox SET expected_revision=?, attachments_json=? WHERE update_id=?",
+                (expected_revision, _canonical(list(attachments)), update_id))
             row = connection.execute(
                 "SELECT * FROM inbox WHERE update_id=?", (update_id,)
             ).fetchone()
@@ -529,6 +542,37 @@ class TelegramBotState:
                 "SELECT * FROM inbox WHERE id=?", (row["id"],)
             ).fetchone()
             return self._public_inbox(claimed)
+
+    def processing_inbox(self):
+        connection = self._connect()
+        try:
+            return [dict(row) for row in connection.execute("SELECT * FROM inbox WHERE status='processing' ORDER BY id")]
+        finally:
+            connection.close()
+
+    def save_upload(self, update_id, descriptor):
+        with self._transaction() as connection:
+            connection.execute("INSERT OR IGNORE INTO incoming_uploads(update_id,descriptor_json) VALUES (?,?)",
+                               (update_id, _canonical(descriptor)))
+
+    def pending_uploads(self):
+        connection = self._connect()
+        try:
+            return [json.loads(row[0]) for row in connection.execute(
+                "SELECT descriptor_json FROM incoming_uploads WHERE claimed_update_id IS NULL ORDER BY update_id")]
+        finally:
+            connection.close()
+
+    def claim_uploads(self, update_ids, by_update_id):
+        with self._transaction() as connection:
+            for identity in update_ids:
+                connection.execute("UPDATE incoming_uploads SET claimed_update_id=? WHERE update_id=? AND claimed_update_id IS NULL",
+                                   (by_update_id, identity))
+
+    def link_inbox_action(self, item_id, action_id):
+        with self._transaction() as connection:
+            connection.execute("UPDATE inbox SET action_id=? WHERE id=? AND status='processing' AND action_id IS NULL",
+                               (action_id, item_id))
 
     def complete_inbox(self, item_id, status, outcome_text):
         if status not in {"done", "outcome_unknown"}:
@@ -594,6 +638,7 @@ class TelegramBotController:
         self._store = None
         self._ledger = None
         self._questions = None
+        self.attachment_downloader = None
 
     @property
     def store(self):
@@ -709,6 +754,16 @@ class TelegramBotController:
         ):
             self.state.record_ignored(update_id, fingerprint)
             return []
+        from .telegram_intake import attachment
+        attachment_problem = False
+        try:
+            supplied = attachment(update.get("message"))
+        except ValueError:
+            supplied = None
+            attachment_problem = True
+            text = "[Вложение не принято: неподдерживаемый размер или формат.]"
+        if supplied is not None:
+            text = update["message"].get("caption") or text or "Прикреплён файл. Уточни его назначение перед записью в проект."
         if not isinstance(text, str) or not text.strip():
             self.state.record_ignored(update_id, fingerprint)
             return []
@@ -731,7 +786,26 @@ class TelegramBotController:
             request = existing["request"]
         else:
             try:
-                request = self._prepare_request(chat_id, text.strip())
+                if attachment_problem:
+                    request = {"kind": "reply", "text": text}
+                elif supplied is not None:
+                    from .telegram_intake import download, materialize
+                    descriptor = download(self.workspace, update_id, supplied, self.attachment_downloader)
+                    selection = self.state.selection(chat_id)
+                    if selection is None or selection["workspace"] != str(self.workspace):
+                        self.state.save_upload(update_id, descriptor)
+                        request = {"kind": "reply", "text": "Файл сохранён отдельно. Выберите проект и напишите, как его использовать."}
+                    else:
+                        project_id = selection["project_id"]
+                        request = {"kind": "inbox", "project_id": project_id, "text": text.strip(),
+                            "expected_revision": self.store.load(project_id)["revision"],
+                            "attachments": [materialize(self.workspace, project_id, descriptor)]}
+                else:
+                    request = self._prepare_request(chat_id, text.strip())
+                    pending = self.state.pending_uploads()
+                    if pending and request.get("kind") == "inbox":
+                        from .telegram_intake import materialize
+                        request["attachments"] = [materialize(self.workspace, request["project_id"], item) for item in pending]
             except (DecisionError, DomainValidationError, InvalidAction,
                     IdempotencyConflict, LedgerError, QuestionError, StoreError,
                     TelegramBotError, ValueError) as error:
@@ -839,6 +913,7 @@ class TelegramBotController:
                 "kind": "inbox",
                 "project_id": project_id,
                 "text": text,
+                "expected_revision": self.store.load(project_id)["revision"],
             }
         if question["kind"] in {"single", "multi"} and text.isdigit():
             answer = resolve_cli_answer(
@@ -953,8 +1028,13 @@ class TelegramBotController:
                 workspace=str(self.workspace),
                 project_id=request["project_id"],
                 text=request["text"],
+                expected_revision=request.get("expected_revision"),
+                attachments=request.get("attachments", ()),
             )
-            text = "Запрос принят и ожидает локального агента на Mac."
+            self.state.claim_uploads([item["update_id"] for item in request.get("attachments", ())], update_id)
+            text = "Запрос принят и ожидает локального агента на компьютере."
+            if any(item.get("transcription") == "unavailable" for item in request.get("attachments", ())):
+                text += " Аудио сохранено. Если агенту недоступно распознавание, пришлите задачу текстом."
             self.state.complete(update_id, text)
             return [TelegramReply(chat_id, text, update_id)]
         raise TelegramBotError("unsupported stored request kind")

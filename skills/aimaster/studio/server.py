@@ -57,8 +57,8 @@ class _WakingLedger:
     def __getattr__(self, name):
         return getattr(self._ledger, name)
 
-    def enqueue(self, project_id, request):
-        action = self._ledger.enqueue(project_id, request)
+    def enqueue(self, project_id, request, **options):
+        action = self._ledger.enqueue(project_id, request, **options)
         self._wake_event.set()
         return action
 
@@ -217,6 +217,7 @@ def serve(workspace: Path, host: str = "127.0.0.1", port: int = 0) -> RunningSer
         origin=base_url,
         event_source=events,
         montage=montage,
+        workspace=workspace,
     )
     httpd.application = application
     thread = threading.Thread(

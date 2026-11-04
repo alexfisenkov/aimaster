@@ -218,7 +218,8 @@ class Runner:
             action_candidates = (
                 candidates if action["action_type"] in GRANT_REQUIRED_ACTIONS else ()
             )
-            return build_job_package(action, candidates=action_candidates, context=context)
+            execution = dict(action, revision=self.ledger.execution_revision(action["action_id"]))
+            return build_job_package(execution, candidates=action_candidates, context=context)
 
     def _refuse_claim(self, action: dict) -> dict:
         """Finish a claimed-but-refused `action` `failed`, releasing its

@@ -6,6 +6,9 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import json
+import os
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -23,6 +26,29 @@ from studio.agent_bridge import (  # noqa: E402
 
 
 class AgentBridgeTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.workspace = Path(temporary.name).resolve()
+        self.addCleanup(patch.stopall)
+        patch.dict(os.environ, {"AIMASTER_CONFIG_HOME":str(self.workspace / "family")}).start()
+        from studio import authoring
+        self.store = authoring.open_store(self.workspace)
+        authoring.create_project(self.store, "film-1", "Synthetic", "photo", "guided")
+
+    def item(self):
+        return {"id":4,"workspace":str(self.workspace),"project_id":"film-1","text":"Проверь"}
+
+    def envelope(self, text):
+        from studio.operator_adapters import state_digest
+        result = {"action_id":"inbox-4","project_id":"film-1","action_type":"continue-in-chat","target_id":"scenario",
+            "base_revision":0,"revision":0,"status":"succeeded","state_sha256":state_digest(self.store.load("film-1")),
+            "output_ids":[],"reply":text}
+        return json.dumps({"type":"item.completed","item":{"type":"agent_message","text":json.dumps(result)}}) + "\n" + json.dumps({"type":"turn.completed"})
+
+    def test_exit_zero_plain_text_does_not_prove_completion(self):
+        with self.assertRaises(AgentBridgeError):
+            run_codex_item(self.item(), runner=lambda *a, **k: type("Completed", (), {"returncode":0,"stdout":"готово","stderr":""})())
     def test_command_contains_workspace_but_no_secret_or_user_text(self):
         with tempfile.TemporaryDirectory() as directory:
             command = build_codex_command(Path(directory).resolve())
@@ -52,15 +78,15 @@ class AgentBridgeTests(unittest.TestCase):
 
         def fake_runner(command, **kwargs):
             calls.append((command, kwargs))
-            return type("Completed", (), {"returncode": 0, "stdout": "готово\n", "stderr": ""})()
+            return type("Completed", (), {"returncode": 0, "stdout": self.envelope("готово"), "stderr": ""})()
 
         result = run_codex_item(
-            {"workspace": WORKSPACE, "project_id": "film-1", "text": "Проверь"},
+            self.item(),
             runner=fake_runner,
         )
         self.assertEqual(result, "готово")
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0][1]["input"].strip().splitlines()[0], "Ты локальный агент AI Мастерской.")
+        self.assertIn("canonical workspace", calls[0][1]["input"])
 
     def test_nonzero_agent_exit_is_outcome_unknown(self):
         def fake_runner(command, **kwargs):
@@ -68,15 +94,15 @@ class AgentBridgeTests(unittest.TestCase):
 
         with self.assertRaisesRegex(AgentBridgeError, "outcome_unknown"):
             run_codex_item(
-                {"workspace": WORKSPACE, "project_id": "film-1", "text": "Проверь"},
+                self.item(),
                 runner=fake_runner,
             )
 
     def test_success_redacts_tokens_and_local_paths(self):
         result = run_codex_item(
-            {"workspace": WORKSPACE, "project_id": "film-1", "text": "Проверь"},
+            self.item(),
             runner=lambda command, **kwargs: type(
-                "Completed", (), {"returncode": 0, "stdout": "token 123456:" + "A" * 36 + " /Users/Alex/secret.txt", "stderr": ""}
+                "Completed", (), {"returncode": 0, "stdout": self.envelope("token 123456:" + "A" * 36 + " /Users/Alex/secret.txt"), "stderr": ""}
             )(),
         )
         self.assertNotIn("123456:", result)

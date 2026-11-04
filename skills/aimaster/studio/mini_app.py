@@ -21,16 +21,19 @@ from .loopback_http import LoopbackThreadingHTTPServer
 # План Б (экран «Сборка»): монтажный стол и «Показать в папке» — только на
 # компьютере владельца. Через шлюз (телефон, туннель) их нет: Studio наружу не
 # выставляется, а папка открылась бы на компьютере, а не у человека в руках.
-_LOCAL_ONLY = re.compile(r"/api/projects/.+/montage/(?:desk|desk/close|reveal)")
+_LOCAL_ONLY = re.compile(r"/api/projects/.+/montage/(?:desk|desk/close|reveal|open-edit)")
 _DECODE_ROUNDS = 4
 
 
 def validate_init_data(raw: str, bot_token: str, owner_id: int, *, now=None, max_age=86400) -> dict:
-    if not isinstance(raw, str) or not raw:
+    if not isinstance(raw, str) or not raw or len(raw) > 16384:
         raise ValueError("missing Telegram initData")
     if not isinstance(bot_token, str) or not bot_token:
         raise ValueError("missing bot token")
-    fields = dict(parse_qsl(raw, keep_blank_values=True, strict_parsing=True))
+    pairs = parse_qsl(raw, keep_blank_values=True, strict_parsing=True)
+    fields = dict(pairs)
+    if len(fields) != len(pairs):
+        raise ValueError("duplicate Telegram initData field")
     supplied_hash = fields.pop("hash", None)
     if not supplied_hash:
         raise ValueError("missing Telegram initData signature")
@@ -50,7 +53,7 @@ def validate_init_data(raw: str, bot_token: str, owner_id: int, *, now=None, max
         user = json.loads(fields.get("user", ""))
     except json.JSONDecodeError:
         raise ValueError("invalid Telegram user data") from None
-    if not isinstance(user, dict) or user.get("id") != owner_id:
+    if not isinstance(user, dict) or type(user.get("id")) is not int or user.get("id") != owner_id:
         raise ValueError("Telegram owner mismatch")
     return user
 
@@ -171,7 +174,7 @@ class MiniAppGateway:
             return self._forbidden()  # до проверки входа и без обращения к дашборду
         asset_path = parsed.path.startswith("/assets/")
         asset_id = parsed.path.removeprefix("/assets/") if asset_path else ""
-        ticket_ok = asset_path and "/" not in asset_id and self._valid_asset_ticket(asset_id, parsed.query)
+        ticket_ok = method.upper() == "GET" and asset_path and "/" not in asset_id and self._valid_asset_ticket(asset_id, parsed.query)
         if self._is_protected(parsed.path) and not ticket_ok:
             authorization = normalized.get("authorization", "")
             if not authorization.startswith("tma "):
@@ -193,7 +196,14 @@ class MiniAppGateway:
         if "range" in normalized:
             forwarded.append(("Range", normalized["range"]))
         response = self.inner.handle(method, parsed.path, forwarded, body)
-        if method.upper() == "GET" and parsed.path.startswith("/api/"):
+        if response.headers.get("Content-Type", "").startswith("text/html"):
+            # Telegram Web embeds the same owner-authenticated app. No arbitrary
+            # ancestor can frame it, and every API still requires initData.
+            policy = response.headers.get("Content-Security-Policy", "")
+            response.headers["Content-Security-Policy"] = policy.replace("frame-ancestors 'none'",
+                "frame-ancestors https://web.telegram.org https://webk.telegram.org https://weba.telegram.org")
+            response.headers.pop("X-Frame-Options", None)
+        if parsed.path.startswith("/api/"):
             response = self._rewrite_asset_urls(response)
         return response
 
