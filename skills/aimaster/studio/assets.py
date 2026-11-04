@@ -246,6 +246,7 @@ def _jpeg(data: bytes) -> tuple[str, int, int] | None:
     huffman_tables = set()
     saw_arithmetic_tables = False
     saw_scan = False
+    progressive_levels = {}
     sof_markers = {
         0xC0,
         0xC1,
@@ -353,6 +354,22 @@ def _jpeg(data: bytes) -> tuple[str, int, int] | None:
             component_count = payload[0]
             if component_count == 0 or len(payload) != 4 + 2 * component_count:
                 raise AssetValidationError("JPEG scan header is invalid")
+            spectral_start, spectral_end, approximation = payload[-3:]
+            if spectral_start > spectral_end or spectral_end > 63 or approximation > 0xDD:
+                raise AssetValidationError("JPEG scan parameters are invalid")
+            if frame_marker == 0xC0 and (
+                spectral_start != 0 or spectral_end != 63 or approximation != 0
+            ):
+                raise AssetValidationError("baseline JPEG scan parameters are invalid")
+            progressive = frame_marker == 0xC2  # Huffman progressive DCT only; no new arithmetic support.
+            high, low = approximation >> 4, approximation & 0x0F
+            if progressive and (
+                spectral_start == 0 and spectral_end != 0
+                or spectral_start > 0 and component_count != 1
+                or low > 13
+                or high != 0 and low != high - 1
+            ):
+                raise AssetValidationError("progressive JPEG scan parameters are invalid")
             scan_components = set()
             for position in range(1, 1 + 2 * component_count, 2):
                 component_id = payload[position]
@@ -366,19 +383,24 @@ def _jpeg(data: bytes) -> tuple[str, int, int] | None:
                     or ac_table > 3
                 ):
                     raise AssetValidationError("JPEG scan component is invalid")
-                if not saw_arithmetic_tables and (
-                    (0, dc_table) not in huffman_tables
-                    or (1, ac_table) not in huffman_tables
-                ):
+                if progressive:
+                    levels = progressive_levels.setdefault(component_id, [-1] * 64)
+                    if (spectral_start > 0 and levels[0] < 0 or
+                            any(levels[index] != (-1 if high == 0 else high)
+                                for index in range(spectral_start, spectral_end + 1))):
+                        raise AssetValidationError("progressive JPEG scan progression is invalid")
+                    # Initial DC needs DC Huffman only; DC refinement is raw
+                    # correction bits. AC initial/refinement needs AC only.
+                    # An unrelated DAC marker cannot waive these Huffman checks.
+                    required_tables = ({(0, dc_table)} if spectral_start == 0 and high == 0 else
+                                       {(1, ac_table)} if spectral_start > 0 else set())
+                    for index in range(spectral_start, spectral_end + 1):
+                        levels[index] = low
+                else:
+                    required_tables = set() if saw_arithmetic_tables else {(0, dc_table), (1, ac_table)}
+                if not required_tables.issubset(huffman_tables):
                     raise AssetValidationError("JPEG scan references a missing table")
                 scan_components.add(component_id)
-            spectral_start, spectral_end, approximation = payload[-3:]
-            if spectral_start > spectral_end or spectral_end > 63 or approximation > 0xDD:
-                raise AssetValidationError("JPEG scan parameters are invalid")
-            if frame_marker == 0xC0 and (
-                spectral_start != 0 or spectral_end != 63 or approximation != 0
-            ):
-                raise AssetValidationError("baseline JPEG scan parameters are invalid")
             if any(table not in quantization_tables for table in frame_components.values()):
                 raise AssetValidationError("JPEG frame references a missing quantization table")
             saw_scan = True
