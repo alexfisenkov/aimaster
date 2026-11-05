@@ -91,6 +91,8 @@ def step_autopilot(env: dict, workspace: Path, media: Path, library_id: str) -> 
                   "--type", "video", "--mode", "autopilot")
     expect(created.get("notice"), "автопилот включён без предупреждения: %s" % created)
     rev = created["revision"]
+    rev = cli(env, "project", "set-assembly-mode", workspace, PROJECT, "--mode", "montage",
+              "--expected-revision", rev)["revision"]
     rev = cli(env, "script", "add-version", workspace, PROJECT, "--text",
               "Кот Барсик гуляет по саду и находит клубок.", "--reason", "смоук",
               "--expected-revision", rev)["revision"]
