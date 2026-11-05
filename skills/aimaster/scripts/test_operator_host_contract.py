@@ -3,7 +3,6 @@ import json
 import os
 from pathlib import Path
 import subprocess
-import shlex
 import sys
 from types import SimpleNamespace
 import unittest
@@ -14,6 +13,8 @@ from studio import authoring
 from studio.ledger import ActionRequest
 from studio.operator import Operator
 from studio.operator_adapters import HostAdapter, AdapterFailure, parse_output
+from studio.montage.shell_line import command_line
+from studio.platform_compat import IS_WINDOWS
 
 
 class HostContractTests(unittest.TestCase):
@@ -95,15 +96,30 @@ class HostContractTests(unittest.TestCase):
             absolute_skill = skill.as_posix()
         self.assertEqual(argv[argv.index('--disallowedTools')+1], 'Edit(/'+absolute_skill+'/**)')
         request=self.ws/'.studio/operator-inputs'/f"{job['action_id']}.json"
-        prefix=shlex.join([sys.executable,str(skill/'scripts/creator_studio_job.py'),str(self.ws),job['action_id'],str(request)])
-        self.assertIn('Bash('+prefix+')',argv)
+        parts=[sys.executable,str(skill/'scripts/creator_studio_job.py'),str(self.ws),job['action_id'],str(request)]
+        prefix=command_line(parts,windows=IS_WINDOWS)
+        self.assertEqual(argv[argv.index('--allowedTools')+1], 'Bash('+prefix+')')
         self.assertNotIn('Bash',argv);self.assertNotIn('bypassPermissions',argv)
         self.assertNotIn('--dangerously-skip-permissions',argv)
         self.assertIn(prefix,prompt(job,self.ws,skill,agent='claude'))
-        with patch('studio.host_launch.resolve',return_value=['/synthetic/claude']):
-            readonly=command('claude',self.ws,skill=skill,job={**job,'action_type':'continue-in-chat'})
-        self.assertIn('Bash('+prefix+')',readonly)
-        self.assertNotIn('Bash('+prefix+' *)',readonly)
+        for windows in (False,True):
+            with self.subTest(windows=windows), patch('studio.platform_compat.IS_WINDOWS',windows), \
+                    patch('studio.host_launch.resolve',return_value=['/synthetic/claude']):
+                expected='Bash('+command_line(parts,windows=windows)+')'
+                for action in ('revise-scenario','continue-in-chat'):
+                    scoped=command('claude',self.ws,skill=skill,job={**job,'action_type':action})
+                    rule=scoped[scoped.index('--allowedTools')+1]
+                    self.assertEqual(rule,expected)
+                    self.assertNotIn('*',rule)
+
+    def test_claude_windows_shell_line_keeps_exact_argument_boundaries(self):
+        parts=[r'C:\Program Files\Python\python.exe',r'D:\package\scripts\creator_studio_job.py',
+            r'C:\Users\runner\workspace Ω','action-'+'1'*32,
+            r'C:\Users\runner\workspace Ω\.studio\operator-inputs\action-'+('1'*32)+'.json']
+        self.assertEqual(command_line(parts,windows=True),
+            '"C:/Program Files/Python/python.exe" D:/package/scripts/creator_studio_job.py '
+            '"C:/Users/runner/workspace Ω" action-'+('1'*32)+' '
+            '"C:/Users/runner/workspace Ω/.studio/operator-inputs/action-'+('1'*32)+'.json"')
 
 
 if __name__=='__main__':unittest.main()
