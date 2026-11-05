@@ -19,8 +19,8 @@ class GuideCatalogTests(unittest.TestCase):
             builtin = root / "builtin"
             builtin.mkdir()
             text = "Synthetic guide / инструкция\n"
-            (instructions / "guide.md").write_text(text, encoding="utf-8")
-            (builtin / "guide.md").write_text(text, encoding="utf-8")
+            (instructions / "guide.md").write_bytes(text.encode("utf-8"))
+            (builtin / "guide.md").write_bytes(text.encode("utf-8"))
             entry = dict(id="same", title="Same title", path="guide.md",
                          sha256=hashlib.sha256(text.encode()).hexdigest(), kind="prompt",
                          modalities=["image"], tasks=["generate"], providers=["test"],

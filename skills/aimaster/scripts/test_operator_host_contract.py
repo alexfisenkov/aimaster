@@ -1,5 +1,6 @@
 """Parent-owned read-back hashes and safe structured host diagnostics."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import shlex
@@ -88,7 +89,11 @@ class HostContractTests(unittest.TestCase):
         with patch('studio.host_launch.resolve',return_value=['/synthetic/claude']):
             argv=command('claude',self.ws,skill=skill,job=job)
         self.assertEqual(argv[argv.index('--add-dir')+1],str(skill))
-        self.assertIn('Edit(/'+skill.as_posix()+'/**)',argv)
+        if os.name == 'nt':
+            absolute_skill = '/' + skill.drive[0].lower() + skill.as_posix()[2:]
+        else:
+            absolute_skill = skill.as_posix()
+        self.assertEqual(argv[argv.index('--disallowedTools')+1], 'Edit(/'+absolute_skill+'/**)')
         request=self.ws/'.studio/operator-inputs'/f"{job['action_id']}.json"
         prefix=shlex.join([sys.executable,str(skill/'scripts/creator_studio_job.py'),str(self.ws),job['action_id'],str(request)])
         self.assertIn('Bash('+prefix+')',argv)

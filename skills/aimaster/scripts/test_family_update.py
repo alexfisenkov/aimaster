@@ -1,5 +1,6 @@
 """Public update CLI and transactional boundaries on disposable homes."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -83,6 +84,17 @@ class PolicyTests(unittest.TestCase):
             (workspace / "projects/one").mkdir(parents=True)
             write_json(workspace / "projects/one/state.json", {"assembly": {"kind": "materials"}})
             self.assertFalse(packages.compatibility(package, [workspace]))
+
+    def test_compatibility_reads_utf8_project_metadata_without_utf8_mode(self):
+        from montage_testkit import video_state
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary) / "workspace"
+            state = workspace / "projects/p/state.json"
+            write_json(state, video_state([("s1", "Scene", "Text", 1000, None)]))
+            self.assertIn("сценарий".encode("utf-8"), state.read_bytes())
+            package = Path(__file__).resolve().parent.parent
+            with mock.patch.dict(os.environ, {"LC_ALL": "C", "PYTHONUTF8": "0"}):
+                self.assertTrue(packages.compatibility(package, [workspace]))
 
     def test_download_extracts_only_skill_and_ignores_other_agent_symlinks(self):
         payload = io.BytesIO()
@@ -276,12 +288,14 @@ class TransactionTests(unittest.TestCase):
         # Old runtime's closed allowlist rejects the newly saved metadata fields.
         old = Path(self.current["package"])
         path = old / "studio/library.py"
-        path.write_text(path.read_text().replace('"voice_of", "source", "notes", "tags", "updated_at"', '"voice_of", "source"'))
+        path.write_text(path.read_text(encoding="utf-8").replace(
+            '"voice_of", "source", "notes", "tags", "updated_at"', '"voice_of", "source"'), encoding="utf-8")
         # Point both installed copies at this initial old version before updating.
         import install
         for target in self.current["targets"]:
-            if not Path(target).is_symlink() and not getattr(__import__('os').path, 'isjunction', lambda p: False)(target):
-                shutil.copy2(path, Path(target) / "studio/library.py")
+            installed = Path(target) / "studio/library.py"
+            if not installed.samefile(path):
+                shutil.copy2(path, installed)
         self.current["fingerprint"] = packages.digest_tree(old)
         state = read_state(self.directory)
         state["components"]["aimaster"] = self.current
@@ -306,13 +320,14 @@ class TransactionTests(unittest.TestCase):
         from montage_testkit import video_state
         old = Path(self.current["package"])
         model_path = old / "studio/montage/model.py"
-        text = model_path.read_text()
+        text = model_path.read_text(encoding="utf-8")
         legacy = text.replace("    overlay: dict | None = None\n", "").replace("    visual_hash: str | None = None\n", "")
         self.assertNotEqual(legacy, text)
-        model_path.write_text(legacy)
+        model_path.write_text(legacy, encoding="utf-8")
         for target in self.current["targets"]:
-            if not Path(target).is_symlink() and not getattr(__import__('os').path, 'isjunction', lambda p: False)(target):
-                shutil.copy2(model_path, Path(target) / "studio/montage/model.py")
+            installed = Path(target) / "studio/montage/model.py"
+            if not installed.samefile(model_path):
+                shutil.copy2(model_path, installed)
         self.current["fingerprint"] = packages.digest_tree(old)
         state = read_state(self.directory)
         state["components"]["aimaster"] = self.current

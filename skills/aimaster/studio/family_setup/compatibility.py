@@ -83,7 +83,7 @@ from studio.projection import validate_state
 root=Path(sys.argv[1])
 if (root/'library/index.json').exists(): read_index(root/'library')
 for path in root.glob('projects/*/state.json'):
- state=json.loads(path.read_text()); validate_state(state); derive_project_status(derive_view_stage(state))
+ state=json.loads(path.read_text(encoding='utf-8')); validate_state(state); derive_project_status(derive_view_stage(state))
 def preserves(source,target):
  if isinstance(source,dict): return isinstance(target,dict) and all(k in target and preserves(v,target[k]) for k,v in source.items())
  if isinstance(source,list): return isinstance(target,list) and len(source)==len(target) and all(preserves(a,b) for a,b in zip(source,target))
@@ -95,12 +95,12 @@ for montage in root.glob('projects/*/montage'):
  paths=MontagePaths(montage)
  models=[*montage.glob('current/model.json'),*montage.glob('versions/*/model.json'),*montage.glob('.cache/model-*.json')]
  for path in models:
-  raw=json.loads(path.read_text()); raw=raw['model'] if path.parent.name=='.cache' else raw
+  raw=json.loads(path.read_text(encoding='utf-8')); raw=raw['model'] if path.parent.name=='.cache' else raw
   model=read_version_model(paths,path.parent.name) if path.parent.parent.name=='versions' and re.fullmatch(r'v\d{3,}',path.parent.name) else Model.from_dict(raw)
   if not preserves(raw,model.to_dict()): raise ValueError('target model would lose metadata')
  for path in montage.glob('versions/*/meta.json'):
   if re.fullmatch(r'v\d{3,}',path.parent.name):
-   raw=json.loads(path.read_text())
+   raw=json.loads(path.read_text(encoding='utf-8'))
    if not preserves(raw,read_meta(paths,path.parent.name).to_dict()): raise ValueError('target version would lose metadata')
  class Features(HTMLParser):
   def handle_starttag(self,tag,attrs):
@@ -112,7 +112,7 @@ for montage in root.glob('projects/*/montage'):
    if attrs.get('data-am-format') and 'appearance' not in {f.name for f in fields(Model)}:
     raise ValueError('target lacks montage appearance')
  for path in [*montage.glob('current/index.html'),*montage.glob('versions/*/index.html')]:
-  parser=Features(); parser.feed(path.read_text()); parser.close()
+  parser=Features(); parser.feed(path.read_text(encoding='utf-8')); parser.close()
 '''
 
 
