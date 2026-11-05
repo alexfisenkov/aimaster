@@ -15,6 +15,7 @@
 // `studio:open-viewer` and ui/viewer.js already use for cards vs. the
 // lightbox, so this module stays swappable/testable without ever touching
 // the dialog's own DOM-singleton machinery.
+import { t } from "./i18n.js";
 
 /**
  * One clickable entry per pending question. Ticket 14 repair, condition 7:
@@ -35,10 +36,10 @@ export function renderQuestionsPanel(root, questions) {
   const section = document.createElement("section");
   section.className = "questions-panel";
   section.dataset.hook = "questions-panel";
-  section.setAttribute("aria-label", "Вопросы");
+  section.setAttribute("aria-label", t("Вопросы"));
 
   const heading = document.createElement("h2");
-  heading.textContent = "Вопросы";
+  heading.textContent = t("Вопросы");
   section.append(heading);
 
   const ul = document.createElement("ul");

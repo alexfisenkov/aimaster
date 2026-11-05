@@ -118,7 +118,11 @@ export function historyBlock(project) {
   for (const entry of entries) {
     const row = el("li", "v2-history-row");
     row.dataset.actor = entry.actor;
-    row.append(el("span", "v2-history-actor", t(entry.actorLabel)), el("span", "v2-history-text", t(entry.text)));
+    const reference = entry.kind === "reference-added" && /^Референс (.+) добавлен$/.exec(entry.text);
+    const montage = entry.kind === "montage-built" && /^Монтаж: собрана версия (.+)$/.exec(entry.text);
+    const historyText = reference ? t("Референс {tag} добавлен", { tag: reference[1] })
+      : montage ? t("Монтаж: собрана версия {version}", { version: montage[1] }) : t(entry.text);
+    row.append(el("span", "v2-history-actor", t(entry.actorLabel)), el("span", "v2-history-text", historyText));
     list.append(row);
   }
   box.append(list);

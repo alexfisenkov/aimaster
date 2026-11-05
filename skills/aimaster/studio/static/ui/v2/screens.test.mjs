@@ -181,6 +181,22 @@ test("на «Видео» строка остаётся промптом дви�
   assert.equal(line.kind, "motion");
 });
 
+test("у завершённого проекта pending промпт описывает пройденный этап без подмены статуса", () => {
+  const project = projectWith({ status: "done" });
+  project.stage_decisions.push({ stage: "motion", decision: "approved", comment: "" });
+  const scene = sceneBy(project, "cafe-open");
+  const version = project.motion_prompts.find((item) => item.version_id === scene.links.motion_prompt_version_id);
+  assert.equal(version.status, "pending");
+  assert.equal(scenePromptLine(project, scene, "motion").text, "промпт движения v2 · этап пройден");
+  globalThis.document = { documentElement: { lang: "en" } };
+  try {
+    assert.equal(scenePromptLine(project, scene, "motion").text, "motion prompt v2 · stage completed");
+    assert.equal(version.text, project.motion_prompts.find((item) => item.version_id === version.version_id).text);
+  } finally {
+    delete globalThis.document;
+  }
+});
+
 test("четыре слоя звука идут по-человечески: голос, музыка, эффекты, атмосфера", () => {
   assert.deepEqual(AUDIO_LAYERS.map((item) => item.layer), ["voice", "music", "fx", "atmos"]);
   const tiles = audioTiles(PROJECT);

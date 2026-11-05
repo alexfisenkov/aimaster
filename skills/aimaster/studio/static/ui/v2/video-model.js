@@ -13,6 +13,7 @@
 
 import { variantCounts } from "./counts.js";
 import { statusTone } from "./status-tone.js";
+import { t } from "./locale.js";
 
 const MODE_WORDS = Object.freeze({
   first: "Оживляем первый кадр",
@@ -32,9 +33,9 @@ export function clipStatus(project, scene) {
   const counts = variantCounts(project, { sceneId: scene?.scene_id, slot: "video" });
   const { total, index, selected } = counts;
   let text;
-  if (total === 0) text = "клипов пока нет";
-  else if (!selected) text = `выберите из ${total}`;
-  else text = total > 1 ? `клип выбран · ${index} из ${total}` : "клип выбран";
+  if (total === 0) text = t("клипов пока нет");
+  else if (!selected) text = t("выберите из {total}", { total });
+  else text = total > 1 ? t("клип выбран · {index} из {total}", { index, total }) : t("клип выбран");
   return { total, index, selected, text, tone: statusTone(counts) };
 }
 
@@ -56,10 +57,10 @@ export function continuationLine(project, scene) {
   );
   let detail;
   if (continues) {
-    detail = index > 0 ? `с конца сцены ${index}` : "с конца соседнего клипа";
+    detail = index > 0 ? t("с конца сцены {number}", { number: index }) : t("с конца соседнего клипа");
   } else {
-    detail = MODE_WORDS[scene?.video_mode] || "Способ оживления пока не выбран";
+    detail = t(MODE_WORDS[scene?.video_mode] || "Способ оживления пока не выбран");
   }
-  const text = continues ? `Продолжение: ${detail}` : detail;
+  const text = continues ? t("Продолжение: {detail}", { detail }) : detail;
   return { text, detail, warn: scene?.linkage_status === "review_linkage" };
 }

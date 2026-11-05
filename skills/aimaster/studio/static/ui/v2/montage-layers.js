@@ -83,7 +83,7 @@ export function renderLayers({ project, model, engine, exists, lagging = false, 
   const detail = el("p", "am-layer-detail");
   detail.setAttribute("aria-live", "polite");
   const picked = rows.flatMap((row) => row.blocks).find((item) => `${project.id}:${item.id}` === chosen);
-  detail.textContent = picked ? picked.detail : HINT;
+  detail.textContent = picked ? picked.detail : t(HINT);
   for (const row of rows) grid.append(track(project.id, row, detail, grid));
   const ruler = el("div", "am-ruler");
   ruler.append(el("span", "", fmtTime(0)), el("span", "", fmtTime(modelDuration(model))));

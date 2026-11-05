@@ -11,6 +11,7 @@
 // ней ничего не знает.
 
 import { requestAgentPrompt } from "../chat-prompt-dialog.js";
+import { renderQuestionsPanel } from "../question-panel.js";
 import { projectRef } from "./chat-prompts.js";
 import { el, restoreCardFocus, cardFocusNote } from "./dom.js";
 import { lengthWords, sceneSeconds } from "./length-text.js";
@@ -262,6 +263,7 @@ export function renderShellV2(root, state) {
     return;
   }
   main.removeAttribute("aria-busy");
+  renderQuestionsPanel(inner, snapshot.questions);
   const overview = readFamilyPreference().view === "overview";
   if (!overview) inner.append(screenHead(project, screen));
   const area = el("div", "v2-area");

@@ -62,7 +62,7 @@ export function renderVideoScreen(root, { state, screen = "video" } = {}) {
   list.dataset.hook = "v2-scenes";
   if (!scenes.length) list.append(el("p", "v2-section-hint", t("Сцен пока нет — они появятся после раскадровки.")));
   else if (project.gen_mode === "one_shot") {
-    list.append(el("p", "v2-section-hint", "Ролик делается целиком, поэтому своих клипов у сцен может и не быть."));
+    list.append(el("p", "v2-section-hint", t("Ролик делается целиком, поэтому своих клипов у сцен может и не быть.")));
   }
   scenes.forEach((scene, index) => list.append(
     renderSceneRow(project, snapshot.revision, scene, index + 1, { mode: "video" }),

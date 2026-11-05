@@ -77,13 +77,19 @@ export function scenePromptLine(project, scene, kind = "motion") {
   if (!current) return null;
   const versions = promptGroups(collection).get(current.prompt_id) || [current];
   const number = versions.findIndex((item) => item.version_id === versionId) + 1;
-  const status = current.stale === true ? "устарел" : PROMPT_STATUS[current.status] || "в работе";
+  const stage = kind === "motion" ? "motion" : "image_plan";
+  const lastDecision = [...(project?.stage_decisions || [])].reverse().find((item) => item?.stage === stage);
+  // Stage approval is evidence about the stage, not approval of this prompt.
+  // Keep the stored prompt status untouched and describe the passed stage.
+  const status = current.stale === true ? "устарел"
+    : current.status === "pending" && project?.status === "done" && lastDecision?.decision === "approved" ? "этап пройден"
+      : PROMPT_STATUS[current.status] || "в работе";
   return {
-    text: `${PROMPT_WORDS[kind]} v${number || 1} · ${status}`,
+    text: `${t(PROMPT_WORDS[kind])} v${number || 1} · ${t(status)}`,
     versionId,
     kind,
     stale: current.stale === true,
-    tone: current.stale !== true && current.status === "approved" ? "ok" : "warn",
+    tone: current.stale !== true && (current.status === "approved" || status === "этап пройден") ? "ok" : "warn",
   };
 }
 

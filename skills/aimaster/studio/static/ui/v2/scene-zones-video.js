@@ -20,8 +20,8 @@ export function clipZone(project, scene, position) {
   const button = el("button", "v2-clip");
   button.type = "button";
   button.dataset.hook = "v2-clip-slot";
-  button.setAttribute("aria-label", `Клип сцены: ${status.text}`);
-  button.append(renderPreview(status.selected, { kind: status.selected ? "video" : "none", label: "Клип сцены", emptyText: "клипа нет" }));
+  button.setAttribute("aria-label", t("Клип сцены: {status}", { status: status.text }));
+  button.append(renderPreview(status.selected, { kind: status.selected ? "video" : "none", label: t("Клип сцены"), emptyText: t("клипа нет") }));
   if (status.selected) button.append(playMark());
   // На телефоне превью во всю ширину карточки, и сцена подписывается прямо
   // на нём: «Сцена 2 · 00:03–00:06».

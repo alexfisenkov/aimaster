@@ -108,7 +108,7 @@ export function renderFramesScreen(root, { state, readOnly = false, screen = "fr
   head.append(
     el("h2", "v2-section-title", t("Сцены")),
     el("span", "v2-section-note", scenes.length
-      ? `${scenes.length} · нажмите на кадр, чтобы выбрать вариант`
+      ? t("{count} · нажмите на кадр, чтобы выбрать вариант", { count: scenes.length })
       : t("Сцен пока нет — они появятся после раскадровки.")),
   );
   list.append(head);

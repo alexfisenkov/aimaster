@@ -16,14 +16,14 @@ function layerTile(tile) {
   button.dataset.hook = "v2-layer";
   button.dataset.layer = tile.layer;
   button.dataset.filled = String(tile.total > 0);
-  button.setAttribute("aria-label", `${tile.name}: ${tile.status}`);
+  button.setAttribute("aria-label", `${t(tile.name)}: ${tile.status}`);
   const head = el("span", "v2-layer-head");
-  head.append(el("b", "v2-layer-name", tile.name));
-  if (tile.total > 0) head.append(el("span", "v2-layer-count", `${tile.total} вар.`));
+  head.append(el("b", "v2-layer-name", t(tile.name)));
+  if (tile.total > 0) head.append(el("span", "v2-layer-count", t("{count} вар.", { count: tile.total })));
   const body = el("span", "v2-layer-body");
   body.append(
     head,
-    el("span", "v2-layer-hint", tile.hint),
+    el("span", "v2-layer-hint", t(tile.hint)),
     statusLine(tile.status, tile.tone, "v2-status v2-layer-status"),
   );
   const arrow = el("span", "v2-layer-arrow v2-phone-only", "›");

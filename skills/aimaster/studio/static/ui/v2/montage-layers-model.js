@@ -3,6 +3,7 @@
 // `GET /api/projects/<id>/montage/model` → `layers` (время — секунды
 // готового ролика, как в `montage status`). Подписи — как в строках
 // `montage diff`: «0:03.3», «2,5 с».
+import { t } from "./locale.js";
 
 const MIN_LEN = 1.2; // % ширины дорожки: короткий клип всё равно можно нажать
 const EPS = 0.01; // studio/montage/montage_format.py: тот же допуск
@@ -23,7 +24,9 @@ export function fmtLen(seconds) {
   const value = Math.max(0, Number(seconds) || 0);
   let tenths = Math.round(value * 10);
   if (tenths === 0 && value > EPS) tenths = 1;
-  return `${(tenths / 10).toFixed(1).replace(".", ",")} с`;
+  const decimal = (tenths / 10).toFixed(1);
+  const displayValue = typeof document !== "undefined" && document.documentElement?.lang === "en" ? decimal : decimal.replace(".", ",");
+  return t("{value} с", { value: displayValue });
 }
 
 /** Громкость в процентах; нет значения — как записано, 100 %. */
@@ -36,21 +39,21 @@ export function sceneNames(project) {
   const scenes = (project?.scenes || []).filter((scene) => scene?.scene_id)
     .sort((left, right) => (left.order || 0) - (right.order || 0));
   return Object.fromEntries(scenes.map((scene, index) => [scene.scene_id,
-    { number: index + 1, text: `сцена ${index + 1} «${scene.title || scene.scene_id}»` }]));
+    { number: index + 1, text: t("сцена {number} «{title}»", { number: index + 1, title: scene.title || scene.scene_id }) }]));
 }
 
 /** Что показать по нажатию: чей клип, где он в ролике, какой кусок исходника. */
 export function clipDetail(clip, layer, label, names = {}) {
-  const span = `${fmtTime(clip.start)}–${fmtTime(clip.start + clip.duration)} ролика`;
-  if (layer === "titles") return `Титр «${clip.text || clip.id}» · ${span}`;
-  const who = layer === "video" && names[clip.scene_id] ? `Клип: ${names[clip.scene_id].text}` : label;
-  const parts = [who, span, `из исходника с ${fmtTime(clip.media_start)}, ${fmtLen(clip.duration)}`];
-  if (layer !== "video" || Number.isFinite(clip.volume)) parts.push(`громкость ${volumeText(clip.volume)}`);
+  const span = t("{start}–{end} ролика", { start: fmtTime(clip.start), end: fmtTime(clip.start + clip.duration) });
+  if (layer === "titles") return t("Титр «{title}» · {span}", { title: clip.text || clip.id, span });
+  const who = layer === "video" && names[clip.scene_id] ? t("Клип: {scene}", { scene: names[clip.scene_id].text }) : t(label);
+  const parts = [who, span, t("из исходника с {start}, {length}", { start: fmtTime(clip.media_start), length: fmtLen(clip.duration) })];
+  if (layer !== "video" || Number.isFinite(clip.volume)) parts.push(t("громкость {volume}", { volume: volumeText(clip.volume) }));
   return parts.join(" · ");
 }
 
 function blockText(layer, clip, names) {
-  if (layer === "titles") return clip.text || "титр";
+  if (layer === "titles") return clip.text || t("титр");
   if (layer === "video" && names[clip.scene_id]) return String(names[clip.scene_id].number);
   return "";
 }

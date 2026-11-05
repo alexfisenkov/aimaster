@@ -2,6 +2,7 @@
 // полку референсов, строку сцены и будущий просмотрщик. Чистые функции.
 
 import { resultGroups, selectedResultVersion } from "./variants.js";
+import { t } from "./locale.js";
 
 const POSITION_KIND_BY_SLOT = Object.freeze({
   first: "first_frame",
@@ -56,8 +57,8 @@ export function variantCounts(project, target = {}) {
  * @param {{source?: string, hasAsset?: boolean}} own «своё» вместо генерации
  */
 export function variantStatus({ total, selected, index }, { source, hasAsset } = {}) {
-  if (source === "upload") return hasAsset ? "ваш файл" : "не задан";
-  if (selected) return total > 1 ? `выбран ${index} из ${total}` : "выбран";
-  if (total > 0) return `выберите из ${total}`;
-  return "не задан";
+  if (source === "upload") return t(hasAsset ? "ваш файл" : "не задан");
+  if (selected) return total > 1 ? t("выбран {index} из {total}", { index, total }) : t("выбран");
+  if (total > 0) return t("выберите из {total}", { total });
+  return t("не задан");
 }

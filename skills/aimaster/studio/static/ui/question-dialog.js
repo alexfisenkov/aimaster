@@ -30,6 +30,7 @@
 // than silently vanishing out from under someone mid-click.
 
 import { postQuestionAnswer, resolveActionErrorMessage } from "./actions.js";
+import { t } from "./i18n.js";
 import {
   QUESTION_KIND_TABLE,
   buildAnswerPayload,
@@ -283,7 +284,7 @@ function buildOverlay() {
   closeButton.dataset.hook = "question-modal-close";
   const closeLabel = document.createElement("span");
   closeLabel.className = "visually-hidden";
-  closeLabel.textContent = "Закрыть";
+  closeLabel.textContent = t("Закрыть");
   closeButton.append(closeLabel);
   closeButton.addEventListener("click", () => closeQuestionModal());
   header.append(icon, closeButton);
@@ -311,7 +312,7 @@ function buildOverlay() {
   const customLabel = document.createElement("label");
   customLabel.className = "question-modal-custom-label";
   const customLabelText = document.createElement("span");
-  customLabelText.textContent = "Свой вариант";
+  customLabelText.textContent = t("Свой вариант");
   const customTextarea = document.createElement("textarea");
   customTextarea.className = "question-modal-custom-textarea";
   customTextarea.dataset.hook = "question-modal-custom-textarea";
@@ -339,13 +340,13 @@ function buildOverlay() {
   deferButton.type = "button";
   deferButton.className = "question-modal-defer";
   deferButton.dataset.hook = "question-modal-defer";
-  deferButton.textContent = "Отложить";
+  deferButton.textContent = t("Отложить");
   deferButton.addEventListener("click", () => closeQuestionModal());
   const submitButton = document.createElement("button");
   submitButton.type = "submit";
   submitButton.className = "question-modal-submit";
   submitButton.dataset.hook = "question-modal-submit";
-  submitButton.textContent = "Продолжить";
+  submitButton.textContent = t("Продолжить");
   footer.append(deferButton, submitButton);
 
   form.append(optionsList, customSection, status, footer);
@@ -363,7 +364,7 @@ function buildOverlay() {
   acceptedCloseButton.type = "button";
   acceptedCloseButton.className = "question-modal-submit";
   acceptedCloseButton.dataset.hook = "question-modal-accepted-close";
-  acceptedCloseButton.textContent = "Закрыть";
+  acceptedCloseButton.textContent = t("Закрыть");
   acceptedCloseButton.addEventListener("click", () => closeQuestionModal());
   acceptedFooter.append(acceptedCloseButton);
   acceptedView.append(acceptedText, acceptedFooter);
@@ -452,6 +453,16 @@ function ensureOverlay() {
     overlayRefs = buildOverlay();
   }
   return overlayRefs;
+}
+
+function localizeOverlay(refs) {
+  const closeLabel = refs.closeButton.querySelector(".visually-hidden");
+  if (closeLabel) closeLabel.textContent = t("Закрыть");
+  const customLabel = refs.customSection.querySelector(".question-modal-custom-label span");
+  if (customLabel) customLabel.textContent = t("Свой вариант");
+  refs.deferButton.textContent = t("Отложить");
+  refs.submitButton.textContent = t("Продолжить");
+  refs.acceptedCloseButton.textContent = t("Закрыть");
 }
 
 // Selection state for whichever question is currently open -- reset on
@@ -565,7 +576,7 @@ function buildOptionsForKind(refs, question) {
       inputType: entry.inputType,
       name: "question-modal-option",
       value: "yes",
-      label: "Да",
+      label: t("Да"),
       checked: false,
       onChange: () => {
         currentSelection.confirmValue = true;
@@ -575,7 +586,7 @@ function buildOptionsForKind(refs, question) {
       inputType: entry.inputType,
       name: "question-modal-option",
       value: "no",
-      label: "Нет",
+      label: t("Нет"),
       checked: false,
       onChange: () => {
         currentSelection.confirmValue = false;
@@ -603,7 +614,7 @@ function configureCustomSection(refs, question) {
   } else {
     refs.customTextarea.removeAttribute("maxlength");
   }
-  refs.customHint.textContent = describeValidationHint(validation) || "";
+  refs.customHint.textContent = t(describeValidationHint(validation) || "");
   updateCustomCounter(refs);
 }
 
@@ -617,7 +628,7 @@ function configureFreeText(refs, question) {
   const label = document.createElement("label");
   label.className = "question-modal-custom-label";
   const labelText = document.createElement("span");
-  labelText.textContent = "Ответ";
+  labelText.textContent = t("Ответ");
   const textarea = document.createElement("textarea");
   textarea.className = "question-modal-custom-textarea";
   textarea.dataset.hook = "question-modal-free-text";
@@ -640,7 +651,7 @@ function configureFreeText(refs, question) {
     const hint = document.createElement("p");
     hint.className = "question-modal-hint";
     hint.dataset.hook = "question-modal-free-text-hint";
-    hint.textContent = hintText;
+    hint.textContent = t(hintText);
     wrap.append(hint);
   }
   refs.optionsList.append(wrap);
@@ -663,6 +674,7 @@ export function openQuestionModal(question, { trigger } = {}) {
   // Captured before `ensureOverlay()`/anything else below can steal focus.
   openedFromElement = isElement(document.activeElement) ? document.activeElement : null;
   const refs = ensureOverlay();
+  localizeOverlay(refs);
   if (!keydownActive) {
     document.addEventListener("keydown", refs.handleDocumentKeydown);
     keydownActive = true;
@@ -673,7 +685,7 @@ export function openQuestionModal(question, { trigger } = {}) {
   currentTriggerDescriptor = question.question_id;
 
   refs.title.textContent = question.text || "";
-  refs.subtitle.textContent = resolveSubtitle(question);
+  refs.subtitle.textContent = t(resolveSubtitle(question));
   buildOptionsForKind(refs, question);
   configureFreeText(refs, question);
   configureCustomSection(refs, question);
@@ -699,8 +711,8 @@ function showAcceptedAnswer(question, answer, { announceText } = {}) {
   refs.acceptedView.hidden = false;
   const described = describeAnswer(question, answer);
   refs.acceptedText.textContent = described
-    ? `Ответ уже принят: ${described}`
-    : "Ответ уже принят.";
+    ? t("Ответ уже принят: {answer}", { answer: described })
+    : t("Ответ уже принят.");
   refs.overlay.hidden = false;
   refs.acceptedCloseButton.focus();
   if (announceText) {
@@ -769,13 +781,13 @@ async function submitAnswer() {
   const refs = ensureOverlay();
   const payload = buildAnswerPayload(currentQuestion, currentSelection);
   if (!payload.ok) {
-    refs.status.textContent = payload.message;
+    refs.status.textContent = t(payload.message);
     return;
   }
   submitting = true;
   refs.submitButton.disabled = true;
   refs.deferButton.disabled = true;
-  refs.status.textContent = "Отправляется…";
+  refs.status.textContent = t("Отправляется…");
   const question = currentQuestion;
   const result = await postQuestionAnswer(question.question_id, question.revision, payload.answer);
   // The operator may have closed the modal (Escape/Отложить) while this
@@ -795,7 +807,7 @@ async function submitAnswer() {
     pruneAnsweredQuestionRow(question.question_id);
     closeQuestionModal();
     requestSnapshotRefresh(question.project_id);
-    announce("Ответ отправлен.");
+    announce(t("Ответ отправлен."));
     return;
   }
   submitting = false;
@@ -808,7 +820,7 @@ async function submitAnswer() {
     // announcement never names a channel the data does not actually carry
     // -- the operator's own dashboard may well be the one that "lost".
     showAcceptedAnswer(question, result.acceptedAnswer.answer, {
-      announceText: "Ответ уже принят.",
+      announceText: t("Ответ уже принят."),
     });
     return;
   }
@@ -910,7 +922,7 @@ export function syncQuestionModalWithQuestions(questions) {
     return;
   }
   closeQuestionModal();
-  announce("Ответ уже получен.");
+  announce(t("Ответ уже получен."));
 }
 
 let openListenerAttached = false;

@@ -10,6 +10,7 @@ import { setActiveProject } from "../actions.js";
 import { createAppController } from "../app-controller.js";
 import { attachViewerOpenListener } from "../viewer.js";
 import { attachAgentPromptListener } from "../chat-prompt-dialog.js";
+import { attachQuestionOpenListener, syncQuestionModalWithQuestions } from "../question-dialog.js";
 import { montageRepaintWanted, renderShellV2, setViewedScreen } from "./shell.js";
 import { createRailDrawer } from "./rail-drawer.js";
 import { attachViewerV2, repaintViewer } from "./viewer.js";
@@ -92,6 +93,7 @@ export function bootV2() {
   // Поэтому оба слушателя висят рядом и не спорят за одно событие.
   attachViewerOpenListener();
   attachAgentPromptListener();
+  attachQuestionOpenListener();
   ensureStylesheet("/static/styles/v2/viewer.css");
   ensureStylesheet("/static/styles/v2/montage.css");
 
@@ -125,6 +127,7 @@ export function bootV2() {
       }
       repaintViewer();
       renderShellV2(shellRoot, state);
+      syncQuestionModalWithQuestions(state?.snapshot?.questions);
     },
     paintRail: (state) => renderProjectRail(railRoot, state),
     setActiveProject,

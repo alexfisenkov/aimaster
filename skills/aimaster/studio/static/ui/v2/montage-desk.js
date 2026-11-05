@@ -109,7 +109,7 @@ function engineMissing(project, revision, reason) {
   const box = el("div", "am-engine");
   box.dataset.hook = "am-engine-missing";
   box.append(el("p", "am-engine-title", t("Монтажный стол не установлен")));
-  if (reason) box.append(el("p", "am-engine-reason", reason));
+  if (reason) box.append(el("p", "am-engine-reason", t(reason)));
   box.append(markedChat(project, "install", t("Установить → чат"), installMontage(project, revision)));
   return box;
 }

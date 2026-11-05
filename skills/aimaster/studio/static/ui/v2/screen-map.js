@@ -129,7 +129,7 @@ export function primaryAction(project) {
   const items = unresolvedEntries(project, stage);
   if (readiness && readiness.can_approve !== true && items.length === 0) {
     items.push({
-      label: READINESS_REASONS[readiness.reason] || "проверьте материалы этого шага",
+      label: t(READINESS_REASONS[readiness.reason] || "проверьте материалы этого шага"),
       target: null,
       tab: null,
       slot: null,

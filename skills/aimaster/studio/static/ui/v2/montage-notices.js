@@ -25,7 +25,7 @@ export function renderNotices(list, { project, revision, actions = true }) {
     const row = el("div", "am-notice");
     row.dataset.tone = notice.tone;
     row.dataset.key = notice.key;
-    row.append(el("p", "am-notice-text", notice.text));
+    row.append(el("p", "am-notice-text", t(notice.text)));
     if (actions && notice.action === "refresh") row.append(refreshButton(project, revision, notice.key));
     box.append(row);
   }

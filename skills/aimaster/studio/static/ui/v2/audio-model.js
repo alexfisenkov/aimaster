@@ -5,6 +5,7 @@
 
 import { variantCounts, variantStatus } from "./counts.js";
 import { statusTone } from "./status-tone.js";
+import { t } from "./locale.js";
 
 export const AUDIO_LAYERS = Object.freeze([
   Object.freeze({ layer: "voice", name: "Голос", hint: "реплики героев" }),
@@ -35,7 +36,7 @@ export function audioTiles(project) {
       // обязательной, только когда у неё появился результат
       // (`domain_positions._position_required`). Так и подписываем —
       // человек должен видеть, что звук можно просто пропустить.
-      status: counts.total === 0 && !counts.selected ? "не нужен — можно пропустить" : variantStatus(counts),
+      status: counts.total === 0 && !counts.selected ? t("не нужен — можно пропустить") : variantStatus(counts),
       tone: statusTone(counts),
       wave: waveHeights(order, counts.total > 0 || Boolean(counts.selected)),
       hasPrompt: typeof owner?.links?.audio_prompt_version_id === "string"

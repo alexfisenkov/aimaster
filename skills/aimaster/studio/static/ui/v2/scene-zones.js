@@ -87,7 +87,7 @@ function localChip(project, reference) {
   const node = el("button", "v2-ref-chip");
   node.type = "button";
   node.dataset.kind = reference.kind;
-  node.setAttribute("aria-label", `${name}: только в этой сцене`);
+  node.setAttribute("aria-label", t("{name}: только в этой сцене", { name }));
   const picture = el("span", "v2-ref-chip-picture");
   picture.append(renderPreview(referenceFile(project, reference), { label: name, small: true }));
   node.append(picture, el("span", "v2-ref-chip-name", name));
@@ -143,12 +143,12 @@ export function videoReferenceZone(project, revision, scene) {
     const chip = el("button", "v2-ref-chip v2-ref-chip-video");
     chip.type = "button";
     chip.dataset.hook = "v2-video-reference";
-    chip.setAttribute("aria-label", `Видеореференс «${name}»: ${USAGE_WORDS[reference.usage] || "пример"}`);
+    chip.setAttribute("aria-label", t("Видеореференс «{name}»: {usage}", { name, usage: t(USAGE_WORDS[reference.usage] || "пример") }));
     const picture = el("span", "v2-ref-chip-picture");
     picture.append(renderPreview(reference, { fallback: "video", label: name, small: true }));
     chip.append(
       picture,
-      el("span", "v2-usage", USAGE_WORDS[reference.usage] || "пример"),
+      el("span", "v2-usage", t(USAGE_WORDS[reference.usage] || "пример")),
       el("span", "v2-ref-chip-name", name),
     );
     chip.addEventListener("click", (event) => {
@@ -170,15 +170,15 @@ export function framesZone(project, revision, scene) {
   for (const slot of planned) {
     const counts = variantCounts(project, { sceneId: scene.scene_id, slot });
     const status = variantStatus(counts);
-    const name = slot === "image" ? t("Картинка") : `${SLOT_WORDS[slot]} кадр`;
+    const name = slot === "image" ? t("Картинка") : t("{slot} кадр", { slot: t(SLOT_WORDS[slot]) });
     const button = el("button", "v2-slot");
     button.type = "button";
     button.dataset.slot = slot;
     button.dataset.hook = "v2-frame-slot";
     button.setAttribute("aria-label", `${name}: ${status}`);
     button.append(renderPreview(counts.selected, { label: name, emptyText: t("Картинки пока нет") }));
-    const label = el("span", "v2-slot-label", slot === "image" ? name : SLOT_WORDS[slot]);
-    if (slot !== "image") label.append(el("span", "v2-phone-only", " кадр"));
+    const label = el("span", "v2-slot-label", slot === "image" ? name : t(SLOT_WORDS[slot]));
+    if (slot !== "image") label.append(el("span", "v2-phone-only", t(" кадр")));
     button.append(label, statusLine(status, statusTone(counts), "v2-status v2-slot-status"));
     button.addEventListener("click", (event) => {
       event.stopPropagation();

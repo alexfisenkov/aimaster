@@ -2,6 +2,7 @@
 // плитки, слота, клипа и слоя одна точка, и её цвет читается по тем же
 // правилам, что и слова `variantStatus`. Чистые функции, без DOM: цвет
 // ставит CSS по `data-tone`.
+import { t } from "./locale.js";
 //
 //   none — вариантов нет («не задан»), серая точка;
 //   warn — варианты есть, ничего не выбрано («выберите из N»);
@@ -29,8 +30,8 @@ export function framesBadge(slots) {
   const list = Array.isArray(slots) ? slots : [];
   if (!list.length) return null;
   return list.every((counts) => Boolean(counts?.selected))
-    ? { text: "кадры готовы", tone: "ok" }
-    : { text: "нужно выбрать", tone: "warn" };
+    ? { text: t("кадры готовы"), tone: "ok" }
+    : { text: t("нужно выбрать"), tone: "warn" };
 }
 
 /**
@@ -39,7 +40,7 @@ export function framesBadge(slots) {
  * @returns {{text: string, tone: "ok"|"warn"|"none"}}
  */
 export function clipBadge({ total = 0, selected = null } = {}) {
-  if (selected) return { text: "клип выбран", tone: "ok" };
-  if (total > 0) return { text: "нужно выбрать", tone: "warn" };
-  return { text: "клипа нет", tone: "none" };
+  if (selected) return { text: t("клип выбран"), tone: "ok" };
+  if (total > 0) return { text: t("нужно выбрать"), tone: "warn" };
+  return { text: t("клипа нет"), tone: "none" };
 }

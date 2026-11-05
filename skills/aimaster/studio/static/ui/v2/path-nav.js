@@ -6,6 +6,7 @@
 
 import { SCREEN_HINTS, pathState } from "./screen-map.js";
 import { el } from "./dom.js";
+import { t } from "./locale.js";
 
 const LOCKED_TITLE = "Откроется, когда одобрите предыдущий шаг";
 
@@ -32,7 +33,7 @@ export function renderPath(project, { current } = {}) {
   const steps = pathState(project);
   const nav = el("nav", "v2-path");
   nav.dataset.hook = "v2-path";
-  nav.setAttribute("aria-label", "Путь проекта");
+  nav.setAttribute("aria-label", t("Путь проекта"));
   const strip = el("ol", "v2-path-strip");
 
   steps.forEach((step, index) => {
@@ -46,12 +47,12 @@ export function renderPath(project, { current } = {}) {
       control.type = "button";
       control.dataset.hook = "v2-path-step";
       control.dataset.screen = step.id;
-      control.title = SCREEN_HINTS[step.id] || "";
+      control.title = t(SCREEN_HINTS[step.id] || "");
       control.addEventListener("click", () => requestScreen(step.id, control));
     } else {
       control = el("span", "v2-path-button");
       control.setAttribute("aria-disabled", "true");
-      control.title = LOCKED_TITLE;
+      control.title = t(LOCKED_TITLE);
     }
     const text = el("span", "v2-path-text");
     text.append(el("span", "v2-path-label", step.label));
