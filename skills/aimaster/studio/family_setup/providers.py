@@ -124,6 +124,15 @@ def register_connector(home, state_dir, agent, name, expected, executable, *, ru
         verified = matches(_entry(after, agent, name), expected)
     except (OSError, ValueError):
         preserved, verified = False, False
+    if agent == "codex" and "url" in expected and verified and preserved and code:
+        # A host CLI can save the entry before returning nonzero (for example,
+        # after starting an interactive auth handoff). Read-back proves only
+        # local configuration, never authentication or availability.
+        return {**base, "installed": True, "configured": True, "status": "auth_pending",
+                "restart_required": True, "backup": str(backup),
+                "registration_warning": "registration_command_nonzero",
+                "registration_exit_code": code,
+                "next_step": login_step + " The CLI returned a nonzero status; verify the host connection after login."}
     if code or not preserved or not verified:
         # A CLI write and a user's concurrent write are not distinguishable by
         # comparing current bytes with bytes just read. Never restore the whole

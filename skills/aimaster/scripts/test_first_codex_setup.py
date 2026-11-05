@@ -13,6 +13,48 @@ from studio.family_setup.service import setup
 
 
 class FirstCodexSetupTests(unittest.TestCase):
+    def test_exact_readback_after_nonzero_or_timeout_is_configured_but_not_authenticated(self):
+        for exit_code in (1, 124):
+            with self.subTest(exit_code=exit_code), tempfile.TemporaryDirectory() as temporary:
+                home = Path(temporary)
+                path = home / ".codex/config.toml"
+
+                def fake_codex(argv, *, env, **kwargs):
+                    path.write_text('[mcp_servers.magnific]\nurl = "https://mcp.magnific.com"\n')
+                    return exit_code, "", "private provider detail must not escape"
+
+                result = providers.register_connector(home, home / "test-state", "codex", "magnific",
+                    {"url": "https://mcp.magnific.com"}, ["fake-codex"], runner=fake_codex)
+                self.assertTrue(result["configured"], result)
+                self.assertEqual(result["status"], "auth_pending")
+                self.assertEqual(result["registration_warning"], "registration_command_nonzero")
+                self.assertEqual(result["registration_exit_code"], exit_code)
+                self.assertFalse(result["authenticated"])
+                self.assertFalse(result["available"])
+                self.assertNotIn("private provider detail", str(result))
+
+    def test_nonzero_with_wrong_or_missing_entry_remains_failed(self):
+        fixtures = (
+            '[mcp_servers.magnific]\nurl = "https://wrong.example/mcp"\n',
+            None,
+        )
+        for config_text in fixtures:
+            with self.subTest(config_text=config_text), tempfile.TemporaryDirectory() as temporary:
+                home = Path(temporary)
+                path = home / ".codex/config.toml"
+
+                def fake_codex(argv, *, env, **kwargs):
+                    if config_text is not None:
+                        path.write_text(config_text)
+                    return 1, "", ""
+
+                result = providers.register_connector(home, home / "test-state", "codex", "magnific",
+                    {"url": "https://mcp.magnific.com"}, ["fake-codex"], runner=fake_codex)
+                self.assertFalse(result["configured"], result)
+                self.assertFalse(result["authenticated"])
+                self.assertFalse(result["available"])
+                self.assertEqual(result["status"], "registration_failed")
+
     def test_setup_creates_missing_codex_home_and_reads_back_preserving_config(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
