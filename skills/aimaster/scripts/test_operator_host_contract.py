@@ -32,6 +32,13 @@ class HostContractTests(unittest.TestCase):
         self.assertEqual(receipt['state_sha256'],state_digest(self.store.load('film')))
         self.assertEqual(self.store.load('film')['revision'],0)
 
+    def test_readonly_cannot_claim_an_output_absent_from_canonical_delta(self):
+        action=self.runner.ledger.enqueue('film',ActionRequest('continue-in-chat','scenario',{},0,'invented-read-output'))
+        with Operator(self.ws,agent='claude',adapter=lambda job,*args:self.result(job,output_ids=['script-never-created']),state_dir=Path(self.tmp.name)/'family') as controller:
+            controller.step()
+        self.assertEqual(self.runner.ledger.get_action(action['action_id'])['status'],'outcome_unknown')
+        self.assertEqual(self.store.load('film')['revision'],0)
+
     def test_nullable_hash_keeps_real_authoring_output_validation(self):
         self.runner.ledger.enqueue('film',ActionRequest('revise-scenario','scenario',{},0,'authoring'))
         def author(job,*args):

@@ -111,6 +111,17 @@ def _ids(items, key):
     return {item.get(key): item for item in items if isinstance(item, dict) and item.get(key)}
 
 
+def _version_ids(state):
+    """Canonical version histories, including scene blocks, not current links."""
+    from .decision_cards import PROMPT_COLLECTIONS, RESULT_COLLECTIONS
+    items = list((state.get("script") or {}).get("versions", []))
+    for scene in state.get("scenes", []):
+        items.extend((scene.get("script_block") or {}).get("versions", []))
+    for collection in (*PROMPT_COLLECTIONS, *RESULT_COLLECTIONS):
+        items.extend(state.get(collection, []))
+    return set(_ids(items, "version_id"))
+
+
 def verify_result(job, result, before, after, workspace):
     """Independently validate identity, revision, exact semantic outputs and actual media."""
     if not isinstance(result, dict) or not set(RESULT_SCHEMA["required"]) <= set(result) <= set(RESULT_SCHEMA["properties"]):
@@ -146,7 +157,10 @@ def verify_result(job, result, before, after, workspace):
                 history[:len(previous)] != previous or len(history) <= len(previous):
             raise AdapterFailure(reason="result_history")
     if kind == "continue-in-chat":
-        # A read-only question has no fabricated revision/result requirement.
+        # Read-only/meta-only work needs no invented output. Authoring must name
+        # every actual new version, not an old existing ID or a claimed one.
+        if output != _version_ids(after) - _version_ids(before):
+            raise AdapterFailure(reason="result_semantic_outputs")
         return "succeeded"
     if after["revision"] <= before["revision"]:
         raise AdapterFailure()
@@ -310,6 +324,7 @@ class Operator:
             self._status, self._active = "busy", job["action_id"]
             self._heartbeat()
             finished = None
+            verified_output_ids = None
             diagnostic = {"reason": "none"}
             reply = "Исход действия не подтверждён; проверьте сохранённое состояние. Автоматического повтора не было."
             phase = "host"
@@ -339,6 +354,8 @@ class Operator:
                 phase = "result_validation"
                 after = self.runner.store.load(job["project_id"])
                 final = verify_result(job, result, before, after, self.workspace)
+                if final == "succeeded":
+                    verified_output_ids = sorted(set(result["output_ids"]))
                 from .agent_bridge import _sanitize_output
                 reply = _sanitize_output(result["reply"])[:12000]
                 if final != "succeeded":
@@ -387,7 +404,8 @@ class Operator:
             write_json(self.private / "operator-results" / (job["action_id"] + ".json"),
                 {"action_id": job["action_id"], "project_id": job["project_id"], "revision": observed["revision"],
                  "state_sha256": state_digest(observed), "status": finished["status"], "reply": reply,
-                 "diagnostic": diagnostic})
+                 "diagnostic": diagnostic,
+                 **({"verified_output_ids": verified_output_ids} if verified_output_ids is not None and finished["status"] == "succeeded" else {})})
             if final == "needs_chat_setup":
                 self._status = "needs_setup"
             self._inbox()

@@ -19,7 +19,7 @@ GATEWAY=Path(__file__).with_name('creator_studio_job.py')
 class JobAuthoringTests(unittest.TestCase):
     setUp=fixture.OperatorTests.setUp
 
-    def apply(self, op='script.add-version', data=None, *, change=None, path_case=None, paid=False, project=None, payload=None):
+    def apply(self, op='script.add-version', data=None, *, change=None, path_case=None, paid=False, project=None, payload=None, reported_output_ids=None):
         self.assertTrue(GATEWAY.is_file(),'missing job-bound public CLI gateway')
         project=project or ('p' if paid else 'film'); state=self.store.load(project)
         from studio.domain import derive_view_stage
@@ -41,14 +41,21 @@ class JobAuthoringTests(unittest.TestCase):
             elif path_case=='foreign-workspace':
                 other=self.ws.parent/'other-workspace';other.mkdir();argv[2]=str(other)
             done=subprocess.run(argv,capture_output=True,text=True,timeout=15)
-            captured.append((done.returncode,json.loads(done.stdout)))
+            response=json.loads(done.stdout)
+            captured.append((done.returncode,response))
             after=self.store.load(project)
+            outputs=[response['version_id']] if done.returncode==0 and response.get('version_id') else []
+            if reported_output_ids is not None:outputs=reported_output_ids
             return {**{key:job[key] for key in ('action_id','project_id','action_type','target_id')},'base_revision':job['revision'],
                 'revision':after['revision'],'state_sha256':None,'status':'succeeded' if done.returncode==0 else 'failed',
-                'output_ids':[],'reply':'Scoped gateway response observed.'}
+                'output_ids':outputs,'reply':'Scoped gateway response observed.'}
         family=self.state_dir if paid else Path(self.tmp.name)/'family'
-        with Operator(self.ws,agent='claude',adapter=host,state_dir=family) as controller:controller.step()
+        with Operator(self.ws,agent='claude',adapter=host,state_dir=family) as controller:finished=controller.step()
         self.assertEqual(len(captured),1)
+        self.last_ledger_status=self.runner.ledger.get_action(action['action_id'])['status']
+        self.assertEqual(self.last_ledger_status,finished['status'])
+        if reported_output_ids is None:
+            self.assertEqual(self.last_ledger_status,'outcome_unknown' if paid else 'succeeded' if captured[0][0]==0 else 'failed')
         return captured[0],state,self.store.load(project)
 
     def test_script_goes_through_existing_authoring_and_history(self):
@@ -57,6 +64,23 @@ class JobAuthoringTests(unittest.TestCase):
         self.assertEqual(after['revision'],before['revision']+1)
         self.assertEqual(after['script']['versions'][-1]['text'],'МАЯК scoped text')
         self.assertEqual(after['history'][-1]['kind'],'script-ready')
+        self.assertEqual(self.last_ledger_status,'succeeded')
+
+    def test_missing_new_script_id_cannot_succeed_in_final_ledger(self):
+        (code,value),before,after=self.apply(reported_output_ids=[])
+        self.assertEqual(code,0,value);self.assertEqual(after['revision'],before['revision']+1)
+        self.assertEqual(self.last_ledger_status,'outcome_unknown')
+
+    def test_nonexistent_output_id_cannot_succeed_in_final_ledger(self):
+        (code,value),_,after=self.apply(reported_output_ids=['script-never-created'])
+        self.assertEqual(code,0,value);self.assertEqual(len(after['script']['versions']),1)
+        self.assertEqual(self.last_ledger_status,'outcome_unknown')
+
+    def test_existing_but_not_new_version_is_not_the_actual_delta(self):
+        authoring.add_script_version(self.store,'film',0,'Existing version','fixture')
+        (code,value),before,after=self.apply(reported_output_ids=['script-v1'])
+        self.assertEqual(code,0,value);self.assertEqual(after['revision'],before['revision']+1)
+        self.assertEqual(self.last_ledger_status,'outcome_unknown')
 
     def test_unknown_op_foreign_project_and_stale_revision_refuse(self):
         for change in ({'op':'shell.eval'},{'project_id':'another'},{'expected_revision':999}, {'unknown':'field'}):
@@ -93,6 +117,22 @@ class JobAuthoringTests(unittest.TestCase):
             (code,value),before,after=self.apply('prompt.add-version',{'target':target,'text':'A blue cube','reason':'owner request'},project=project)
             self.assertEqual(code,0,value);self.assertEqual(after['revision'],before['revision']+1)
             self.assertEqual(after[collection][-1]['text'],'A blue cube');self.assertEqual(after['history'][-1]['kind'],'prompt-ready')
+
+    def test_missing_prompt_version_id_cannot_succeed_in_final_ledger(self):
+        self.plan()
+        (code,value),_,after=self.apply('prompt.add-version',{'target':'pos:scene:s1:image','text':'Blue cube','reason':'owner request'},reported_output_ids=[])
+        self.assertEqual(code,0,value);self.assertEqual(len(after['image_prompts']),1)
+        self.assertEqual(self.last_ledger_status,'outcome_unknown')
+
+    def test_wrong_uploaded_result_version_id_cannot_succeed_in_final_ledger(self):
+        self.plan()
+        self.apply('prompt.add-version',{'target':'pos:scene:s1:image','text':'Blue cube','reason':'fixture'})
+        cli('stage','approve',self.ws,'film','--expected-revision',self.store.load('film')['revision'])
+        (self.ws/'media/upload.png').write_bytes(png_bytes())
+        asset=authoring.open_assets(self.ws).register('media/upload.png','result')
+        (code,value),_,after=self.apply('result.add-upload',{'target':'pos:scene:s1:image','asset_id':asset['asset_id'],'source':'upload'},reported_output_ids=['result-never-created'])
+        self.assertEqual(code,0,value);self.assertEqual(len(after['image_results']),1)
+        self.assertEqual(self.last_ledger_status,'outcome_unknown')
 
     def test_guide_and_library_reference_keep_exact_choice_and_identity(self):
         self.plan()
