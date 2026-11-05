@@ -60,6 +60,8 @@ def project_ready_for_assembly(env: dict, workspace: Path) -> int:
     p = MONTAGE_PROJECT
     rev = cli(env, "project", "create", workspace, p, "--title", "Проба «монтаж»", "--type", "video",
               "--mode", "autopilot")["revision"]
+    rev = cli(env, "project", "set-assembly-mode", workspace, p, "--mode", "montage",
+              "--expected-revision", rev)["revision"]
     rev = cli(env, "script", "add-version", workspace, p, "--text", "Кот Барсик находит клубок.",
               "--reason", "смоук", "--expected-revision", rev)["revision"]
     scenes = folder / "сцены.json"

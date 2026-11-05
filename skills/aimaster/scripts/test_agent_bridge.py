@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import json
 import os
+import shutil
 from unittest.mock import patch
 from pathlib import Path
 
@@ -80,10 +81,15 @@ class AgentBridgeTests(unittest.TestCase):
             calls.append((command, kwargs))
             return type("Completed", (), {"returncode": 0, "stdout": self.envelope("готово"), "stderr": ""})()
 
-        result = run_codex_item(
-            self.item(),
-            runner=fake_runner,
-        )
+        with tempfile.TemporaryDirectory() as path:
+            # The CI fixture supplies discovery without depending on either
+            # Codex or Claude being installed on the runner.
+            with patch.dict(os.environ, {"PATH": path}), patch(
+                "studio.host_launch.resolve", return_value=[str(Path(path) / "codex")]
+            ):
+                self.assertIsNone(shutil.which("codex"))
+                self.assertIsNone(shutil.which("claude"))
+                result = run_codex_item(self.item(), runner=fake_runner)
         self.assertEqual(result, "готово")
         self.assertEqual(len(calls), 1)
         self.assertIn("canonical workspace", calls[0][1]["input"])
@@ -99,12 +105,13 @@ class AgentBridgeTests(unittest.TestCase):
             )
 
     def test_success_redacts_tokens_and_local_paths(self):
-        result = run_codex_item(
-            self.item(),
-            runner=lambda command, **kwargs: type(
-                "Completed", (), {"returncode": 0, "stdout": self.envelope("token 123456:" + "A" * 36 + " /Users/Alex/secret.txt"), "stderr": ""}
-            )(),
-        )
+        with tempfile.TemporaryDirectory() as path:
+            with patch.dict(os.environ, {"PATH": path}), patch(
+                "studio.host_launch.resolve", return_value=[str(Path(path) / "codex")]
+            ):
+                result = run_codex_item(self.item(), runner=lambda command, **kwargs: type(
+                    "Completed", (), {"returncode": 0, "stdout": self.envelope("token 123456:" + "A" * 36 + " /Users/Alex/secret.txt"), "stderr": ""}
+                )())
         self.assertNotIn("123456:", result)
         self.assertNotIn("/Users/Alex", result)
 

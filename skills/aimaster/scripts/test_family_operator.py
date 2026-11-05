@@ -5,12 +5,20 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from studio import authoring
 from studio.runner import open_runner
 from studio.ledger import ActionRequest
+
+
+@contextmanager
+def _test_tempdir(test):
+    temporary = tempfile.TemporaryDirectory()
+    test.addCleanup(temporary.cleanup)
+    yield temporary.name
 
 
 class OperatorTests(unittest.TestCase):
@@ -143,7 +151,7 @@ class PaidRouteTests(unittest.TestCase):
         from studio.operator import Operator
         from studio.operator_routes import set_route
         from studio.operator_adapters import state_digest
-        with tempfile.TemporaryDirectory() as directory:
+        with _test_tempdir(self) as directory:
             root = Path(directory).resolve(); ws = root / "ws"
             cli("workspace", "init", ws)
             store = authoring.open_store(ws)

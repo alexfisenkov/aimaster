@@ -7,6 +7,7 @@ import unittest
 import time
 import io
 import zipfile
+from contextlib import contextmanager
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -14,9 +15,17 @@ from studio import authoring
 from studio.server import serve
 
 
+@contextmanager
+def _test_tempdir(test):
+    """Keep temporary files until unittest cleanups, after server shutdown."""
+    temporary = tempfile.TemporaryDirectory()
+    test.addCleanup(temporary.cleanup)
+    yield temporary.name
+
+
 class HttpOperatorTests(unittest.TestCase):
     def test_montage_family_routes_keep_owner_and_typed_payload(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with _test_tempdir(self) as directory:
             ws = Path(directory).resolve()
             authoring.create_project(authoring.open_store(ws), "film", "Synthetic", "photo", "guided")
             server = serve(ws)
@@ -37,7 +46,7 @@ class HttpOperatorTests(unittest.TestCase):
             self.assertEqual(result.status, 200)
             self.assertEqual(json.loads(result.body)["received"]["edit"]["op"], "overlay-add")
     def test_real_server_offline_actions_are_observable_not_permanently_queued(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with _test_tempdir(self) as directory:
             ws = Path(directory).resolve()
             authoring.create_project(authoring.open_store(ws), "film", "Synthetic", "photo", "guided")
             server = serve(ws)
@@ -100,7 +109,7 @@ class TelegramAttachmentTests(unittest.TestCase):
     def test_photo_download_is_owner_scoped_and_replay_safe(self):
         from studio.telegram_bot import TelegramBotController
         from test_library import png_bytes
-        with tempfile.TemporaryDirectory() as directory:
+        with _test_tempdir(self) as directory:
             ws = Path(directory).resolve()
             authoring.create_project(authoring.open_store(ws), "film", "Synthetic", "photo", "guided")
             controller = TelegramBotController(ws, 99)
@@ -125,7 +134,7 @@ class TelegramAttachmentTests(unittest.TestCase):
     def test_unselected_document_is_retained_separately_and_voice_has_text_fallback(self):
         from studio.telegram_bot import TelegramBotController
         from test_library import wav_bytes
-        with tempfile.TemporaryDirectory() as directory:
+        with _test_tempdir(self) as directory:
             ws = Path(directory).resolve()
             authoring.create_project(authoring.open_store(ws), "p", "Synthetic", "photo", "guided")
             controller = TelegramBotController(ws, 99)
@@ -154,7 +163,7 @@ class HttpMontageDeliveryTests(unittest.TestCase):
         from studio.mini_app import MiniAppGateway
         from test_mini_app import init_data
         from studio.montage import service
-        with tempfile.TemporaryDirectory() as directory:
+        with _test_tempdir(self) as directory:
             root = Path(directory).resolve()
             seed = seed_workspace(root,{"a.mp4":tiny_mp4(b"a")},lambda ids:video_state([("s1","Scene","slow cinematic",2000,ids["a.mp4"])]))
             engine = fake_engine(fake_gsap_prefix(root, files=("gsap","MotionPathPlugin")))
