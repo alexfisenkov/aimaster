@@ -1,5 +1,14 @@
 // Explicit interface-copy lookup. User data is never passed through here.
 const PAIRS = [
+  ["Материалы","Materials"],["Подготовить материалы → чат","Prepare materials → chat"],
+  ["Оригинал сохранён; текущее задание изменилось. Продолжите в чате.","The original is saved; the current request changed. Continue in chat."],
+  ["Провайдер создал оригинал; локальная выдача не завершена. Повторять генерацию нельзя.","The provider created the original; local delivery is incomplete. Do not generate again."],
+  ["Материалы готовы","Materials ready"],["Материалы приняты. Проект завершён.","Materials accepted. Project complete."],
+  ["Ролик принят. Проект завершён.","Video accepted. Project complete."],
+  ["Открыть финальный ролик","Open final video"],["Финального ролика пока нет","No final video yet"],
+  ["Финальный ролик","Final video"],["ролик ещё не собран","video has not been assembled yet"],
+  ["кадр за кадром","scene by scene"],["одним заходом","one shot"],["без звука","no audio"],
+  ["Редактировать ролик","Edit video"],["Воспроизвести / пауза","Play / pause"],["Позиция воспроизведения","Playback position"],
   ["Сценарий","Scenario"],["Кадры","Frames"],["Видео","Video"],["Звук","Audio"],["Сборка","Assembly"],
   ["Сцены","Scenes"],["Референсы","References"],["Персонажи","Characters"],["Локации","Locations"],
   ["Реквизит","Products"],["Стиль","Style"],["Прочее","Other"],["Видеореференс","Video reference"],

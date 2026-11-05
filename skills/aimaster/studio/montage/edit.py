@@ -47,14 +47,14 @@ def apply_edit(engine: Engine, paths: MontagePaths, request: EditRequest, *,
         raise MontageError(f"неизвестная правка {request.op}; можно: {', '.join(OPS)}")
     if not paths.index.is_file():
         raise MontageError("черновика ещё нет: сначала montage draft")
-    if request.op == "undo":
-        return {"op": "undo", **undo_last(paths)}
     ctx = EditContext(engine, paths, runner or EngineRunner())
     model = read_model(engine, paths.current, cache_dir=paths.cache, runner=ctx.runner)
     before = model_hash(model)
     if expected_model_hash and expected_model_hash != before:
         raise MontageError("монтаж изменился с тех пор, как вы его читали (например, в монтажном "
                            "столе): прочитайте montage status и повторите")
+    if request.op == "undo":
+        return {"op": "undo", **undo_last(paths)}
     clip = None if request.op in {"title-add", "preset", "overlay-add"} else model.clip(need(request.clip, "clip", request.op))
     snapshot = snapshot_before(paths)
     try:

@@ -324,6 +324,10 @@ class StudioApplication:
 
             if method == "GET" and request_path == "/api/session":
                 return self._json_response(200, {"csrf_token": self.csrf_token})
+            if self.workspace is not None and request_path == "/api/preferences" and method in {"GET", "POST"}:
+                from . import workspace_preferences
+                result = workspace_preferences.read(self.workspace) if method == "GET" else workspace_preferences.save(self.workspace, json.loads(body))
+                return self._json_response(200, result)
             if method == "GET" and request_path == "/api/operator" and self.workspace is not None:
                 from .operator import status, package_fingerprint, family_fingerprint
                 result = status(self.workspace)
@@ -369,6 +373,19 @@ class StudioApplication:
                 return self._static_file(request_path.removeprefix("/static/"))
             if method == "POST" and request_path == "/api/actions":
                 return self._action(request_headers, body)
+            if self.workspace is not None and request_path.startswith("/api/actions/"):
+                suffix = request_path.removeprefix("/api/actions/")
+                if suffix.endswith("/collection") and "/" not in suffix[:-11]:
+                    action_id = suffix[:-11]
+                    from .runner import open_runner
+                    runner = open_runner(self.workspace)
+                    if method == "GET":
+                        from .provider_collection import public
+                        return self._json_response(200, public(runner, action_id))
+                    if method == "POST":
+                        if json.loads(body) != {}:
+                            raise ValueError("collection accepts no paths or URLs")
+                        return self._json_response(200, runner.reconcile(self.workspace, action_id))
             if method == "POST" and request_path.startswith("/api/questions/"):
                 suffix = request_path.removeprefix("/api/questions/")
                 if suffix.endswith("/answers"):
@@ -439,9 +456,12 @@ class StudioApplication:
                     options["initial_status"] = "needs_chat"
                 elif request["action_type"] in {"generate", "vary", "regenerate"}:
                     from .operator_routes import selected_route, uncertain_position, RouteUnavailable
+                    from .provider_download import preflight
                     state = self.store.load(request["project_id"])
                     try:
                         route = selected_route(self.workspace, state, request["action_type"], request["target_id"])
+                        if not preflight(route):
+                            raise RouteUnavailable("original collection is unavailable before dispatch")
                         if uncertain_position(self.ledger, state, request["action_type"], request["target_id"]):
                             options["initial_status"] = "needs_chat"
                         spending = request["payload"].get("spending")

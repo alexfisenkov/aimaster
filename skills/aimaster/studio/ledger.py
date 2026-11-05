@@ -349,6 +349,18 @@ class ActionLedger:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS provider_collections (
+                    action_id TEXT PRIMARY KEY REFERENCES actions(action_id),
+                    receipt_sha256 TEXT NOT NULL,
+                    external_id TEXT NOT NULL,
+                    phase TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS provider_acknowledgements (
+                    action_id TEXT PRIMARY KEY REFERENCES actions(action_id),
+                    basis_sha256 TEXT NOT NULL,
+                    external_id TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS actions_claimable
                     ON actions(status, created_at, action_id);
                 CREATE INDEX IF NOT EXISTS grants_available
@@ -668,6 +680,74 @@ class ActionLedger:
         finally:
             connection.close()
 
+    def collection(self, action_id):
+        connection = self._connect()
+        try:
+            row = connection.execute("SELECT phase FROM provider_collections WHERE action_id=?", (action_id,)).fetchone()
+            return row[0] if row else None
+        finally:
+            connection.close()
+
+    def acknowledge_provider(self, action_id, basis_sha256, external_id):
+        external_id = _external_id(external_id)
+        if not external_id or not re.fullmatch(r"[a-f0-9]{64}", basis_sha256):
+            raise InvalidAction("invalid provider acknowledgement")
+        with self._transaction() as connection:
+            row = self._fetch_action(connection, action_id)
+            if row is None:
+                raise ActionNotFound(action_id)
+            prior = connection.execute("SELECT * FROM provider_acknowledgements WHERE action_id=?", (action_id,)).fetchone()
+            if prior:
+                if (prior["basis_sha256"], prior["external_id"]) != (basis_sha256, external_id):
+                    raise InvalidTransition("provider acknowledgement is immutable")
+                return self._action(row)
+            if row["status"] not in {"running", "outcome_unknown"} or row["action_type"] not in GRANT_REQUIRED_ACTIONS or not row["grant_id"]:
+                raise InvalidTransition("provider action is not dispatched")
+            reservation = connection.execute("SELECT reserved_action_id FROM grants WHERE grant_id=?", (row["grant_id"],)).fetchone()
+            if not reservation or reservation[0] != action_id:
+                raise InvalidTransition("provider action has no reserved grant")
+            if row["external_id"] is not None and row["external_id"] != external_id:
+                raise InvalidTransition("provider creation differs")
+            connection.execute("INSERT INTO provider_acknowledgements VALUES (?,?,?)", (action_id,basis_sha256,external_id))
+            connection.execute("UPDATE actions SET external_id=?,updated_at=? WHERE action_id=?", (external_id,_timestamp(),action_id))
+            self._event(connection,action_id,row["status"],row["status"],{"provider_acknowledged":True,"external_id_recorded":True})
+            return self._action(self._fetch_action(connection,action_id))
+
+    def reconcile_collection(self, action_id, receipt_sha256, external_id, phase):
+        """Evidence-bound resolution; never requeue or release the paid grant.
+
+        The collection service independently verifies private receipt/artifact and
+        canonical output before requesting succeeded. Original events are retained.
+        """
+        external_id = _external_id(external_id)
+        if not external_id or not re.fullmatch(r"[a-f0-9]{64}", receipt_sha256) or phase not in {"received", "blocked", "conflict", "succeeded"}:
+            raise InvalidAction("invalid collection evidence")
+        with self._transaction() as connection:
+            row = self._fetch_action(connection, action_id)
+            if row is None:
+                raise ActionNotFound(action_id)
+            prior = connection.execute("SELECT * FROM provider_collections WHERE action_id=?", (action_id,)).fetchone()
+            if row["external_id"] is not None and row["external_id"] != external_id:
+                raise InvalidTransition("provider creation differs")
+            if prior is not None and (prior["receipt_sha256"] != receipt_sha256 or prior["external_id"] != external_id):
+                raise InvalidTransition("collection receipt is immutable")
+            if prior is not None and (prior["phase"] == phase or prior["phase"] == "succeeded"):
+                return self._action(row)
+            if row["action_type"] not in GRANT_REQUIRED_ACTIONS or not row["grant_id"] or not row["worker_id"] or row["status"] not in {"running", "outcome_unknown", "needs_chat_setup"}:
+                raise InvalidTransition("action is not awaiting provider reconciliation")
+            grant = connection.execute("SELECT reserved_action_id FROM grants WHERE grant_id=?", (row["grant_id"],)).fetchone()
+            if grant is None or grant[0] != action_id:
+                raise InvalidTransition("collection has no reserved authorization")
+            status = "succeeded" if phase == "succeeded" else "outcome_unknown"
+            public = {"status": status, "message": STATUS_MESSAGE_RU[status]}
+            connection.execute("INSERT INTO provider_collections VALUES (?,?,?,?) ON CONFLICT(action_id) DO UPDATE SET phase=excluded.phase",
+                               (action_id, receipt_sha256, external_id, phase))
+            connection.execute("UPDATE actions SET status=?, public_result_json=?, external_id=?, updated_at=? WHERE action_id=?",
+                               (status, _json(public), external_id, _timestamp(), action_id))
+            self._event(connection, action_id, row["status"], status, {"reconciliation": phase,
+                "receipt_sha256": receipt_sha256, "external_id_recorded": True, "public_result": public})
+            return self._action(self._fetch_action(connection, action_id))
+
     @staticmethod
     def _issue_autopilot_grant(connection, project_id, action_type) -> str:
         grant_id = f"grant-{uuid.uuid4().hex}"
@@ -881,6 +961,16 @@ class ActionLedger:
             row = self._fetch_action(connection, action_id)
             if row is None:
                 raise ActionNotFound(action_id)
+            acknowledgement = connection.execute("SELECT external_id FROM provider_acknowledgements WHERE action_id=?", (action_id,)).fetchone()
+            if acknowledgement:
+                if release_grant:
+                    raise InvalidTransition("acknowledged provider authorization cannot be released")
+                if external_id is not None and external_id != acknowledgement[0]:
+                    raise InvalidTransition("provider creation differs")
+                external_id = acknowledgement[0]
+                if status != "succeeded":
+                    status = "outcome_unknown"
+                    public_result_json = _json({"status": status, "message": STATUS_MESSAGE_RU[status]})
             if row["status"] in TERMINAL_STATUSES:
                 if (
                     row["status"] == status
@@ -1093,6 +1183,8 @@ class ActionLedger:
             row = self._fetch_action(connection, action_id)
             if row is None or row["status"] != "running":
                 return None
+            if row["external_id"] is not None:
+                raise InvalidTransition("acknowledged provider work cannot be requeued")
             connection.execute(
                 "UPDATE actions SET status = 'queued', worker_id = NULL, updated_at = ? "
                 "WHERE action_id = ? AND status = 'running'",
@@ -1112,6 +1204,13 @@ class ActionLedger:
             row = self._fetch_action(connection, action_id)
             if row is None or row["status"] != "running":
                 return None
+            if row["external_id"] is not None:
+                if external_id is not None and external_id != row["external_id"]:
+                    raise InvalidTransition("provider creation differs")
+                external_id = row["external_id"]
+                if status != "succeeded":
+                    status = "outcome_unknown"
+                    public_result = {"status": status, "message": STATUS_MESSAGE_RU[status]}
             cleaned_result = _redact(public_result)
             result_json = _json(cleaned_result)
             external_id = _external_id(external_id)

@@ -115,7 +115,7 @@ function sceneAddButton(project, revision, scene) {
 function sceneBadge(project, scene, video) {
   const state = video
     ? clipBadge(clipStatus(project, scene))
-    : framesBadge(plannedSlots(scene).map((slot) => variantCounts(project, { sceneId: scene.scene_id, slot })));
+    : framesBadge(plannedSlots(scene, project).map((slot) => variantCounts(project, { sceneId: scene.scene_id, slot })));
   return state ? badge(state.text, state.tone) : null;
 }
 

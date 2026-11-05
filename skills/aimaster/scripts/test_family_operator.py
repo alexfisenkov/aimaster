@@ -136,6 +136,7 @@ class OperatorTests(unittest.TestCase):
 
 
 class PaidRouteTests(unittest.TestCase):
+    @patch("studio.provider_download.preflight", lambda route: True)
     def test_exact_route_grant_duplicate_and_canonical_asset_collection(self):
         from test_library import cli, png_bytes
         from studio.server import serve

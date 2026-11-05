@@ -34,22 +34,22 @@ export function assemblyLines(project, { ready, finished }) {
   const time = sceneDuration(project);
   const layers = AUDIO_LAYERS
     .filter((meta) => selectedResultVersion(project, { layer: meta.layer }))
-    .map((meta) => meta.name.toLowerCase());
+    .map((meta) => t(meta.name).toLowerCase());
   return [
-    { key: "Сцены", value: time ? `${scenes} · ${time}` : String(scenes) },
-    { key: "Режим", value: MODE_WORDS[project?.gen_mode] || "кадр за кадром" },
-    { key: "Звук", value: layers.length ? layers.join(", ") : "без звука" },
-    { key: "Статус", value: finished ? "принят" : ready ? "ждёт вашего решения" : "ещё не собран" },
+    { key: t("Сцены"), value: time ? `${scenes} · ${time}` : String(scenes) },
+    { key: t("Режим"), value: t(MODE_WORDS[project?.gen_mode] || "кадр за кадром") },
+    { key: t("Звук"), value: layers.length ? layers.join(", ") : t("без звука") },
+    { key: t("Статус"), value: t(finished ? "принят" : ready ? "ждёт вашего решения" : "ещё не собран") },
   ];
 }
 
 /** «Ролик принят. Проект завершён.» */
-export function doneBanner() {
+export function doneBanner(materials = false) {
   const done = el("div", "v2-done");
   done.dataset.hook = "v2-done";
   const mark = el("span", "v2-done-mark", "✓");
   mark.setAttribute("aria-hidden", "true");
-  done.append(mark, el("span", "", "Ролик принят. Проект завершён."));
+  done.append(mark, el("span", "", t(materials ? "Материалы приняты. Проект завершён." : "Ролик принят. Проект завершён.")));
   return done;
 }
 
@@ -62,10 +62,10 @@ export function finalPreview(project, { ready, statusText, durationText = "", or
   button.dataset.part = "v2-final-slot";
   button.dataset.ready = String(ready);
   button.dataset.orientation = orientation;
-  button.setAttribute("aria-label", ready ? "Открыть финальный ролик" : "Финального ролика пока нет");
+  button.setAttribute("aria-label", t(ready ? "Открыть финальный ролик" : "Финального ролика пока нет"));
   button.disabled = !ready;
   button.append(renderPreview(ready ? assembly : null,
-    { kind: ready ? "video" : "none", label: "Финальный ролик", emptyText: "ролик ещё не собран" }));
+    { kind: ready ? "video" : "none", label: t("Финальный ролик"), emptyText: t("ролик ещё не собран") }));
   if (ready) button.append(playMark("v2-play v2-play-big"));
   button.append(el("span", "v2-final-status", statusText));
   if (durationText) button.append(el("span", "v2-final-duration", durationText));
@@ -79,7 +79,7 @@ export function finalPreview(project, { ready, statusText, durationText = "", or
 export function summaryCard(project, revision, state) {
   const card = el("section", "v2-card v2-final");
   card.dataset.hook = "v2-final";
-  card.append(el("h2", "v2-card-title", "Финальный ролик"));
+  card.append(el("h2", "v2-card-title", t("Финальный ролик")));
   const list = el("dl", "v2-kv");
   for (const line of assemblyLines(project, state)) {
     const row = el("div", "v2-kv-row");

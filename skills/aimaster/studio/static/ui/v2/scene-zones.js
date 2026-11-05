@@ -51,7 +51,8 @@ function plus(label, request) {
 }
 
 /** Какие кадры сцены запланированы: `first`, `last` или оба. */
-export function plannedSlots(scene) {
+export function plannedSlots(scene, project = null) {
+  if (project?.type === "photo") return ["image"];
   return ["first", "last"].filter((slot) => scene?.[slot === "first" ? "need_first" : "need_last"] === true);
 }
 
@@ -163,20 +164,21 @@ export function videoReferenceZone(project, revision, scene) {
 /** «Кадры»: слоты «первый» и «последний» — только отмеченные в плане. */
 export function framesZone(project, revision, scene) {
   const { row, items } = zone("Кадры", "frames");
-  const planned = plannedSlots(scene);
+  const planned = plannedSlots(scene, project);
   markEmpty(row, !planned.length);
   if (!planned.length) items.append(el("span", "v2-zone-none", t("без кадров")));
   for (const slot of planned) {
     const counts = variantCounts(project, { sceneId: scene.scene_id, slot });
     const status = variantStatus(counts);
+    const name = slot === "image" ? t("Картинка") : `${SLOT_WORDS[slot]} кадр`;
     const button = el("button", "v2-slot");
     button.type = "button";
     button.dataset.slot = slot;
     button.dataset.hook = "v2-frame-slot";
-    button.setAttribute("aria-label", `${SLOT_WORDS[slot]} кадр: ${status}`);
-    button.append(renderPreview(counts.selected, { label: `${SLOT_WORDS[slot]} кадр`, emptyText: "нет кадра" }));
-    const label = el("span", "v2-slot-label", SLOT_WORDS[slot]);
-    label.append(el("span", "v2-phone-only", " кадр"));
+    button.setAttribute("aria-label", `${name}: ${status}`);
+    button.append(renderPreview(counts.selected, { label: name, emptyText: t("Картинки пока нет") }));
+    const label = el("span", "v2-slot-label", slot === "image" ? name : SLOT_WORDS[slot]);
+    if (slot !== "image") label.append(el("span", "v2-phone-only", " кадр"));
     button.append(label, statusLine(status, statusTone(counts), "v2-status v2-slot-status"));
     button.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -186,7 +188,7 @@ export function framesZone(project, revision, scene) {
   }
   items.append(plus(
     "Загрузить свой кадр",
-    uploadFrame({ project, revision, sceneId: scene?.scene_id, slot: planned.length ? "last" : "first" }),
+    uploadFrame({ project, revision, sceneId: scene?.scene_id, slot: project?.type === "photo" ? "image" : planned.length ? "last" : "first" }),
   ));
   return row;
 }

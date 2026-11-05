@@ -1035,8 +1035,7 @@
       "sha256": "1fa6507cc91db50610a78515e952eb203b687074e4d10b44f238fa17e59f2ae9",
       "kind": "prompt",
       "modalities": [
-        "image",
-        "video"
+        "image"
       ],
       "tasks": [
         "generate",
@@ -1048,9 +1047,10 @@
       "model_families": [
         "imagine"
       ],
-      "models": [],
+      "models": [
+        "grok-imagine-image-2.0"
+      ],
       "versions": [
-        "1.5",
         "2.0"
       ],
       "family_all_versions": false,
@@ -1062,7 +1062,47 @@
         "official_urls": [
           "https://docs.x.ai/developers/model-capabilities/imagine"
         ],
-        "changes": "New authored route, separate from historical corpus.",
+        "changes": "Exact image 2.0 generate/edit scope; video generation has its own 1.5 entry. Primary xAI docs rechecked 2026-11-05.",
+        "source_date": "2026-11-05",
+        "review_status": "source-checked-route",
+        "source_path": "new-authored-supplement"
+      }
+    },
+    {
+      "id": "grok-imagine-video-1-5",
+      "title": "Grok Imagine Video 1.5: генерация",
+      "path": "current/grok-imagine.md",
+      "sha256": "1fa6507cc91db50610a78515e952eb203b687074e4d10b44f238fa17e59f2ae9",
+      "kind": "prompt",
+      "modalities": [
+        "video"
+      ],
+      "tasks": [
+        "generate"
+      ],
+      "providers": [
+        "xai"
+      ],
+      "model_families": [
+        "imagine"
+      ],
+      "models": [
+        "grok-imagine-video-1.5"
+      ],
+      "versions": [
+        "1.5"
+      ],
+      "family_all_versions": false,
+      "model_agnostic": false,
+      "provenance": {
+        "author_source_title": "AIMaster original supplement",
+        "original_sha256": "1fa6507cc91db50610a78515e952eb203b687074e4d10b44f238fa17e59f2ae9",
+        "reviewed_at": "2026-11-05",
+        "official_urls": [
+          "https://docs.x.ai/developers/model-capabilities/imagine",
+          "https://docs.x.ai/developers/model-capabilities/video/overview"
+        ],
+        "changes": "Exact video 1.5 generation scope. Video editing uses a different model and is not covered by this scope.",
         "source_date": "2026-11-05",
         "review_status": "source-checked-route",
         "source_path": "new-authored-supplement"
@@ -1189,7 +1229,7 @@
       "id": "nano-banana-2-1",
       "title": "Nano Banana 2.1: проверка версии перед генерацией",
       "path": "current/nano-banana-2-1.md",
-      "sha256": "6bdd0a06bc1f30c3d18db0ee340d40aee5b06dad760658c1f8b447a6f9df9377",
+      "sha256": "1acde9690baf4bb01f3a7a4e0486e56678070c2cf2e91745c20342bd363b3767",
       "kind": "prompt",
       "modalities": [
         "image"
@@ -1217,7 +1257,7 @@
         "official_urls": [
           "https://deepmind.google/models/model-cards/nano-banana-2-1/"
         ],
-        "changes": "New authored creative method; clarified portability while keeping vendor controls route-specific.",
+        "changes": "New authored creative method; clarified portability while keeping vendor controls route-specific. F1: explicit selected full-method reading path or corrected scoped bundle narration; original source SHA preserved.",
         "source_date": "2026-11-05",
         "review_status": "source-checked-route",
         "source_path": "new-authored-supplement"
@@ -1259,7 +1299,7 @@
       "id": "syntx-director-v5",
       "title": "SYNTX Director V5.2: тематическая маршрутизация",
       "path": "current/syntx-director-v5.md",
-      "sha256": "c65259eb9c278945a5930de6f008da833d8da49213948618313711d038391f7b",
+      "sha256": "a196fb023c97e9d04e665bc6e378ff143201de985430a1165f15997ca4c60c69",
       "kind": "scenario",
       "modalities": [
         "scenario"
@@ -1280,7 +1320,7 @@
         "original_sha256": "c65259eb9c278945a5930de6f008da833d8da49213948618313711d038391f7b",
         "reviewed_at": "2026-11-05",
         "official_urls": [],
-        "changes": "New route replacing unlicensed compiled upload package.",
+        "changes": "New route replacing unlicensed compiled upload package. F1: explicit selected full-method reading path or corrected scoped bundle narration; original source SHA preserved.",
         "source_date": "2026-11-05",
         "review_status": "new-methodology",
         "source_path": "new-authored-supplement"
@@ -1681,7 +1721,7 @@
       "id": "nano-banana-2-1-magnific",
       "title": "Nano Banana 2.1: проверка версии перед генерацией — magnific route",
       "path": "current/nano-banana-2-1.md",
-      "sha256": "6bdd0a06bc1f30c3d18db0ee340d40aee5b06dad760658c1f8b447a6f9df9377",
+      "sha256": "1acde9690baf4bb01f3a7a4e0486e56678070c2cf2e91745c20342bd363b3767",
       "kind": "prompt",
       "modalities": [
         "image"
@@ -1711,11 +1751,18 @@
         "official_urls": [
           "https://deepmind.google/models/model-cards/nano-banana-2-1/"
         ],
-        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific. F1: explicit selected full-method reading path or corrected scoped bundle narration; original source SHA preserved.",
         "source_date": "2026-11-05",
         "review_status": "route-adaptation",
         "source_path": "new-authored-supplement",
-        "route_evidence": "Magnific image model catalog, read 2026-11-05"
+        "route_evidence": "Magnific image model catalog, read 2026-11-05",
+        "required_readings": [
+          {
+            "path": "authored/gemini-images.md",
+            "sha256": "bb76d25d9eea00f5c82ffbfdc0d9fafe6194015b13ac6b48f384978ee84a52b8",
+            "role": "creative_methodology"
+          }
+        ]
       }
     },
     {
@@ -1764,7 +1811,7 @@
       "id": "nano-banana-2-1-syntx",
       "title": "Nano Banana 2.1: проверка версии перед генерацией — syntx route",
       "path": "current/nano-banana-2-1.md",
-      "sha256": "6bdd0a06bc1f30c3d18db0ee340d40aee5b06dad760658c1f8b447a6f9df9377",
+      "sha256": "1acde9690baf4bb01f3a7a4e0486e56678070c2cf2e91745c20342bd363b3767",
       "kind": "prompt",
       "modalities": [
         "image"
@@ -1794,11 +1841,18 @@
         "official_urls": [
           "https://deepmind.google/models/model-cards/nano-banana-2-1/"
         ],
-        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific.",
+        "changes": "Same complete creative guide; exact route adapter. Vendor settings, reference binding, costs and availability stay route-specific. F1: explicit selected full-method reading path or corrected scoped bundle narration; original source SHA preserved.",
         "source_date": "2026-11-05",
         "review_status": "route-adaptation",
         "source_path": "new-authored-supplement",
-        "route_evidence": "SYNTX dated official-public snapshot 2026-10-29; not account entitlement"
+        "route_evidence": "SYNTX dated official-public snapshot 2026-10-29; not account entitlement",
+        "required_readings": [
+          {
+            "path": "authored/gemini-images.md",
+            "sha256": "bb76d25d9eea00f5c82ffbfdc0d9fafe6194015b13ac6b48f384978ee84a52b8",
+            "role": "creative_methodology"
+          }
+        ]
       }
     },
     {

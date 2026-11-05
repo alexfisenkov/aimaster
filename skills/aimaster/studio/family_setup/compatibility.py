@@ -96,10 +96,10 @@ for montage in root.glob('projects/*/montage'):
  models=[*montage.glob('current/model.json'),*montage.glob('versions/*/model.json'),*montage.glob('.cache/model-*.json')]
  for path in models:
   raw=json.loads(path.read_text()); raw=raw['model'] if path.parent.name=='.cache' else raw
-  model=read_version_model(paths,path.parent.name) if path.parent.parent.name=='versions' and re.fullmatch(r'vd{3,}',path.parent.name) else Model.from_dict(raw)
+  model=read_version_model(paths,path.parent.name) if path.parent.parent.name=='versions' and re.fullmatch(r'v\d{3,}',path.parent.name) else Model.from_dict(raw)
   if not preserves(raw,model.to_dict()): raise ValueError('target model would lose metadata')
  for path in montage.glob('versions/*/meta.json'):
-  if re.fullmatch(r'vd{3,}',path.parent.name):
+  if re.fullmatch(r'v\d{3,}',path.parent.name):
    raw=json.loads(path.read_text())
    if not preserves(raw,read_meta(paths,path.parent.name).to_dict()): raise ValueError('target version would lose metadata')
  class Features(HTMLParser):

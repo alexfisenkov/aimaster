@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+import zlib
 
 from .assets import AssetIndex
 from .family_setup.state import write_bytes, write_json
@@ -58,6 +59,9 @@ def _extension(data):
             if any(entry.filename.startswith(("/", "\\")) or ".." in Path(entry.filename).parts or
                    "vbaProject" in entry.filename for entry in entries):
                 raise ValueError("unsafe document archive")
+            if any(entry.flag_bits & 1 or entry.compress_type not in {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}
+                   for entry in entries):
+                raise ValueError("unsupported document archive encoding")
             if archive.testzip() is not None:
                 raise ValueError("document archive checksum failed")
         return ".docx"
@@ -90,7 +94,12 @@ def download(workspace, update_id, spec, downloader):
     data = downloader(spec)
     if not isinstance(data, bytes) or not 0 < len(data) <= MAX_DOWNLOAD:
         raise ValueError("attachment is empty or exceeds 20 MiB")
-    extension = _extension(data)
+    try:
+        extension = _extension(data)
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError, NotImplementedError, EOFError, zlib.error):
+        # Container/codec/encryption errors must become the same durable refusal
+        # as other invalid uploads, without reflecting untrusted archive names.
+        raise ValueError("unsupported or corrupt document archive") from None
     if spec["kind"] == "photo" and extension not in {".png", ".jpg", ".webp"}:
         raise ValueError("photo has an invalid container")
     if spec["kind"] == "video" and extension not in {".mp4", ".webm"}:

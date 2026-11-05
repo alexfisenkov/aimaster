@@ -94,13 +94,13 @@
     },
     {
       "path": "styles/v2/family.css",
-      "bytes": 8073,
-      "sha256": "38790e1f0f26ed824b465186787a89ac4be4431a3a2b412500b52e207392e150"
+      "bytes": 8276,
+      "sha256": "a11444229c0bfdcb4cff9d33ef4ca4b6febee30cfc25b0f071bf865f0841a383"
     }
   ],
   "bundle": {
     "path": "styles/studio-bundle.css",
-    "bytes": 162849,
-    "sha256": "abb0754ee5fcaf7e0077a0704063afce2cb593e6270ec6243af7ef4b01e92bad"
+    "bytes": 163052,
+    "sha256": "9621496f8641332b8704c7c3452e8f7692808bbaa8415002a7e4b10b4fed921b"
   }
 }

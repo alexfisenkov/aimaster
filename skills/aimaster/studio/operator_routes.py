@@ -91,16 +91,18 @@ def _parameters(value):
     return value
 
 
-def set_route(workspace, project_id, position_id, expected_revision, *, provider, model, operation, parameters):
+def set_route(workspace, project_id, position_id, expected_revision, *, provider, model, operation, parameters, collection_mode="provider-original"):
     if provider not in PROVIDERS or any(not isinstance(x, str) or not _NAME.fullmatch(x) or "://" in x for x in (model, operation)):
         raise RouteUnavailable("unsupported route selection")
+    if collection_mode not in {"provider-original", "host-local-original"}:
+        raise RouteUnavailable("unsupported collection mode")
     state = authoring.open_store(workspace).load(project_id)
     if type(expected_revision) is not int or state["revision"] != expected_revision:
         from .store import RevisionConflict
         raise RevisionConflict(expected_revision, state["revision"])
     scope = _scope(workspace, state, resolve_position(state, position_id))
     record = {**scope, "provider": provider, "model": model, "operation": operation,
-              "parameters": _parameters(parameters)}
+              "parameters": _parameters(parameters), "collection_mode": collection_mode}
     record["route_id"] = "route-" + state_digest(record)[:32]
     path, lock = _paths(workspace)
     with open_text_nofollow(lock) as handle, file_lock(handle):
@@ -110,7 +112,7 @@ def set_route(workspace, project_id, position_id, expected_revision, *, provider
     return {key: record[key] for key in record if key != "parameters"}
 
 
-def selected_route(workspace, state, kind, target):
+def selected_route(workspace, state, kind, target, *, frozen_collection=False):
     spec = action_position(state, kind, target)
     scope = _scope(workspace, state, spec)
     path, _ = _paths(workspace)
@@ -119,10 +121,20 @@ def selected_route(workspace, state, kind, target):
     if len(rows) != 1 or any(rows[0].get(key) != value for key, value in scope.items()):
         raise RouteUnavailable("choose a current route in chat")
     record = rows[0]
+    if record.get("collection_mode", "provider-original") not in {"provider-original", "host-local-original"}:
+        raise RouteUnavailable("invalid collection mode")
     content = {key: value for key, value in record.items() if key != "route_id"}
     if record.get("route_id") != "route-" + state_digest(content)[:32] or record.get("provider") not in PROVIDERS:
         raise RouteUnavailable("invalid route record")
     _parameters(record["parameters"])
+    if not frozen_collection:
+        from .guide_catalog import resolve_choice
+        for choice in state["project"].get("guide_choices", []):
+            if choice["source"] != "none":
+                try:
+                    resolve_choice(workspace, choice)
+                except (ValueError, OSError):
+                    raise RouteUnavailable("selected guide changed; choose the current guide before generation") from None
     return record
 
 
@@ -149,5 +161,12 @@ def public_routes(workspace, project_id):
         except (ValueError, OSError):
             rows.append({"position_id": spec["position_id"], "status": "needs_setup"})
         else:
-            rows.append({key: route[key] for key in ("position_id", "route_id", "provider", "model", "operation", "prompt_version_id", "prompt_sha256")} | {"status": "selected"})
-    return {"revision": state["revision"], "routes": rows}
+            from .provider_download import preflight
+            supported = preflight(route)
+            rows.append({key: route[key] for key in ("position_id", "route_id", "provider", "model", "operation", "prompt_version_id", "prompt_sha256")} | {
+                "status": "selected" if supported else "needs_setup", "collection_supported": supported})
+    from .runner import open_ledger
+    ledger = open_ledger(workspace)
+    collections = [{"action_id": action["action_id"], "phase": ledger.collection(action["action_id"])}
+                   for action in ledger.uncertain_actions(project_id) if ledger.collection(action["action_id"])]
+    return {"revision": state["revision"], "routes": rows, "collections": collections}

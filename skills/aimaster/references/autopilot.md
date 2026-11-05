@@ -14,3 +14,17 @@ then check status again. If it still reports `engine.state: missing`, report
 `montage draft` and `montage render` only after the engine and selected clips
 are ready. The newer `montage build` can make the base version directly; a
 failed render never means a completed MP4.
+
+## Allowed stops
+
+Stop for a concrete missing account capability, unsupported collection path, incompatible source,
+stale/ambiguous required basis, or an unknown paid outcome. Preserve the action and evidence;
+never repeat a paid generation to repair a download. Ordinary choices covered by the approved
+brief are not new permission gates. See [provider recovery](provider-recovery.md).
+
+## Tool check before any no
+
+Read the current exposed tool catalog, its selected operation schema, and a read-only capability
+probe. A configured connector alone does not prove login or collection. Respect an explicit host
+denial; do not change sandbox, browser or network permissions to bypass it. Unsupported parent
+collection is diagnosed before payment; prompt-only work can continue.

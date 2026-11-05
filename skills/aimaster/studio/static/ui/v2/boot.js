@@ -14,7 +14,7 @@ import { montageRepaintWanted, renderShellV2, setViewedScreen } from "./shell.js
 import { createRailDrawer } from "./rail-drawer.js";
 import { attachViewerV2, repaintViewer } from "./viewer.js";
 import { refreshMontage } from "./montage-feed.js";
-import { applyFamilyPreference, readFamilyPreference } from "./family.js";
+import { applyFamilyPreference, readFamilyPreference, loadWorkspacePreference } from "./family.js";
 import { loadFamilyData } from "./family-data.js";
 
 const LAST_PROJECT_KEY = "aimaster.v2.lastProject";
@@ -134,6 +134,11 @@ export function bootV2() {
   });
 
   const rail = createRailDrawer();
+  void loadWorkspacePreference();
+  setInterval(() => {
+    const projectId = store.getState()?.snapshot?.active_project?.id;
+    if (projectId && document.visibilityState === "visible") loadFamilyData(projectId);
+  }, 5000);
 
   /** Открыть проект и записать его в адрес и в память браузера. */
   function openProjectAt(projectId) {

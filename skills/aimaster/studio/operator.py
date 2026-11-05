@@ -113,7 +113,7 @@ def _ids(items, key):
 
 def verify_result(job, result, before, after, workspace):
     """Independently validate identity, revision, exact semantic outputs and actual media."""
-    if not isinstance(result, dict) or set(result) != set(RESULT_SCHEMA["required"]):
+    if not isinstance(result, dict) or not set(RESULT_SCHEMA["required"]) <= set(result) <= set(RESULT_SCHEMA["properties"]):
         raise AdapterFailure()
     for key in ("action_id", "project_id", "action_type", "target_id"):
         if result[key] != job[key]:
@@ -128,6 +128,8 @@ def verify_result(job, result, before, after, workspace):
             not isinstance(result["reply"], str) or not result["reply"].strip():
         raise AdapterFailure()
     if result["status"] != "succeeded":
+        if job["action_type"] in {"generate", "vary", "regenerate"}:
+            return "outcome_unknown"
         return result["status"]
     kind = job["action_type"]
     output = set(result["output_ids"])
@@ -206,9 +208,9 @@ class Operator:
         self.workspace, _, _, self.private = resolve_workspace_paths(workspace)
         self.private = _private(self.workspace)
         self.agent = agent
-        self.adapter = adapter or HostAdapter(agent, model=model)
-        self.injected = adapter is not None
         self.state_dir = Path(state_dir or default_state_dir())
+        self.adapter = adapter or HostAdapter(agent, model=model, state_dir=self.state_dir)
+        self.injected = adapter is not None
         self.runner = open_runner(self.workspace)
         self.identity = "operator-" + uuid.uuid4().hex
         self.fingerprint = package_fingerprint()
@@ -275,7 +277,8 @@ class Operator:
                 with operation_lease(self.state_dir, self.identity):
                     self.runner.ledger.recover_inflight(lambda action: {"status": "outcome_unknown"},
                         action_types=CHAT_ACTION_TYPES, worker_id=previous["lease_id"])
-            if not self.injected and not shutil.which(self.agent):
+            from .host_launch import resolve
+            if not self.injected and not resolve(self.agent, state_dir=self.state_dir):
                 self._status = "needs_setup"
             self._heartbeat()
             self._thread = threading.Thread(target=self._pulse, daemon=True)
@@ -318,6 +321,7 @@ class Operator:
                 return None
             self._status, self._active = "busy", job["action_id"]
             self._heartbeat()
+            finished = None
             try:
                 before = self.runner.store.load(job["project_id"])
                 if before["revision"] != job["revision"]:
@@ -328,6 +332,9 @@ class Operator:
                         if uncertain_position(self.runner.ledger, before, job["action_type"], job["target_id"]):
                             return self.runner.ledger.finish_and_release_grant(job["action_id"], "needs_chat", {"status": "needs_chat"})
                         route = selected_route(self.workspace, before, job["action_type"], job["target_id"])
+                        from .provider_download import preflight
+                        if not preflight(route):
+                            raise RouteUnavailable("original collection capability is not established for this provider")
                         spending = job["untrusted_input"]["payload"].get("spending")
                         if before["project"].get("mode") != "autopilot" and spending != {
                             "confirmed": True, **{key: route[key] for key in ("route_id", "provider", "model")}}:
@@ -335,21 +342,41 @@ class Operator:
                     except (ValueError, OSError):
                         return self.runner.ledger.finish_and_release_grant(job["action_id"], "needs_chat_setup", {"status": "needs_chat_setup"})
                     job["execution_route"] = route
+                    from .provider_receipts import freeze
+                    freeze(self.workspace, self.runner, job["action_id"], before, route)
                 result = self.adapter(job, self.workspace, SKILL_ROOT)
                 after = self.runner.store.load(job["project_id"])
                 final = verify_result(job, result, before, after, self.workspace)
+                if result.get("provider_receipt") is not None:
+                    if job["action_type"] not in {"generate", "vary", "regenerate"} or before != after or result["output_ids"]:
+                        raise AdapterFailure()
+                    from .provider_collection import record, reconcile
+                    record(self.workspace, self.runner, job["action_id"], result["provider_receipt"], operation_locked=True)
+                    try:
+                        finished = reconcile(self.workspace, self.runner, job["action_id"], operation_locked=True)
+                    except ValueError:
+                        from .provider_collection import public
+                        finished = public(self.runner, job["action_id"])
+                    final = finished["status"]
                 from .agent_bridge import _sanitize_output
                 write_json(self.private / "operator-results" / (job["action_id"] + ".json"),
                     {"action_id": job["action_id"], "project_id": job["project_id"], "revision": after["revision"],
                      "status": final, "reply": _sanitize_output(result["reply"])[:12000]})
             except AdapterFailure as error:
                 final = error.code if error.code in {"needs_chat_setup", "outcome_unknown"} else "outcome_unknown"
+                if self.runner.ledger.get_action(job["action_id"])["external_id"] is not None:
+                    final = "outcome_unknown"
             except Exception:
                 # Any post-dispatch uncertainty consumes the grant and is never replayed.
                 final = "outcome_unknown"
             finally:
                 self._active, self._status = None, "ready"
-            finished = self.runner.finish(job["action_id"], final, {})
+            if finished is None:
+                if self.runner.ledger.collection(job["action_id"]) is not None:
+                    from .provider_collection import public
+                    finished = public(self.runner, job["action_id"])
+                else:
+                    finished = self.runner.finish(job["action_id"], final, {})
             if final == "needs_chat_setup":
                 self._status = "needs_setup"
             self._inbox()

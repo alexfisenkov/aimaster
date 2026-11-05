@@ -60,7 +60,7 @@ function montageLayout(surface, snapshot, project, finished) {
   if (list.length) surface.append(renderNotices(list, { project, revision, actions: flags.build }));
   const ready = isReady(project);
   const current = project?.montage?.current_version;
-  const statusText = finished ? t("принят") : ready && current ? `текущая ${versionLabel(current)}` : t("ещё не собран");
+  const statusText = finished ? t("принят") : ready && current ? t("Текущая версия — {version}", { version: versionLabel(current) }) : t("ещё не собран");
   const top = el("div", "am-top");
   const side = el("div", "am-side");
   const actions = renderMainActions({ project, revision, status, flags });
@@ -102,10 +102,16 @@ export function renderAssemblyScreen(root, { state, screen = "assembly" } = {}) 
     return;
   }
   const finished = footerMode(snapshot, { screen, stage: "assembly" }) === "done";
-  if (finished) surface.append(doneBanner());
+  const materials = project.assembly_mode === "materials";
+  if (finished) surface.append(doneBanner(materials));
   const montage = montageScreen(project);
   surface.dataset.montage = String(montage);
-  if (montage) montageLayout(surface, snapshot, project, finished);
+  if (materials) {
+    hideMontage();
+    const delivery = renderMontageFamily({ project, revision: snapshot.revision, finished });
+    if (delivery) surface.append(delivery);
+    surface.append(historyBlock(project));
+  } else if (montage) montageLayout(surface, snapshot, project, finished);
   else plainLayout(surface, snapshot, project, finished);
   surface.append(renderFooter(snapshot, { screen }));
   root.append(surface);

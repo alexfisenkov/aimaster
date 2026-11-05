@@ -40,15 +40,17 @@ not browse a provider website merely to discover one. Live-probe the selected
 route and present only models actually exposed by that verified route. For each
 newly selected model and relevant prompt task/stage, run the
 [writing-guide gate](writing-guides.md) before writing prompts. The gate names
-any matching saved guide, waits for the user's choice (`guided`) or takes the
-first exact match (`autopilot`) and makes the selected guide the creative
+matching saved guides, keeps the user's exact choice (`guided`) or applies the
+approved brief's saved guide choice/selection rule (`autopilot`), and makes that guide the creative
 specification only for that task. Before saying a route is unavailable, run
 the three-step tool check from [provider preferences](provider-preferences.md),
 including `scripts/detect_tools.py --json`.
 
 For every character, location, product and style reference, in `guided` ask
 one of: none, upload, generate. In `autopilot`, run `library match` on the idea
-and add every hit with `reference add --from-library`; generate the rest.
+and attach only the exact library identities selected by the brief or unambiguously matching its reuse rule.
+Namesakes remain separate IDs. If a required identity or guide is ambiguous and the brief has no resolving rule,
+report that concrete blocker; do not select every hit or substitute a same-titled guide. Generate only the inputs the brief calls for.
 Uploads come through chat. Generation requires a verified route and, in
 `guided`, scoped authorization.
 

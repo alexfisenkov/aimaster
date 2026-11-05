@@ -58,10 +58,13 @@ the saved choice and SHA immediately before use. Built-in and user guides with
 the same title remain separate by namespace and ID. Never use an image guide
 for motion or broaden an unknown version.
 
-After choosing a saved guide, read its entire current file before composing.
+After choosing a saved guide, read its entire current file before composing,
+plus only its SHA-checked `provenance.required_readings` (returned as `readings`
+by `resolve_choice`). These are the selected route's full creative methodology;
+provider-specific API/UI controls still come from the current route schema.
 If it is missing or unreadable, in `guided` explain that and ask for a
-replacement or an explicit choice to continue without it; in `autopilot` take
-the next entry in `matches` or write without a guide and record why. Never silently fall back to writing
+replacement or an explicit choice to continue without it; in `autopilot` use only
+the approved brief's explicit fallback rule, otherwise report the missing required guide as a blocker. Never silently fall back to writing
 from memory. Reuse the user's already explicit choice for the current task
 instead of asking an identical question again.
 

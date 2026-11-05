@@ -11,10 +11,31 @@ import unittest
 
 ROOT = Path(__file__).resolve().parent.parent / "guides"
 sys.path.insert(0, str(ROOT.parent))
-from studio.guide_catalog import match  # noqa: E402
+from studio.guide_catalog import match, resolve_choice  # noqa: E402
 
 
 class GuideBundleTest(unittest.TestCase):
+    def test_grok_version_modality_pairs_are_not_a_cross_product(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            for modality, version, model, task, allowed in (
+                ("image","2.0",None,"generate",True), ("video","1.5",None,"generate",True),
+                ("image","1.5",None,"generate",False), ("video","2.0",None,"generate",False),
+                ("video","1.5","grok-imagine-video-1.5","edit",False),
+                ("image","2.0","grok-imagine-video-1.5","generate",False)):
+                scope=SimpleNamespace(kind="prompt",modality=modality,task=task,provider="xai",model_family="imagine",model=model,version=version)
+                found=[entry for entry in match(workspace,scope)["matches"] if entry["id"].startswith("grok-imagine")]
+                self.assertEqual(bool(found),allowed,(modality,version,model,task))
+
+    def test_selected_aggregator_guide_reaches_full_method_and_exact_supplement(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            for provider, family, model in (("magnific","nano-banana","imagen-nano-banana-2-1"),("syntx","banana","banana-2.1")):
+                scope=dict(kind="prompt",modality="image",task="generate",provider=provider,model_family=family,model=model,version="2.1")
+                entry=next(item for item in match(workspace,SimpleNamespace(**scope))["matches"] if item["id"]=="nano-banana-2-1-"+provider)
+                chosen=resolve_choice(workspace,{**scope,"stage":"image_results","source":"builtin","ref":entry["ref"],"sha256":entry["sha256"]})
+                readings=chosen.get("readings",[])
+                self.assertEqual({item["path"] for item in readings},{"current/nano-banana-2-1.md","authored/gemini-images.md"})
+                for item in readings:
+                    self.assertEqual(hashlib.sha256((ROOT/item["path"]).read_bytes()).hexdigest(),item["sha256"])
     def test_catalog_covers_authored_families_with_full_sources(self):
         catalog = json.loads((ROOT / "catalog.json").read_text(encoding="utf-8"))
         entries = catalog["entries"]

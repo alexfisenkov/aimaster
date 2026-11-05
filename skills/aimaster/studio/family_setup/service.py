@@ -107,6 +107,7 @@ def setup(package, *, home=None, state_dir=None, agents=("codex", "claude"), sel
 
 
 def status(state_dir):
+    from ..host_launch import resolve
     state = read_state(state_dir)
     result = {"schema_version": 1, "auto_update": state["auto_update"], "components": {}, "providers": {},
               "last_check": state.get("last_check")}
@@ -128,6 +129,6 @@ def status(state_dir):
             except (OSError, ValueError):
                 configured = False
             # Configuration and old discovery evidence never establish current auth.
-            result["providers"][name][agent] = {"configured": configured, "authenticated": False,
+            result["providers"][name][agent] = {"configured": configured, "host_installed": bool(resolve(agent, state_dir=state_dir)), "authenticated": False,
                 "available": False, "status": "discovery_required" if configured else "needs_setup"}
     return result

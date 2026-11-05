@@ -11,3 +11,14 @@ Video/mixed projects choose `materials` or `montage`. Materials approval verifie
 Family setup treats AIMaster, SYNTX and AIEditing as local components with package/config backups, compatibility gating and possible rollback. Higgsfield, Magnific and fal are hosted endpoints: local connector state can be restored, vendor server versions cannot. `installed`, `configured`, `authenticated` and `available` are separate statuses. Auto-update is opt-in once and runs at an idle new-session boundary. It verifies official provenance and target data readers, and preserves the running package and user data on failure. Old code cannot read all newer metadata; a `compatibility_blocked` rollback is the safe result. Older-compatible workspace snapshots restore to a separate directory.
 
 Verification layers are distinct: unit/CLI/UI tests, synthetic clean-home install, actual host and provider login, paid creation read-back, native OS/browser operation, and published release read-back. A local PASS proves only its tested layer. `scripts/check_project.py` runs the bundled Python, static JS, UI, compile and diff gates. Release VERSION, CI, tag and publication are separate owner operations.
+
+Provider acknowledgements, completed GET receipts, locator renewals and computed artifact verification
+are separate private evidence. Parent collection has exact provider origins, public-address-pinned TLS,
+bounded GET and typed original metadata checks. It uses AssetIndex and the existing authoring transaction,
+then appends a reconciliation event; it never dispatches generation. The selected guide SHA remains frozen
+for old-result recovery while new generation revalidates the current bundle. See the package's
+[recovery contract](../skills/aimaster/references/provider-recovery.md).
+
+Presentation settings use owner/CSRF-protected `/api/preferences`, with exact locale/theme/view/rail
+enums outside creative state. A client imports workspace preferences once at boot and keeps an origin-local
+first-frame fallback; background creative polls never apply another client's preference changes.

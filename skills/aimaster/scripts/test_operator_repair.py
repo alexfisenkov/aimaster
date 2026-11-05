@@ -13,6 +13,7 @@ from studio.operator_routes import set_route
 
 
 class ScopedGrantRepairTests(unittest.TestCase):
+    @patch("studio.provider_download.preflight", lambda route: True)
     def test_refused_s1_grant_never_authorizes_s2(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve(); ws = root / "workspace"

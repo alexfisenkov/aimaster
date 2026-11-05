@@ -12,6 +12,9 @@ FILES = (
     "test_family_foundation.py", "test_family_setup.py", "test_family_update.py",
     "test_family_operator.py", "test_operator_repair.py", "test_family_transport.py",
     "test_telegram_transport.py", "test_montage_family.py",
+    "test_family_final_repair.py", "test_private_host_launch.py", "test_provider_collection.py",
+    "test_provider_download.py", "test_family_ui_browser.py",
+    "test_public_package_links.py",
 )
 
 

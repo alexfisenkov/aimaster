@@ -12,6 +12,7 @@
 
 import { isPhone, onViewportChange } from "./responsive.js";
 import { t } from "./locale.js";
+import { saveRailPreference } from "./preferences.js";
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), [tabindex="0"]';
 const COLLAPSED_KEY = "aimaster.v2.railCollapsed";
@@ -25,6 +26,7 @@ function readCollapsed() {
 }
 
 function writeCollapsed(value) {
+  saveRailPreference(value);
   try {
     window.localStorage.setItem(COLLAPSED_KEY, value ? "1" : "0");
   } catch {
@@ -46,6 +48,9 @@ export function createRailDrawer() {
   let open = false;
   let collapsed = readCollapsed();
   let phone = isPhone();
+  document.addEventListener("studio:rail-preference", (event) => {
+    collapsed = event.detail.collapsed; paint();
+  });
 
   function paint() {
     document.body.dataset.rail = phone ? (open ? "open" : "closed") : (collapsed ? "collapsed" : "docked");

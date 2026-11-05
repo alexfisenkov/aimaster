@@ -79,7 +79,8 @@ class TelegramTransportStateTests(unittest.TestCase):
 
             self.assertEqual(controller.owner_id, 501)
             self.assertEqual(controller.state.paired_owner(), 501)
-            self.assertEqual(replies[0].text, "Telegram owner paired.")
+            self.assertEqual(replies[0].text, "Проектов пока нет.")
+            self.assertIsNotNone(replies[0].reply_markup)
 
     def test_pairing_code_blocks_wrong_code(self):
         with tempfile.TemporaryDirectory() as workspace:
@@ -360,9 +361,14 @@ class TelegramPairingTests(unittest.TestCase):
             state = TelegramBotState(Path(directory) / "telegram.sqlite3")
             from studio.telegram_bot import TelegramBotController
 
+            def authorized_store():
+                self.assertEqual(state.paired_owner(), 501, "project access occurred before durable owner pairing")
+                from studio.authoring import open_store
+                return open_store(Path(directory))
+
             controller = TelegramBotController(
                 Path(directory), None, pairing_code="pair", state=state,
-                store_factory=lambda: None,
+                store_factory=authorized_store,
                 ledger_factory=lambda: None,
                 questions_factory=lambda: None,
             )
@@ -377,7 +383,8 @@ class TelegramPairingTests(unittest.TestCase):
 
             self.assertEqual(state.paired_owner(), 501)
             self.assertEqual(controller.owner_id, 501)
-            self.assertIn("paired", replies[0].text.lower())
+            self.assertEqual(replies[0].text, "Проектов пока нет.")
+            self.assertIsNotNone(replies[0].reply_markup)
 
     def test_unpaired_controller_ignores_non_start_messages(self):
         with tempfile.TemporaryDirectory() as directory:

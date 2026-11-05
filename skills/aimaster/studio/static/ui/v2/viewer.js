@@ -239,7 +239,11 @@ function leftColumn(snapshot, project) {
     layer: target.kind === "layer" ? target.id : undefined,
     slot: tab === "video" ? "video" : view.slot,
   };
+  const generation = { project, snapshot, version: shown?.version || null,
+    promptVersion: prompts.versions[view.promptShown - 1] || null,
+    positionId: (project.positions || []).find((item) => item.prompt_group_id === place.groupId)?.position_id };
   column.append(renderCanvas({
+    generation,
     strip,
     shownIndex: view.shown,
     mediaKind: mediaKindFor(project, target, tab),
@@ -263,6 +267,7 @@ function leftColumn(snapshot, project) {
   // в плёнке, его текст переживает и перелистывание, и перерисовку.
   view.draftKeys = strip.items.flatMap((item) => decideDraftKeys(project.id, item.version));
   column.append(renderDecideRow({
+    generation,
     ...chat,
     project,
     revision: snapshot.revision,

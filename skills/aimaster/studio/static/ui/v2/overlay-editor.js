@@ -66,17 +66,25 @@ export function renderOverlayEditor({ project, snapshot, model, status }) {
   const selected = project?.montage?.versions?.find((item) => item.id === project.montage.current_version);
   let video = null;
   if (selected?.asset_url?.startsWith("/assets/")) {
-    video = el("video", "am-overlay-media"); video.src = selected.asset_url; video.controls = true; video.preload = "metadata"; video.playsInline = true; stage.append(video);
+    video = el("video", "am-overlay-media"); video.src = selected.asset_url; video.controls = false; video.preload = "metadata"; video.playsInline = true; stage.append(video);
   }
   const svg = document.createElementNS(SVG, "svg"); svg.setAttribute("viewBox", `0 0 ${canvas.width} ${canvas.height}`);
   svg.setAttribute("aria-label", t("Холст пометок")); svg.setAttribute("role", "img"); svg.classList.add("am-overlay-canvas"); stage.append(svg);
   const statusLine = el("p", "am-overlay-status"); statusLine.setAttribute("role", "status");
+  let time = savedDraft?.time || 0;
+  const playback = el("div", "am-overlay-playback");
+  const play = el("button", "v2-chat-button", t("Воспроизвести / пауза")); play.type = "button"; play.disabled = !video;
+  const seek = el("input", "am-overlay-seek"); seek.type = "range"; seek.min = "0";
+  seek.max = String(model.duration || 0); seek.step = ".01"; seek.value = String(time);
+  seek.setAttribute("aria-label", t("Позиция воспроизведения"));
+  const clock = el("output", "am-overlay-clock");
+  playback.append(play, seek, clock);
   const existing = (model.layers || []).find((layer) => layer.layer === "overlays")?.clips || [];
   let chosen = existing.find((item) => item.id === savedDraft?.chosenId) || null;
   let draft = savedDraft?.draft || null; let start = null; let points = []; let moving = null;
   const draw = () => {
     svg.replaceChildren();
-    for (const clip of existing) if (clip.overlay) {
+    for (const clip of existing) if (clip.overlay && time >= clip.start && time < clip.start + clip.duration) {
       const node = shapeNode(clip.overlay); node.dataset.clip = clip.id; node.classList.add("am-overlay-existing");
       node.addEventListener("pointerdown", (event) => {
         event.stopPropagation(); event.preventDefault(); chosen = clip; draft = structuredClone(clip.overlay);
@@ -85,13 +93,28 @@ export function renderOverlayEditor({ project, snapshot, model, status }) {
       });
       svg.append(node);
     }
-    if (draft) { const node = shapeNode(draft); node.classList.add("am-overlay-draft"); svg.append(node); }
+    if (draft && (!chosen || time >= chosen.start && time < chosen.start + chosen.duration)) { const node = shapeNode(draft); node.classList.add("am-overlay-draft"); svg.append(node); }
   };
   const paint = () => {
     draw(); save.disabled = !draft; remove.disabled = !chosen;
     statusLine.textContent = chosen ? t("Выбрана пометка {id}", { id: chosen.id }) : draft ? t("Новая пометка — сохраните её") : "";
-    drafts.set(project.id, { hash: model.model_hash, chosenId: chosen?.id || null, draft, mode: mode.value, color: color.value, width: Number(width.value) });
+    clock.textContent = `${time.toFixed(2)} / ${Number(model.duration || 0).toFixed(2)}`;
+    drafts.set(project.id, { hash: model.model_hash, chosenId: chosen?.id || null, draft, time, mode: mode.value, color: color.value, width: Number(width.value) });
   };
+  seek.addEventListener("input", () => {
+    time = Number(seek.value);
+    if (video) { video.pause(); video.currentTime = time; }
+    paint();
+  });
+  play.addEventListener("click", async () => {
+    if (!video) return;
+    if (video.paused) { try { await video.play(); } catch { statusLine.textContent = t("Файл не открылся"); } }
+    else video.pause();
+  });
+  if (video) {
+    video.addEventListener("loadedmetadata", () => { video.currentTime = Math.min(time, video.duration || 0); });
+    video.addEventListener("timeupdate", () => { time = video.currentTime; seek.value = String(time); paint(); });
+  }
   svg.addEventListener("pointerdown", (event) => {
     event.preventDefault(); svg.setPointerCapture(event.pointerId); start = pointInCanvas(event, svg.getBoundingClientRect(), canvas); points = [start]; chosen = null;
   });
@@ -113,7 +136,7 @@ export function renderOverlayEditor({ project, snapshot, model, status }) {
   const save = el("button", "v2-primary", t("Сохранить пометку")); save.type = "button"; save.disabled = true;
   save.addEventListener("click", async () => {
     save.disabled = true; statusLine.textContent = t("Сохраняю…");
-    const at = Number.isFinite(video?.currentTime) ? video.currentTime : 0;
+    const at = time;
     const duration = Math.max(.1, Math.min(3, (model.duration || 3) - at));
     const edit = chosen ? { op: "overlay-update", clip: chosen.id, overlay: draft } : { op: "overlay-add", overlay: draft, at, duration };
     const result = await postMontage(project.id, "edit", { expected_revision: snapshot.revision, expected_model_hash: model.model_hash, edit });
@@ -129,5 +152,5 @@ export function renderOverlayEditor({ project, snapshot, model, status }) {
     if (result.ok) { drafts.delete(project.id); document.dispatchEvent(new CustomEvent("studio:refresh-snapshot", { detail: { projectId: project.id } })); await refreshMontage(); }
     else remove.disabled = false;
   });
-  paint(); section.append(hint, tools, stage, save, remove, statusLine); return section;
+  paint(); section.append(hint, tools, stage, playback, save, remove, statusLine); return section;
 }

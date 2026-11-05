@@ -14,7 +14,7 @@ const WHO = Object.freeze({ owner: "Вы", agent: "Агент", autopilot: "По
 
 /** Монтаж — у видео и смешанных проектов; фото собирается картинкой. */
 export function montageApplies(project) {
-  return project?.type === "video" || project?.type === "mixed";
+  return project?.assembly_mode !== "materials" && (project?.type === "video" || project?.type === "mixed");
 }
 
 /** Монтажная раскладка экрана: монтаж уже есть — или итога ещё нет. Старый

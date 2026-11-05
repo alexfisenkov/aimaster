@@ -732,8 +732,8 @@ class TelegramBotController:
         fingerprint = _fingerprint(update)
 
         # A bot configured locally but not yet paired accepts exactly the
-        # owner's first private /start.  No project store, ledger or question
-        # surface is opened on this path.
+        # owner's first private /start. Project navigation is read only after
+        # the pairing identity has been validated and persisted.
         if self.owner_id is None:
             if (
                 sender_id is None
@@ -753,7 +753,7 @@ class TelegramBotController:
                 update_id,
                 fingerprint,
                 chat_id,
-                {"kind": "reply", "text": "Telegram owner paired."},
+                {"kind": "projects"},
             )
             return self._execute(update_id, chat_id, existing["request"])
 
@@ -906,6 +906,11 @@ class TelegramBotController:
             if comment:
                 payload["note" if action_type == "vary" else "comment"] = comment
             kind = "paid" if action_type in _PAID_ACTIONS else "decision"
+            if kind == "paid":
+                from .operator_routes import selected_route
+                route = selected_route(self.workspace, state, action_type, candidates[target_id])
+                payload["spending"] = {"confirmed": True,
+                    **{key: route[key] for key in ("route_id", "provider", "model")}}
             return {
                 "kind": kind,
                 "project_id": project_id,

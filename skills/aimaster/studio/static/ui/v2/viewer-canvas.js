@@ -8,6 +8,7 @@
 import { variantCounts } from "./counts.js";
 import { variantState, versionsMadeBy } from "./variants.js";
 import { chatButton, el } from "./dom.js";
+import { generationControl } from "./family-actions.js";
 import { renderMedia } from "./viewer-media.js";
 import { t } from "./locale.js";
 
@@ -104,6 +105,10 @@ export function soloStrip(assetUrl, caption, state = "own") {
  * @returns {{slot: string, label: string, total: number}[]}
  */
 export function slotOptions(project, scene) {
+  if (project?.type === "photo") {
+    const total = variantCounts(project, { sceneId: scene?.scene_id, slot: "image" }).total;
+    return [{ slot: "image", total, label: `${t("Картинка")} · ${total}` }];
+  }
   const options = [];
   for (const slot of ["first", "last"]) {
     const total = variantCounts(project, { sceneId: scene?.scene_id, slot }).total;
@@ -232,7 +237,7 @@ function attachSwipe(stage, shownIndex, onShow) {
  *   без него плитки «＋» нет.
  * @returns {HTMLElement}
  */
-export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark, addRequest, emptyText, onShow }) {
+export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark, addRequest, generation, emptyText, onShow }) {
   const wrap = el("div", "v2-viewer-canvas-wrap");
   const canvas = el("div", "v2-viewer-canvas");
   canvas.dataset.hook = "v2-viewer-canvas";
@@ -247,7 +252,7 @@ export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark,
   } else {
     frame.dataset.empty = "true";
     frame.append(el("p", "v2-viewer-empty", emptyText || t("Вариантов пока нет — попросите агента сделать первый.")));
-    if (addRequest) frame.append(chatButton(t("＋ Попросить вариант"), addRequest, "v2-viewer-ask"));
+    if (addRequest) frame.append(generationControl(generation || {}, t("＋ Попросить вариант"), addRequest, "v2-viewer-ask"));
   }
   canvas.append(frame);
   if (shown) canvas.append(arrow("›", t("Следующий вариант (→)"), () => onShow(shownIndex + 1), shownIndex >= strip.total));
@@ -274,7 +279,7 @@ export function renderCanvas({ strip, shownIndex, mediaKind, caption, stageMark,
     film.append(tile);
   }
   if (addRequest && strip.total > 0) {
-    const plus = chatButton("＋", addRequest, "v2-viewer-tile-add");
+    const plus = generationControl(generation || {}, "＋", addRequest, "v2-viewer-tile-add");
     plus.setAttribute("aria-label", t("Ещё вариант"));
     plus.title = t("Ещё вариант");
     film.append(plus);

@@ -15,6 +15,7 @@ import { draftKey } from "../card-drafts.js";
 import { resolveCardActions } from "../card-model.js";
 import { buildMoreMenu } from "../more-menu.js";
 import { chatButton } from "./dom.js";
+import { generationControl } from "./family-actions.js";
 import { editPrompt, moreVariants, uploadFrame } from "./chat-prompts.js";
 import { t } from "./locale.js";
 
@@ -237,7 +238,7 @@ export function renderDecideRow(context) {
   // же кнопки в ряду не нужно.
   if (context.secondary || version) buttons.append(context.secondary
     ? chatButton(context.secondary.label, context.secondary.request, "v2-viewer-secondary")
-    : chatButton(
+    : generationControl(context.generation || {},
       t("＋ Ещё вариант"),
       moreVariants({ ...chat, promptVersion: context.promptVersion, selectedVariant: version }),
       "v2-viewer-secondary",

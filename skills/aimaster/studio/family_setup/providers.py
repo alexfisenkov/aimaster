@@ -232,13 +232,8 @@ def dependencies(state_dir, home, agents, install_missing, *, runner=run):
             code, _, _ = runner([node, str(npm), "install", "--prefix", str(prefix), "--no-audit", "--no-fund", package],
                                 env=env, timeout=600)
             steps.append({"program": agent, "status": "installed" if code == 0 else "install_failed"})
-        if not found and node and metadata.is_file():
-            entry = json.loads(metadata.read_text())["bin"]
-            relative = entry if isinstance(entry, str) else entry[agent]
-            cli = (metadata.parent / relative).resolve()
-            cli.relative_to(metadata.parent.resolve())
-            if cli.is_file():
-                hosts[agent] = [node, str(cli)]
+        from ..host_launch import resolve
+        hosts[agent] = resolve(agent, state_dir=state_dir, node=node, lookup=program)
     return {"programs": programs, "npm": str(npm) if npm else None, "hosts": hosts, "steps": steps}
 
 

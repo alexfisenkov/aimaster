@@ -45,6 +45,9 @@ body[data-ui="v2"] .v2-topbar { grid-template-columns: minmax(0,1fr) auto auto; 
 .am-overlay-stage { position: relative; width: min(100%,720px); aspect-ratio: var(--am-canvas-ratio,16 / 9); background: #0E0E10; overflow: hidden; border-radius: 12px; }
 .am-overlay-media,.am-overlay-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .am-overlay-media { object-fit: contain; }.am-overlay-canvas { touch-action: none; cursor: crosshair; }
+.am-overlay-playback { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.am-overlay-seek { flex: 1 1 180px; min-height: 44px; }
+.am-overlay-clock { font-variant-numeric: tabular-nums; }
 .am-overlay-existing { cursor: move; }.am-overlay-draft { pointer-events: none; stroke-dasharray: 12 6; }
 .am-overlay-editor > button { min-height: 44px; margin: 10px 10px 0 0; }
 .am-overlay-status { min-height: 1.4em; color: var(--v2-muted); }

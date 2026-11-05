@@ -334,6 +334,8 @@ def _model_rank(entry: dict[str, Any], args: argparse.Namespace) -> int | None:
     model = args.model
     family = args.model_family
     version = args.version
+    if model is None and entry["models"] and family in entry["model_families"] and version in entry["versions"]:
+        return 400  # Metadata lookup for this exact version; an explicit model must still match.
     if (
         entry["models"]
         and model in entry["models"]

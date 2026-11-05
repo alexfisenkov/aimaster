@@ -1,6 +1,6 @@
 import { postAction } from "../actions.js";
 import { requestAgentPrompt } from "../chat-prompt-dialog.js";
-import { el } from "./dom.js";
+import { el, chatButton } from "./dom.js";
 import { familyData } from "./family-data.js";
 import { familyLabel } from "./family.js";
 import { projectRef } from "./chat-prompts.js";
@@ -12,7 +12,7 @@ export function selectedSpending(route) {
     ? { confirmed: true, route_id: route.route_id, provider: route.provider, model: route.model } : null;
 }
 export function canDirectAction(operator, allowed, type, spending) {
-  return operator?.available === true && allowed.includes(type) && (type !== "generate" || Boolean(spending));
+  return operator?.available === true && allowed.includes(type) && (!["generate", "vary", "regenerate"].includes(type) || Boolean(spending));
 }
 function routeLabel(project, positionId) {
   const position = (project.positions || []).find((item) => item.position_id === positionId);
@@ -30,13 +30,20 @@ function copyFallback(project, revision, target, title, trigger, receipt) {
   const line = receipt?.copy_request || `Открой ${projectRef(project, revision)}. ${title}${target ? ` Позиция ${target}.` : ""}`;
   requestAgentPrompt({ title: t("Продолжить в чате"), prompt: line }, trigger);
 }
-function control({ project, snapshot, type, target, label, spending = null, operator, title }) {
+function control({ project, snapshot, type, target, label, spending = null, operator, title, fallback, className }) {
   const row = el("div", "am-family-action");
   const button = el("button", "v2-chat-button", label); button.type = "button";
+  if (className) button.className = className;
   const status = el("p", "am-family-action-status"); status.setAttribute("role", "status");
   const prior = (snapshot.actions || []).find((item) => item.action_type === type && item.target_id === target);
   if (prior) status.textContent = `${prior.status} · ${prior.action_id}`;
-  const direct = canDirectAction(operator, snapshot.view_stage?.allowed_actions || [], type, spending);
+  const collection = familyData(project.id)?.routes?.collections?.find((item) => item.action_id === prior?.action_id);
+  if (collection) status.textContent = t(collection.phase === "conflict"
+    ? "Оригинал сохранён; текущее задание изменилось. Продолжите в чате."
+    : "Провайдер создал оригинал; локальная выдача не завершена. Повторять генерацию нельзя.");
+  const blocked = prior && ["queued", "running", "outcome_unknown"].includes(prior.status);
+  const direct = !blocked && canDirectAction(operator, snapshot.view_stage?.allowed_actions || [], type, spending);
+  if (prior && RUNNING.has(prior.status)) button.disabled = true;
   if (!direct) button.textContent = t("{label} → чат", { label });
   button.addEventListener("click", async () => {
     if (!direct && type === "continue-in-chat" && (snapshot.view_stage?.allowed_actions || []).includes(type)) {
@@ -49,8 +56,11 @@ function control({ project, snapshot, type, target, label, spending = null, oper
       } else copyFallback(project, snapshot.revision, target, title, button, prior);
       return;
     }
-    if (!direct) { copyFallback(project, snapshot.revision, target, title, button, prior); return; }
-    if (spending && !window.confirm(t("Платный запуск: {provider} / {model}. Списать кредиты для {target}?", { ...spending, target }))) return;
+    if (!direct) {
+      if (fallback) requestAgentPrompt(fallback, button);
+      else copyFallback(project, snapshot.revision, target, title, button, prior);
+      return;
+    }
     button.disabled = true; status.textContent = t("Отправляю действие…");
     const result = await postAction(type, target, spending ? { spending } : {}, snapshot.revision, crypto.randomUUID());
     if (!result.ok) { status.textContent = result.code; button.disabled = false; return; }
@@ -75,6 +85,17 @@ function control({ project, snapshot, type, target, label, spending = null, oper
     setTimeout(poll, 2000);
   });
   row.append(button, status); return row;
+}
+
+export function generationControl({ project, snapshot, positionId, promptVersion, version, type }, label, request, className) {
+  if (!project || !snapshot || !positionId) return chatButton(label, request, className);
+  const { operator, routes } = familyData(project.id);
+  const route = routes?.routes?.find((item) => item.position_id === positionId);
+  const currentPrompt = !promptVersion || promptVersion.version_id === route?.prompt_version_id;
+  const action = type || (version?.version_id ? "vary" : "generate");
+  return control({ project, snapshot, type: action, target: action === "generate" ? positionId : version?.version_id,
+    label, spending: currentPrompt ? selectedSpending(route) : null, operator,
+    title: request?.title, fallback: request, className });
 }
 export function renderFamilyActions(snapshot, language) {
   const project = snapshot.active_project;

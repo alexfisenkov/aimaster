@@ -53,7 +53,11 @@ def resolve_choice(workspace, choice, *, catalog_path=None):
              and entry["sha256"] == choice["sha256"]]
     if len(exact) != 1:
         raise registry.RegistryError("guide choice has no exact current match (scope mismatch or stale content)")
-    return exact[0]
+    selected = copy.deepcopy(exact[0])
+    provenance = selected.get("provenance", {})
+    selected["readings"] = [{"path": selected["path"], "sha256": selected["sha256"], "role": "selected_guide"},
+                            *(provenance.get("required_readings", []) if isinstance(provenance, dict) else [])]
+    return selected
 
 
 def candidates(workspace, *, catalog_path=None) -> dict:
@@ -84,6 +88,15 @@ def candidates(workspace, *, catalog_path=None) -> dict:
                                     ("user", user_path.parent, user["entries"])):
         for entry in source:
             reason = registry._stale_reason(root, entry)
+            provenance = entry.get("provenance", {})
+            readings = provenance.get("required_readings", []) if isinstance(provenance, dict) else []
+            if not isinstance(readings, list) or len(readings) > 4:
+                raise registry.RegistryError("invalid selected guide readings")
+            for reading in readings:
+                if not isinstance(reading, dict) or set(reading) != {"path", "sha256", "role"} or reading["role"] != "creative_methodology":
+                    raise registry.RegistryError("invalid selected guide reading")
+                if registry._stale_reason(root, reading):
+                    reason = "required-methodology-stale"
             candidate = dict(entry, namespace=namespace, ref=f"{namespace}:{entry['id']}",
                              status="stale" if reason else "valid")
             if reason:

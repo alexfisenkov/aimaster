@@ -313,6 +313,21 @@ class Runner:
         validated = validate_public_result(status, public_result)
         return self.ledger.finish(action_id, status, validated, external_id=external_id)
 
+    def record_provider(self, workspace, action_id, evidence, *, state_dir=None):
+        """Import a completed-provider GET receipt; never dispatch generation."""
+        from .provider_collection import record
+        return record(workspace, self, action_id, evidence, state_dir=state_dir)
+
+    def record_provider_ack(self, workspace, action_id, evidence):
+        """Persist the paid creation ID immediately, before any long polling."""
+        from .provider_receipts import acknowledge
+        return acknowledge(workspace, self, action_id, evidence)
+
+    def reconcile(self, workspace, action_id, *, original_file=None, state_dir=None):
+        """Collect an existing approved receipt, preserving all dispatch events."""
+        from .provider_collection import reconcile
+        return reconcile(workspace, self, action_id, original_file=original_file, state_dir=state_dir)
+
     def recover(self, verifier: Callable[[dict], dict] | None = None) -> list[dict]:
         """Resolve every in-flight action after a restart; never retries silently.
 
