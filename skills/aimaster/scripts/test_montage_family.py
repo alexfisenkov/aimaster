@@ -76,8 +76,8 @@ class FamilyMontageTests(unittest.TestCase):
         self.assertTrue((destination / "final.mp4").is_file())
         self.assertTrue((destination / "editable" / "assets" / "fonts" / "OFL.txt").is_file(),
                         "redistributed fonts must retain their license")
-        self.assertIn("Created caption", (destination / "subtitles" / "titles.srt").read_text())
-        self.assertNotIn(str(self.ws), (destination / "manifest.json").read_text())
+        self.assertIn("Created caption", (destination / "subtitles" / "titles.srt").read_text(encoding="utf-8"))
+        self.assertNotIn(str(self.ws), (destination / "manifest.json").read_text(encoding="utf-8"))
         self.assertFalse((destination / "editable" / ".env").exists())
         # Unsaved desk changes never replace the composition for the delivered MP4.
         self.paths.index.write_text("unrendered private edits", encoding="utf-8")
@@ -87,7 +87,7 @@ class FamilyMontageTests(unittest.TestCase):
         shutil.rmtree(self.ws)
         verified = service.verify_export(moved / "manifest.json")
         self.assertEqual(verified["version"], "v002")
-        self.assertIn("Created caption", (moved / "editable" / "index.html").read_text())
+        self.assertIn("Created caption", (moved / "editable" / "index.html").read_text(encoding="utf-8"))
         (moved / "final.mp4").write_bytes(b"corrupt")
         with self.assertRaises(MontageError):
             service.verify_export(moved / "manifest.json")

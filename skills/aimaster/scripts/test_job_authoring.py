@@ -31,16 +31,16 @@ class JobAuthoringTests(unittest.TestCase):
             path=self.ws/'.studio/operator-inputs'/f"{job['action_id']}.json";path.parent.mkdir(exist_ok=True)
             request={'op':op,'project_id':project,'expected_revision':state['revision'],'data':data or {'text':'МАЯК scoped text','reason':'owner request'}}
             if change:request.update(change)
-            path.write_text(json.dumps(request,ensure_ascii=False))
+            path.write_text(json.dumps(request,ensure_ascii=False), encoding='utf-8')
             argv=[sys.executable,str(GATEWAY),str(self.ws),job['action_id'],str(path)]
             if path_case in {'foreign-file','symlink'}:
-                other=self.ws.parent/'foreign.json';other.write_text(path.read_text())
+                other=self.ws.parent/'foreign.json';other.write_text(path.read_text(encoding='utf-8'), encoding='utf-8')
                 if path_case=='symlink':path.unlink();path.symlink_to(other)
                 else:argv[-1]=str(other)
             elif path_case=='wrong-action':argv[-2]='action-'+'0'*32
             elif path_case=='foreign-workspace':
                 other=self.ws.parent/'other-workspace';other.mkdir();argv[2]=str(other)
-            done=subprocess.run(argv,capture_output=True,text=True,timeout=15)
+            done=subprocess.run(argv,capture_output=True,text=True,encoding='utf-8',timeout=15)
             response=json.loads(done.stdout)
             captured.append((done.returncode,response))
             after=self.store.load(project)
@@ -86,8 +86,8 @@ class JobAuthoringTests(unittest.TestCase):
                 ('guide.select',{'choice':{'stage':'scenario','kind':'scenario','modality':'text','task':'script','provider':None,
                     'model_family':None,'model':None,'version':None,'source':'none','ref':None,'sha256':None}})]
             for op,data in operations:
-                path.write_text(json.dumps({'op':op,'project_id':'film','expected_revision':revision,'data':data}))
-                process=subprocess.run([sys.executable,str(GATEWAY),str(self.ws),job['action_id'],str(path)],capture_output=True,text=True,timeout=15)
+                path.write_text(json.dumps({'op':op,'project_id':'film','expected_revision':revision,'data':data}), encoding='utf-8')
+                process=subprocess.run([sys.executable,str(GATEWAY),str(self.ws),job['action_id'],str(path)],capture_output=True,text=True,encoding='utf-8',timeout=15)
                 response=json.loads(process.stdout);responses.append(response)
                 if process.returncode:raise AssertionError(response)
                 revision=response['revision'];outputs.update(response.get('output_ids',[]))
@@ -170,7 +170,7 @@ class JobAuthoringTests(unittest.TestCase):
 
     def test_guide_and_library_reference_keep_exact_choice_and_identity(self):
         self.plan()
-        catalog=json.loads((GATEWAY.parents[1]/'guides/catalog.json').read_text())
+        catalog=json.loads((GATEWAY.parents[1]/'guides/catalog.json').read_text(encoding='utf-8'))
         guide=next(item for item in catalog['entries'] if item['id']=='nano-banana-2-1-magnific')
         choice=dict(stage='image_plan',kind='prompt',modality='image',task='generate',provider='magnific',model_family='nano-banana',
             model='imagen-nano-banana-2-1',version='2.1',source='builtin',ref='builtin:'+guide['id'],sha256=guide['sha256'])

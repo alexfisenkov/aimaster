@@ -66,7 +66,7 @@ class OverlayLiveTests(unittest.TestCase):
                     "pidFile": str(root / "browser.pid"), "href": desk["opener_url"],
                     "indexPath": str(paths.index), "overlay": True}), encoding="utf-8")
                 check = subprocess.run([eng.node, str(SCRIPTS / "montage_family_desk.mjs"), str(config)],
-                                       capture_output=True, text=True, timeout=180)
+                                       capture_output=True, text=True, encoding="utf-8", timeout=180)
                 self.assertEqual(check.returncode, 0, check.stdout + check.stderr[-2000:])
             finally:
                 service.close_desk(ws, "p")

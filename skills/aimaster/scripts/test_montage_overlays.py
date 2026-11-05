@@ -58,7 +58,7 @@ class OverlayTests(unittest.TestCase):
         shutil.rmtree(self.ws)
         verified = service.verify_export(bundle / "manifest.json")
         self.assertEqual(verified["version"], second["version"])
-        text = (bundle / "editable" / "index.html").read_text()
+        text = (bundle / "editable" / "index.html").read_text(encoding="utf-8")
         self.assertIn('<svg', text)
         self.assertIn('id="o-4"', text)
         self.assertFalse((bundle / "subtitles" / "titles.srt").exists())

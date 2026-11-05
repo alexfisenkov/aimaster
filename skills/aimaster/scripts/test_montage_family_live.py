@@ -57,7 +57,7 @@ class FamilyLiveTests(unittest.TestCase):
                     "pidFile": str(root / "browser.pid"), "href": desk["opener_url"],
                     "indexPath": str(montage_paths(ws / "projects" / "p").index)}), encoding="utf-8")
                 check = subprocess.run([eng.node, str(SCRIPTS / "montage_family_desk.mjs"), str(config)],
-                                       capture_output=True, text=True, timeout=180)
+                                       capture_output=True, text=True, encoding="utf-8", timeout=180)
                 self.assertEqual(check.returncode, 0, check.stdout + check.stderr[-2000:])
                 self.assertTrue(all(item["ok"] for item in json.loads(check.stdout.strip())))
             finally:

@@ -147,7 +147,7 @@ class FamilyUIBrowserTests(unittest.TestCase):
         server=serve(fixture.ws);self.addCleanup(server.close)
         server.application.montage.family_state_dir=fixture.root/'family-state'
         cfg={'modules':str(engine.prefix/'node_modules'),'browser':engine.browser,'profile':str(fixture.root/'browser-profile'),'url':server.base_url}
-        result=subprocess.run([engine.node,'--input-type=module','-',json.dumps(cfg)],input=MATERIALS_SCRIPT,text=True,capture_output=True,timeout=60)
+        result=subprocess.run([engine.node,'--input-type=module','-',json.dumps(cfg)],input=MATERIALS_SCRIPT,text=True,encoding='utf-8',capture_output=True,timeout=60)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr[-2000:])
         packet=json.loads(result.stdout)
         with zipfile.ZipFile(io.BytesIO(base64.b64decode(packet['body']))) as archive:
@@ -176,7 +176,7 @@ class FamilyUIBrowserTests(unittest.TestCase):
                 config = {"modules":str(engine.prefix / "node_modules"),"browser":engine.browser,
                     "profile":str(root / "browser-profile"),"url":server.base_url,"url2":second.base_url,"videoUrl":"/assets/"+video['asset_id'],"imageUrl":"/assets/"+photo['asset_id']}
                 result = subprocess.run([engine.node,"--input-type=module","-",json.dumps(config)],input=SCRIPT,
-                                        text=True,capture_output=True,timeout=60)
+                                        text=True,encoding="utf-8",capture_output=True,timeout=60)
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr[-2000:])
             finally:
                 server.close(); second.close()

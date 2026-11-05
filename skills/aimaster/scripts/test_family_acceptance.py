@@ -26,7 +26,7 @@ class FamilyAcceptance(unittest.TestCase):
 
     def run_json(self, script, *args, success=True):
         result = subprocess.run([sys.executable, str(script), *map(str, args)],
-                                capture_output=True, text=True, timeout=25)
+                                capture_output=True, text=True, encoding="utf-8", timeout=25)
         if success:
             self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
         return result, json.loads(result.stdout) if result.returncode == 0 else None

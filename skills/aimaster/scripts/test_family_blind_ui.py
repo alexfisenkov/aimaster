@@ -89,7 +89,7 @@ class FamilyBlindUI(unittest.TestCase):
                     config = {"modules": str(engine.prefix / "node_modules"), "browser": engine.browser,
                         "profile": str(root / "browser-profile"), "url": server.base_url}
                     result = subprocess.run([engine.node, "--input-type=module", "-", json.dumps(config)],
-                        input=SCRIPT, text=True, capture_output=True, timeout=60)
+                        input=SCRIPT, text=True, encoding="utf-8", capture_output=True, timeout=60)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr[-2000:])
                     self.assertEqual(questions.pending("p"), [])
                 finally:

@@ -29,7 +29,7 @@ class HostContractTests(unittest.TestCase):
         action=self.runner.ledger.enqueue('film',ActionRequest('continue-in-chat','scenario',{},0,'parent-hash'))
         with Operator(self.ws,agent='claude',adapter=lambda job,*args:self.result(job),state_dir=Path(self.tmp.name)/'family') as controller:
             self.assertEqual(controller.step()['status'],'succeeded')
-        receipt=json.loads((self.ws/'.studio/operator-results'/f"{action['action_id']}.json").read_text())
+        receipt=json.loads((self.ws/'.studio/operator-results'/f"{action['action_id']}.json").read_text(encoding='utf-8'))
         from studio.operator_adapters import state_digest
         self.assertEqual(receipt['state_sha256'],state_digest(self.store.load('film')))
         self.assertEqual(self.store.load('film')['revision'],0)
@@ -69,7 +69,7 @@ class HostContractTests(unittest.TestCase):
             self.assertEqual(controller.step()['status'],'outcome_unknown')
         path=self.ws/'.studio/operator-results'/f"{action['action_id']}.json"
         self.assertTrue(path.is_file(),'failure path discarded its diagnostic')
-        text=path.read_text(); receipt=json.loads(text)
+        text=path.read_text(encoding='utf-8'); receipt=json.loads(text)
         self.assertEqual(receipt['diagnostic']['reason'],'host_nonzero_exit')
         self.assertEqual(receipt['diagnostic']['returncode'],17)
         self.assertNotIn('signature',text);self.assertNotIn('Bearer',text);self.assertNotIn('never-log',text)
