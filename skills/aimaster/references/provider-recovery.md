@@ -5,6 +5,13 @@ GET receipt; the normal parent Operator saves it privately and collects the exac
 No Chrome or child sandbox/network permission changes are needed. A timeout or post-call setup
 error stays protected as `outcome_unknown`; the generation is never silently replayed.
 
+A new paid action cannot succeed through direct child asset/result authoring. Such changes
+remain evidence with an unknown outcome and a reserved grant; they are not silently erased or
+adopted as parent-collected success. Only a validated completed receipt and parent collection
+can promote the paid action. Existing historical terminal records are not rewritten.
+For the headless host's free authoring permissions and read-back contract, see
+[scoped job authoring](job-authoring.md).
+
 Immediately after a provider returns a queued creation/request ID, before long polling, the host
 runs `creator_studio_operator.py record-ack WS ACTION --file PRIVATE_ACK.json`. Its exact fields
 are provider, model, operation, creation_id, prompt_sha256, basis_sha256 and

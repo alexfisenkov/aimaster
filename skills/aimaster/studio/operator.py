@@ -114,55 +114,43 @@ def _ids(items, key):
 def verify_result(job, result, before, after, workspace):
     """Independently validate identity, revision, exact semantic outputs and actual media."""
     if not isinstance(result, dict) or not set(RESULT_SCHEMA["required"]) <= set(result) <= set(RESULT_SCHEMA["properties"]):
-        raise AdapterFailure()
+        raise AdapterFailure(reason="host_result_schema")
     for key in ("action_id", "project_id", "action_type", "target_id"):
         if result[key] != job[key]:
-            raise AdapterFailure()
+            raise AdapterFailure(reason="result_identity")
     if type(result["revision"]) is not int or type(result["base_revision"]) is not int or \
             result["base_revision"] != job["revision"] or result["revision"] != after["revision"] or \
-            before["revision"] != job["revision"] or result["state_sha256"] != state_digest(after):
-        raise AdapterFailure()
+            before["revision"] != job["revision"]:
+        raise AdapterFailure(reason="result_revision")
+    if result["state_sha256"] is not None and result["state_sha256"] != state_digest(after):
+        raise AdapterFailure(reason="result_state_hash")
     if result["status"] not in RESULT_SCHEMA["properties"]["status"]["enum"]:
-        raise AdapterFailure()
+        raise AdapterFailure(reason="result_status")
     if not isinstance(result["output_ids"], list) or not all(isinstance(x, str) for x in result["output_ids"]) or \
             not isinstance(result["reply"], str) or not result["reply"].strip():
-        raise AdapterFailure()
-    if result["status"] != "succeeded":
-        if job["action_type"] in {"generate", "vary", "regenerate"}:
-            return "outcome_unknown"
-        return result["status"]
+        raise AdapterFailure(reason="result_outputs")
     kind = job["action_type"]
+    if kind in {"generate", "vary", "regenerate"}:
+        # A child's prose or direct authoring cannot prove parent collection.
+        # Only the separate validated receipt/collector path may promote this.
+        return "outcome_unknown"
+    if result["status"] != "succeeded":
+        if result["status"] == "provider_completed":
+            raise AdapterFailure(reason="result_status")
+        return result["status"]
     output = set(result["output_ids"])
+    if after != before:
+        previous = before.get("history", [])
+        history = after.get("history", [])
+        if after["revision"] <= before["revision"] or not isinstance(history, list) or \
+                history[:len(previous)] != previous or len(history) <= len(previous):
+            raise AdapterFailure(reason="result_history")
     if kind == "continue-in-chat":
         # A read-only question has no fabricated revision/result requirement.
         return "succeeded"
     if after["revision"] <= before["revision"]:
         raise AdapterFailure()
-    if kind in {"generate", "vary", "regenerate"}:
-        collections = ("image_results", "video_results", "audio_results")
-        old = _ids([item for name in collections for item in before.get(name, [])], "version_id")
-        new = _ids([item for name in collections for item in after.get(name, [])], "version_id")
-        added = set(new) - set(old)
-        if not output or output != added:
-            raise AdapterFailure()
-        from .operator_routes import action_position
-        from .domain_positions import current_member
-        from .domain import compute_prompt_stale
-        spec = action_position(before, kind, job["target_id"])
-        current = current_member(before, spec, "result", missing_ok=True)
-        group = current["result_id"] if current else spec["result_group_id"]
-        prompt_before = current_member(before, spec, "prompt", missing_ok=True)
-        prompt_after = current_member(after, spec, "prompt", missing_ok=True)
-        if not prompt_before or prompt_before != prompt_after or compute_prompt_stale(after, prompt_after, spec):
-            raise AdapterFailure()
-        assets = authoring.open_assets(workspace)
-        for identity in output:
-            item = new[identity]
-            if item.get("result_id") != group or item.get("scene_id") != spec.get("scene_id") or \
-                    item.get("hidden") or item.get("retired") or item.get("stale"):
-                raise AdapterFailure()
-            assets.resolve(item["asset_id"])
-    elif kind in {"prompts-generate", "prompt-refresh"}:
+    if kind in {"prompts-generate", "prompt-refresh"}:
         collections = ("image_prompts", "motion_prompts", "audio_prompts")
         old = _ids([item for name in collections for item in before.get(name, [])], "version_id")
         new = _ids([item for name in collections for item in after.get(name, [])], "version_id")
@@ -322,6 +310,9 @@ class Operator:
             self._status, self._active = "busy", job["action_id"]
             self._heartbeat()
             finished = None
+            diagnostic = {"reason": "none"}
+            reply = "Исход действия не подтверждён; проверьте сохранённое состояние. Автоматического повтора не было."
+            phase = "host"
             try:
                 before = self.runner.store.load(job["project_id"])
                 if before["revision"] != job["revision"]:
@@ -345,30 +336,45 @@ class Operator:
                     from .provider_receipts import freeze
                     freeze(self.workspace, self.runner, job["action_id"], before, route)
                 result = self.adapter(job, self.workspace, SKILL_ROOT)
+                phase = "result_validation"
                 after = self.runner.store.load(job["project_id"])
                 final = verify_result(job, result, before, after, self.workspace)
-                if result.get("provider_receipt") is not None:
-                    if job["action_type"] not in {"generate", "vary", "regenerate"} or before != after or result["output_ids"]:
-                        raise AdapterFailure()
-                    from .provider_collection import record, reconcile
-                    record(self.workspace, self.runner, job["action_id"], result["provider_receipt"], operation_locked=True)
-                    try:
-                        finished = reconcile(self.workspace, self.runner, job["action_id"], operation_locked=True)
-                    except ValueError:
-                        from .provider_collection import public
-                        finished = public(self.runner, job["action_id"])
-                    final = finished["status"]
                 from .agent_bridge import _sanitize_output
-                write_json(self.private / "operator-results" / (job["action_id"] + ".json"),
-                    {"action_id": job["action_id"], "project_id": job["project_id"], "revision": after["revision"],
-                     "status": final, "reply": _sanitize_output(result["reply"])[:12000]})
+                reply = _sanitize_output(result["reply"])[:12000]
+                if final != "succeeded":
+                    diagnostic = {"reason": "paid_receipt_missing" if job["action_type"] in {"generate", "vary", "regenerate"}
+                                  else "host_reported_status", "reported_status": result["status"]}
+                if result.get("provider_receipt") is not None:
+                    if job["action_type"] not in {"generate", "vary", "regenerate"}:
+                        raise AdapterFailure()
+                    from .provider_collection import record, reconcile, public
+                    phase = "provider_receipt"
+                    record(self.workspace, self.runner, job["action_id"], result["provider_receipt"], operation_locked=True)
+                    if before != after or result["output_ids"]:
+                        # Keep the provider ID and child-created evidence, but
+                        # never adopt direct child mutations as collected success.
+                        finished = public(self.runner, job["action_id"])
+                        diagnostic = {"reason": "paid_child_mutation"}
+                    else:
+                        phase = "collection"
+                        try:
+                            finished = reconcile(self.workspace, self.runner, job["action_id"], operation_locked=True)
+                            diagnostic = {"reason": "none" if finished["status"] == "succeeded" else "collection_blocked"}
+                        except ValueError:
+                            finished = public(self.runner, job["action_id"])
+                            diagnostic = {"reason": "collection_blocked"}
+                    final = finished["status"]
+                    after = self.runner.store.load(job["project_id"])
             except AdapterFailure as error:
+                diagnostic = error.diagnostic
                 final = error.code if error.code in {"needs_chat_setup", "outcome_unknown"} else "outcome_unknown"
                 if self.runner.ledger.get_action(job["action_id"])["external_id"] is not None:
                     final = "outcome_unknown"
             except Exception:
                 # Any post-dispatch uncertainty consumes the grant and is never replayed.
                 final = "outcome_unknown"
+                diagnostic = {"reason": "provider_receipt_invalid" if phase == "provider_receipt" else
+                              "collection_internal_failure" if phase == "collection" else "unexpected_internal_failure"}
             finally:
                 self._active, self._status = None, "ready"
             if finished is None:
@@ -377,6 +383,11 @@ class Operator:
                     finished = public(self.runner, job["action_id"])
                 else:
                     finished = self.runner.finish(job["action_id"], final, {})
+            observed = self.runner.store.load(job["project_id"])
+            write_json(self.private / "operator-results" / (job["action_id"] + ".json"),
+                {"action_id": job["action_id"], "project_id": job["project_id"], "revision": observed["revision"],
+                 "state_sha256": state_digest(observed), "status": finished["status"], "reply": reply,
+                 "diagnostic": diagnostic})
             if final == "needs_chat_setup":
                 self._status = "needs_setup"
             self._inbox()

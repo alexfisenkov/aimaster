@@ -156,7 +156,7 @@ class PaidRouteTests(unittest.TestCase):
             target = "pos:scene:s1:image"
             cli("prompt", "add-version", ws, "p", "--target", target, "--text", "Synthetic image", "--reason", "start", "--expected-revision", rev())
             cli("stage", "approve", ws, "p", "--expected-revision", rev())
-            selected = set_route(ws, "p", target, rev(), provider="magnific", model="synthetic-test-model", operation="image.generate", parameters={"width":1280})
+            selected = set_route(ws, "p", target, rev(), provider="magnific", model="synthetic-test-model", operation="image.generate", parameters={"width":8})
             server = serve(ws); self.addCleanup(server.close)
             app = server.application
             headers = [("Host",app.authority),("Origin",app.origin),("X-CSRF-Token",app.csrf_token),("Content-Type","application/json")]
@@ -165,12 +165,16 @@ class PaidRouteTests(unittest.TestCase):
             calls = []
             def adapter(job, workspace, skill):
                 calls.append(job)
-                (ws / "media" / "result.png").write_bytes(png_bytes())
-                asset = cli("asset", "register", ws, "--path", "media/result.png", "--role", "result")
-                result = cli("result", "add-version", ws, "p", "--target", target, "--asset-id", asset["asset_id"], "--expected-revision", rev())
+                route = job["execution_route"]
+                receipt = {**{key:route[key] for key in ("provider","model","operation","prompt_sha256","basis_sha256")},
+                    "creation_id":"creation-"+str(len(calls)),"observation":"completed_get","artifact":{
+                        "id":"original-"+str(len(calls)),"url":"https://pikaso.cdnpk.net/private/original-"+str(len(calls))+".png",
+                        "mime_type":"image/png","width":8,"height":8,"duration":None,"size_bytes":None,"sha256":None}}
                 return {**{key:job[key] for key in ("action_id","project_id","action_type","target_id")},"base_revision":job["revision"],
-                    "revision":rev(),"status":"succeeded","state_sha256":state_digest(store.load("p")),"output_ids":[result["version_id"]],"reply":"Collected."}
-            with Operator(ws, agent="codex", adapter=adapter, state_dir=root / "family") as controller:
+                    "revision":rev(),"status":"provider_completed","state_sha256":state_digest(store.load("p")),"output_ids":[],
+                    "reply":"Provider original is complete.","provider_receipt":receipt}
+            with patch("studio.provider_collection.fetch_original", return_value=png_bytes()), \
+                    Operator(ws, agent="codex", adapter=adapter, state_dir=root / "family") as controller:
                 first = json.loads(app.handle("POST","/api/actions",headers,json.dumps(request).encode()).body)
                 self.assertEqual(first["status"], "queued")
                 request["idempotency_key"] = "double-click"
