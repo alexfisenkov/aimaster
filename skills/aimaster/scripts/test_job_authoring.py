@@ -44,7 +44,7 @@ class JobAuthoringTests(unittest.TestCase):
             response=json.loads(done.stdout)
             captured.append((done.returncode,response))
             after=self.store.load(project)
-            outputs=[response['version_id']] if done.returncode==0 and response.get('version_id') else []
+            outputs=response.get('output_ids',[]) if done.returncode==0 else []
             if reported_output_ids is not None:outputs=reported_output_ids
             return {**{key:job[key] for key in ('action_id','project_id','action_type','target_id')},'base_revision':job['revision'],
                 'revision':after['revision'],'state_sha256':None,'status':'succeeded' if done.returncode==0 else 'failed',
@@ -65,6 +65,40 @@ class JobAuthoringTests(unittest.TestCase):
         self.assertEqual(after['script']['versions'][-1]['text'],'МАЯК scoped text')
         self.assertEqual(after['history'][-1]['kind'],'script-ready')
         self.assertEqual(self.last_ledger_status,'succeeded')
+        self.assertEqual(value['output_ids'],['script-v1'])
+
+    def test_storyboard_returns_two_new_block_ids_and_final_ledger_succeeds(self):
+        authoring.add_script_version(self.store,'film',0,'Two scenes','fixture')
+        scenes=[{'scene_id':identity,'title':identity,'text':'Synthetic scene'} for identity in ('s1','s2')]
+        (code,value),before,after=self.apply('scenes.set',{'scenes':scenes})
+        self.assertEqual(code,0,value);self.assertEqual(after['revision'],before['revision']+1)
+        self.assertEqual(value['output_ids'],['s1-block-v1','s2-block-v1'])
+        self.assertEqual(self.last_ledger_status,'succeeded')
+
+    def test_multiple_operations_accumulate_all_gateway_output_ids(self):
+        action=self.runner.ledger.enqueue('film',ActionRequest('continue-in-chat','scenario',{'text':'Create a scenario and two scenes'},0,'multiop'))
+        responses=[]
+        def host(job,*args):
+            path=self.ws/'.studio/operator-inputs'/f"{job['action_id']}.json";path.parent.mkdir(exist_ok=True)
+            revision=job['revision'];outputs=set()
+            operations=[('script.add-version',{'text':'Two scenes','reason':'owner request'}),
+                ('scenes.set',{'scenes':[{'scene_id':identity,'title':identity,'text':'Synthetic scene'} for identity in ('s1','s2')]}),
+                ('guide.select',{'choice':{'stage':'scenario','kind':'scenario','modality':'text','task':'script','provider':None,
+                    'model_family':None,'model':None,'version':None,'source':'none','ref':None,'sha256':None}})]
+            for op,data in operations:
+                path.write_text(json.dumps({'op':op,'project_id':'film','expected_revision':revision,'data':data}))
+                process=subprocess.run([sys.executable,str(GATEWAY),str(self.ws),job['action_id'],str(path)],capture_output=True,text=True,timeout=15)
+                response=json.loads(process.stdout);responses.append(response)
+                if process.returncode:raise AssertionError(response)
+                revision=response['revision'];outputs.update(response.get('output_ids',[]))
+            return {**{key:job[key] for key in ('action_id','project_id','action_type','target_id')},'base_revision':job['revision'],
+                'revision':revision,'state_sha256':None,'status':'succeeded','output_ids':sorted(outputs),'reply':'Scenario and storyboard saved.'}
+        with Operator(self.ws,agent='claude',adapter=host,state_dir=Path(self.tmp.name)/'family') as controller:controller.step()
+        self.assertEqual(self.runner.ledger.get_action(action['action_id'])['status'],'succeeded')
+        self.assertEqual(responses[0]['output_ids'],['script-v1'])
+        self.assertEqual(responses[1]['output_ids'],['s1-block-v1','s2-block-v1'])
+        self.assertEqual(responses[2]['output_ids'],[])
+        self.assertEqual(self.store.load('film')['revision'],3)
 
     def test_missing_new_script_id_cannot_succeed_in_final_ledger(self):
         (code,value),before,after=self.apply(reported_output_ids=[])

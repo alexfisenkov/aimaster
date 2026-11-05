@@ -20,6 +20,7 @@ from .platform_compat import file_lock, open_text_nofollow
 from .runner import open_runner, CHAT_ACTION_TYPES
 from .ledger import ActionRequest, TERMINAL_STATUSES
 from .workspace import resolve_workspace_paths
+from .version_history import version_ids
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 HEARTBEAT_SECONDS = 2
@@ -111,17 +112,6 @@ def _ids(items, key):
     return {item.get(key): item for item in items if isinstance(item, dict) and item.get(key)}
 
 
-def _version_ids(state):
-    """Canonical version histories, including scene blocks, not current links."""
-    from .decision_cards import PROMPT_COLLECTIONS, RESULT_COLLECTIONS
-    items = list((state.get("script") or {}).get("versions", []))
-    for scene in state.get("scenes", []):
-        items.extend((scene.get("script_block") or {}).get("versions", []))
-    for collection in (*PROMPT_COLLECTIONS, *RESULT_COLLECTIONS):
-        items.extend(state.get(collection, []))
-    return set(_ids(items, "version_id"))
-
-
 def verify_result(job, result, before, after, workspace):
     """Independently validate identity, revision, exact semantic outputs and actual media."""
     if not isinstance(result, dict) or not set(RESULT_SCHEMA["required"]) <= set(result) <= set(RESULT_SCHEMA["properties"]):
@@ -159,7 +149,7 @@ def verify_result(job, result, before, after, workspace):
     if kind == "continue-in-chat":
         # Read-only/meta-only work needs no invented output. Authoring must name
         # every actual new version, not an old existing ID or a claimed one.
-        if output != _version_ids(after) - _version_ids(before):
+        if output != version_ids(after) - version_ids(before):
             raise AdapterFailure(reason="result_semantic_outputs")
         return "succeeded"
     if after["revision"] <= before["revision"]:

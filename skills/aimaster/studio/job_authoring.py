@@ -9,6 +9,7 @@ from .platform_compat import file_lock, open_text_nofollow
 from .safe_paths import safe_path
 from .store import RevisionConflict
 from .workspace import resolve_workspace_paths
+from .version_history import version_ids
 
 SCHEMAS = {
     "script.add-version": ({"text", "reason"}, set()),
@@ -198,6 +199,9 @@ def apply_request(workspace, action_id, supplied_path):
         if revision != current["revision"]:
             raise RevisionConflict(revision, current["revision"])
         result = _apply(root, runner.store, action, request)
+        after = runner.store.load(action["project_id"])
+        output_ids = sorted(version_ids(after) - version_ids(current))
         allowed = {"version_id", "result_id", "prompt_id", "reference_id", "asset_id", "asset_ids", "version", "duration", "kind", "destination"}
         return {"ok": True, "action_id": action_id, "project_id": action["project_id"],
-                "revision": runner.store.load(action["project_id"])["revision"], **{key:value for key,value in result.items() if key in allowed}}
+                "revision": after["revision"], "output_ids": output_ids,
+                **{key:value for key,value in result.items() if key in allowed}}

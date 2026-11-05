@@ -19,6 +19,13 @@ keys, unknown operations/fields and external file/catalog arguments are refused.
 It calls the existing canonical authoring APIs and returns their real revision/IDs.
 For another authorized operation, replace the request JSON and use the returned revision.
 
+Every successful response has `output_ids`: all canonical version IDs actually created by
+that operation, including each new storyboard `script_block` version. Accumulate the union
+of these lists for the whole job and return it in the host result. A later metadata-only
+response with `output_ids: []` must not erase earlier IDs. Asset/reference IDs remain separate
+response fields; they do not replace version IDs. The dedicated `assemble` action retains
+its existing asset-ID result contract.
+
 Supported operations are script version, initial storyboard, image/motion/audio prompt
 version, exact registered guide choice, reference add/attach by workspace asset/library ID,
 registration of a file explicitly supplied in the job's attachments, and an explicit uploaded
