@@ -112,7 +112,8 @@ def match(workspace, scope, *, catalog_path=None) -> dict:
     for entry in listing["entries"]:
         if (entry["kind"] != scope.kind or scope.modality not in entry["modalities"]
                 or scope.task not in entry["tasks"]
-                or not registry._provider_matches(entry["providers"], scope.provider)):
+                or not registry._provider_matches(entry["providers"], scope.provider,
+                    allow_unselected=entry["kind"] == "scenario" and entry["model_agnostic"] is True)):
             continue
         rank = registry._model_rank(entry, scope)
         if rank is None:

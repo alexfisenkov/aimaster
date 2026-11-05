@@ -322,11 +322,11 @@ def command_list(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def _provider_matches(scopes: list[str], provider: str | None) -> bool:
+def _provider_matches(scopes: list[str], provider: str | None, *, allow_unselected: bool = False) -> bool:
     if not scopes:
         return provider is None
     if provider is None:
-        return False
+        return allow_unselected and scopes == ["*"]
     return scopes == ["*"] or provider in scopes
 
 
@@ -390,7 +390,8 @@ def command_match(args: argparse.Namespace) -> dict[str, Any]:
             entry["kind"] != args.kind
             or args.modality not in entry["modalities"]
             or args.task not in entry["tasks"]
-            or not _provider_matches(entry["providers"], args.provider)
+            or not _provider_matches(entry["providers"], args.provider,
+                                     allow_unselected=entry["kind"] == "scenario" and entry["model_agnostic"] is True)
         ):
             continue
         rank = _model_rank(entry, args)
