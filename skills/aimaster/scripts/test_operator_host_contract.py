@@ -101,7 +101,8 @@ class HostContractTests(unittest.TestCase):
         self.assertEqual(argv[argv.index('--allowedTools')+1], 'Bash('+prefix+')')
         self.assertNotIn('Bash',argv);self.assertNotIn('bypassPermissions',argv)
         self.assertNotIn('--dangerously-skip-permissions',argv)
-        self.assertIn(prefix,prompt(job,self.ws,skill,agent='claude'))
+        payload=json.loads(prompt(job,self.ws,skill,agent='claude').rsplit('\n',1)[-1])
+        self.assertEqual(payload['host_authoring']['command'],prefix)
         for windows in (False,True):
             with self.subTest(windows=windows), patch('studio.platform_compat.IS_WINDOWS',windows), \
                     patch('studio.host_launch.resolve',return_value=['/synthetic/claude']):
@@ -111,6 +112,11 @@ class HostContractTests(unittest.TestCase):
                     rule=scoped[scoped.index('--allowedTools')+1]
                     self.assertEqual(rule,expected)
                     self.assertNotIn('*',rule)
+                    payload=json.loads(prompt({**job,'action_type':action},self.ws,skill,agent='claude').rsplit('\n',1)[-1])
+                    self.assertEqual(payload['host_authoring']['command'],command_line(parts,windows=windows))
+                    self.assertEqual(payload['host_authoring']['request_path'],str(request))
+                    if windows:
+                        self.assertIn('"',payload['host_authoring']['command'])
 
     def test_claude_windows_shell_line_keeps_exact_argument_boundaries(self):
         parts=[r'C:\Program Files\Python\python.exe',r'D:\package\scripts\creator_studio_job.py',

@@ -31,6 +31,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
+        id: setup_python
         with:
           python-version: ${{ matrix.python }}
 
@@ -42,7 +43,7 @@ jobs:
         run: python -X utf8 -m unittest discover -s skills/aimaster/scripts -p "test_*.py"
 
       - name: Python unit tests (Windows console encoding, no UTF-8 mode)
-        if: runner.os == 'Windows'
+        if: ${{ !cancelled() && runner.os == 'Windows' && steps.setup_python.outcome == 'success' }}
         env:
           PYTHONUTF8: "0"
         run: python -m unittest discover -s skills/aimaster/scripts -p "test_*.py"
