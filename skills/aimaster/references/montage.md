@@ -112,6 +112,13 @@ what it means in plain words (see Refusals).
 | `montage open` | starts the montage desk (HyperFrames Studio) | `state`, `url`, `opener_url`, `port`, `pid`, `started_at`; sometimes `forgotten` (Montage desk) |
 | `montage close` | stops it | `state`; sometimes `forgotten` or `note` (Montage desk) |
 
+Open the `opener_url` from `montage open` and allow Studio to finish loading.
+The root `index.html` composition opens automatically: confirm that `index` is
+selected and its video/title tracks appear in Timeline. The `+` beside `index`
+means **insert this composition into the current timeline**; it is not the
+open button and inserting the root into itself is rejected as a cycle. For a
+one-second test clip, use Timeline zoom to make its tracks easier to see.
+
 `montage render` without `--by` records `autopilot` in an autopilot project and
 `agent` otherwise; pass `--by owner` when the build is the person's own
 (their desk edits, their «собери»). `--summary` is the version's caption on the
@@ -131,7 +138,8 @@ dashboard; without it the caption is made from the changes.
   clip `id`, `kind`, `start`, `duration`, `media_start`, `volume`,
   `scene_id`, `asset_id`, `text`.
 - `model_hash` and `unrendered_changes` (`true` — the montage changed after the
-  current version was built); `duration`.
+  current version was built, including a saved Studio animation/layout edit);
+  `model_hash` can stay the same for a Studio-only edit; `duration`.
 - `stale_clips` (see Keeping the draft current); `desk`; `paths.current`
   (the composition folder) and `paths.output` (the MP4 of the current version).
 - `model_error` / `stale_error`: the engine could not read the montage, or the

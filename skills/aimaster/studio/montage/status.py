@@ -19,6 +19,7 @@ from .montage_state import montage_section
 from .paths import render_output
 from .stale import stale_clips
 from .versions import current_meta, has_unrendered_changes
+from .version_diff import inline_script_changed
 from .workspace_skills import skills_summary
 
 STALE_KEYS = ("clip", "layer", "scene_id", "asset_id", "current_asset_id", "reason", "cause",
@@ -61,7 +62,8 @@ def model_part(ctx: ProjectContext, engine: Engine, current_version, runner) -> 
         return {"model_error": str(error)}
     digest = model_hash(model)
     return {"model_hash": digest, "duration": model.duration, "layers": layers_view(model),
-            "unrendered_changes": has_unrendered_changes(digest, current_meta(paths, current_version))}
+            "unrendered_changes": (has_unrendered_changes(digest, current_meta(paths, current_version))
+                                   or inline_script_changed(paths, current_version))}
 
 
 def montage_status(ctx: ProjectContext, engine: Engine | None, reason: str, *, runner=None,

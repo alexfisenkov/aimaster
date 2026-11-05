@@ -16,7 +16,8 @@ from .montage_state import (check_writable, load_fresh, montage_section, record_
 from .paths import VERSION_ID
 from .probe import probe_media
 from .render import render_version
-from .version_diff import base_model, changes_since
+from .version_diff import (base_model, changes_since, include_inline_script_change,
+                           inline_script_changed)
 from .version_staging import build_lock, settle_orphans
 from .versions import current_meta, has_unrendered_changes, read_version_model, restore_files
 
@@ -72,10 +73,15 @@ def diff(workspace, project_id, *, against=None, engine=None, runner=None) -> di
         old, problem = read_version_model(ctx.paths, against), None
     else:
         old, problem = base_model(ctx.paths, base)
+    current_script_changed = inline_script_changed(ctx.paths, current)
+    script_changed = (current_script_changed if base == current
+                      else inline_script_changed(ctx.paths, base))
+    changes = changes_since(base, old, problem, model, ctx.scene_names())
     return {"project_id": project_id, "base": base, "model_hash": model_hash(model),
-            "changes": changes_since(base, old, problem, model, ctx.scene_names()),
-            "unrendered_changes": has_unrendered_changes(model_hash(model),
-                                                         current_meta(ctx.paths, current))}
+            "changes": include_inline_script_change(changes, script_changed),
+            "unrendered_changes": (has_unrendered_changes(model_hash(model),
+                                                           current_meta(ctx.paths, current))
+                                   or current_script_changed)}
 
 
 def _recorded(state: dict, version_id: str) -> list[str]:

@@ -6,7 +6,8 @@
 
 - `cheap_status` — то, что меняют действия человека и что должно быть видно
   сразу: движок, текущая версия, файл ролика, ключ текста index.html и флаг
-  несобранных правок, если модель этого текста уже лежит в кэше;
+  несобранных правок, если модель этого текста уже лежит в кэше; флаг также
+  сравнивает встроенный сценарий с исходником текущей версии;
 - `model_status` — схема слоёв, хэш, флаг несобранных правок и устаревшие
   клипы; экран просит её, когда сменился ключ index.html, текущая версия
   (сборка не трогает index.html — ключ тогда прежний) или ревизия проекта.
@@ -28,6 +29,7 @@ from .montage_state import montage_section
 from .paths import render_output
 from .status import model_part, stale_part
 from .versions import current_meta, has_unrendered_changes
+from .version_diff import inline_script_changed
 
 
 def index_key(text: str) -> str:
@@ -65,7 +67,8 @@ def _cached_unrendered(ctx, engine, text, current_version) -> bool | None:
         model = None
     if model is None:
         return None
-    return has_unrendered_changes(model_hash(model), current_meta(ctx.paths, current_version))
+    return (has_unrendered_changes(model_hash(model), current_meta(ctx.paths, current_version))
+            or inline_script_changed(ctx.paths, current_version, current_text=text))
 
 
 def cheap_status(ctx: ProjectContext, engine: Engine | None, reason: str) -> dict:

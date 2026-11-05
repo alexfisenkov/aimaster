@@ -23,7 +23,8 @@ from .probe import probe_media
 from .render_run import remove_output, render_mp4
 from .render_steps import checked_output, normalized_index, preflight
 from .summary_text import auto_summary, checked_summary
-from .version_diff import base_model, changes_since
+from .version_diff import (base_model, changes_since, include_inline_script_change,
+                           inline_script_changed)
 from .version_staging import (build_lock, discard_staging, publish_version, settle_orphans,
                               stage_version)
 from .versions import BY_VALUES, VersionMeta, next_version_id
@@ -87,7 +88,9 @@ def _build(ctx, state, expected_revision, *, by, summary, engine, runner, probe)
             raise MontageError("монтаж поменяли во время сборки (например, в монтажном столе) — "
                                "эта сборка не записана; соберите ещё раз")
         asset_id = _register(ctx, output)
-        changes = changes_since(base, old, problem, model, scene_names(state))
+        changes = include_inline_script_change(
+            changes_since(base, old, problem, model, scene_names(state)),
+            inline_script_changed(ctx.paths, base, current_text=text))
         meta = VersionMeta(
             version=version_id, created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             by=by or ("autopilot" if project_mode(state) == "autopilot" else "agent"),
