@@ -93,6 +93,14 @@ def register_connector(home, state_dir, agent, name, expected, executable, *, ru
     if not executable:
         return base
     path = config_path(home, agent)
+    try:
+        # Codex CLI requires CODEX_HOME to exist before it will load config.toml.
+        # Create only the selected host's config directory; do not touch any
+        # existing config file or neighboring host directories.
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return {**base, "status": "registration_failed",
+                "next_step": "The host configuration directory could not be created; check its path and permissions."}
     backup = Path(state_dir) / "backups" / (agent + "-" + uuid.uuid4().hex + path.suffix)
     write_bytes(backup, raw)
     if "url" in expected:
