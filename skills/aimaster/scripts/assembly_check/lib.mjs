@@ -115,6 +115,11 @@ export async function click(page, selector, { tap = false, tries = 6 } = {}) {
 export const text = (page, selector) => page.$eval(selector, (node) => node.textContent.trim()).catch(() => null);
 
 export async function openProject(page, cfg) {
+  // The checks below use the Russian UI copy. Set the same supported preference
+  // a user can choose, before theme-init reads it on the first page load.
+  await page.evaluateOnNewDocument(() => {
+    localStorage.setItem("aimaster.family.preferences.v1", JSON.stringify({ locale: "ru" }));
+  });
   await page.goto(`${cfg.baseUrl}/?project=${encodeURIComponent(cfg.projectId)}`, { waitUntil: "load" });
   await page.waitForSelector('[data-part="v2-final-slot"]', { timeout: 30000 });
 }

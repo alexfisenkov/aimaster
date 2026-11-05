@@ -5,6 +5,7 @@
 // собранного ролика — на месте.
 
 import { absoluteIn, openProject, promptOf, text, until } from "./lib.mjs";
+import { download } from "./phase_desktop.mjs";
 
 export async function noengine(c, cfg, { page }) {
   await openProject(page, cfg);
@@ -24,8 +25,14 @@ export async function noengine(c, cfg, { page }) {
   const tracks = await page.$$eval(".am-track", (rows) => rows.length);
   c.add("missing.schema", tracks === 0 && hint === "Схема появится, когда будет установлен монтажный стол.",
     `${hint}; дорожек: ${tracks}`);
-  const download = await text(page, '[data-part="am-download"]');
-  c.add("missing.download", download === "Скачать", download || "«Скачать» нет");
+  const downloadText = await text(page, '[data-part="am-download"]');
+  c.add("missing.download", downloadText === "Скачать", downloadText || "«Скачать» нет");
+  await c.step("missing.download_link", async () => {
+    const href = await page.$eval('[data-part="am-download"]', (link) => link.getAttribute("href"));
+    if (!href) return [false, "у скачивания нет адреса"];
+    await download(c, cfg, href);
+    return [true, "проверены полная загрузка и Range"];
+  });
   c.add("missing.no_desk", !(await page.$('[data-action="desk-open"]')), "кнопки стола нет");
   await c.shot(page, "no-engine");
 }

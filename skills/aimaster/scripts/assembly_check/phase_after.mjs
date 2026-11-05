@@ -16,9 +16,9 @@ const versions = (page) => page.$$eval('[data-hook="am-version"]', (items) => it
 async function v2(c, page) {
   const status = await until(page, () => {
     const now = document.querySelector('[data-part="v2-final-slot"] .v2-final-status')?.textContent;
-    return now === "текущая v2" ? now : "";
+    return now === "Текущая версия — v2" ? now : "";
   }, null, { timeout: 20000 });
-  c.add("v2.current", Boolean(status), status || "нет «текущая v2» за 20 с");
+  c.add("v2.current", Boolean(status), status || "нет «Текущая версия — v2» за 20 с");
   const rows = await versions(page);
   c.add("v2.card", rows.length === 2 && rows[0].label === "v2" && rows[0].current && rows[0].meta.startsWith("Вы"),
     JSON.stringify(rows));

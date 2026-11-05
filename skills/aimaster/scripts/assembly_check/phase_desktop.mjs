@@ -12,7 +12,7 @@ function filename(disposition) {
   return star ? decodeURIComponent(star[1]) : null;
 }
 
-async function download(c, cfg, href) {
+export async function download(c, cfg, href) {
   const url = new URL(href, cfg.baseUrl).href;
   await c.step("download.full", async () => {
     const response = await fetch(url);
@@ -80,14 +80,25 @@ export async function desktop(c, cfg, { page, state }) {
   await until(page, () => document.querySelector('[data-hook="am-layers"] .am-track'), null, { timeout: SCHEMA_WAIT });
   await c.shot(page, "top");
   await c.step("preview", async () => {
+    await until(page, () => {
+      const video = document.querySelector('[data-part="v2-final-slot"] video');
+      return video?.videoWidth && video?.videoHeight;
+    }, null, { timeout: 15000 });
     const view = await page.$eval('[data-part="v2-final-slot"]', (slot) => {
       const rect = slot.getBoundingClientRect();
+      const video = slot.querySelector("video");
+      const videoRect = video?.getBoundingClientRect();
       return { orientation: slot.dataset.orientation, ratio: rect.height / rect.width,
+        videoRatio: video?.videoHeight / video?.videoWidth,
+        displayRatio: videoRect?.height / videoRect?.width,
+        broken: Boolean(slot.querySelector(".v2-thumb-broken")),
         status: slot.querySelector(".v2-final-status")?.textContent,
         duration: slot.querySelector(".v2-final-duration")?.textContent };
     });
     return [view.orientation === "portrait" && Math.abs(view.ratio - 16 / 9) <= 0.05
-      && view.status === "текущая v1" && view.duration === "00:03", JSON.stringify(view)];
+      && Math.abs(view.videoRatio - 16 / 9) <= 0.05 && Math.abs(view.displayRatio - 16 / 9) <= 0.05
+      && !view.broken
+      && view.status === "Текущая версия — v1" && view.duration === "00:03", JSON.stringify(view)];
   });
   await c.step("file.card", async () => {
     const title = await text(page, '[data-hook="am-file"] .v2-card-title');
