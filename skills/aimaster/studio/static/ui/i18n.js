@@ -264,6 +264,7 @@ const PAIRS = [
   ["Материал принят","Material accepted"],
   ["Референс {tag} добавлен","Reference {tag} added"],
   ["Монтаж: собрана версия {version}","Edit: version {version} built"],
+  ["Есть несобранные правки: монтаж менялся после последней сборки.","Unrendered changes: the edit changed after the last build."],
 ];
 const EN = new Map(PAIRS);
 /** Resolve an owned UI string. Params are used only in UI templates. */

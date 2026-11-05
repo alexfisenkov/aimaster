@@ -115,6 +115,22 @@ test("«Есть несобранные правки» — только факт
   assert.equal(stale.descendants().filter((n) => n.tagName === "BUTTON").length, 0); // после принятия — без кнопок
 }));
 
+test("EN: version summaries stay verbatim even when equal to system copy; dirty notice and heading translate", withDom((doc) => {
+  doc.documentElement = { lang: "en" };
+  const studioChange = "изменена анимация или положение элементов в монтажном столе";
+  const project = projectWith({ id: "p", montage: { current_version: "v002", canvas: { width: 1080, height: 1920 },
+    versions: [{ ...version("v001", "owner"), summary: "Авторская подпись" },
+      { ...version("v002", "owner"), summary: studioChange, based_on: "v001" }] } });
+  const versions = renderVersions({ project, revision: 7, flags: screenFlags({ status: STATUS() }), onChanged: () => {} });
+  assert.equal(versions.querySelector(".v2-card-title").textContent, "Versions");
+  assert.deepEqual(versions.querySelectorAll(".am-version-summary").map((node) => node.textContent),
+    [studioChange, "Авторская подпись"]);
+  const dirty = renderNotices(notices({ status: STATUS({ unrendered_changes: true }) }),
+    { project, revision: 7, actions: false });
+  assert.equal(dirty.querySelector(".am-notice-text").textContent,
+    "Unrendered changes: the edit changed after the last build.");
+}));
+
 test("после «Принять ролик» оставленный открытым стол можно закрыть — и только", withDom((doc) => {
   const status = STATUS({ desk: { state: "open", url: "http://127.0.0.1:9/x", telemetry_off: true } });
   const box = renderMainActions({ project: PROJECT, revision: 7, status, flags: screenFlags({ status, finished: true }) });
