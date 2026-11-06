@@ -99,6 +99,14 @@ def _plan_card_decision(target_id, decision_value, payload):
         stage = derive_view_stage(state)["current_stage"]
         collection, target = resolve_stage_card(state, target_id, payload)
         if collection in PROMPT_COLLECTIONS:
+            if decision_value == "approved":
+                from . import domain
+                from .domain_positions import current_member, current_prompt_spec
+                spec = current_prompt_spec(state, collection, target)
+                if current_member(state, spec, "prompt", missing_ok=True) is not target:
+                    raise DecisionError("only the current prompt version can be approved")
+                if domain.compute_prompt_stale(state, target, spec):
+                    raise DecisionError("stale prompt cannot be approved")
             target["status"] = decision_value
         else:
             target["decision"] = decision_value

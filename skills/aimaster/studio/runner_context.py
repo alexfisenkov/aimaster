@@ -8,7 +8,7 @@ from .decision_cards import STAGE_COLLECTIONS, PROMPT_EDIT_COLLECTIONS_BY_STAGE
 from .domain_positions import current_member, position_specs, resolve_position
 from .stage_readiness import require_accepted_frames
 
-CONTEXT_ACTION_TYPES = frozenset({"generate", "prompts-generate", "prompt-refresh", "assemble"})
+CONTEXT_ACTION_TYPES = frozenset({"vary", "regenerate", "generate", "prompts-generate", "prompt-refresh", "assemble"})
 
 
 def _scene(state, identity):
@@ -146,6 +146,35 @@ def _position_context(state, spec, *, for_generation=False):
         scene = _scene(state, spec["scene_id"])
         mode = domain.frame_basis(scene)["video_mode"]
         item["video_mode"] = mode
+        item["continuity_strategy"] = scene.get("continuity_strategy")
+        item["semantic_references"] = list(item["references"])
+        item["semantic_tags"] = []
+        if mode in {"first", "firstlast"}:
+            item["semantic_tags"] = [r["tag"] for r in item["semantic_references"]
+                                     if r.get("tag", "").startswith("IMG_")]
+            item["references"] = []
+            item["allowed_tags"] = []
+            item["semantic_prompt_instruction"] = (
+                "Inspect the selected frames; only if they actually contain the referenced subject, "
+                "rewrite the outgoing prompt to describe that subject within the frame. "
+                "Do not submit canonical IMG tags or send extra images in a keyframe-only request. "
+                "If the frame does not establish the subject, refresh the prompt or choose a compatible route.")
+        if scene.get("continuity_strategy") == "previous_video":
+            _, source, source_id = domain._continuity_source(state, scene)
+            aliases = {r.get("reference_id") for r in state.get("references", [])
+                       if isinstance(r, dict) and r.get("scene_id") == scene["scene_id"]
+                       and r.get("local") is True and r.get("role") == "video"
+                       and r.get("usage") == "continue" and r.get("asset_id") == source["asset_id"]
+                       and r.get("continuity_source_result_id") == source_id}
+            duplicates = [r for r in item["references"] if r.get("reference_id") in aliases]
+            item["references"] = [r for r in item["references"] if r.get("reference_id") not in aliases]
+            item["semantic_tags"].extend(r["tag"] for r in duplicates if r.get("tag"))
+            item["allowed_tags"] = [tag for r in item["references"] for tag in
+                                    (r.get("tag"), r.get("voice", {}).get("tag")) if tag]
+            item["continuity_video"] = {"canonical": "PREVIOUS_VIDEO", "reference_id": "previous:" + source_id,
+                                        "asset_id": source["asset_id"], "version_id": source_id,
+                                        "aliases": [r["reference_id"] for r in duplicates],
+                                        "purpose": "previous_video_guidance"}
         item["frames"] = []
         for edge in (("first", "last") if mode == "firstlast" else ("first",) if mode == "first" else ()):
             frame = resolve_position(state, f"pos:frame:{scene['scene_id']}:{edge}")
@@ -159,10 +188,14 @@ def build_action_context(state, action):
     """Validate one new job and return explicit operator data, never authority."""
     kind, target = action["action_type"], action["target_id"]
     stage = domain.derive_view_stage(state)["current_stage"]
-    if new_action_target_stage(state, kind, target) != stage:
+    if kind not in {"vary", "regenerate"} and new_action_target_stage(state, kind, target) != stage:
         raise domain.DomainValidationError("action belongs to another current stage")
     positions = domain.derive_positions(state)
-    if kind == "generate":
+    if kind in {"vary", "regenerate"}:
+        from .operator_routes import action_result
+        spec, target_result = action_result(state, kind, target)
+        specs = [spec]
+    elif kind == "generate":
         spec = resolve_position(state, target)
         position = next(p for p in positions if p["position_id"] == target)
         if position["status"] != "none":
@@ -183,12 +216,31 @@ def build_action_context(state, action):
         accepted = {p["position_id"] for p in positions if p["status"] == "accepted"}
         specs = [s for s in position_specs(state) if s["position_id"] in accepted]
     context = {"state_revision": state["revision"], "stage": stage,
-               "positions": [_position_context(state, spec, for_generation=kind == "generate") for spec in specs]}
+               "positions": [_position_context(state, spec, for_generation=kind in {"generate", "vary", "regenerate"}) for spec in specs]}
     if state["project"]["type"] != "photo":
         context["gen_mode"] = state.get("gen_mode", "per_scene")
-    if kind == "generate":
+    if kind in {"generate", "vary", "regenerate"}:
+        spec = specs[0]
+        if spec["kind"] in {"video", "oneshot"}:
+            prompt = current_member(state, spec, "prompt", missing_ok=True)
+            if not prompt or not isinstance(prompt.get("text"), str) or not prompt["text"].strip():
+                raise domain.DomainValidationError("video generation requires a current motion prompt")
+            if prompt.get("status") == "rejected":
+                raise domain.DomainValidationError("rejected motion prompt cannot be used")
+            if domain.compute_prompt_stale(state, prompt, spec):
+                raise domain.DomainValidationError("motion prompt is stale or lacks a verified basis; refresh it")
+            if spec["kind"] == "video":
+                scene = _scene(state, spec["scene_id"])
+                domain.require_continuity_choice(state, spec["scene_id"])
+                require_accepted_frames(state, spec["scene_id"], domain.frame_basis(scene)["video_mode"])
+        context["guide_choices"] = state["project"].get("guide_choices", [])
+        if kind != "generate":
+            context["target_result"] = {key: target_result[key] for key in ("result_id", "version_id", "asset_id") if key in target_result}
         item = context["positions"][0]
-        if set(domain.extract_tags(item["prompt"]["text"])) - set(item["allowed_tags"]):
+        if not item["prompt"]:
+            raise domain.DomainValidationError("generation requires a current prompt")
+        permitted_tags = set(item["allowed_tags"]) | set(item.get("semantic_tags", []))
+        if set(domain.extract_tags(item["prompt"]["text"])) - permitted_tags:
             raise domain.DomainValidationError("prompt contains excluded or unavailable reference tags")
         if any(ref.get("tag") and (not isinstance(ref.get("asset_id"), str) or not ref["asset_id"].strip())
                for ref in item["references"]):

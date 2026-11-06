@@ -14,6 +14,9 @@ export function selectedSpending(route) {
 export function canDirectAction(operator, allowed, type, spending) {
   return operator?.available === true && allowed.includes(type) && (!["generate", "vary", "regenerate"].includes(type) || Boolean(spending));
 }
+export function recoveryBlockedForPosition(routes, positionId) {
+  return !routes || (routes.collections || []).some((item) => item.position_id === positionId || !item.position_id);
+}
 function routeLabel(project, positionId) {
   const position = (project.positions || []).find((item) => item.position_id === positionId);
   if (!position) return t("Создать вариант");
@@ -30,7 +33,7 @@ function copyFallback(project, revision, target, title, trigger, receipt) {
   const line = receipt?.copy_request || `Открой ${projectRef(project, revision)}. ${title}${target ? ` Позиция ${target}.` : ""}`;
   requestAgentPrompt({ title: t("Продолжить в чате"), prompt: line }, trigger);
 }
-function control({ project, snapshot, type, target, label, spending = null, operator, title, fallback, className }) {
+function control({ project, snapshot, type, target, label, spending = null, operator, title, fallback, className, recoveryBlocked = false }) {
   const row = el("div", "am-family-action");
   const button = el("button", "v2-chat-button", label); button.type = "button";
   if (className) button.className = className;
@@ -40,7 +43,12 @@ function control({ project, snapshot, type, target, label, spending = null, oper
   const collection = familyData(project.id)?.routes?.collections?.find((item) => item.action_id === prior?.action_id);
   if (collection) status.textContent = t(collection.phase === "conflict"
     ? "Оригинал сохранён; текущее задание изменилось. Продолжите в чате."
-    : "Провайдер создал оригинал; локальная выдача не завершена. Повторять генерацию нельзя.");
+    : "Получение результата не завершено. Сначала восстановите его.");
+  if (recoveryBlocked) {
+    button.disabled = true;
+    status.textContent = t("Получение результата не завершено. Сначала восстановите его.");
+    row.append(button, status); return row;
+  }
   const blocked = prior && ["queued", "running", "outcome_unknown"].includes(prior.status);
   const direct = !blocked && canDirectAction(operator, snapshot.view_stage?.allowed_actions || [], type, spending);
   if (prior && RUNNING.has(prior.status)) button.disabled = true;
@@ -93,9 +101,10 @@ export function generationControl({ project, snapshot, positionId, promptVersion
   const route = routes?.routes?.find((item) => item.position_id === positionId);
   const currentPrompt = !promptVersion || promptVersion.version_id === route?.prompt_version_id;
   const action = type || (version?.version_id ? "vary" : "generate");
+  const recoveryBlocked = recoveryBlockedForPosition(routes, positionId);
   return control({ project, snapshot, type: action, target: action === "generate" ? positionId : version?.version_id,
     label, spending: currentPrompt ? selectedSpending(route) : null, operator,
-    title: request?.title, fallback: request, className });
+    title: request?.title, fallback: request, className, recoveryBlocked });
 }
 export function renderFamilyActions(snapshot, language) {
   const project = snapshot.active_project;
@@ -108,7 +117,8 @@ export function renderFamilyActions(snapshot, language) {
     const spending = selectedSpending(route);
     box.append(control({ project, snapshot, type: "generate", target: route.position_id,
       label: routeLabel(project, route.position_id),
-      spending, operator, title: "Подготовь и запусти генерацию только для выбранной позиции, после моего подтверждения расхода." }));
+      spending, operator, recoveryBlocked: recoveryBlockedForPosition(routes, route.position_id),
+      title: "Подготовь и запусти генерацию только для выбранной позиции, после моего подтверждения расхода." }));
   }
   return box;
 }

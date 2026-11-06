@@ -205,6 +205,24 @@ class ReferenceBindingCliTests(unittest.TestCase):
         result = self.run_validator(manifest, "Use @img1.", context)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_previous_video_exact_binding_is_required(self):
+        context = {"action_id": "op-test-1", "context": {"state_revision": 7, "positions": [{
+            "references": [], "frames": [], "continuity_video": {"canonical": "PREVIOUS_VIDEO",
+                "reference_id": "previous:result:s1:video-v2", "version_id": "result:s1:video-v2", "asset_id": "asset-previous"}}]}}
+        entry = {"canonical": "PREVIOUS_VIDEO", "reference_id": "previous:result:s1:video-v2",
+                 "asset_id": "asset-previous", "slot": "source_video", "role": "continuity guidance", "transport": "structured"}
+        manifest = self.manifest(entry, binding_source="structured_schema")
+        self.assertEqual(self.run_validator(manifest, "Continue the scene.", context).returncode, 0)
+        self.assertEqual(self.run_validator(self.manifest(binding_source="structured_schema"), "Continue.", context).returncode, 2)
+        for key, value in (("asset_id", "asset-wrong"), ("reference_id", "previous:result:s1:video-v1")):
+            bad = dict(entry, **{key: value})
+            self.assertEqual(self.run_validator(self.manifest(bad, binding_source="structured_schema"), "Continue.", context).returncode, 2)
+        inline = dict(entry, transport="inline", native="@video1")
+        inline.pop("slot")
+        self.assertEqual(self.run_validator(self.manifest(inline), "Continue from @video1.", context).returncode, 0)
+        inline["native"] = "@VID_01"
+        self.assertEqual(self.run_validator(self.manifest(inline), "Continue from @VID_01.", context).returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

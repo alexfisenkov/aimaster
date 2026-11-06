@@ -207,7 +207,7 @@ class Runner:
                 if current and action["action_type"] in {"vary", "regenerate"}:
                     require_existing_video_action_continuity(state, action["target_id"])
                 context = build_action_context(state, action) if current and action["action_type"] in CONTEXT_ACTION_TYPES else None
-            except (StoreError, DomainValidationError, ProjectionError):
+            except (StoreError, DomainValidationError, ProjectionError, ValueError):
                 current = False
             except Exception:
                 self._refuse_claim(action)
@@ -317,6 +317,65 @@ class Runner:
         """Import a completed-provider GET receipt; never dispatch generation."""
         from .provider_collection import record
         return record(workspace, self, action_id, evidence, state_dir=state_dir)
+
+    def prepare_paid(self, workspace, action_id, worker_id):
+        """Validate and freeze the exact claimed dispatch before any paid POST."""
+        from .provider_receipts import path_for
+        from .platform_compat import file_lock, open_text_nofollow
+        lock = path_for(workspace, action_id, "basis").with_suffix(".prepare.lock")
+        lock.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with open_text_nofollow(lock) as handle:
+            with file_lock(handle):
+                return self._prepare_paid_locked(workspace, action_id, worker_id)
+
+    def _prepare_paid_locked(self, workspace, action_id, worker_id):
+        from .operator_routes import selected_route, uncertain_position
+        from .provider_download import preflight
+        from .provider_receipts import freeze, path_for, read
+        action = self.ledger.get_action(action_id)
+        if (action["status"] != "running" or action["worker_id"] != worker_id or
+                action["action_type"] not in {"generate", "vary", "regenerate"} or
+                action["external_id"] is not None or read(path_for(workspace, action_id, "ack")) is not None or
+                read(path_for(workspace, action_id, "basis")) is not None):
+            raise ValueError("action_not_preparable")
+        state = self.store.load(action["project_id"])
+        state["actions"] = self.ledger.pending_actions(action["project_id"], exclude_action_id=action_id)
+        if (self.ledger.execution_revision(action_id) != state["revision"] or
+                not self._claim_is_current(action, state=state) or
+                not autopilot_grant_still_valid(self.ledger, action, state) or
+                uncertain_position(self.ledger, state, action["action_type"], action["target_id"])):
+            raise ValueError("dispatch_state_changed")
+        from .runner_context import build_action_context, require_existing_video_action_continuity
+        if action["action_type"] in {"vary", "regenerate"}:
+            require_existing_video_action_continuity(state, action["target_id"])
+        context = build_action_context(state, action)
+        route = selected_route(workspace, state, action["action_type"], action["target_id"])
+        from .operator_routes import action_position, dispatch_guides
+        spec = action_position(state, action["action_type"], action["target_id"])
+        context["guide_choices"] = dispatch_guides(state, spec, route)
+        if not preflight(route):
+            raise ValueError("collection_not_supported")
+        spending = action["payload"].get("spending")
+        if state["project"].get("mode") != "autopilot" and spending != {
+                "confirmed": True, **{key: route[key] for key in ("route_id", "provider", "model")}}:
+            raise ValueError("route_confirmation_changed")
+        state.pop("actions", None)
+        basis = freeze(workspace, self, action_id, state, route)
+        result = {"action_id": action_id, "status": "prepared", "execution_route": route,
+                  "untrusted_input": {"context": context}}
+        if "source_result" in basis:
+            result["execution_source"] = basis["source_result"]
+        return result
+
+    def inspect_dispatch(self, workspace, action_id):
+        """Read-only recovery information; never provides another dispatch permit."""
+        from .provider_receipts import path_for, read
+        action = self.ledger.get_action(action_id)
+        frozen = read(path_for(workspace, action_id, "basis")) is not None
+        ack = read(path_for(workspace, action_id, "ack"))
+        return {"action_id": action_id, "status": action["status"], "frozen": frozen,
+                "creation_id": action["external_id"], "acknowledged": ack is not None,
+                "collection": self.ledger.collection(action_id)}
 
     def record_provider_ack(self, workspace, action_id, evidence):
         """Persist the paid creation ID immediately, before any long polling."""

@@ -8,6 +8,8 @@ import { clock, el, openViewer } from "./dom.js";
 import { clipStatus, continuationLine } from "./video-model.js";
 import { renderPreview } from "./preview.js";
 import { t } from "./locale.js";
+import { requestAgentPrompt } from "../chat-prompt-dialog.js";
+import { projectRef } from "./chat-prompts.js";
 
 /**
  * Превью клипа сцены: первый кадр выбранного варианта, «▶» и статус.
@@ -36,8 +38,19 @@ export function clipZone(project, scene, position) {
   return box;
 }
 
+export function continuityChoices(project, scene, revision) {
+  const scenes = [...(project?.scenes || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const index = scenes.findIndex(item => item.scene_id === scene?.scene_id);
+  if (project?.stage !== "motion" || project?.gen_mode === "one_shot" || index <= 0) return [];
+  return [["independent", "Независимый клип"], ["previous_last_frame", "Последний кадр"],
+    ["previous_video", "Предыдущее видео"]].map(([strategy, label]) => ({strategy, label,
+      prompt: `Открой ${projectRef(project, revision)}, scene_id «${scene.scene_id}». Выбираю ${strategy}. `
+        + `Проверь принятую версию предыдущей сцены «${scenes[index - 1].scene_id}», запиши выбор через scene continuity с актуальной revision и перечитай результат. `
+        + `Если промпт движения устарел после выбора или смены кадров, обнови его до генерации. Проверь поддерживаемые inputs сервиса; генерацию не запускай.`}));
+}
+
 /** «Продолжение»: откуда берётся движение этой сцены. */
-export function continuationZone(project, scene) {
+export function continuationZone(project, scene, revision) {
   const line = continuationLine(project, scene);
   const box = el("div", "v2-continuation");
   box.dataset.zone = "continuation";
@@ -47,5 +60,15 @@ export function continuationZone(project, scene) {
     el("span", "v2-continuation-text", line.detail),
   );
   if (line.warn) box.append(el("span", "v2-continuation-warn", t("сцену меняли — проверьте связь")));
+  for (const choice of continuityChoices(project, scene, revision)) {
+      const button = el("button", "agent-prompt-button", t(choice.label));
+      button.type = "button";
+      button.dataset.continuity = choice.strategy;
+      button.addEventListener("click", event => {
+        event.stopPropagation();
+        requestAgentPrompt({title: t("Связь сцен"), prompt: choice.prompt}, button);
+      });
+      box.append(button);
+  }
   return box;
 }

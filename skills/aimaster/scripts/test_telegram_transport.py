@@ -242,6 +242,11 @@ class TelegramProjectMenuTests(unittest.TestCase):
                     raise TelegramBotError("unknown project")
                 return {"project": {"id": project_id, "title": "Первый ролик"}}
 
+            def project_dir(self, project_id):
+                if project_id != "film-1":
+                    raise TelegramBotError("unknown project")
+                return Path(directory)
+
         state = TelegramBotState(Path(directory) / "telegram.sqlite3")
         return TelegramBotController(
             directory,

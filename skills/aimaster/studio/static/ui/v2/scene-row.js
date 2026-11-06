@@ -185,7 +185,7 @@ export function renderSceneRow(project, revision, scene, position, { mode = "fra
 
   const zones = el("div", "v2-scene-zones");
   if (video) {
-    zones.append(clipZone(project, scene, position), continuationZone(project, scene));
+    zones.append(clipZone(project, scene, position), continuationZone(project, scene, revision));
     const references = videoReferenceZone(project, revision, scene);
     if (references.dataset.empty !== "true") zones.append(references);
   } else {

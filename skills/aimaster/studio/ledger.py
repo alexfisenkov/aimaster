@@ -560,7 +560,10 @@ class ActionLedger:
 
             if deduplicate:
                 pending = connection.execute("SELECT * FROM actions WHERE project_id=? AND action_type=? "
-                    "AND target_id=? AND status IN ('queued','running','outcome_unknown') ORDER BY created_at LIMIT 1",
+                    "AND target_id=? AND status IN ('queued','running','outcome_unknown') "
+                    "AND NOT (action_type IN ('vary','regenerate') AND status='outcome_unknown' "
+                    "AND EXISTS (SELECT 1 FROM provider_collections c WHERE c.action_id=actions.action_id "
+                    "AND c.phase IN ('resolved_adopt','resolved_keep'))) ORDER BY created_at LIMIT 1",
                     (project_id, action_type, target_id)).fetchone()
                 if pending is not None:
                     return self._action(pending)
@@ -747,6 +750,64 @@ class ActionLedger:
             self._event(connection, action_id, row["status"], status, {"reconciliation": phase,
                 "receipt_sha256": receipt_sha256, "external_id_recorded": True, "public_result": public})
             return self._action(self._fetch_action(connection, action_id))
+
+    def collection_evidence(self, action_id):
+        """Return the private evidence identity for audited correction."""
+        connection = self._connect()
+        try:
+            row = connection.execute("SELECT receipt_sha256, external_id, phase FROM provider_collections WHERE action_id=?", (action_id,)).fetchone()
+            return dict(row) if row else None
+        finally:
+            connection.close()
+
+    def correct_collection_receipt(self, action_id, expected_sha, new_sha, external_id, reason):
+        """CAS an evidence correction, preserving the old digest and transition event."""
+        if (not all(isinstance(x, str) and re.fullmatch(r"[a-f0-9]{64}", x) for x in (expected_sha, new_sha))
+                or expected_sha == new_sha or not isinstance(reason, str)
+                or not re.fullmatch(r"[a-z][a-z0-9_]{2,63}", reason)):
+            raise InvalidAction("invalid receipt correction")
+        external_id = _external_id(external_id)
+        if not external_id:
+            raise InvalidAction("invalid provider identity")
+        with self._transaction() as connection:
+            row = self._fetch_action(connection, action_id)
+            if row is None:
+                raise ActionNotFound(action_id)
+            prior = connection.execute("SELECT * FROM provider_collections WHERE action_id=?", (action_id,)).fetchone()
+            if not prior or prior["external_id"] != external_id or row["external_id"] != external_id:
+                raise InvalidTransition("collection identity differs")
+            if prior["receipt_sha256"] == new_sha:
+                return self._action(row)
+            if prior["receipt_sha256"] != expected_sha or prior["phase"] in {"resolved_adopt", "resolved_keep"}:
+                raise InvalidTransition("collection correction conflict")
+            connection.execute("UPDATE provider_collections SET receipt_sha256=?, phase='received' WHERE action_id=?", (new_sha, action_id))
+            public = {"status": "outcome_unknown", "message": STATUS_MESSAGE_RU["outcome_unknown"]}
+            connection.execute("UPDATE actions SET status='outcome_unknown', public_result_json=?, updated_at=? WHERE action_id=?", (_json(public), _timestamp(), action_id))
+            self._event(connection, action_id, row["status"], "outcome_unknown", {
+                "receipt_correction": reason, "old_receipt_sha256": expected_sha,
+                "new_receipt_sha256": new_sha, "old_collection_phase": prior["phase"], "public_result": public})
+            return self._action(self._fetch_action(connection, action_id))
+
+    def resolve_collection_choice(self, action_id, expected_sha, choice):
+        """Record explicit disposition of a previously verified conflict."""
+        if choice not in {"adopt", "keep"} or not isinstance(expected_sha, str) or not re.fullmatch(r"[a-f0-9]{64}", expected_sha):
+            raise InvalidAction("invalid collection choice")
+        with self._transaction() as connection:
+            row = self._fetch_action(connection, action_id)
+            if row is None:
+                raise ActionNotFound(action_id)
+            prior = connection.execute("SELECT * FROM provider_collections WHERE action_id=?", (action_id,)).fetchone()
+            if not prior or prior["receipt_sha256"] != expected_sha:
+                raise InvalidTransition("collection resolution conflict")
+            phase = "resolved_" + choice
+            if prior["phase"] == phase:
+                return self._action(row)
+            if prior["phase"] != "conflict":
+                raise InvalidTransition("collection is not awaiting a choice")
+            connection.execute("UPDATE provider_collections SET phase=? WHERE action_id=?", (phase, action_id))
+            self._event(connection, action_id, row["status"], row["status"], {
+                "collection_resolution": choice, "receipt_sha256": expected_sha})
+            return self._action(row)
 
     @staticmethod
     def _issue_autopilot_grant(connection, project_id, action_type) -> str:

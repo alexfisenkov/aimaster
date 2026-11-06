@@ -112,6 +112,7 @@ _SCENE_KEYS = {
     "continuity_strategy",
     "continuity_previous_scene_id",
     "continuity_source_result_id",
+    "continuity_source_asset_id",
     "continuity_first_frame_result_id",
 }
 # Ticket 15 repair, поправка оркестратора 8: the reduced scene view stage
@@ -193,6 +194,10 @@ _RESULT_KEYS = {
     "result_id",
     "scene_id",
     "asset_id",
+    "continuity_source_result_id",
+    "continuity_source_asset_id",
+    "continuity_timestamp",
+    "recovery_operation_id",
     "status",
     "version_id",
     # Ticket 12 repair, condition 13: `domain.append_result_version` gives
@@ -518,6 +523,7 @@ def _sanitize_scene(scene, index, *, project_type, hidden_link_keys=frozenset())
         elif key in {
             "continuity_previous_scene_id",
             "continuity_source_result_id",
+            "continuity_source_asset_id",
             "continuity_first_frame_result_id",
         }:
             result[key] = _string(value, field)
@@ -545,6 +551,7 @@ def _sanitize_scene(scene, index, *, project_type, hidden_link_keys=frozenset())
                 "continuity_strategy",
                 "continuity_previous_scene_id",
                 "continuity_source_result_id",
+                "continuity_source_asset_id",
                 "continuity_first_frame_result_id",
             )
         ):
@@ -780,13 +787,16 @@ def _sanitize_audio_layers(value):
     layers = []
     seen = set()
     for item in _list(value, "audio_layers"):
-        item = _exact_keys(item, {"layer", "links"}, "audio_layers entry")
+        item = _exact_keys(item, {"layer", "links", "planned"}, "audio_layers entry")
         layer = _enum(item.get("layer"), AUDIO_LAYERS, "audio layer")
         if layer in seen:
             raise ProjectionError("duplicate audio layer")
         seen.add(layer)
-        layers.append({"layer": layer, "links": _sanitize_owner_links(item.get("links", {}),
-            {"audio_prompt_version_id", "audio_result_id"}, "audio layer links")})
+        record = {"layer": layer, "links": _sanitize_owner_links(item.get("links", {}),
+            {"audio_prompt_version_id", "audio_result_id"}, "audio layer links")}
+        if "planned" in item:
+            record["planned"] = _boolean(item["planned"], "audio layer planned")
+        layers.append(record)
     return layers
 
 
@@ -795,6 +805,9 @@ def _sanitize_result(item, context, asset_url):
     result = {}
     for key, value in item.items():
         field = f"{context}.{key}"
+        if key == "recovery_operation_id":
+            _string(value, field)
+            continue
         if key in {"hidden", "retired"}:
             result[key] = _boolean(value, field)
         elif key in {"decision", "parent_version_id"}:
@@ -1087,7 +1100,7 @@ def action_target_stage(state, action_type, target_id, sequence):
 
 
 def build_snapshot(
-    index: list[dict], state: dict, *, asset_url, pending_actions=None
+    index: list[dict], state: dict, *, asset_url, pending_actions=None, project_directory=None
 ) -> dict:
     """Build a strict progressive snapshot or fail before returning any data."""
 
@@ -1141,7 +1154,7 @@ def build_snapshot(
     if pending_actions is not None:
         position_state = {**state, "actions": [*state.get("actions", []), *pending_actions]}
     try:
-        active_project["stage_readiness"] = stage_readiness(position_state)
+        active_project["stage_readiness"] = stage_readiness(position_state, project_directory=project_directory)
     except DomainValidationError as error:
         raise ProjectionError(str(error)) from error
     active_project["stage"] = view_stage["current_stage"]

@@ -145,7 +145,7 @@ function staleNotices(clips) {
   }
   if (unaccepted.length) {
     list.push({ key: "stale-unaccepted", tone: "warn", action: "refresh",
-      text: `Нет принятого результата — таких клипов в монтаже: ${unaccepted.length}.` });
+      text: `В черновике монтажа нет актуального принятого результата для клипов: ${unaccepted.length}.` });
   }
   if (other.length) {
     list.push({ key: "stale-other", tone: "warn", action: "refresh",

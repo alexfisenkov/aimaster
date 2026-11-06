@@ -8,7 +8,20 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from studio.provider_download import fetch_original, original_url
+from studio.provider_download import fetch_original, original_url, preflight
+
+
+class VideoPreflightTests(unittest.TestCase):
+    def test_magnific_video_requires_both_local_media_tools_before_network(self):
+        route = {'provider':'magnific','position_id':'pos:scene:s1:video'}
+        with patch('studio.platform_compat.find_program', side_effect=lambda name: None if name == 'ffmpeg' else '/bin/ffprobe'), \
+             patch('studio.provider_download._addresses') as dns:
+            self.assertFalse(preflight(route))
+            dns.assert_not_called()
+        with patch('studio.platform_compat.find_program', side_effect=lambda name: None if name == 'ffprobe' else '/bin/ffmpeg'), \
+             patch('studio.provider_download._addresses') as dns:
+            self.assertFalse(preflight(route))
+            dns.assert_not_called()
 
 
 class Socket:

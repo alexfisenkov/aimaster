@@ -53,6 +53,29 @@ def action_position(state, kind, target):
     return matches[0]
 
 
+def action_result(state, kind, target):
+    """Resolve the exact requested version, or the current one for a group id."""
+    spec = action_position(state, kind, target)
+    current = current_member(state, spec, "result", missing_ok=True)
+    if not current:
+        raise RouteUnavailable("result position is empty")
+    group = current.get("result_id")
+    members = [item for item in state.get(spec["result_collection"], [])
+               if item.get("result_id") == group]
+    exact = [item for item in members if item.get("version_id") == target]
+    if len(exact) == 1:
+        result = exact[0]
+    elif not exact and target == group:
+        result = current
+    else:
+        raise RouteUnavailable("result version is missing or ambiguous")
+    if (result.get("scene_id", spec.get("scene_id")) != spec.get("scene_id")
+            or result.get("retired") or result.get("hidden") or result.get("decision") == "rejected"
+            or not isinstance(result.get("asset_id"), str) or not result["asset_id"]):
+        raise RouteUnavailable("result version is unavailable")
+    return spec, result
+
+
 def _scope(workspace, state, spec):
     prompt = current_member(state, spec, "prompt", missing_ok=True)
     if not prompt or not prompt.get("text") or domain.compute_prompt_stale(state, prompt, spec):
@@ -112,6 +135,18 @@ def set_route(workspace, project_id, position_id, expected_revision, *, provider
     return {key: record[key] for key in record if key != "parameters"}
 
 
+def dispatch_guides(state, spec, route):
+    """Supply prompt guides scoped to the chosen medium and service."""
+    modality = {"image_results": "image", "video_results": "video",
+                "audio_results": "audio"}[spec["result_collection"]]
+    stages = {"image": {"image_plan", "image_results"}, "video": {"image_plan", "motion"},
+              "audio": {"audio"}}[modality]
+    return [choice for choice in state["project"].get("guide_choices", [])
+            if choice["stage"] in stages and choice["kind"] == "prompt"
+            and choice["modality"] == modality and choice["provider"] in {None, route["provider"]}
+            and choice["model"] in {None, route["model"]}]
+
+
 def selected_route(workspace, state, kind, target, *, frozen_collection=False):
     spec = action_position(state, kind, target)
     scope = _scope(workspace, state, spec)
@@ -129,7 +164,7 @@ def selected_route(workspace, state, kind, target, *, frozen_collection=False):
     _parameters(record["parameters"])
     if not frozen_collection:
         from .guide_catalog import resolve_choice
-        for choice in state["project"].get("guide_choices", []):
+        for choice in dispatch_guides(state, spec, record):
             if choice["source"] != "none":
                 try:
                     resolve_choice(workspace, choice)
@@ -142,6 +177,10 @@ def uncertain_position(ledger, state, kind, target):
     position = action_position(state, kind, target)["position_id"]
     for action in ledger.uncertain_actions(state["project"]["id"]):
         if action["action_type"] not in {"generate", "vary", "regenerate"}:
+            continue
+        # Only an explicit audited resolution permits a new authorized result
+        # action; merely observing completion or a blocked collection does not.
+        if kind in {"vary", "regenerate"} and ledger.collection(action["action_id"]) in {"resolved_adopt", "resolved_keep"}:
             continue
         try:
             other = action_position(state, action["action_type"], action["target_id"])["position_id"]
@@ -167,6 +206,40 @@ def public_routes(workspace, project_id):
                 "status": "selected" if supported else "needs_setup", "collection_supported": supported})
     from .runner import open_ledger
     ledger = open_ledger(workspace)
-    collections = [{"action_id": action["action_id"], "phase": ledger.collection(action["action_id"])}
-                   for action in ledger.uncertain_actions(project_id) if ledger.collection(action["action_id"])]
+    collections = []
+    for action in ledger.uncertain_actions(project_id):
+        if action["action_type"] not in {"generate", "vary", "regenerate"}:
+            continue
+        try:
+            position = action_position(state, action["action_type"], action["target_id"])["position_id"]
+        except (ValueError, KeyError):
+            position = None
+        row = {"action_id": action["action_id"], "phase": ledger.collection(action["action_id"]), "position_id": position}
+        if row["phase"] in {"resolved_adopt", "resolved_keep"}:
+            continue
+        if row["phase"] == "conflict":
+            try:
+                from .provider_collection import recovered_preview, _basis_matches, adoption_already_applied
+                from .provider_receipts import path_for, read
+                from .decision_cards import STAGE_COLLECTIONS
+                from .domain_positions import current_member
+                from .runner import open_runner
+                row["preview"] = recovered_preview(workspace, open_runner(workspace), action["action_id"])
+                spec = resolve_position(state, position)
+                row["can_keep"] = bool(current_member(state, spec, "result", missing_ok=True))
+                row["resume_applied"] = adoption_already_applied(workspace, open_runner(workspace), action["action_id"], state)
+                if row["resume_applied"]:
+                    row["can_adopt"] = True
+                    row["can_keep"] = False
+                    collections.append(row)
+                    continue
+                basis = read(path_for(workspace, action["action_id"], "basis"))
+                _basis_matches(workspace, basis, state)
+                stage = STAGE_COLLECTIONS[spec["result_collection"]][0]
+                row["can_adopt"] = state.get("milestones", {}).get(stage, "draft") != "approved"
+            except (ValueError, OSError, RuntimeError, KeyError, TypeError):
+                row.setdefault("can_adopt", False)
+                row.setdefault("can_keep", False)
+                row.setdefault("preview", None)
+        collections.append(row)
     return {"revision": state["revision"], "routes": rows, "collections": collections}

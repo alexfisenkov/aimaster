@@ -604,7 +604,7 @@ export const ACTION_ERROR_MESSAGES = Object.freeze({
   blocked: "Шаг заблокирован. Вернитесь в чат.",
   already_approved: "Шаг уже одобрен.",
   incomplete_storyboard: "Добавьте кадры и укажите длительность каждого.",
-  missing_prompts: "Сначала напишите промпты для всех нужных позиций.",
+  missing_prompts: "Проверьте отсутствующие, устаревшие или отклонённые промпты.",
   unaccepted_positions: "Сначала примите все нужные результаты.",
   missing_final_material: "Сначала подготовьте финальный материал проекта.",
   revision_conflict: "Проект обновился — показываю актуальную версию.",

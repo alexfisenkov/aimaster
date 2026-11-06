@@ -49,6 +49,303 @@ class CollectionTests(unittest.TestCase):
         self.assertTrue(callable(getattr(self.runner, "record_provider", None)), "missing public provider receipt/reconciliation seam")
         return self.runner.record_provider(self.ws, self.action["action_id"], self.evidence, state_dir=self.state_dir)
 
+    def test_completed_get_uses_master_and_is_idempotent(self):
+        from studio.provider_collection import collect_completed
+        action = self.runner.ledger.enqueue("p", ActionRequest("generate", self.target,
+            self.action["payload"], self.store.load("p")["revision"], "completed-get"), scoped_grant=True)
+        job = self.runner.claim("new-worker")
+        self.assertEqual(job["action_id"], action["action_id"])
+        self.runner.prepare_paid(self.ws, action["action_id"], "new-worker")
+        ack = {key:self.evidence[key] for key in ("provider", "model", "operation", "creation_id", "prompt_sha256", "basis_sha256")}
+        self.runner.record_provider_ack(self.ws, action["action_id"], {**ack, "observation":"acknowledged"})
+        metadata = {"status":"completed", "creation_id":"synthetic-creation",
+                    "url":"https://pikaso.cdnpk.net/private/proxy.png",
+                    "downloadUrl":self.evidence["artifact"]["url"]}
+        from studio.provider_receipts import path_for
+        wrong_kind = (20).to_bytes(4, "big") + b"ftypqt  " + b"\0\0\0\0qt  " + (8).to_bytes(4, "big") + b"mdat"
+        with patch("studio.provider_collection.fetch_original", return_value=wrong_kind):
+            with self.assertRaisesRegex(ValueError, "original_media_kind_mismatch"):
+                collect_completed(self.ws, self.runner, action["action_id"], metadata, state_dir=self.state_dir)
+        self.assertFalse(path_for(self.ws, action["action_id"], "receipt").exists())
+        with patch("studio.provider_collection.fetch_original", return_value=self.original.read_bytes()) as get:
+            result = collect_completed(self.ws, self.runner, action["action_id"], metadata, state_dir=self.state_dir)
+            self.assertEqual(get.call_args.args[1]["url"], metadata["downloadUrl"])
+            self.assertEqual(result["status"], "succeeded")
+            collect_completed(self.ws, self.runner, action["action_id"], metadata, state_dir=self.state_dir)
+            self.assertEqual(get.call_count, 1)
+
+    def test_quicktime_brand_is_not_mp4(self):
+        from studio.assets import _inspect_media
+        ftyp = (20).to_bytes(4, "big") + b"ftypqt  " + b"\0\0\0\0qt  "
+        media = (8).to_bytes(4, "big") + b"mdat"
+        self.assertEqual(_inspect_media(ftyp + media)[0], "video/quicktime")
+
+    def test_magnific_toon_uses_download_url_and_checks_original(self):
+        from studio.provider_collection import _completed_metadata
+        payload = {"content":[{"type":"text", "text": (
+            'identifier: synthetic-creation\ntool: video-generator\nkind: video\nstatus: completed\n'
+            'url: "https://pikaso.cdnpk.net/private/proxy.mp4"\n'
+            'downloadUrl: "https://pikaso.cdnpk.net/private/master.mov"\nmetadata:\n'
+            '  mediaCollection[2]:\n    - type: frame\n      url: frame\n'
+            '    - fps: 24\n      type: original\n      codec: hevc\n'
+            '      url: "https://pikaso.cdnpk.net/private/master.mov"\n'
+            '  isPreviewProxy: true\nwebUrl: ignored\n')}]}
+        result = _completed_metadata(payload)
+        self.assertEqual(result["creation_id"], "synthetic-creation")
+        self.assertTrue(result["downloadUrl"].endswith("master.mov"))
+        value = payload["content"][0]["text"]
+        payload["content"][0]["text"] = value.replace('      url: "https://pikaso.cdnpk.net/private/master.mov"', '      url: "https://pikaso.cdnpk.net/private/master.mov?fresh=1"')
+        self.assertTrue(_completed_metadata(payload)["downloadUrl"].endswith("master.mov"))
+        payload["content"][0]["text"] = value
+        payload["content"][0]["text"] = payload["content"][0]["text"].replace('      url: "https://pikaso.cdnpk.net/private/master.mov"', '      url: "https://pikaso.cdnpk.net/private/proxy.mp4"')
+        with self.assertRaises(ValueError):
+            _completed_metadata(payload)
+
+    def test_magnific_image_url_requires_image_position_and_named_tool(self):
+        from studio.provider_collection import _completed_metadata
+        value = {"content":[{"type":"text", "text":'identifier: synthetic-creation\ntool: text-to-image\nstatus: completed\nurl: "https://pikaso.cdnpk.net/private/original.png"\npreviewUrl: "https://pikaso.cdnpk.net/private/preview.png"\nmetadata:\n  width: 1344\n  height: 768\n'}]}
+        self.assertTrue(_completed_metadata(value, image=True)["downloadUrl"].endswith("original.png"))
+        self.assertIsNone(_completed_metadata(value, image=False)["downloadUrl"])
+        value["content"][0]["text"] = value["content"][0]["text"].replace("text-to-image", "video-generator")
+        self.assertIsNone(_completed_metadata(value, image=True)["downloadUrl"])
+
+    def test_image_proxy_requires_original_and_rejects_error_envelope(self):
+        from studio.provider_collection import _completed_metadata
+        text = ('identifier: synthetic-creation\ntool: text-to-image\nstatus: completed\n'
+                'url: "https://pikaso.cdnpk.net/private/proxy.png"\nmetadata:\n  isPreviewProxy: true\n')
+        value = {"content":[{"type":"text", "text":text}]}
+        self.assertIsNone(_completed_metadata(value, image=True)['downloadUrl'])
+        value['content'][0]['text'] = text.replace('metadata:\n', 'downloadUrl: "https://pikaso.cdnpk.net/private/master.png"\nmetadata:\n')
+        self.assertTrue(_completed_metadata(value, image=True)['downloadUrl'].endswith('master.png'))
+        value['isError'] = True
+        with self.assertRaises(ValueError):
+            _completed_metadata(value, image=True)
+
+    def test_wrong_receipt_can_be_superseded_without_rewriting_evidence(self):
+        from studio.provider_collection import collect_completed
+        from studio.provider_receipts import path_for
+        self.evidence["artifact"].update(width=1024, height=1024)
+        self.record()
+        original_receipt = path_for(self.ws, self.action["action_id"], "receipt").read_bytes()
+        with self.assertRaises(ValueError):
+            self.runner.reconcile(self.ws, self.action["action_id"], original_file=self.original, state_dir=self.state_dir)
+        metadata = {"status":"completed", "creation_id":"synthetic-creation", "downloadUrl":self.evidence["artifact"]["url"]}
+        with patch("studio.provider_collection.fetch_original", return_value=self.original.read_bytes()) as get:
+            result = collect_completed(self.ws, self.runner, self.action["action_id"], metadata,
+                                       state_dir=self.state_dir, correction_reason="preview_dimensions")
+            self.assertEqual(result["status"], "succeeded")
+            self.assertEqual(collect_completed(self.ws, self.runner, self.action["action_id"], metadata,
+                state_dir=self.state_dir, correction_reason="preview_dimensions"), result)
+            renewed = {**metadata, "downloadUrl": metadata["downloadUrl"].split("?")[0] + "?signature=renewed"}
+            self.assertEqual(collect_completed(self.ws, self.runner, self.action["action_id"], renewed,
+                state_dir=self.state_dir, correction_reason="preview_dimensions"), result)
+            self.assertEqual(get.call_count, 1)
+        self.assertEqual(path_for(self.ws, self.action["action_id"], "receipt").read_bytes(), original_receipt)
+        self.assertTrue(path_for(self.ws, self.action["action_id"], "correction").is_file())
+
+    def test_succeeded_proxy_correction_keeps_old_result_and_reports_conflict(self):
+        from studio.provider_collection import collect_completed, resolve_conflict
+        self.record()
+        self.runner.reconcile(self.ws, self.action["action_id"], original_file=self.original, state_dir=self.state_dir)
+        before = self.store.load("p")
+        metadata = {"status":"completed", "creation_id":"synthetic-creation",
+                    "downloadUrl":"https://pikaso.cdnpk.net/private/master.png"}
+        with patch("studio.provider_collection.fetch_original", return_value=png_bytes(123)):
+            for _ in range(2):
+                result = collect_completed(self.ws, self.runner, self.action["action_id"], metadata,
+                    state_dir=self.state_dir, correction_reason="proxy_mistaken_for_original")
+                self.assertEqual(result["collection"], "conflict")
+                self.assertEqual(self.store.load("p"), before)
+            revision = before["revision"]
+            result = resolve_conflict(self.ws, self.runner, self.action["action_id"], "adopt", revision, state_dir=self.state_dir)
+            self.assertEqual(result["collection"], "resolved_adopt")
+            after = self.store.load("p")
+            self.assertEqual(after["revision"], revision + 1)
+            self.assertEqual(len(after["image_results"]), len(before["image_results"]) + 1)
+            self.assertEqual(resolve_conflict(self.ws, self.runner, self.action["action_id"], "adopt", revision, state_dir=self.state_dir), result)
+            self.assertEqual(collect_completed(self.ws, self.runner, self.action["action_id"], metadata,
+                state_dir=self.state_dir, correction_reason="proxy_mistaken_for_original"), result)
+            self.assertEqual(self.store.load("p"), after)
+            with self.assertRaises(ValueError):
+                resolve_conflict(self.ws, self.runner, self.action["action_id"], "keep", revision, state_dir=self.state_dir)
+
+    def test_keep_recovered_conflict_preserves_current_result(self):
+        from studio.provider_collection import collect_completed, resolve_conflict
+        self.record()
+        self.runner.reconcile(self.ws, self.action["action_id"], original_file=self.original, state_dir=self.state_dir)
+        before = self.store.load("p")
+        metadata = {"status":"completed", "creation_id":"synthetic-creation",
+                    "downloadUrl":"https://pikaso.cdnpk.net/private/master.png"}
+        with patch("studio.provider_collection.fetch_original", return_value=png_bytes(123)):
+            collect_completed(self.ws, self.runner, self.action["action_id"], metadata, state_dir=self.state_dir,
+                              correction_reason="proxy_mistaken_for_original")
+        result = resolve_conflict(self.ws, self.runner, self.action["action_id"], "keep", before["revision"], state_dir=self.state_dir)
+        self.assertEqual(result["collection"], "resolved_keep")
+        self.assertEqual(self.store.load("p"), before)
+        self.assertEqual(resolve_conflict(self.ws, self.runner, self.action["action_id"], "keep", before["revision"], state_dir=self.state_dir), result)
+
+    def test_adopt_recovers_after_authoring_crash(self):
+        from studio.provider_collection import collect_completed, resolve_conflict
+        self.record()
+        self.runner.reconcile(self.ws, self.action["action_id"], original_file=self.original, state_dir=self.state_dir)
+        revision = self.store.load("p")["revision"]
+        metadata = {"status":"completed", "creation_id":"synthetic-creation",
+                    "downloadUrl":"https://pikaso.cdnpk.net/private/master.png"}
+        with patch("studio.provider_collection.fetch_original", return_value=png_bytes(123)):
+            collect_completed(self.ws, self.runner, self.action["action_id"], metadata, state_dir=self.state_dir,
+                              correction_reason="proxy_mistaken_for_original")
+        real = authoring.add_result_version
+        def crash(*args, **kwargs):
+            real(*args, **kwargs)
+            raise SystemExit("simulated interruption")
+        with patch("studio.provider_collection.authoring.add_result_version", side_effect=crash):
+            with self.assertRaises(SystemExit):
+                resolve_conflict(self.ws, self.runner, self.action["action_id"], "adopt", revision, state_dir=self.state_dir)
+        after = self.store.load("p")
+        self.assertEqual(resolve_conflict(self.ws, self.runner, self.action["action_id"], "adopt", revision, state_dir=self.state_dir)["collection"], "resolved_adopt")
+        self.assertEqual(self.store.load("p"), after)
+
+    def test_first_receipt_conflict_can_adopt_into_empty_position(self):
+        from studio.provider_collection import resolve_conflict, recovered_preview
+        self.record()
+        before = self.store.load('p')
+        def rename(state): state['project']['title'] = 'Renamed without changing the prompt'
+        self.store.transact('p', before['revision'], rename)
+        changed = self.store.load('p')
+        self.assertEqual(self.runner.reconcile(self.ws, self.action['action_id'], original_file=self.original, state_dir=self.state_dir)['collection'], 'conflict')
+        self.assertIsNotNone(recovered_preview(self.ws, self.runner, self.action['action_id']))
+        with self.assertRaises(ValueError):
+            resolve_conflict(self.ws, self.runner, self.action['action_id'], 'keep', changed['revision'], state_dir=self.state_dir)
+        result = resolve_conflict(self.ws, self.runner, self.action['action_id'], 'adopt', changed['revision'], state_dir=self.state_dir)
+        self.assertEqual(result['collection'], 'resolved_adopt')
+        self.assertEqual(len(self.store.load('p')['image_results']), 1)
+
+    def test_first_receipt_conflict_rejects_changed_prompt(self):
+        from studio.provider_collection import resolve_conflict
+        self.record()
+        state = self.store.load('p')
+        authoring.add_prompt_version(self.store, 'p', state['revision'], target=self.target, text='Changed prompt', reason='edit')
+        changed = self.store.load('p')
+        self.runner.reconcile(self.ws, self.action['action_id'], original_file=self.original, state_dir=self.state_dir)
+        with self.assertRaises(ValueError):
+            resolve_conflict(self.ws, self.runner, self.action['action_id'], 'adopt', changed['revision'], state_dir=self.state_dir)
+        self.assertEqual(self.store.load('p'), changed)
+
+    def test_successful_collection_retry_stays_succeeded_after_later_edits(self):
+        self.record()
+        result = self.runner.reconcile(self.ws, self.action['action_id'], original_file=self.original, state_dir=self.state_dir)
+        state = self.store.load('p')
+        self.store.transact('p', state['revision'], lambda value: value['project'].update(title='Later edit'))
+        self.assertEqual(self.runner.reconcile(self.ws, self.action['action_id'], state_dir=self.state_dir), result)
+
+    def test_adopt_revision_race_does_not_strand_intent(self):
+        import copy
+        from studio.provider_collection import resolve_conflict, _ResolutionStore
+        from studio.provider_receipts import path_for
+        self.record()
+        before = self.store.load('p')
+        def add_neighbour(state):
+            scene = copy.deepcopy(state['scenes'][0]); scene.update(scene_id='s2', order=2, title='Neighbour', links={})
+            state['scenes'].append(scene)
+        self.store.transact('p', before['revision'], add_neighbour)
+        self.runner.reconcile(self.ws, self.action['action_id'], original_file=self.original, state_dir=self.state_dir)
+        rev = self.store.load('p')['revision']
+        real = _ResolutionStore.transact
+        other = authoring.open_store(self.ws)
+        def race(guard, project_id, expected, mutation):
+            other.transact(project_id, expected, lambda state: state['scenes'][1].update(title='Another simultaneous edit'))
+            return real(guard, project_id, expected, mutation)
+        with patch.object(_ResolutionStore, 'transact', race):
+            with self.assertRaises(Exception):
+                resolve_conflict(self.ws, self.runner, self.action['action_id'], 'adopt', rev, state_dir=self.state_dir)
+        self.assertFalse(path_for(self.ws, self.action['action_id'], 'resolution').exists())
+        latest = self.store.load('p')['revision']
+        result = resolve_conflict(self.ws, self.runner, self.action['action_id'], 'adopt', latest, state_dir=self.state_dir)
+        self.assertEqual(result['collection'], 'resolved_adopt')
+        self.assertEqual(len(self.store.load('p')['image_results']), 1)
+
+    def test_keep_revision_race_does_not_strand_intent(self):
+        from studio.provider_collection import collect_completed, resolve_conflict
+        from studio.provider_receipts import path_for
+        self.record()
+        self.runner.reconcile(self.ws, self.action['action_id'], original_file=self.original, state_dir=self.state_dir)
+        metadata = {'status':'completed','creation_id':'synthetic-creation','downloadUrl':'https://pikaso.cdnpk.net/private/master.png'}
+        with patch('studio.provider_collection.fetch_original', return_value=png_bytes(123)):
+            collect_completed(self.ws, self.runner, self.action['action_id'], metadata, state_dir=self.state_dir, correction_reason='wrong_master')
+        rev = self.store.load('p')['revision']
+        other = authoring.open_store(self.ws)
+        real_project_dir = self.runner.store.project_dir
+        def race(project):
+            other.transact(project, rev, lambda state: state['project'].update(title='Another simultaneous edit'))
+            return real_project_dir(project)
+        with patch.object(self.runner.store, 'project_dir', side_effect=race):
+            with self.assertRaises(ValueError):
+                resolve_conflict(self.ws, self.runner, self.action['action_id'], 'keep', rev, state_dir=self.state_dir)
+        self.assertFalse(path_for(self.ws, self.action['action_id'], 'resolution').exists())
+        latest = self.store.load('p')['revision']
+        result = resolve_conflict(self.ws, self.runner, self.action['action_id'], 'keep', latest, state_dir=self.state_dir)
+        self.assertEqual(result['collection'], 'resolved_keep')
+
+    def test_crash_before_state_write_supersedes_unexecuted_intent(self):
+        from studio.provider_collection import resolve_conflict
+        from studio.provider_receipts import path_for, read
+        self.record()
+        rev = self.store.load('p')['revision']
+        self.store.transact('p', rev, lambda state: state['project'].update(title='First edit'))
+        self.runner.reconcile(self.ws, self.action['action_id'], original_file=self.original, state_dir=self.state_dir)
+        rev = self.store.load('p')['revision']
+        with patch.object(self.runner.store, '_atomic_replace', side_effect=SystemExit('crash before state write')):
+            with self.assertRaises(SystemExit):
+                resolve_conflict(self.ws, self.runner, self.action['action_id'], 'adopt', rev, state_dir=self.state_dir)
+        old = read(path_for(self.ws, self.action['action_id'], 'resolution'))
+        self.assertIsNotNone(old)
+        self.store.transact('p', rev, lambda state: state['project'].update(title='Second edit'))
+        result = resolve_conflict(self.ws, self.runner, self.action['action_id'], 'adopt', rev + 1, state_dir=self.state_dir)
+        self.assertEqual(result['collection'], 'resolved_adopt')
+        self.assertIsNotNone(read(path_for(self.ws, self.action['action_id'], 'resolution-001')))
+        self.assertEqual(len(self.store.load('p')['image_results']), 1)
+
+    def test_crash_after_state_write_recovers_executed_intent_after_later_edit(self):
+        from studio.provider_collection import resolve_conflict
+        self.record()
+        rev = self.store.load('p')['revision']
+        self.store.transact('p', rev, lambda state: state['project'].update(title='First edit'))
+        self.runner.reconcile(self.ws, self.action['action_id'], original_file=self.original, state_dir=self.state_dir)
+        rev = self.store.load('p')['revision']
+        real = authoring.add_result_version
+        def crash(*args, **kwargs):
+            real(*args, **kwargs)
+            raise SystemExit('crash after state write')
+        with patch('studio.provider_collection.authoring.add_result_version', side_effect=crash):
+            with self.assertRaises(SystemExit):
+                resolve_conflict(self.ws, self.runner, self.action['action_id'], 'adopt', rev, state_dir=self.state_dir)
+        state = self.store.load('p')
+        self.store.transact('p', state['revision'], lambda value: value['project'].update(title='Later edit'))
+        result = resolve_conflict(self.ws, self.runner, self.action['action_id'], 'adopt', state['revision'] + 1, state_dir=self.state_dir)
+        self.assertEqual(result['collection'], 'resolved_adopt')
+        self.assertEqual(len(self.store.load('p')['image_results']), 1)
+
+    def test_keep_crash_before_ledger_write_supersedes_after_other_edit(self):
+        from studio.provider_collection import collect_completed, resolve_conflict
+        from studio.provider_receipts import path_for, read
+        self.record()
+        self.runner.reconcile(self.ws, self.action['action_id'], original_file=self.original, state_dir=self.state_dir)
+        metadata = {'status':'completed','creation_id':'synthetic-creation','downloadUrl':'https://pikaso.cdnpk.net/private/master.png'}
+        with patch('studio.provider_collection.fetch_original', return_value=png_bytes(123)):
+            collect_completed(self.ws, self.runner, self.action['action_id'], metadata, state_dir=self.state_dir, correction_reason='wrong_master')
+        rev = self.store.load('p')['revision']
+        with patch.object(self.runner.ledger, 'resolve_collection_choice', side_effect=SystemExit('crash before ledger')):
+            with self.assertRaises(SystemExit):
+                resolve_conflict(self.ws, self.runner, self.action['action_id'], 'keep', rev, state_dir=self.state_dir)
+        self.assertIsNotNone(read(path_for(self.ws, self.action['action_id'], 'resolution')))
+        old_asset = self.store.load('p')['image_results'][0]['asset_id']
+        authoring.add_result_version(self.store, authoring.open_assets(self.ws), 'p', rev, target=self.target, asset_id=old_asset)
+        changed = self.store.load('p')
+        result = resolve_conflict(self.ws, self.runner, self.action['action_id'], 'keep', rev + 1, state_dir=self.state_dir)
+        self.assertEqual(result['collection'], 'resolved_keep')
+        self.assertIsNotNone(read(path_for(self.ws, self.action['action_id'], 'resolution-001')))
+        self.assertEqual(self.store.load('p'), changed)
+
     def test_paid_failure_recovers_original_and_preserves_failure_event(self):
         self.record()
         result = self.runner.reconcile(self.ws, self.action["action_id"], original_file=self.original, state_dir=self.state_dir)
@@ -107,6 +404,34 @@ class CollectionTests(unittest.TestCase):
         self.evidence["artifact"]["url"] = "https://pikaso.cdnpk.net/private/different-original.png?signature=renewed"
         with self.assertRaises(ValueError):
             self.record()
+
+    def test_completed_get_renews_expired_existing_receipt_before_retry(self):
+        from studio.provider_collection import collect_completed
+        self.record()
+        with patch('studio.provider_collection.fetch_original', side_effect=ValueError('expired')):
+            with self.assertRaises(ValueError):
+                self.runner.reconcile(self.ws, self.action['action_id'], state_dir=self.state_dir)
+        url = self.evidence['artifact']['url'].split('?')[0] + '?signature=fresh'
+        metadata = {'status':'completed','creation_id':'synthetic-creation','downloadUrl':url}
+        with patch('studio.provider_collection.fetch_original', return_value=self.original.read_bytes()) as fetch:
+            result = collect_completed(self.ws, self.runner, self.action['action_id'], metadata, state_dir=self.state_dir)
+        self.assertEqual(result['status'], 'succeeded')
+        self.assertEqual(fetch.call_args.args[1]['url'], url)
+
+    def test_completed_get_renews_interrupted_correction_before_retry(self):
+        from studio.provider_collection import collect_completed
+        self.record()
+        metadata = {'status':'completed','creation_id':'synthetic-creation',
+                    'downloadUrl':'https://pikaso.cdnpk.net/private/master.png?signature=old'}
+        with patch('studio.provider_collection.fetch_original', return_value=self.original.read_bytes()), \
+             patch('studio.provider_collection.reconcile', side_effect=SystemExit('interrupted')):
+            with self.assertRaises(SystemExit):
+                collect_completed(self.ws, self.runner, self.action['action_id'], metadata, state_dir=self.state_dir, correction_reason='wrong_master')
+        metadata['downloadUrl'] = metadata['downloadUrl'].split('?')[0] + '?signature=fresh'
+        with patch('studio.provider_collection.fetch_original', return_value=self.original.read_bytes()) as fetch:
+            result = collect_completed(self.ws, self.runner, self.action['action_id'], metadata, state_dir=self.state_dir)
+        self.assertEqual(fetch.call_args.args[1]['url'], metadata['downloadUrl'])
+        self.assertEqual(result['status'], 'succeeded')
 
     def test_crash_after_canonical_write_reconciles_without_second_result(self):
         self.record()

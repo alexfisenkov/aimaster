@@ -160,10 +160,10 @@ def validate_binding(manifest: Any, prompt: str) -> dict[str, int | str]:
                 raise ValueError(f"unresolved canonical tag remains in native prompt: {canonical}")
 
     allowed_canonical_native = {
-        reference["canonical"]
+        reference["native"]
         for reference in references
         if reference.get("transport") in {"inline", "hybrid"}
-        and reference.get("native") == reference.get("canonical")
+        and CANONICAL_TAG.fullmatch(reference.get("native", ""))
     }
     for token in CANONICAL_TAG.findall(prompt):
         if token not in allowed_canonical_native:
@@ -235,6 +235,16 @@ def validate_claimed_context(manifest: dict, package: Any) -> None:
                         _require_nonempty(voice["asset_id"], "claimed voice asset_id"),
                     )
                 )
+        continuity = position.get("continuity_video")
+        if continuity is not None:
+            if not isinstance(continuity, dict):
+                raise ValueError("claimed continuity_video must be an object")
+            version = _require_nonempty(continuity.get("version_id"), "claimed continuity video version_id")
+            asset = _require_nonempty(continuity.get("asset_id"), "claimed continuity video asset_id")
+            reference_id = "previous:" + version
+            if continuity.get("canonical", "PREVIOUS_VIDEO") != "PREVIOUS_VIDEO" or continuity.get("reference_id", reference_id) != reference_id:
+                raise ValueError("claimed continuity video identity does not match its selected version")
+            expected.append(("PREVIOUS_VIDEO", reference_id, asset))
         frames = position.get("frames", [])
         if not isinstance(frames, list):
             raise ValueError("claimed context frames must be a list")

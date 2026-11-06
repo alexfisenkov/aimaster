@@ -39,6 +39,36 @@ jobs:
         with:
           node-version: "22"
 
+      # Continuity extracts and compares a real decoded final frame in the
+      # ordinary unit suite, so all three OS jobs need both executables.
+      - name: FFmpeg for unit tests (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: FFmpeg for unit tests (macOS)
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew list --versions ffmpeg || brew install ffmpeg
+
+      - name: FFmpeg for unit tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $shimDir = Join-Path $env:ProgramData 'chocolatey\bin'
+          if (Test-Path $shimDir) { $shimDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append }
+
+      - name: Verify FFmpeg and ffprobe
+        run: |
+          ffmpeg -version
+          ffprobe -version
+
       - name: Python unit tests (UTF-8 mode)
         run: python -X utf8 -m unittest discover -s skills/aimaster/scripts -p "test_*.py"
 

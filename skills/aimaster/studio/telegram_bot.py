@@ -1190,6 +1190,7 @@ class TelegramBotController:
                 state,
                 asset_url=lambda asset_id: f"/assets/{asset_id}",
                 pending_actions=None if ledger is None else ledger.pending_actions(project_id),
+                project_directory=self.store.project_dir(project_id),
             )
         except (ProjectionError, DomainValidationError):
             return None

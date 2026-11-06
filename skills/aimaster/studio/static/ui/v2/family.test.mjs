@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { familyPreference, familyLabel } from "./family.js";
 import { overlayFromDrag, pointInCanvas } from "./overlay-editor.js";
-import { selectedSpending, canDirectAction } from "./family-actions.js";
+import { selectedSpending, canDirectAction, recoveryBlockedForPosition } from "./family-actions.js";
 
 test("family preferences reject unknown values and translate only interface copy", () => {
   assert.deepEqual(familyPreference({ view: "overview", theme: "dark", locale: "en" }), { view: "overview", theme: "dark", locale: "en" });
@@ -26,4 +26,11 @@ test("paid action uses exact saved route and only live operator", () => {
   assert.equal(canDirectAction({ available: true }, ["generate"], "generate", selectedSpending(route)), true);
   assert.equal(canDirectAction({ available: false }, ["generate"], "generate", selectedSpending(route)), false);
   assert.equal(canDirectAction({ available: true }, ["generate"], "generate", null), false);
+});
+
+test("an uncertain outcome blocks that position even before route context loads", () => {
+  assert.equal(recoveryBlockedForPosition(null, "a"), true);
+  assert.equal(recoveryBlockedForPosition({ collections: [{ position_id: "a", phase: null }] }, "a"), true);
+  assert.equal(recoveryBlockedForPosition({ collections: [{ position_id: null }] }, "a"), true);
+  assert.equal(recoveryBlockedForPosition({ collections: [{ position_id: "b" }] }, "a"), false);
 });

@@ -193,7 +193,7 @@ test("устаревшие клипы — три разных исхода, тр
     { clip: "v-1", asset_id: null, current_asset_id: null, reason: "нет принятого", cause: null },
   ]) });
   assert.deepEqual(unaccepted.map((item) => item.key), ["stale-unaccepted"]);
-  assert.match(unaccepted[0].text, /нет принятого/i);
+  assert.match(unaccepted[0].text, /в черновике монтажа нет актуального принятого/i);
 
   const mixed = notices({ status: status(), model: model([
     { clip: "v-1", reason: null, cause: null },

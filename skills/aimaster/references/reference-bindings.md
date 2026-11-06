@@ -13,6 +13,29 @@ instruction to generate a new reference. Image and video/continuation routes
 may use different fields. A previous video should be used for extension/edit
 only when the selected endpoint schema actually offers that operation.
 
+Scene links are semantic context, not automatically provider inputs. In a
+keyframe-only request use the selected frame assets; do not upload semantic
+hero/location links as additional image references unless the chosen schema
+supports that combination. The claim's `references` are operation bindings;
+`semantic_references` are context only. A selected previous clip appears as
+`continuity_video` and must be mapped only to an actual supported input field.
+Do not invent a provider tag for it or describe guidance as native extension.
+For a claimed `continuity_video`, the binding is mandatory: use canonical
+`PREVIOUS_VIDEO`, `reference_id` `previous:<exact-version_id>` and the exact
+`asset_id` from that object, with the actual observed native tag or structured
+slot. Missing or mismatched version/asset fails validation. An explicitly
+proven scene-local `VID_NN` alias for that same result and asset stays in
+`semantic_references`, but is not a second operation input; map its meaning to
+the one `PREVIOUS_VIDEO` input in the outgoing prompt.
+
+For a keyframe-only request a stored `@IMG_NN` can describe the person or
+object already visible in the selected frame. Inspect that frame: if it really
+contains the subject, rewrite only the outgoing text to describe the subject
+in the frame. Do not submit the internal token or attach the semantic image as
+another input. If the frame does not establish that subject, refresh the
+canonical prompt or choose a compatible input mode; do not claim it does. Keep
+the scene's semantic links and stored prompt unchanged during outgoing mapping.
+
 On 2026-11-05 a synthetic Magnific Seedance 2.5 test demonstrated one
 route-limited native mechanism: `references[].modifier_key` values `img1` and
 `img2` paired with exact `@img1`/`@img2` mentions. Reversing the reference
@@ -135,7 +158,8 @@ python3 scripts/validate_reference_bindings.py \
    `claimed-job.json`; `--context` is mandatory and the validator compares the
    complete canonical tag/reference ID/asset ID set and state revision. Include
    accepted frame inputs as canonical `FRAME_FIRST`/`FRAME_LAST` with
-   `reference_id` `frame:<scene-id>:first|last`. For a direct-chat operation
+   `reference_id` `frame:<scene-id>:first|last`, and selected prior video as
+   `PREVIOUS_VIDEO` / `previous:<version_id>`. For a direct-chat operation
    without a job, omit `--context` only after rebuilding the same complete set
    through the reference's read-only state door and recording `action_id: none`
    in `binding.md`.

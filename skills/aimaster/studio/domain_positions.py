@@ -220,6 +220,12 @@ def _position_required(state, spec):
 
     if spec["kind"] != "audio":
         return True
+    owner = next((item for item in state.get("audio_layers", [])
+                  if item["layer"] == spec["layer"]), {})
+    if owner.get("planned") is True or (
+        "planned" not in owner and owner.get("links", {}).get("audio_prompt_version_id")
+    ):
+        return True
     group = spec["result_group_id"]
     return any(item.get("result_id") == group
                for item in state.get(spec["result_collection"], []) if isinstance(item, dict))

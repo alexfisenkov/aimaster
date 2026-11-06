@@ -220,6 +220,11 @@ def command_project_set_assembly_mode(args):
                                        args.expected_revision, args.mode))
 
 
+def command_project_set_audio_plan(args):
+    _print(authoring.set_audio_plan(authoring.open_store(args.workspace), args.project,
+                                   args.expected_revision, args.layers or []))
+
+
 def command_project_set_guide_choice(args):
     choice = json.loads(args.file.read_text(encoding="utf-8"))
     _print(authoring.set_guide_choice(authoring.open_store(args.workspace), args.workspace, args.project,
@@ -630,6 +635,11 @@ def command_scene_video_mode(args):
 
 def command_scene_continuity(args):
     store = authoring.open_store(args.workspace)
+    if args.strategy == "previous_last_frame":
+        from studio.authoring_continuity import extract_last_frame
+        _print(extract_last_frame(store, authoring.open_assets(args.workspace), args.project,
+                                  args.expected_revision, scene_id=args.scene_id))
+        return
     _print(
         authoring.set_continuity_strategy(
             store,
@@ -814,6 +824,14 @@ def _add_decision_subcommands(subparsers) -> None:
 def _add_project_subcommands(subparsers) -> None:
     project_cmd = subparsers.add_parser("project", help="create a project")
     project_sub = project_cmd.add_subparsers(dest="subcommand", required=True)
+    plan = project_sub.add_parser("set-audio-plan", help="record the sound layers requested in the brief")
+    plan.add_argument("workspace", type=Path)
+    plan.add_argument("project")
+    selection = plan.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--layers", nargs="+", choices=("voice", "music", "fx", "atmos"))
+    selection.add_argument("--silent", action="store_true", help="explicitly choose no planned sound")
+    plan.add_argument("--expected-revision", required=True, type=int)
+    plan.set_defaults(handler=command_project_set_audio_plan)
     assembly_mode_cmd = project_sub.add_parser("set-assembly-mode", help="choose montage or materials delivery")
     assembly_mode_cmd.add_argument("workspace", type=Path)
     assembly_mode_cmd.add_argument("project")

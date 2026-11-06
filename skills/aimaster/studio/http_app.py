@@ -373,6 +373,28 @@ class StudioApplication:
                 return self._static_file(request_path.removeprefix("/static/"))
             if method == "POST" and request_path == "/api/actions":
                 return self._action(request_headers, body)
+            if method == "POST" and self.workspace is not None and request_path.startswith("/api/projects/"):
+                parts = request_path.removeprefix("/api/projects/").split("/")
+                if len(parts) == 3 and parts[1] == "recovery" and parts[0] and parts[2]:
+                    value = self._parse_json(request_headers, body, {"operation", "expected_revision"})
+                    if value["operation"] not in {"retry", "adopt", "keep"} or type(value["expected_revision"]) is not int or value["expected_revision"] < 0:
+                        raise ValueError("invalid recovery request")
+                    from .runner import open_runner
+                    runner = open_runner(self.workspace)
+                    action = runner.ledger.get_action(parts[2])
+                    if action["project_id"] != parts[0] or runner.store.load(parts[0])["revision"] != value["expected_revision"]:
+                        raise ValueError("recovery project or revision mismatch")
+                    if value["operation"] == "retry":
+                        return self._json_response(200, runner.reconcile(self.workspace, parts[2]))
+                    from .provider_collection import resolve_conflict
+                    from .authoring_support import AuthoringError
+                    try:
+                        result = resolve_conflict(self.workspace, runner, parts[2], value["operation"], value["expected_revision"])
+                    except AuthoringError as error:
+                        if str(error).startswith("этап «") and "уже одобрен" in str(error):
+                            return self.error_response(409, "recovery_stage_approved")
+                        raise
+                    return self._json_response(200, result)
             if self.workspace is not None and request_path.startswith("/api/actions/"):
                 suffix = request_path.removeprefix("/api/actions/")
                 if suffix.endswith("/collection") and "/" not in suffix[:-11]:
@@ -441,6 +463,7 @@ class StudioApplication:
             state,
             asset_url=lambda asset_id: f"/assets/{asset_id}",
             pending_actions=self.ledger.pending_actions(project_id),
+            project_directory=self.store.project_dir(project_id),
         )
         return self._json_response(200, snapshot)
 

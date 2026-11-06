@@ -10,13 +10,13 @@ from .workspace import resolve_workspace_paths
 from .safe_paths import safe_path
 
 MIMES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp",
-         "video/mp4": ".mp4", "video/webm": ".webm", "audio/wav": ".wav", "audio/mpeg": ".mp3"}
+         "video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm", "audio/wav": ".wav", "audio/mpeg": ".mp3"}
 
 
 def path_for(workspace, action_id, kind):
     if not isinstance(action_id, str) or not re.fullmatch(r"action-[0-9a-f]{32}", action_id):
         raise ValueError("invalid_collection_action")
-    if kind not in {"basis", "receipt", "verification", "ack"} and not re.fullmatch(r"locator-\d{3}", kind):
+    if kind not in {"basis", "receipt", "verification", "ack", "derivative", "correction", "correction-verification", "correction-derivative", "resolution"} and not re.fullmatch(r"(?:(?:correction-)?locator|resolution)-\d{3}", kind):
         raise ValueError("invalid_receipt_kind")
     root, _, _, private = resolve_workspace_paths(workspace)
     return safe_path(root, private / "provider-receipts" / (action_id + "." + kind + ".json"))
@@ -53,6 +53,15 @@ def freeze(workspace, runner, action_id, state, route):
              "grant_id": action["grant_id"], "expected_revision": action["revision"],
              "execution_revision": state["revision"], "route": route, "state": state,
              "owner_transport": "telegram" if action["idempotency_key"].startswith("telegram") else "owner_local"}
+    if action["action_type"] in {"vary", "regenerate"}:
+        from . import authoring
+        from .operator_routes import action_result
+        _, result = action_result(state, action["action_type"], action["target_id"])
+        assets = authoring.open_assets(workspace)
+        assets.resolve(result["asset_id"])
+        basis["source_result"] = {"result_id": result["result_id"],
+            "version_id": result.get("version_id", result["result_id"]),
+            "asset_id": result["asset_id"], "sha256": assets.stored(result["asset_id"])["digest"]}
     return immutable(path_for(workspace, action_id, "basis"), basis)
 
 
@@ -175,13 +184,13 @@ def record(workspace, runner, action_id, value):
     return immutable(path, receipt)
 
 
-def current_artifact(workspace, action_id, receipt):
+def current_artifact(workspace, action_id, receipt, *, correction=False):
     artifact = copy.deepcopy(receipt["provider_evidence"]["artifact"])
     if artifact.get("local_path"):
         return artifact
     original = original_url(receipt["provider_evidence"]["provider"], artifact["url"])
     for index in range(1, 33):
-        locator = read(path_for(workspace, action_id, f"locator-{index:03}"))
+        locator = read(path_for(workspace, action_id, f"{'correction-' if correction else ''}locator-{index:03}"))
         if locator is None:
             break
         parsed = original_url(receipt["provider_evidence"]["provider"], locator["url"])
@@ -190,3 +199,23 @@ def current_artifact(workspace, action_id, receipt):
             raise ValueError("invalid_original_renewal")
         artifact["url"] = locator["url"]
     return artifact
+
+
+def renew_correction(workspace, action_id, receipt, url):
+    artifact = receipt["provider_evidence"]["artifact"]
+    provider = receipt["provider_evidence"]["provider"]
+    before, after = original_url(provider, artifact["url"]), original_url(provider, url)
+    if (before.scheme, before.netloc, before.path) != (after.scheme, after.netloc, after.path):
+        raise ValueError("invalid_original_renewal")
+    if url == artifact["url"]:
+        return
+    value = {"receipt_sha256": state_digest(receipt), "url": url}
+    for index in range(1, 33):
+        path = path_for(workspace, action_id, f"correction-locator-{index:03}")
+        prior = read(path)
+        if prior == value:
+            return
+        if prior is None:
+            immutable(path, value)
+            return
+    raise ValueError("locator_renewal_limit")

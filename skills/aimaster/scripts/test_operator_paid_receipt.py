@@ -52,5 +52,33 @@ class RequiredPaidReceiptTests(unittest.TestCase):
     def test_regenerate_without_receipt_is_not_success(self): self.attempt('regenerate')
     def test_receipt_plus_child_mutation_stays_unknown_and_preserves_provider_id(self): self.attempt('generate',receipt=True)
 
+    def test_controller_collects_raw_get_after_ack_before_marking_success(self):
+        before = self.store.load("p")
+        action = self.runner.ledger.enqueue("p", ActionRequest("generate", self.target,
+            self.action["payload"], before["revision"], "observed-get"), scoped_grant=True)
+
+        def child(job, *args):
+            ack = {key: self.evidence[key] for key in
+                   ("provider", "model", "operation", "creation_id", "prompt_sha256", "basis_sha256")}
+            self.runner.record_provider_ack(self.ws, job["action_id"], {**ack, "observation": "acknowledged"})
+            observed = {"content": [{"type": "text", "text": (
+                "identifier: synthetic-creation\ntool: text-to-image\nstatus: completed\n"
+                "url: https://pikaso.cdnpk.net/private/picture.png\nmetadata:\n  width: 9999"
+            )}]}
+            return {**{key: job[key] for key in ("action_id", "project_id", "action_type", "target_id")},
+                    "base_revision": job["revision"], "revision": job["revision"], "state_sha256": None,
+                    "output_ids": [], "status": "provider_completed", "reply": "Кадр готов.",
+                    "provider_observation": {"creation": observed}}
+
+        with patch("studio.provider_collection.fetch_original", return_value=self.original.read_bytes()):
+            with Operator(self.ws, agent="codex", adapter=child, state_dir=self.state_dir) as controller:
+                self.assertEqual(controller.step()["status"], "succeeded")
+                self.assertIsNone(controller.step())
+        saved = self.store.load("p")["image_results"]
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(authoring.open_assets(self.ws).resolve(saved[0]["asset_id"])[0].read_bytes(),
+                         self.original.read_bytes())
+        self.assertEqual(self.runner.ledger.collection(action["action_id"]), "succeeded")
+
 
 if __name__ == '__main__': unittest.main()

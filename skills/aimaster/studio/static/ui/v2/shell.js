@@ -29,6 +29,7 @@ import {
 } from "./screen-map.js";
 import { familyLabel, readFamilyPreference, saveFamilyPreference } from "./family.js";
 import { renderOverview } from "./overview.js";
+import { renderRecovery } from "./recovery.js";
 import { t } from "./locale.js";
 
 const TYPE_WORDS = Object.freeze({ video: "видео", photo: "фото", mixed: "видео и фото" });
@@ -264,6 +265,8 @@ export function renderShellV2(root, state) {
   }
   main.removeAttribute("aria-busy");
   renderQuestionsPanel(inner, snapshot.questions);
+  const recovery = renderRecovery(snapshot);
+  if (recovery) inner.append(recovery);
   const overview = readFamilyPreference().view === "overview";
   if (!overview) inner.append(screenHead(project, screen));
   const area = el("div", "v2-area");

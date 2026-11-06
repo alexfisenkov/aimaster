@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { audioTiles, AUDIO_LAYERS } from "./audio-model.js";
 import { scriptVersions, storyboardRows, activeBlockText } from "./scenario-model.js";
 import { clipStatus, continuationLine } from "./video-model.js";
+import { continuityChoices } from "./scene-zones-video.js";
 import { framePromptKind, scenePromptLine } from "./scene-row.js";
 import { audioTouched, primaryAction } from "./screen-map.js";
 import { unresolvedItems } from "./unresolved.js";
@@ -105,6 +106,39 @@ test("правленая сцена просит перепроверить св
   const scene = sceneBy(project, "skeptic-online");
   scene.linkage_status = "review_linkage";
   assert.equal(continuationLine(project, scene).warn, true);
+});
+
+test("сохранённая связь показывает источник и отдельный клип", () => {
+  const project = structuredClone(PROJECT);
+  const scene = sceneBy(project, "skeptic-online");
+  scene.continuity_strategy = "previous_last_frame";
+  scene.continuity_source_result_id = "result:scene:previous:video-v2";
+  assert.match(continuationLine(project, scene).detail, /result:scene:previous:video-v2/);
+  scene.continuity_strategy = "independent";
+  delete scene.continuity_source_result_id;
+  assert.equal(continuationLine(project, scene).detail, "Независимый клип");
+});
+
+test("меню связи даёт три выбора с точным проектом, сценой и ревизией", () => {
+  const project = structuredClone(PROJECT);
+  project.stage = "motion";
+  project.gen_mode = "per_scene";
+  const scene = sceneBy(project, "skeptic-online");
+  const choices = continuityChoices(project, scene, 42);
+  assert.deepEqual(choices.map(item => item.strategy), ["independent", "previous_last_frame", "previous_video"]);
+  for (const item of choices) {
+    assert.ok(item.prompt.includes(project.id));
+    assert.ok(item.prompt.includes(scene.scene_id));
+    assert.ok(item.prompt.includes("revision 42"));
+  }
+});
+
+test("на этапе плана не требуют выбрать ещё не созданный референс", () => {
+  const project = structuredClone(PROJECT);
+  project.stage = "image_plan";
+  project.references.push({reference_id:"IMG_99", label:"Новый", source:"generate", kind:"character"});
+  assert.ok(!unresolvedItems(project, "image_plan").some(text => text.includes("Новый")));
+  assert.ok(unresolvedItems(project, "image_results").some(text => text.includes("Новый")));
 });
 
 /** Копия проекта, где у первой сцены запланирован кадр со своим промптом. */

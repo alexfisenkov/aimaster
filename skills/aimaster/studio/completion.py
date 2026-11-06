@@ -57,10 +57,6 @@ def selected_materials(state):
         valid = (isinstance(member, dict) and member.get("decision") == "approved"
                  and not any(member.get(key) for key in ("hidden", "retired", "stale"))
                  and isinstance(member.get("asset_id"), str) and bool(member["asset_id"]))
-        prompt = current_member(state, spec, "prompt")
-        if prompt and (prompt.get("stale") is True or
-                       ("basis" in prompt and domain.compute_prompt_stale(state, prompt, spec))):
-            valid = False
         if not valid:
             if position["required"]:
                 raise CompletionError("required selected materials are missing, unapproved or stale")
@@ -123,6 +119,46 @@ def verify_assembly(state, project_directory):
             or [item["asset_id"] for item in manifest["assets"]] != assembly["asset_ids"]):
         raise CompletionError("manifest does not match this project's selected assets")
     return manifest
+
+
+def verify_montage_sources(state, project_directory):
+    """Compare selected sources with the immutable composition of the selected render.
+
+    A changed working draft is a separate surface. Missing or damaged version
+    evidence blocks approval, but does not delete the existing render.
+    """
+    from .montage import MontageError
+    from .montage.accepted_sources import video_sources
+    from .montage.paths import VERSION_ID
+    from .montage.stale import stale_clips
+    section = state.get("montage")
+    if not isinstance(section, dict) or not section.get("current_version"):
+        return  # legacy manually linked final without a Studio version
+    version = section["current_version"]
+    if not isinstance(version, str) or not VERSION_ID.fullmatch(version):
+        raise CompletionError("invalid selected montage version")
+    try:
+        entries = [item for item in section.get("versions", []) if item.get("id") == version]
+        assembly_asset = state.get("assembly", {}).get("asset_id")
+        if len(entries) != 1 or entries[0].get("asset_id") != assembly_asset:
+            raise CompletionError("selected montage and assembly asset do not match")
+        base = f"montage/versions/{version}"
+        index = _inside(project_directory, base + "/index.html")
+        meta_path = _inside(project_directory, base + "/meta.json")
+        files_path = _inside(project_directory, base + "/files.json")
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        files = json.loads(files_path.read_text(encoding="utf-8"))
+        indexes = [item for item in files if isinstance(item, dict) and item.get("path") == "index.html"]
+        if (meta.get("version") != version or meta.get("asset_id") != assembly_asset
+                or len(indexes) != 1 or indexes[0].get("sha256") != _digest(index)):
+            raise CompletionError("selected montage snapshot failed verification")
+        video_sources(state, strict=True)
+        if stale_clips(index.read_text(encoding="utf-8"), state):
+            raise CompletionError("selected montage sources changed; refresh and render again")
+    except (OSError, ValueError, TypeError, AttributeError, MontageError) as error:
+        if isinstance(error, CompletionError):
+            raise
+        raise CompletionError("selected montage snapshot is missing or invalid") from error
 
 
 def prepare_materials(workspace, project_id, expected_revision):

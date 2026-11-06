@@ -25,6 +25,12 @@ def preflight(route):
     """Known inability to collect must be reported before spending a grant."""
     if not supports_collection(route):
         return False
+    position = route.get("position_id", "")
+    if route.get("provider") == "magnific" and isinstance(position, str) and \
+            (position == "pos:oneshot" or position.endswith(":video")):
+        from .platform_compat import find_program
+        if not find_program("ffprobe") or not find_program("ffmpeg"):
+            return False
     if route.get("collection_mode") == "host-local-original":
         return True  # This route was explicitly selected with an existing host file capability.
     provider = route["provider"]
@@ -118,14 +124,14 @@ def fetch_original(provider, artifact):
             with ssl.create_default_context().wrap_socket(raw, server_hostname=parsed.hostname) as connection, _deadline(connection, remaining()):
                 connection.settimeout(remaining())
                 target = parsed.path + ("?" + parsed.query if parsed.query else "")
-                request = f"GET {target} HTTP/1.1\r\nHost: {parsed.hostname}\r\nAccept: {artifact['mime_type']}\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n"
+                request = f"GET {target} HTTP/1.1\r\nHost: {parsed.hostname}\r\nAccept: {artifact.get('mime_type') or '*/*'}\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n"
                 connection.sendall(request.encode("ascii"))
                 response = http.client.HTTPResponse(connection); response.begin()
                 # Redirects are not followed, including same-origin redirects.
                 if response.status != 200 or response.getheader("Content-Encoding", "identity") != "identity":
                     raise ValueError("original_response_refused")
                 mime = response.getheader("Content-Type", "").split(";", 1)[0].strip().lower()
-                if mime != artifact["mime_type"]:
+                if artifact.get("mime_type") is not None and mime != artifact["mime_type"]:
                     raise ValueError("original_content_type_mismatch")
                 length = response.getheader("Content-Length")
                 limit = artifact.get("size_bytes") or MAX_BYTES

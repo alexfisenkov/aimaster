@@ -41,12 +41,75 @@ def main(argv=None):
     ack.add_argument("workspace", type=Path)
     ack.add_argument("action_id")
     ack.add_argument("--file", type=Path, required=True)
+    prepare = sub.add_parser("prepare", help="Freeze a claimed paid action before dispatch")
+    prepare.add_argument("workspace", type=Path)
+    prepare.add_argument("action_id")
+    prepare.add_argument("--worker", required=True)
+    inspect = sub.add_parser("inspect-dispatch", help="Read dispatch and recovery status without a new permit")
+    inspect.add_argument("workspace", type=Path)
+    inspect.add_argument("action_id")
+    ready = sub.add_parser("get-ready-result", help="Collect an already completed provider result")
+    ready.add_argument("workspace", type=Path)
+    ready.add_argument("action_id")
+    ready.add_argument("--file", type=Path, required=True)
+    ready.add_argument("--correction-reason", help="Explicit audited correction reason code")
+    resolve = sub.add_parser("resolve-conflict", help="Explicitly keep or adopt verified recovered media")
+    resolve.add_argument("workspace", type=Path)
+    resolve.add_argument("action_id")
+    resolve.add_argument("--choice", choices=("keep", "adopt"), required=True)
+    resolve.add_argument("--expected-revision", type=int, required=True)
+    export = sub.add_parser("collect-provider-export", help="Collect verified provider export as a labelled representation")
+    export.add_argument("workspace", type=Path)
+    export.add_argument("action_id")
+    export.add_argument("--creation-get", type=Path, required=True)
+    export.add_argument("--zip-status", type=Path, required=True)
+    export.add_argument("--zip-job", required=True)
+    export.add_argument("--video-metadata", type=Path, required=True)
     recovery = sub.add_parser("reconcile", help="GET-only collection of an existing approved receipt")
     recovery.add_argument("workspace", type=Path)
     recovery.add_argument("action_id")
     recovery.add_argument("--original-file", type=Path)
     args = parser.parse_args(argv)
     try:
+        if args.command == "collect-provider-export":
+            from studio.runner import open_runner
+            from studio.provider_export import collect_provider_export
+            def read_json(path):
+                if path.stat().st_size > 65536:
+                    raise ValueError("receipt_size_limit")
+                return json.loads(path.read_text(encoding="utf-8"))
+            result = collect_provider_export(args.workspace, open_runner(args.workspace), args.action_id,
+                read_json(args.creation_get), read_json(args.zip_status), args.zip_job, read_json(args.video_metadata))
+            print(json.dumps(result))
+            return 0 if result["status"] == "succeeded" else 1
+        if args.command == "resolve-conflict":
+            from studio.runner import open_runner
+            from studio.provider_collection import resolve_conflict
+            result = resolve_conflict(args.workspace, open_runner(args.workspace), args.action_id,
+                                      args.choice, args.expected_revision)
+            print(json.dumps(result))
+            return 0 if result["collection"] in {"resolved_keep", "resolved_adopt"} else 1
+        if args.command == "inspect-dispatch":
+            from studio.runner import open_runner
+            print(json.dumps(open_runner(args.workspace).inspect_dispatch(args.workspace, args.action_id)))
+            return 0
+        if args.command == "prepare":
+            from studio.runner import open_runner
+            from studio.family_setup.state import operation_lease
+            with operation_lease(owner="direct-chat-prepare"):
+                result = open_runner(args.workspace).prepare_paid(args.workspace, args.action_id, args.worker)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
+        if args.command == "get-ready-result":
+            from studio.runner import open_runner
+            from studio.provider_collection import collect_completed
+            if args.file.stat().st_size > 65536:
+                raise ValueError("receipt_size_limit")
+            result = collect_completed(args.workspace, open_runner(args.workspace), args.action_id,
+                                       json.loads(args.file.read_text(encoding="utf-8")),
+                                       correction_reason=args.correction_reason)
+            print(json.dumps(result))
+            return 0 if result["status"] == "succeeded" else 1
         if args.command in {"record-provider", "record-ack", "reconcile"}:
             from studio.runner import open_runner
             runner = open_runner(args.workspace)

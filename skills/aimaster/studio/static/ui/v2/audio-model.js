@@ -27,6 +27,8 @@ export function audioTiles(project) {
   return AUDIO_LAYERS.map((meta, order) => {
     const counts = variantCounts(project, { layer: meta.layer });
     const owner = layers.find((item) => item?.layer === meta.layer);
+    const required = project?.positions?.some(p => p.kind === "audio" && p.layer === meta.layer && p.required === true);
+    const awaiting = required && counts.total === 0 && !counts.selected;
     return {
       ...meta,
       total: counts.total,
@@ -36,8 +38,10 @@ export function audioTiles(project) {
       // обязательной, только когда у неё появился результат
       // (`domain_positions._position_required`). Так и подписываем —
       // человек должен видеть, что звук можно просто пропустить.
-      status: counts.total === 0 && !counts.selected ? t("не нужен — можно пропустить") : variantStatus(counts),
-      tone: statusTone(counts),
+      status: awaiting ? t("запланировано · ждём файл")
+        : counts.total === 0 && !counts.selected ? t("не нужен — можно пропустить") : variantStatus(counts),
+      tone: awaiting ? "warn" : statusTone(counts),
+      required,
       wave: waveHeights(order, counts.total > 0 || Boolean(counts.selected)),
       hasPrompt: typeof owner?.links?.audio_prompt_version_id === "string"
         && Boolean(owner.links.audio_prompt_version_id),

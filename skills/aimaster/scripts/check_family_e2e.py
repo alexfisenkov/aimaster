@@ -13,6 +13,9 @@ FILES = (
     "test_family_operator.py", "test_operator_repair.py", "test_family_transport.py",
     "test_telegram_transport.py", "test_montage_family.py",
     "test_family_final_repair.py", "test_private_host_launch.py", "test_provider_collection.py",
+    "test_provider_export.py", "test_direct_chat_prepare.py", "test_recovery_http.py",
+    "test_stage_contract_repair.py", "test_montage_acceptance_truth.py",
+    "test_continuity_guard.py", "test_operator_paid_receipt.py",
     "test_provider_download.py", "test_family_ui_browser.py",
     "test_public_package_links.py",
 )

@@ -338,8 +338,17 @@ class Operator:
                     except (ValueError, OSError):
                         return self.runner.ledger.finish_and_release_grant(job["action_id"], "needs_chat_setup", {"status": "needs_chat_setup"})
                     job["execution_route"] = route
+                    from .operator_routes import action_position, dispatch_guides
+                    spec = action_position(before, job["action_type"], job["target_id"])
+                    job["untrusted_input"]["context"]["guide_choices"] = dispatch_guides(before, spec, route)
                     from .provider_receipts import freeze
-                    freeze(self.workspace, self.runner, job["action_id"], before, route)
+                    from .assets import AssetError
+                    try:
+                        basis = freeze(self.workspace, self.runner, job["action_id"], before, route)
+                    except AssetError:
+                        return self.runner.ledger.finish_and_release_grant(job["action_id"], "needs_chat_setup", {"status": "needs_chat_setup"})
+                    if "source_result" in basis:
+                        job["execution_source"] = basis["source_result"]
                 result = self.adapter(job, self.workspace, SKILL_ROOT)
                 phase = "result_validation"
                 after = self.runner.store.load(job["project_id"])
@@ -351,7 +360,28 @@ class Operator:
                 if final != "succeeded":
                     diagnostic = {"reason": "paid_receipt_missing" if job["action_type"] in {"generate", "vary", "regenerate"}
                                   else "host_reported_status", "reported_status": result["status"]}
-                if result.get("provider_receipt") is not None:
+                if result.get("provider_observation") is not None:
+                    phase = "collection"
+                    observation = result["provider_observation"]
+                    if (result["status"] != "provider_completed" or result.get("provider_receipt") is not None
+                            or job["action_type"] not in {"generate", "vary", "regenerate"}
+                            or before != after or result["output_ids"] or not isinstance(observation, dict)
+                            or job.get("execution_route", {}).get("collection_mode", "provider-original") != "provider-original"):
+                        raise AdapterFailure(reason="host_provider_receipt_invalid")
+                    if set(observation) == {"creation"}:
+                        from .provider_collection import collect_completed
+                        finished = collect_completed(self.workspace, self.runner, job["action_id"], observation["creation"],
+                                                     operation_locked=True)
+                    elif set(observation) == {"creation", "zip_status", "job_id", "video_metadata"}:
+                        from .provider_export import collect_provider_export
+                        finished = collect_provider_export(self.workspace, self.runner, job["action_id"],
+                            observation["creation"], observation["zip_status"], observation["job_id"],
+                            observation["video_metadata"], operation_locked=True)
+                    else:
+                        raise AdapterFailure(reason="host_provider_receipt_invalid")
+                    final = finished["status"]
+                    diagnostic = {"reason": "none" if final == "succeeded" else "collection_blocked"}
+                elif result.get("provider_receipt") is not None:
                     if job["action_type"] not in {"generate", "vary", "regenerate"}:
                         raise AdapterFailure()
                     from .provider_collection import record, reconcile, public

@@ -155,6 +155,12 @@ def build_video_project(workspace, directory):
         "--expected-revision", revision(workspace, pid))
     cli("stage", "approve", workspace, pid, "--expected-revision", revision(workspace, pid))
 
+    cli("scene", "continuity", workspace, pid, "--scene", "s2", "--strategy", "independent",
+        "--expected-revision", revision(workspace, pid))
+    for scene, text in (("s1", "медленный наезд на кота"), ("s2", "проводка за котом на кухню")):
+        cli("prompt", "add-version", workspace, pid, "--target", f"pos:scene:{scene}:video",
+            "--text", text, "--reason", "после выбора кадров и связи",
+            "--expected-revision", revision(workspace, pid))
     video = mp4_bytes()
     for scene, caption in (("s1", "подоконник"), ("s2", "кухня")):
         asset = register_media(workspace, f"{scene}.mp4", "result", video)
@@ -324,9 +330,9 @@ class TelegramSectionTests(unittest.TestCase):
 
         self.assertTrue(prompts.startswith("Проект «Кот в кадре» · Промпты\n"), prompts)
         self.assertIn("IMG_01 — Кот Борис (персонаж)", prompts)
-        self.assertIn("Первый кадр: рыжий кот на подоконнике, контровой свет, IMG_01", prompts)
-        self.assertIn("Движение: медленный наезд на кота", prompts)
-        self.assertIn("Движение: проводка за котом на кухню", prompts)
+        self.assertIn("Первый кадр [принят]: рыжий кот на подоконнике, контровой свет, IMG_01", prompts)
+        self.assertIn("Движение [принят]: медленный наезд на кота", prompts)
+        self.assertIn("Движение [принят]: проводка за котом на кухню", prompts)
 
         self.assertTrue(results.startswith("Проект «Кот в кадре» · Результаты\n"), results)
         self.assertIn("Изображения: 1 вариант", results)
@@ -367,7 +373,7 @@ class TelegramSectionTests(unittest.TestCase):
     def test_photo_project_has_no_video_or_sound_sections(self):
         prompts = self.press(f"project:{PHOTO_ID}:prompts").text
         results = self.press(f"project:{PHOTO_ID}:results").text
-        self.assertIn("Изображение: портрет анфас, мягкий свет", prompts)
+        self.assertIn("Изображение [принят]: портрет анфас, мягкий свет", prompts)
         self.assertNotIn("Движение", prompts)
         self.assertIn("Изображения: 1 вариант", results)
         self.assertNotIn("Видео:", results)

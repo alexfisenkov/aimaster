@@ -85,6 +85,38 @@ def create_project(store: ProjectStore, project_id: str, title: str, project_typ
     return {"project_id": project_id, "revision": 0}
 
 
+def set_audio_plan(store, project_id, expected_revision, layers):
+    """Save the requested layers together; retain every existing take and decision."""
+    from .domain_positions import AUDIO_LAYERS
+    if not isinstance(layers, (tuple, list)) or any(layer not in AUDIO_LAYERS for layer in layers):
+        raise AuthoringError("unknown audio layer")
+    if len(set(layers)) != len(layers):
+        raise AuthoringError("duplicate audio layer")
+
+    def change(state):
+        stage = domain.derive_view_stage(state)["current_stage"]
+        if require_project(state)["type"] == "photo" or stage == "assembly":
+            raise AuthoringError("set the sound plan before assembly in a video or mixed project")
+        excluded = set(AUDIO_LAYERS) - set(layers)
+        for item in state.get("audio_results", []):
+            if item.get("result_id") in {"result:audio:" + layer for layer in excluded}:
+                raise AuthoringError("cannot mark a layer silent while it has audio results; resolve the existing material first")
+        owners = state.setdefault("audio_layers", [])
+        for layer in AUDIO_LAYERS:
+            owner = next((item for item in owners if item["layer"] == layer), None)
+            if owner is None:
+                owner = {"layer": layer, "links": {}}
+                owners.append(owner)
+            required = layer in layers
+            if owner.get("planned") is not required:
+                owner["planned"] = required
+                domain.append_history(state, "you", "audio-planned" if required else "audio-optional",
+                                      stage, target_id="pos:audio:" + layer)
+
+    _, state = mutate(store, project_id, expected_revision, change)
+    return {"project_id": project_id, "revision": state["revision"], "layers": list(layers)}
+
+
 def set_assembly_mode(store, project_id, expected_revision, mode):
     """Record the owner's delivery choice and reopen only the final review."""
     if mode not in {"montage", "materials"}:

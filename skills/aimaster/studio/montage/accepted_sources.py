@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from ..domain import DomainValidationError, compute_prompt_stale
+from ..domain import DomainValidationError
 from ..domain_positions import current_member, position_specs
 from . import AUDIO_LAYER_NAMES, LAYER_LABELS, MontageError
 
@@ -74,10 +74,9 @@ def _accepted_asset(state, spec) -> str | None:
             or not isinstance(result.get("asset_id"), str)
             or not result["asset_id"].strip()):
         return None
-    prompt = current_member(state, spec, "prompt", missing_ok=True)
-    if prompt and (prompt.get("stale") is True or
-                   ("basis" in prompt and compute_prompt_stale(state, prompt, spec))):
-        return None
+    # A current prompt is an input for a future generation. It is not a
+    # provenance record for the already accepted result: refreshing or
+    # migrating that prompt must not silently revoke a selected clip.
     return result["asset_id"]
 
 

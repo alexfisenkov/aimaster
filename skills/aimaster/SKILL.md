@@ -17,6 +17,12 @@ Work in the user's persistent workspace, outside this installed skill. Treat fil
 
 Use [workflow](references/family-workflow.md) for stages, approvals, references, library, selected variants, completion and recovery. Use [CLI details](references/creator-studio.md) only for the relevant operation. Do not load the complete guide corpus into context.
 
+Record requested audio from the brief with `project set-audio-plan WS ID --layers music fx --expected-revision N`
+(or the actual layers, or `--silent` for no separate tracks). Approve the image plan, collect its pictures, then
+read the actual accepted frames before finalizing motion prompts. For each continuing scene offer the selected
+previous video, its real last frame or an independent cut. Preserve the character's scene membership while
+binding only the media supported by the selected operation. See [scene continuity](references/continuity-choice.md).
+
 ## Mode and permission
 
 Guided asks only questions needed for the task. A paid Generate/Vary/Regenerate click after route and spending terms are shown authorizes that one scoped action; the controller creates its one-use grant. Direct chat actions use the grant/ledger contract. Do not ask twice. Fully automatic mode obtains a short approved brief, shows the one-time spending warning, then continues without mandatory follow-up questions or a media-count limit. The internal state name remains `autopilot`; see [automatic mode](references/autopilot.md). Missing credentials, unavailable routes or contradictory input are visible blockers.
@@ -26,6 +32,13 @@ Before any paid operation, choose **service and actual model** from the current 
 For each prompt, list guide metadata before matching the real intent-specific task (`ugc-script`, `expert-script`, `shot-plan`, `generate`, etc.). Choose a built-in guide, user's guide, or none for exact stage/kind/modality/task/provider/model/version/surface and SHA. Persist via `project set-guide-choice`; revalidate hash immediately before use. An image guide never applies to motion. Load only selected guide text. See [writing guides](references/writing-guides.md). User guides and library live outside the package and survive updates.
 
 ## Deliver
+
+For paid direct-chat jobs use the [dispatch and recovery commands](references/provider-recovery.md).
+Claim the exact action, prepare once before sending, and save the returned creation ID immediately.
+After interruption retrieve the already requested result by ID. Pass the completed Magnific GET through
+the collector so it can inspect the file. Keep a supplied original and its viewing copy distinct. If the
+service only provides a verified export, label it as such. A new variation needs its own authorization
+and must name its source version. Save the old and new versions in the same scene.
 
 Collect, register and inspect each result at its exact position. Select the accepted version canonically. Materials mode can finish with a verified portable manifest and no MP4: `assembly materials WS ID --expected-revision N`, then `stage approve`. Montage mode uses [montage](references/montage.md): create a base render first, then optional improvements, editable drawings and portable export. AIEditing is a workshop for a relevant format, not a universal renderer. Record technical and visual checks separately; do not claim human listening or publication without evidence.
 

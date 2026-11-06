@@ -170,6 +170,13 @@ def resolve_stage_card(state, target_id, payload, *, collections=None):
     if len(matches) != 1:
         raise DecisionError("card target is missing or ambiguous across collections")
     name, target = matches[0]
-    if derive_view_stage(state)["current_stage"] != STAGE_COLLECTIONS[name][0]:
+    current = derive_view_stage(state)["current_stage"]
+    visible_prompt = name in PROMPT_EDIT_COLLECTIONS_BY_STAGE.get(current, ())
+    if name in PROMPT_COLLECTIONS:
+        visible_prompt = visible_prompt and not (current == "image_plan" and name == "motion_prompts")
+        allowed = visible_prompt
+    else:
+        allowed = current == STAGE_COLLECTIONS[name][0]
+    if not allowed:
         raise DecisionError("card does not belong to the current stage")
     return name, target

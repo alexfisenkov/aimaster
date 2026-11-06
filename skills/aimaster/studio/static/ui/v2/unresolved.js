@@ -156,7 +156,7 @@ function stalePrompts(project, collections) {
 export function unresolvedEntries(project, stage = project?.stage) {
   if (!project || typeof project !== "object") return [];
   if (stage === "image_plan") {
-    return [...referencesWithoutChoice(project), ...stalePrompts(project, ["image_prompts"])];
+    return stalePrompts(project, ["image_prompts"]);
   }
   if (stage === "image_results") {
     return [
@@ -169,7 +169,12 @@ export function unresolvedEntries(project, stage = project?.stage) {
     return [...clipsWithoutChoice(project), ...stalePrompts(project, ["motion_prompts"])];
   }
   if (stage === "audio") {
-    return stalePrompts(project, ["audio_prompts"]);
+    const missing = (project.positions || []).filter(p =>
+      p.kind === "audio" && p.required && p.status === "none");
+    return [...missing.map(p => entry(
+      AUDIO_LAYERS.find(meta => meta.layer === p.layer)?.name || p.layer,
+      {kind: "layer", id: p.layer}, "frames",
+    )), ...stalePrompts(project, ["audio_prompts"])];
   }
   if (stage === "scenario" || stage === "assembly") {
     return [];

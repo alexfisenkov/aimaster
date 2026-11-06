@@ -38,6 +38,7 @@ RESULT_SCHEMA["required"] = list(RESULT_SCHEMA["properties"])
 # Additive: old free/authoring adapters keep their structured result contract.
 # Paid hosts return provider evidence instead of depending on child downloads.
 RESULT_SCHEMA["properties"]["provider_receipt"] = {"type": ["object", "null"]}
+RESULT_SCHEMA["properties"]["provider_observation"] = {"type": ["object", "null"]}
 RESULT_SCHEMA["properties"]["status"]["enum"].append("provider_completed")
 RESULT_SCHEMA["properties"]["state_sha256"] = {"type": ["string", "null"]}
 
@@ -116,7 +117,14 @@ def prompt(job, workspace, skill, *, agent=None):
         "All other action types prohibit paid provider calls. After a provider timeout/ambiguous result return outcome_unknown; "
         "reconcile GET only. Use selected guide/model/provider and native reference binding from canonical context; "
         "For a paid generate/vary/regenerate: after the provider completes, use its read-only creation GET to verify the exact "
-        "original (never a preview) and return status provider_completed plus provider_receipt. Do NOT download with Chrome, "
+        "original (never a preview). For Magnific provider-original image/video routes return status provider_completed "
+        "and provider_observation={creation:raw_creations_get_MCP_envelope} on the private structured result. "
+        "Preserve its content text exactly, including TOON. The parent downloads and measures the media. "
+        "If an owned video has no original URL, you may instead return provider_observation with creation, "
+        "zip_status (the final projects_download status envelope for the one-creation export), job_id (ZIP UUID) "
+        "and video_metadata (the probed master's metadata object). The parent verifies this separate export representation. "
+        "Never substitute a preview or fabricate dimensions; keep URLs out of reply. For other supported routes "
+        "return status provider_completed plus provider_receipt. Do NOT download with Chrome, "
         "change network permissions, or register/attach the result yourself: the parent collects it. Receipt shape: "
         "{provider,model,operation,creation_id,observation:'completed_get',prompt_sha256,basis_sha256,artifact:"
         "{id,url,mime_type,width,height,duration,size_bytes,sha256}}. The two basis hashes must equal execution_route; "
@@ -154,7 +162,8 @@ def prompt(job, workspace, skill, *, agent=None):
            "References use existing workspace asset_id/library_id; asset.register only accepts an attachment path explicitly in this job. "
            "result.add-upload requires source=upload and an already registered asset. A paid job may NOT use these creative operations. "
            "For paid jobs host_authoring.kind=provider_ack: write only the acknowledgement JSON, then run its exact record-ack command; "
-           "return completed provider_receipt to the parent, never run record-provider/reconcile or result authoring from the child.\n"
+           "return the completed private provider_observation for Magnific hosted images/videos or the applicable "
+           "provider_receipt for other routes. Never run collection or result authoring from the child.\n"
            if agent == "claude" else "")
         + json.dumps({"workspace": str(workspace), "skill": str(Path(skill) / "SKILL.md"),
                       "host_authoring": _claude_access(workspace, skill, job)[1] if agent == "claude" else {},
@@ -187,6 +196,12 @@ def parse_output(agent, output):
         if not isinstance(value, dict) or not set(RESULT_SCHEMA["required"]) <= set(value) <= set(RESULT_SCHEMA["properties"]):
             raise ValueError
         for name, spec in RESULT_SCHEMA["properties"].items():
+            if name == "provider_observation":
+                observation = value.get(name)
+                if observation is not None and (not isinstance(observation, dict) or value.get("provider_receipt") is not None
+                        or len(json.dumps(observation)) > 262144):
+                    raise ValueError
+                continue
             if name == "provider_receipt":
                 if value.get(name) is not None:
                     from .provider_receipts import evidence

@@ -56,11 +56,18 @@ export function continuationLine(project, scene) {
     (item) => item?.kind === "video" && item.usage === "continue" && item.scene_id === scene?.scene_id,
   );
   let detail;
-  if (continues) {
+  if (index > 0 && scene?.continuity_strategy === "previous_last_frame") {
+    detail = t("с последнего кадра сцены {number}", {number: index});
+  } else if (index > 0 && scene?.continuity_strategy === "previous_video") {
+    detail = t("видео сцены {number} как референс", {number: index});
+  } else if (index > 0 && scene?.continuity_strategy === "independent") {
+    detail = t("Независимый клип");
+  } else if (continues) {
     detail = index > 0 ? t("с конца сцены {number}", { number: index }) : t("с конца соседнего клипа");
   } else {
     detail = t(MODE_WORDS[scene?.video_mode] || "Способ оживления пока не выбран");
   }
+  if (scene?.continuity_source_result_id) detail += ` · ${scene.continuity_source_result_id}`;
   const text = continues ? t("Продолжение: {detail}", { detail }) : detail;
   return { text, detail, warn: scene?.linkage_status === "review_linkage" };
 }

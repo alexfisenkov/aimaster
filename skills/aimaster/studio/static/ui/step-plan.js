@@ -190,7 +190,7 @@ const READINESS_REASON_LABELS = Object.freeze({
   blocked: "Сначала ответьте агенту в чате.",
   already_approved: "Этот шаг уже одобрен.",
   incomplete_storyboard: "Сначала завершите раскадровку.",
-  missing_prompts: "Не у всех обязательных позиций есть промпт.",
+  missing_prompts: "Проверьте отсутствующие, устаревшие или отклонённые промпты.",
   unaccepted_positions: "Сначала примите обязательные результаты.",
 });
 

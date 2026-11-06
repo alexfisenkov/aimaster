@@ -122,6 +122,24 @@ def plan_milestone(stage: str, is_approve: bool, payload):
             readiness = stage_readiness(state)
             if not readiness["can_approve"]:
                 raise DecisionError(readiness["reason"])
+            if stage in {"image_plan", "motion"}:
+                from . import domain
+                from .decision_support import append_decision
+                from .domain_positions import current_member, resolve_position
+                target_stage = "image_results" if stage == "image_plan" else "motion"
+                for position in domain.derive_positions(state):
+                    if not position["required"] or position["stage"] != target_stage:
+                        continue
+                    spec = resolve_position(state, position["position_id"])
+                    prompt = current_member(state, spec, "prompt")
+                    decisions = prompt.get("decisions", [])
+                    has_approval = bool(decisions and isinstance(decisions[-1], dict)
+                                        and decisions[-1].get("decision") == "approved")
+                    if prompt.get("status") != "approved" or not has_approval:
+                        prompt["status"] = "approved"
+                        append_decision(prompt, "approved", comment)
+                        append_history(state, "you", "accepted", stage,
+                                       target_id=prompt.get("version_id", prompt["prompt_id"]))
         milestones = state.get("milestones")
         if not isinstance(milestones, dict):
             raise DecisionError("milestones must be an object")
@@ -259,6 +277,7 @@ def build_reopen_mutation(ledger, project_id: str, payload, *, exclude_action_id
                     "continuity_strategy",
                     "continuity_previous_scene_id",
                     "continuity_source_result_id",
+                    "continuity_source_asset_id",
                     "continuity_first_frame_result_id",
                 ):
                     scene.pop(key, None)

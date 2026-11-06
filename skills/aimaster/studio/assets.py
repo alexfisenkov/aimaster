@@ -52,6 +52,7 @@ _EXTENSION_MIME = {
     ".jpeg": "image/jpeg",
     ".webp": "image/webp",
     ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
     ".webm": "video/webm",
     ".mp3": "audio/mpeg",
     ".wav": "audio/wav",
@@ -542,7 +543,7 @@ def _mp4(data: bytes) -> tuple[str, None, None] | None:
         raise AssetValidationError("MP4 brand is invalid")
     if not any(kind in {b"moov", b"moof", b"mdat"} for kind in boxes[1:]):
         raise AssetValidationError("MP4 contains no media structure")
-    return "video/mp4", None, None
+    return ("video/quicktime" if data[8:12] == b"qt  " else "video/mp4"), None, None
 
 
 def _vint_size(data: bytes, offset: int) -> tuple[int | None, int]:
