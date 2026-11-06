@@ -77,6 +77,14 @@ def project_ready_for_assembly(env: dict, workspace: Path) -> int:
                       "--text", "кадр " + scene, "--reason", "смоук", "--expected-revision", rev)["revision"]
     rev = cli(env, "stage", "approve", workspace, p, "--expected-revision", rev)["revision"]
     for kind, files in (("image", ("кадр.png", "кадр.png")), ("video", ("клип 1.mp4", "клип 2.mp4"))):
+        if kind == "video":
+            # Later per-scene clips require an explicit transition. Choosing
+            # it changes the motion prompt basis, so refresh that prompt at
+            # motion before any video result is approved.
+            rev = cli(env, "scene", "continuity", workspace, p, "--scene", "s2", "--strategy", "independent",
+                      "--expected-revision", rev)["revision"]
+            rev = cli(env, "prompt", "add-version", workspace, p, "--target", "pos:scene:s2:video",
+                      "--text", "кадр s2", "--reason", "после выбора связи", "--expected-revision", rev)["revision"]
         for scene, name in zip(("s1", "s2"), files):
             rev = cli(env, "result", "add-version", workspace, p, "--scene", scene, "--kind", kind,
                       "--asset-id", ids[name], "--expected-revision", rev)["revision"]
