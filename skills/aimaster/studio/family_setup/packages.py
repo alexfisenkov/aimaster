@@ -16,7 +16,8 @@ import zipfile
 
 from .state import private_dir, write_json, write_bytes
 
-OFFICIAL = {"aimaster": "alexfisenkov/aimaster", "aiediting": "alexfisenkov/AIEditing"}
+OFFICIAL = {"aimaster": "alexfisenkov/aimaster", "aiediting": "alexfisenkov/AIEditing",
+            "aidesign": "alexfisenkov/aidesign"}
 IGNORED = {"__pycache__", ".DS_Store", ".aimaster-install.json"}
 SHA = re.compile(r"^[0-9a-f]{40}$")
 

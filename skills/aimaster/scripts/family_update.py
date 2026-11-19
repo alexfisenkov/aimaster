@@ -21,7 +21,7 @@ def main(argv=None):
     parser.add_argument("--home", type=Path)
     parser.add_argument("--session-id")
     parser.add_argument("--enabled", choices=("on", "off"))
-    parser.add_argument("--component", choices=("aimaster", "aiediting", "syntx", "higgsfield", "magnific", "fal"))
+    parser.add_argument("--component", choices=("aimaster", "aiediting", "aidesign", "syntx", "higgsfield", "magnific", "fal"))
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--locale", choices=("ru", "en"), default="ru")
     parser.add_argument("--workspace", type=Path)

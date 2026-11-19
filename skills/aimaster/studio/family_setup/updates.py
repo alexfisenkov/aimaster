@@ -179,7 +179,7 @@ def session_start(session_id, *, state_dir=None, fetcher=packages.fetch_package,
                 return {"ok": True, "status": "already_checked"}
             workspace_guard(state, locks)
             results = {}
-            for name in ("aimaster", "aiediting"):
+            for name in ("aimaster", "aiediting", "aidesign"):
                 if name not in state["components"]:
                     results[name] = {"status": "not_installed"}
                     continue

@@ -8,7 +8,7 @@ from .state import default_state_dir, operation_lease, read_state, save_state, n
 
 
 def setup(package, *, home=None, state_dir=None, agents=("codex", "claude"), selected=None,
-          install_deps=False, aiediting=True, auto_update=None, syntx_destination=None,
+          install_deps=False, aiediting=True, aidesign=True, auto_update=None, syntx_destination=None,
           refresh_official=False, runner=None):
     home = Path(home or Path.home()).expanduser().absolute()
     directory = private_dir(state_dir or default_state_dir(home if home != Path.home() else None))
@@ -83,21 +83,24 @@ def setup(package, *, home=None, state_dir=None, agents=("codex", "claude"), sel
             state.setdefault("connectors", {})[name] = {"expected": expected, "hosts": report["providers"][name],
                 "manifest_version": providers.catalog()["manifest_version"], "server_rollback": profile["server_rollback"]}
             save_state(directory, state)
-        if aiediting and "aiediting" not in state["components"]:
+        # Sibling skills of the family: official archive of main, same transaction.
+        for name, wanted in (("aiediting", aiediting), ("aidesign", aidesign)):
+            if not wanted or name in state["components"]:
+                continue
             try:
-                with tempfile.TemporaryDirectory(prefix="family-editing-", dir=directory) as temporary:
-                    source = Path(temporary) / "aiediting"
-                    identity = {**packages.fetch_package("aiediting", source), "origin_status": "verified"}
+                with tempfile.TemporaryDirectory(prefix="family-" + name + "-", dir=directory) as temporary:
+                    source = Path(temporary) / name
+                    identity = {**packages.fetch_package(name, source), "origin_status": "verified"}
                     pending = copy.deepcopy(state)
-                    def publish(receipt):
-                        pending["components"]["aiediting"] = receipt
+                    def publish(receipt, name=name, pending=pending):
+                        pending["components"][name] = receipt
                         save_state(directory, pending)
-                    packages.install_package(source, "aiediting", directory, home, agents, identity=identity, publish=publish)
+                    packages.install_package(source, name, directory, home, agents, identity=identity, publish=publish)
                     state = pending
-                    report["components"]["aiediting"] = {"status": "installed", "installed": True}
+                    report["components"][name] = {"status": "installed", "installed": True}
             except (OSError, ValueError) as error:
-                report["components"]["aiediting"] = {"status": "install_failed", "installed": False,
-                                                       "reason": type(error).__name__}
+                report["components"][name] = {"status": "install_failed", "installed": False,
+                                              "reason": type(error).__name__}
                 report["ok"] = False
         state["setup_at"] = now()
         save_state(directory, state)

@@ -110,6 +110,20 @@ class PolicyTests(unittest.TestCase):
             self.assertTrue((Path(temporary) / "skill/SKILL.md").is_file())
             self.assertFalse((Path(temporary) / ".claude").exists())
 
+    def test_download_extracts_only_the_aidesign_skill_subtree(self):
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, "w") as archive:
+            archive.writestr("repo/skills/aidesign/SKILL.md", "---\nname: aidesign\n---\n")
+            archive.writestr("repo/skills/aidesign/tools/setup.py", "# synthetic\n")
+            archive.writestr("repo/tests/test_private.py", "# outside the skill\n")
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(packages, "download", side_effect=[
+                json.dumps({"sha": "c" * 40}).encode(), payload.getvalue()]) as download:
+            receipt = packages.fetch_package("aidesign", Path(temporary) / "skill")
+            self.assertEqual(receipt["origin"], "https://github.com/alexfisenkov/aidesign.git")
+            self.assertIn("/repos/alexfisenkov/aidesign/commits/main", download.call_args_list[0].args[0])
+            self.assertTrue((Path(temporary) / "skill/tools/setup.py").is_file())
+            self.assertFalse((Path(temporary) / "skill/tests").exists())
+
     def test_new_session_does_nothing_without_explicit_opt_in(self):
         with tempfile.TemporaryDirectory() as temporary:
             result = subprocess.run([sys.executable, str(Path(__file__).with_name("family_update.py")),
@@ -221,6 +235,31 @@ class TransactionTests(unittest.TestCase):
         for target in self.current["targets"]:
             self.assertEqual(packages.digest_tree(Path(target).resolve()), persisted["components"]["aimaster"]["fingerprint"])
         self.assertEqual(persisted["rollback"]["aimaster"]["fingerprint"], self.current["fingerprint"])
+
+    def test_session_updates_installed_aidesign_and_keeps_rollback(self):
+        design = self.root / "aidesign v1"
+        design.mkdir()
+        (design / "SKILL.md").write_text("---\nname: aidesign\n---\n")
+        identity = {"origin_status": "verified", "origin": "https://github.com/alexfisenkov/aidesign.git",
+                    "revision": "c" * 40, "archive_sha256": "0" * 64, "provenance": "official_archive"}
+        installed = packages.install_package(design, "aidesign", self.directory, self.home, ("codex", "claude"), identity=identity)
+        state = read_state(self.directory)
+        state["components"]["aidesign"] = installed
+        save_state(self.directory, state)
+        def fetch(name, destination):
+            if name != "aidesign":
+                return self.fetch(name, destination)
+            shutil.copytree(design, destination)
+            (destination / "NEW.md").write_text("synthetic newer release\n")
+            return {"origin": identity["origin"], "revision": "d" * 40,
+                    "fingerprint": packages.digest_tree(destination), "archive_sha256": "0" * 64}
+        result = updates.session_start("design-update", state_dir=self.directory, fetcher=fetch)
+        self.assertEqual(result["components"]["aidesign"]["status"], "updated")
+        persisted = read_state(self.directory)
+        self.assertEqual(persisted["rollback"]["aidesign"]["fingerprint"], installed["fingerprint"])
+        self.assertTrue((self.home / ".claude/skills/aidesign/NEW.md").is_file())
+        self.assertEqual(updates.rollback("aidesign", state_dir=self.directory)["status"], "rolled_back")
+        self.assertFalse((self.home / ".agents/skills/aidesign/NEW.md").exists())
 
     def test_busy_lock_and_same_session_do_not_fetch(self):
         fetch = mock.Mock(side_effect=self.fetch)

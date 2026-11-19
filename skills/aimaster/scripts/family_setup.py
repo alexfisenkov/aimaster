@@ -47,6 +47,7 @@ def main(argv=None):
     parser.add_argument("--provider", choices=tuple(catalog()["providers"]), action="append")
     parser.add_argument("--install-deps", action="store_true")
     parser.add_argument("--no-aiediting", action="store_true")
+    parser.add_argument("--no-aidesign", action="store_true")
     parser.add_argument("--auto-update", choices=("on", "off"))
     parser.add_argument("--syntx-upload-destination", choices=("uploaded", "hidden"))
     parser.add_argument("--refresh-official", action="store_true")
@@ -77,6 +78,7 @@ def main(argv=None):
             result = setup(args.package, home=args.home, state_dir=directory,
                 agents=("codex", "claude") if args.agent == "all" else (args.agent,), selected=args.provider,
                 install_deps=args.install_deps, aiediting=not args.no_aiediting,
+                aidesign=not args.no_aidesign,
                 auto_update=None if args.auto_update is None else args.auto_update == "on",
                 syntx_destination=args.syntx_upload_destination, refresh_official=args.refresh_official)
     except OperationBusy:

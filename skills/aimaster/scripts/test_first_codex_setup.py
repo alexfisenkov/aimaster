@@ -89,7 +89,7 @@ class FirstCodexSetupTests(unittest.TestCase):
                     mock.patch.object(packages, "install_package", side_effect=install_package), \
                     mock.patch.object(providers, "program", return_value="fake-codex"):
                 result = setup(Path(__file__).resolve().parents[1], home=home, state_dir=state_dir,
-                               agents=("codex",), selected=("magnific",), aiediting=False,
+                               agents=("codex",), selected=("magnific",), aiediting=False, aidesign=False,
                                runner=fake_codex)
 
             self.assertTrue(result["providers"]["magnific"]["codex"]["configured"], result)

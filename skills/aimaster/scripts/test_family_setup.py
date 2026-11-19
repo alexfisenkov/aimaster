@@ -44,7 +44,7 @@ class StandaloneTests(unittest.TestCase):
                 pass  # Native Windows without symlink rights still tests the copy bootstrap.
             env = dict(os.environ, HOME=str(home), USERPROFILE=str(home), PATH=str(home / "empty-bin"))
             result = subprocess.run([sys.executable, str(skill / "scripts/family_setup.py"), "setup",
-                                     "--home", str(home), "--provider", "magnific", "--no-aiediting", "--json"],
+                                     "--home", str(home), "--provider", "magnific", "--no-aiediting", "--no-aidesign", "--json"],
                                     env=env, cwd=home, capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
             self.assertTrue(result.stdout.startswith("{"), result.stderr)
@@ -86,7 +86,7 @@ class StandaloneTests(unittest.TestCase):
             output = io.StringIO()
             with mock.patch("studio.family_setup.providers.program", return_value=None), redirect_stdout(output):
                 code = family_setup.main(["setup", "--home", str(home), "--provider", "magnific",
-                                          "--no-aiediting", "--auto-update", "on", "--json"])
+                                          "--no-aiediting", "--no-aidesign", "--auto-update", "on", "--json"])
             self.assertEqual(code, 1, output.getvalue())  # partial: host is absent
             report = json.loads(output.getvalue())
             self.assertTrue((home / ".agents/skills/aimaster/SKILL.md").is_file())
@@ -268,11 +268,13 @@ class ConnectorTests(unittest.TestCase):
                     value.setdefault("mcpServers", {})[name] = entry
                     path.write_text(json.dumps(value))
                 return 0, "", ""
+            fetched = []
             def fetch(name, target):
-                self.assertEqual(name, "aiediting")
+                self.assertIn(name, ("aiediting", "aidesign"))
+                fetched.append(name)
                 target.mkdir()
-                (target / "SKILL.md").write_text('---\nname: aiediting\n---\n')
-                return {"origin": "https://github.com/alexfisenkov/AIEditing.git", "revision": "b" * 40,
+                (target / "SKILL.md").write_text(f'---\nname: {name}\n---\n')
+                return {"origin": "https://github.com/" + packages.OFFICIAL[name] + ".git", "revision": "b" * 40,
                         "fingerprint": packages.digest_tree(target)}
             with mock.patch.object(providers, "dependencies", return_value=deps), \
                     mock.patch.object(packages, "fetch_package", side_effect=fetch):
@@ -289,16 +291,44 @@ class ConnectorTests(unittest.TestCase):
             for hosts in result["providers"].values():
                 self.assertTrue(all(h["configured"] and not h["available"] and not h["authenticated"] for h in hosts.values()))
             self.assertTrue((home / ".agents/skills/aiediting/SKILL.md").is_file())
+            self.assertTrue((home / ".agents/skills/aidesign/SKILL.md").is_file())
+            self.assertTrue((home / ".claude/skills/aidesign/SKILL.md").is_file())
+            self.assertEqual(result["components"]["aidesign"]["status"], "installed")
+            self.assertEqual(fetched, ["aiediting", "aidesign"])  # the repeat setup fetches nothing
+            from studio.family_setup.service import status
+            self.assertTrue(status(directory)["components"]["aidesign"]["installed"])
             self.assertEqual(providers.read_config(home, "codex")[1]["model"], "untouched")
             self.assertEqual(providers.read_config(home, "claude")[1]["theme"], "untouched")
+
+    def test_aidesign_is_optional_and_its_failure_is_reported_separately(self):
+        def fetch(name, target):
+            if name == "aidesign":
+                raise OSError("offline")
+            target.mkdir()
+            (target / "SKILL.md").write_text(f'---\nname: {name}\n---\n')
+            return {"origin": "https://github.com/" + packages.OFFICIAL[name] + ".git", "revision": "b" * 40,
+                    "fingerprint": packages.digest_tree(target)}
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            with mock.patch.object(providers, "program", return_value=None), \
+                    mock.patch.object(packages, "fetch_package", side_effect=fetch) as fetcher:
+                skipped = setup(Path(__file__).parent.parent, home=home, agents=("codex",), selected=("fal",), aidesign=False)
+                self.assertEqual([call.args[0] for call in fetcher.call_args_list], ["aiediting"])
+                self.assertNotIn("aidesign", skipped["components"])
+                failed = setup(Path(__file__).parent.parent, home=home, agents=("codex",), selected=("fal",))
+            self.assertEqual(failed["components"]["aidesign"], {"status": "install_failed", "installed": False, "reason": "OSError"})
+            self.assertNotIn("aiediting", failed["components"])  # already installed, not fetched again
+            self.assertFalse(failed["ok"])
+            self.assertTrue((home / ".agents/skills/aiediting/SKILL.md").is_file())
+            self.assertFalse(os.path.lexists(home / ".agents/skills/aidesign"))
 
     def test_repeat_setup_can_add_the_other_host_without_clobbering_first(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             with mock.patch.object(providers, "program", return_value=None):
-                setup(Path(__file__).parent.parent, home=home, agents=("codex",), selected=("fal",), aiediting=False)
+                setup(Path(__file__).parent.parent, home=home, agents=("codex",), selected=("fal",), aiediting=False, aidesign=False)
                 before = packages.digest_tree(home / ".agents/skills/aimaster")
-                setup(Path(__file__).parent.parent, home=home, agents=("codex", "claude"), selected=("fal",), aiediting=False)
+                setup(Path(__file__).parent.parent, home=home, agents=("codex", "claude"), selected=("fal",), aiediting=False, aidesign=False)
             self.assertTrue((home / ".claude/skills/aimaster/SKILL.md").is_file())
             self.assertEqual(packages.digest_tree(home / ".agents/skills/aimaster"), before)
 
